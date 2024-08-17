@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 
 class AnimalBase(models.Model):
     tag = models.OneToOneField(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
-    status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
+    animal_status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
     birth_date = models.DateField(verbose_name='Дата рождения')
     age = models.IntegerField(verbose_name='Возраст (в месяцах)', null=True, blank=True)
     
@@ -16,7 +16,7 @@ class AnimalBase(models.Model):
 
     # Метод для расчета возраста
     def calculate_age(self):
-        if self.status and self.status.status_type not in ['Убыл', 'Убой', 'Продажа']:
+        if self.animal_status and self.animal_status.status_type not in ['Убыл', 'Убой', 'Продажа']:
             current_date = date.today()
             delta = relativedelta(current_date, self.birth_date)
             self.age = delta.years * 12 + delta.months  # Возраст в месяцах
@@ -24,7 +24,7 @@ class AnimalBase(models.Model):
 
     # Метод для фиксации возраста при смене статуса
     def set_fixed_age(self):
-        if self.status and self.status.status_type in ['Убыл', 'Убой', 'Продажа']:
+        if self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']:
             current_date = date.today()
             delta = relativedelta(current_date, self.birth_date)
             self.age = delta.years * 12 + delta.months  # Фиксируем возраст в месяцах
@@ -32,7 +32,7 @@ class AnimalBase(models.Model):
 
     # Переопределение метода save для автообновления возраста
     def save(self, *args, **kwargs):
-        if self.status and self.status.status_type in ['Убыл', 'Убой', 'Продажа']:
+        if self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']:
             self.set_fixed_age()  # Фиксируем возраст
         else:
             self.calculate_age()  # Рассчитываем возраст
