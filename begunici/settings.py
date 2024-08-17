@@ -37,6 +37,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'animals',        # Приложение для работы с животными
+    'veterinary',     # Приложение для ветобработки и взвешивания
+    'rest_framework', # Если используете Django REST Framework
 ]
 
 MIDDLEWARE = [
