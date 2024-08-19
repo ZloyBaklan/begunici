@@ -1,0 +1,18 @@
+<!-- templates/animals/list_rams.html -->
+{% extends "base.html" %}
+
+{% block title %}List of Rams{% endblock %}
+
+{% block content %}
+<h1>List of Rams</h1>
+<ul>
+    {% for ram in rams %}
+        <li>
+            {{ ram.tag.tag_number }} - Age: {{ ram.age }}, Weight: {{ ram.last_weight }} kg
+        </li>
+    {% empty %}
+        <li>No rams found.</li>
+    {% endfor %}
+</ul>
+<a href="{% url 'create_ram' %}">Create new Ram</a>
+{% endblock %}

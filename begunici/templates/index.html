@@ -1,0 +1,57 @@
+<!-- templates/index.html -->
+<!-- templates/index.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ферма Бегуницы</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script defer src="{% static 'js/main.js' %}"></script>
+</head>
+<body>
+    <header>
+        <h1>Ферма Бегуницы</h1>
+    </header>
+
+    <div class="container">
+        <div class="menu">
+            <h2>Свод по животным:</h2>
+            <button id="loadMakers">Загрузить производителей</button>
+            <button id="loadRams">Загрузить баранов</button>
+            <ul id="makers-list"></ul> <!-- Контейнер для производителей -->
+            <ul id="rams-list"></ul>   <!-- Контейнер для баранов -->
+        </div>
+    </div>
+
+        <div class="menu-manager">
+            <h2>Меню управляющего:</h2>
+            <h3>Животные:</h3>
+            <ul>
+                <li><a href="{% url 'create_maker' %}">Создать производителя</a></li>
+                <li><a href="{% url 'create_ram' %}">Создать барана</a></li>
+                <li><a href="{% url 'create_ewe' %}">Создать овцу</a></li>
+                <li><a href="{% url 'create_sheep' %}">Создать ярку</a></li>
+                <li><a href="{% url 'create_lamb' %}">Создать ягнёнка</a></li>
+                <li><a href="{% url 'create_lambing' %}">Создать окот</a></li>
+            </ul>
+
+            <h3>Процессы:</h3>
+            <ul>
+                <li><a href="{% url 'create_status' %}">Создать статус</a></li>
+                <li><a href="{% url 'create_place' %}">Создать место</a></li>
+                <li><a href="{% url 'create_veterinary_care' %}">Создать тип вет обработки</a></li>
+                <li><a href="{% url 'create_weight_record' %}">Создать взвешивание</a></li>
+            </ul>
+
+            <h3>Редактирование:</h3>
+            <ul>
+                <li><a href="{% url 'ewe_to_sheep' ewe_id=1 %}">Преобразование овцы в ярку</a></li>
+                <li><a href="{% url 'lamb_to_ram_or_ewe' lamb_id=1 %}">Преобразование ягнёнка в барана или овцу</a></li>
+            </ul>
+        </div>
+    </div>
+
+</body>
+</html>

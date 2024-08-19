@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from .models import Maker, Ram, Ewe, Sheep, Lamb
-from veterinary.serializers import StatusSerializer, TagSerializer, VeterinaryCareSerializer, WeightRecordSerializer, PlaceSerializer
+from .models import Maker, Ram, Ewe, Sheep, Lamb, Lambing
+from begunici.app_types.veterinary.serializers import StatusSerializer, TagSerializer, VeterinaryCareSerializer, WeightRecordSerializer, PlaceSerializer
 
 
 # Сериализатор для ягнят
@@ -57,4 +57,12 @@ class MakerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Maker
+        fields = '__all__'
+
+# Сериализатор для окота
+class LambingSerializer(serializers.ModelSerializer):
+    lambs = LambSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Lambing
         fields = '__all__'

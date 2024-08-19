@@ -1,0 +1,39 @@
+<!-- templates/create_veterinary.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создание Veterinary объектов</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script defer src="{% static 'js/veterinary.js' %}"></script> <!-- Подключение veterinary.js -->
+</head>
+<body>
+    <h1>Создать новые объекты для Veterinary</h1>
+
+    <h2>Создать статус</h2>
+    <form id="status-form">
+        <label for="status-type">Название статуса:</label>
+        <input type="text" id="status-type" name="status_type" required>
+        <button type="submit">Создать статус</button>
+    </form>
+
+    <h2>Создать место</h2>
+    <form id="place-form">
+        <label for="sheepfold">Овчарня:</label>
+        <input type="text" id="sheepfold" name="sheepfold" required>
+        <label for="compartment">Отсек:</label>
+        <input type="text" id="compartment" name="compartment" required>
+        <button type="submit">Создать место</button>
+    </form>
+
+    <h2>Создать тип ветобработки</h2>
+    <form id="veterinary-care-form">
+        <label for="care-type">Тип ветобработки:</label>
+        <input type="text" id="care-type" name="care_type" required>
+        <button type="submit">Создать тип ветобработки</button>
+    </form>
+
+</body>
+</html>

@@ -2,12 +2,13 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from django.core.paginator import Paginator
-from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Lambing, Place, Sheep
+from begunici.app_types.animals.models import Sheep, Lambing
+from begunici.app_types.animals.serializers import LambingSerializer
+from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
 from .serializers import (
     VeterinarySerializer, StatusSerializer, TagSerializer, VeterinaryCareSerializer,
-    WeightRecordSerializer, LambingSerializer, PlaceSerializer
+    WeightRecordSerializer, PlaceSerializer
 )
-from animals.serializers import SheepSerializer
 
 # Универсальная функция для создания новых объектов
 @api_view(['POST'])
@@ -49,9 +50,6 @@ def create_veterinary_care(request):
 def create_weight_record(request):
     return create_object(request, WeightRecordSerializer)
 
-@api_view(['POST'])
-def create_lambing(request):
-    return create_object(request, LambingSerializer)
 
 @api_view(['POST'])
 def create_place(request):
@@ -78,9 +76,7 @@ def list_veterinary_care(request):
 def list_weight_records(request):
     return list_objects(request, WeightRecord, WeightRecordSerializer)
 
-@api_view(['GET'])
-def list_lambing(request):
-    return list_objects(request, Lambing, LambingSerializer)
+
 
 @api_view(['GET'])
 def list_places(request):

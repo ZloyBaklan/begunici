@@ -1,6 +1,4 @@
 from django.db import models
-from datetime import timedelta
-from animals.models import Sheep, Lamb, Maker
 
 class Status(models.Model):
     status_type = models.CharField(max_length=200, verbose_name='Название статуса')
@@ -56,37 +54,6 @@ class WeightRecord(models.Model):
     def __str__(self):
         return f"Вес: {self.weight} кг, Дата: {self.weight_date}"
 
-
-
-class Lambing(models.Model):
-    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE, verbose_name='Овца')
-    
-    # Дата постановки под барана
-    mating_date = models.DateField(verbose_name='Дата постановки под барана')
-    
-    # Ориентировочная дата окота (плюс 155 дней)
-    estimated_lambing_date = models.DateField(verbose_name='Ориентировочная дата окота')
-    
-    # Фактическая дата окота
-    actual_lambing_date = models.DateField(verbose_name='Фактическая дата окота', null=True, blank=True)
-    
-    # Число ягнят
-    lamb_count = models.IntegerField(verbose_name='Число ягнят')
-    
-    # Ягнята (связь с моделью Lamb)
-    lambs = models.ManyToManyField(Lamb, verbose_name='Ягнята')
-    
-    # Производитель (Maker)
-    maker = models.ForeignKey(Maker, on_delete=models.CASCADE, verbose_name='Производитель', null=True, blank=True)
-
-    def save(self, *args, **kwargs):
-        # При сохранении автоматически вычисляем ориентировочную дату окота
-        if not self.estimated_lambing_date:
-            self.estimated_lambing_date = self.mating_date + timedelta(days=155)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"Окот овцы {self.sheep.tag.tag_number} от производителя {self.maker.tag.tag_number} - Число ягнят: {self.lamb_count}"
 
 
 

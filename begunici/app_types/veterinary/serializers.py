@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Lambing, Place
-from animals.serializers import LambSerializer
+from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
 
 
 # Сериализатор для ветобработок
@@ -40,13 +39,7 @@ class WeightRecordSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# Сериализатор для окота
-class LambingSerializer(serializers.ModelSerializer):
-    lambs = LambSerializer(many=True, read_only=True)
-    
-    class Meta:
-        model = Lambing
-        fields = '__all__'
+
 
 
     

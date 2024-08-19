@@ -3,4 +3,4 @@ from django.apps import AppConfig
 
 class AnimalsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'animals'
+    name = 'begunici.app_types.animals'  # Укажите точный путь к приложению

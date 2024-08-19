@@ -1,13 +1,11 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db.models import Q
 from rest_framework import status
 from django.core.paginator import Paginator
-from .models import Maker, Ram, Ewe, Sheep, Lamb
-from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambSerializer
-from veterinary.models import Status
-from datetime import date
-from dateutil.relativedelta import relativedelta
+from .models import Maker, Ram, Ewe, Sheep, Lamb, Lambing
+from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambSerializer, LambingSerializer
+from begunici.app_types.veterinary.models import Status
+
 
 
 
@@ -21,13 +19,19 @@ def list_objects(request, model, serializer_class, per_page=10):
     serializer = serializer_class(page_obj, many=True)
     return Response(serializer.data)
 
+# API для получения списка производителей
 @api_view(['GET'])
 def maker_list(request):
-    return list_objects(request, Maker, MakerSerializer)
+    makers = Maker.objects.all()
+    serializer = MakerSerializer(makers, many=True)
+    return Response(serializer.data)
 
+# API для получения списка баранов
 @api_view(['GET'])
 def ram_list(request):
-    return list_objects(request, Ram, RamSerializer)
+    rams = Ram.objects.all()
+    serializer = RamSerializer(rams, many=True)
+    return Response(serializer.data)
 
 @api_view(['GET'])
 def ewe_list(request):
@@ -41,6 +45,10 @@ def sheep_list(request):
 def lamb_list(request):
     return list_objects(request, Lamb, LambSerializer)
 
+@api_view(['GET'])
+def list_lambing(request):
+    return list_objects(request, Lambing, LambingSerializer)
+
 # 2. Создание новых записей
 @api_view(['POST'])
 def create_object(request, serializer_class, model):
@@ -49,6 +57,10 @@ def create_object(request, serializer_class, model):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def create_lambing(request):
+    return create_object(request, LambingSerializer)
 
 @api_view(['POST'])
 def create_maker(request):
@@ -105,44 +117,57 @@ def ewe_to_sheep(request, ewe_id):
 def lamb_to_ram_or_ewe(request, lamb_id):
     try:
         lamb = Lamb.objects.get(id=lamb_id)
+        
+        # Ищем запись окота (Lambing), связанную с овцой-матерью
+        try:
+            lambing = Lambing.objects.get(lambs__id=lamb_id)  # Ищем запись окота, связанного с ягнёнком
+            mother_sheep = lambing.sheep  # Овца-мать из записи Lambing
+            father_tag = lambing.maker.tag.tag_number  # Производитель (отец)
+        except Lambing.DoesNotExist:
+            return Response({"error": "Lambing record not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Проверяем пол ягнёнка и создаём запись либо для Ram, либо для Ewe
         if lamb.gender == 'М':
             ram_data = {
                 'tag': lamb.tag.id,
                 'birth_date': lamb.birth_date,
                 'age': 0,
-                'mother_tag': lamb.tag.tag_number,
-                'father_tag': 'UNKNOWN',  # Указать отца
-                'place': lamb.place.id,
+                'mother_tag': mother_sheep.tag.tag_number,  # Бирка овцы-матери
+                'father_tag': father_tag,  # Бирка производителя (отца)
+                'place': mother_sheep.place.id,  # Место, где находится овца-мать
                 'last_weight': lamb.weight,
                 'last_weight_date': lamb.birth_date,
-                'status': Status.objects.get(status_type='Новорожденный').id
+                'animal_status': Status.objects.get(status_type='Новорожденный').id  # Статус "Новорожденный"
             }
             ram_serializer = RamSerializer(data=ram_data)
             if ram_serializer.is_valid():
                 ram_serializer.save()
-                lamb.delete()  # Удаляем запись Lamb
+                lamb.delete()  # Удаляем запись Lamb после успешного переноса
                 return Response(ram_serializer.data, status=status.HTTP_201_CREATED)
             return Response(ram_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
         elif lamb.gender == 'Ж':
             ewe_data = {
                 'tag': lamb.tag.id,
                 'birth_date': lamb.birth_date,
                 'age': 0,
-                'mother_tag': lamb.tag.tag_number,
-                'father_tag': 'UNKNOWN',
-                'place': lamb.place.id,
+                'mother_tag': mother_sheep.tag.tag_number,  # Бирка овцы-матери
+                'father_tag': father_tag,  # Бирка производителя (отца)
+                'place': mother_sheep.place.id,  # Место, где находится овца-мать
                 'last_weight': lamb.weight,
                 'last_weight_date': lamb.birth_date,
-                'status': Status.objects.get(status_type='Новорожденный').id
+                'animal_status': Status.objects.get(status_type='Новорожденный').id  # Статус "Новорожденный"
             }
             ewe_serializer = EweSerializer(data=ewe_data)
             if ewe_serializer.is_valid():
                 ewe_serializer.save()
-                lamb.delete()  # Удаляем запись Lamb
+                lamb.delete()  # Удаляем запись Lamb после успешного переноса
                 return Response(ewe_serializer.data, status=status.HTTP_201_CREATED)
             return Response(ewe_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     except Lamb.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Lamb not found"}, status=status.HTTP_404_NOT_FOUND)
+
 
 # Универсальная функция для фильтрации по статусу, месту, возрасту и производителю
 @api_view(['GET'])
