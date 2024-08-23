@@ -7,10 +7,6 @@ def index(request):
     return render(request, 'index.html')
 
 
-# Представление для страницы создания объектов
-def create_veterinary(request):
-    return render(request, 'create_veterinary.html')
-
 
 # Представление для списка Makers
 def maker_list(request):

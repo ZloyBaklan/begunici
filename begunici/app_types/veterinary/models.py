@@ -2,11 +2,12 @@ from django.db import models
 
 class Status(models.Model):
     status_type = models.CharField(max_length=200, verbose_name='Название статуса')
-    date_of_status = models.DateField(verbose_name='Дата статуса')
+    date_of_status = models.DateField(auto_now_add=True, verbose_name='Дата статуса')
 
     def __str__(self):
         return self.status_type
-    
+
+'''Статус через админку и вебку имеет дату создания, но в случае выставления статуса в поле(его обновления), нужно чтобы дата обновлялась на текущую'''
 # Приложение animals
 
 class Tag(models.Model):
@@ -40,10 +41,6 @@ class VeterinaryCare(models.Model):
     care_type = models.CharField(max_length=200, verbose_name='Тип ветобработки')
 
     def __str__(self):
-        # Вернем все связанные с этим типом ветобработки записи и выведем последний препарат и дату обработки
-        last_veterinary = Veterinary.objects.filter(veterinary_care=self).order_by('-date_of_care').first()
-        if last_veterinary:
-            return f"{self.care_type} - Препарат: {last_veterinary.medication}, Дата: {last_veterinary.date_of_care}"
         return self.care_type
 
 class WeightRecord(models.Model):

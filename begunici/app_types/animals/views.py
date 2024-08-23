@@ -1,4 +1,6 @@
+from rest_framework import viewsets
 from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.core.paginator import Paginator
@@ -8,80 +10,10 @@ from begunici.app_types.veterinary.models import Status
 
 
 
-
-# 1. Вывод всех объектов постранично
-@api_view(['GET'])
-def list_objects(request, model, serializer_class, per_page=10):
-    objects = model.objects.all()
-    paginator = Paginator(objects, per_page)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-    serializer = serializer_class(page_obj, many=True)
-    return Response(serializer.data)
-
-# API для получения списка производителей
-@api_view(['GET'])
-def maker_list(request):
-    makers = Maker.objects.all()
-    serializer = MakerSerializer(makers, many=True)
-    return Response(serializer.data)
-
-# API для получения списка баранов
-@api_view(['GET'])
-def ram_list(request):
-    rams = Ram.objects.all()
-    serializer = RamSerializer(rams, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-def ewe_list(request):
-    return list_objects(request, Ewe, EweSerializer)
-
-@api_view(['GET'])
-def sheep_list(request):
-    return list_objects(request, Sheep, SheepSerializer)
-
-@api_view(['GET'])
-def lamb_list(request):
-    return list_objects(request, Lamb, LambSerializer)
-
-@api_view(['GET'])
-def list_lambing(request):
-    return list_objects(request, Lambing, LambingSerializer)
-
-# 2. Создание новых записей
-@api_view(['POST'])
-def create_object(request, serializer_class, model):
-    serializer = serializer_class(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-def create_lambing(request):
-    return create_object(request, LambingSerializer)
-
-@api_view(['POST'])
-def create_maker(request):
-    return create_object(request, MakerSerializer, Maker)
-
-@api_view(['POST'])
-def create_ram(request):
-    return create_object(request, RamSerializer, Ram)
-
-@api_view(['POST'])
-def create_ewe(request):
-    return create_object(request, EweSerializer, Ewe)
-
-@api_view(['POST'])
-def create_sheep(request):
-    return create_object(request, SheepSerializer, Sheep)
-
-@api_view(['POST'])
-def create_lamb(request):
-    return create_object(request, LambSerializer, Lamb)
-
+class MakerViewSet(viewsets.ModelViewSet):
+    queryset = Maker.objects.all()
+    serializer_class = MakerSerializer
+    permission_classes = [AllowAny]  # Доступ без аутентификации
 # 3. Преобразование Ewe в Sheep
 @api_view(['POST'])
 def ewe_to_sheep(request, ewe_id):

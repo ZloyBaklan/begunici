@@ -15,13 +15,31 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include  # Для подключения маршрутов приложений
-import begunici.views
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from begunici.app_types.veterinary.views import StatusViewSet, PlaceViewSet, VeterinaryCareViewSet
+from .views import index  # Импортируем view для главной страницы
+# from begunici.app_types.animals.views import MakerViewSet, RamViewSet, EweViewSet, SheepViewSet, LambViewSet
+
+# Создаем один общий роутер для всех ViewSet
+router = DefaultRouter()
+# Маршруты для veterinary
+router.register(r'status', StatusViewSet)
+router.register(r'place', PlaceViewSet)
+router.register(r'veterinary-care', VeterinaryCareViewSet)
+
+# Маршруты для animals
+#router.register(r'maker', MakerViewSet)
+#router.register(r'ram', RamViewSet)
+#router.register(r'ewe', EweViewSet)
+#router.register(r'sheep', SheepViewSet)
+#router.register(r'lamb', LambViewSet)
 
 urlpatterns = [
-    path('', begunici.views.index, name='index'),  # Главная страница приложения animals
-    path('admin/', admin.site.urls),
-    path('create/', begunici.views.create_veterinary, name='create_veterinary'),  # Путь для создания
-    path('animals/', include('begunici.app_types.animals.urls')),  # Подключаем маршруты animals
-    path('veterinary/', include('begunici.app_types.veterinary.urls')),  # Подключаем маршруты veterinary
+    path('api/', include(router.urls)),  # Все API маршруты для ViewSet
+    path('veterinary/', include('begunici.app_types.veterinary.urls')),  # Включаем URL из veterinary
+    #path('animals/', include('begunici.app_types.animals.urls')),  # Включаем URL из animals
+    path('admin/', admin.site.urls),  # Панель администратора
+    path('', index, name='index'),  # Главная страница
 ]
+

@@ -1,24 +1,30 @@
-<!-- templates/animals/base.html -->
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Farm Management</title>
-    <script defer src="{% static 'js/main.js' %}"></script>  <!-- Подключаем скрипт -->
+    <title>Управление объектами</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script defer src="{% static 'js/main.js' %}"></script> <!-- Подключение основного JS -->
 </head>
 <body>
-    <h1>Animals List</h1>
-    
-    <div>
-        <h2>Makers</h2>
-        <ul id="makers-list"></ul>
-        
-        <h2>Rams</h2>
-        <ul id="rams-list"></ul>
-        
-        <h2>Ewes</h2>
-        <ul id="ewes-list"></ul>
-    </div>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="{% url 'index' %}">Главная страница</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        {% block content %}
+        <!-- Контент будет вставляться в этот блок -->
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; 2024 Ферма Бегуницы</p>
+    </footer>
 </body>
 </html>

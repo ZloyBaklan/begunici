@@ -1,56 +1,41 @@
-/* static/css/styles.css */
-
 body {
     font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
-    margin: 0;
-    padding: 0;
 }
 
-header {
-    background-color: #333;
-    color: #fff;
-    padding: 10px 0;
-    text-align: center;
-}
-
-h1 {
-    margin: 0;
-}
-
-.container {
-    display: flex;
-    justify-content: space-around;
-    padding: 20px;
-}
-
-.menu, .menu-manager {
-    background-color: #fff;
-    border-radius: 8px;
-    padding: 20px;
-    width: 45%;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-}
-
-h2, h3 {
+h1, h2 {
     color: #333;
+}
+
+form {
+    margin-bottom: 20px;
 }
 
 ul {
     list-style-type: none;
-    padding: 0;
+    padding-left: 0;
 }
 
-ul li {
-    margin-bottom: 10px;
+li {
+    margin: 5px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
 }
 
-ul li a {
-    text-decoration: none;
-    color: #000;
+table {
+    margin-top: 10px; /* Отступ перед таблицами */
+    margin-bottom: 20px; /* Отступ после таблиц */
+    width: 100%; /* Опционально: таблицы будут занимать всю ширину контейнера */
+    border-collapse: collapse; /* Убираем промежутки между ячейками */
 }
 
-ul li a:hover {
-    color: #007bff;
+th, td {
+    padding: 10px; /* Добавляем отступы внутри ячеек таблицы */
+    border: 1px solid #ddd; /* Легкая рамка для ячеек */
+    text-align: left; /* Текст по левому краю */
 }
 
+th {
+    background-color: #f4f4f4; /* Фон для заголовков таблицы */
+}
