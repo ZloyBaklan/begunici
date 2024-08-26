@@ -23,10 +23,12 @@ class PlaceViewSet(viewsets.ModelViewSet):
 class VeterinaryCareViewSet(viewsets.ModelViewSet):
     queryset = VeterinaryCare.objects.all()
     serializer_class = VeterinaryCareSerializer
+    permission_classes = [AllowAny]  # Доступ без аутентификации
 
 class VeterinaryViewSet(viewsets.ModelViewSet):
     queryset = Veterinary.objects.all()
     serializer_class = VeterinarySerializer
+    permission_classes = [AllowAny]  # Доступ без аутентификации
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['veterinary_care__care_type', 'date_of_care', 'tag']  # Фильтрация по типу обработки, дате и бирке
 
