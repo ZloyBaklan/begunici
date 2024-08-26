@@ -1,25 +1,26 @@
 {% load static %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление объектами</title>
+    <title>{% block title %}Управление системой{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <script defer src="{% static 'js/main.js' %}"></script> <!-- Подключение основного JS -->
+    <script defer src="{% static 'js/main.js' %}"></script>
 </head>
 <body>
     <header>
         <nav>
             <ul>
-                <li><a href="{% url 'index' %}">Главная страница</a></li>
-            </ul>
+                <li><a href="{% url 'index' %}">Главная</a></li>
+           </ul>
         </nav>
     </header>
 
     <main>
         {% block content %}
-        <!-- Контент будет вставляться в этот блок -->
+        <!-- Контент будет здесь -->
         {% endblock %}
     </main>
 
@@ -28,3 +29,4 @@
     </footer>
 </body>
 </html>
+

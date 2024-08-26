@@ -1,156 +1,16 @@
 {% extends 'base.html' %}
 
+{% block title %}Главная{% endblock %}
+
 {% block content %}
-<h1>Главное управление</h1>
+<h1>Добро пожаловать в систему управления</h1>
+<p>Пожалуйста, выберите раздел:</p>
 
-<!-- Основные вкладки -->
-<ul class="tabs">
-    <li><a href="#" id="tab-animal" onclick="showTab('animal-content')">Управление животными</a></li>
-    <li><a href="#" id="tab-technical" onclick="showTab('technical-content')">Управление технической информацией</a></li>
+<ul>
+    <li><a href="{% url 'animals:maker-list' %}">Управление животными</a></li>
+    <li><a href="{% url 'veterinary:veterinary-care-list' %}">Управление технической информацией</a></li>
 </ul>
 
-<!-- Вкладка "Управление животными" -->
-<div id="animal-content" class="tab-content" style="display: none;">
-    <h2>Создание и просмотр информации о животных</h2>
-
-    <!-- Подвкладки для управления животными -->
-    <ul>
-        <li><a href="#" onclick="showForm('create-maker-form')">Создать Производителя (Maker)</a></li>
-        <!-- Можно добавить другие формы для создания объектов, таких как Ram, Ewe и т.д. -->
-        <li><a href="#" id="show-maker-list">Показать производителей (Maker)</a></li>
-    </ul>
-
-    <!-- Форма для создания производителя -->
-    <div id="create-maker-form" style="display: none;">
-        <h3>Форма создания производителя</h3>
-        <form id="maker-form">
-            {% csrf_token %}
-            <label for="maker-tag">Бирка:</label>
-            <select id="maker-tag" name="tag">
-                <!-- Здесь будут варианты тегов, которые подгружаются через JS -->
-            </select>
-            
-            <label for="maker-status">Статус:</label>
-            <select id="maker-status" name="status">
-                <!-- Здесь будут варианты статусов -->
-            </select>
-    
-            <label for="maker-birth-date">Дата рождения:</label>
-            <input type="date" id="maker-birth-date" name="birth_date" required>
-    
-            <label for="maker-last-weight">Последний вес (кг):</label>
-            <input type="number" id="maker-last-weight" name="last_weight" step="0.01" required>
-    
-            <label for="maker-last-weight-date">Дата последнего взвешивания:</label>
-            <input type="date" id="maker-last-weight-date" name="last_weight_date" required>
-    
-            <label for="maker-working-condition">Рабочее состояние:</label>
-            <input type="text" id="maker-working-condition" name="working_condition" required>
-    
-            <label for="maker-place">Место:</label>
-            <select id="maker-place" name="place">
-                <!-- Здесь будут варианты мест -->
-            </select>
-    
-            <label for="maker-veterinary-care">Последняя ветобработка:</label>
-            <select id="maker-veterinary-care" name="veterinary_care">
-                <!-- Здесь будут варианты ветобработки -->
-            </select>
-    
-            <label for="maker-plemstatus">Племенной статус:</label>
-            <input type="text" id="maker-plemstatus" name="plemstatus" required>
-    
-            <button type="submit">Создать производителя</button>
-        </form>
-    </div>
-
-    <!-- Таблица для отображения производителей -->
-    <div id="maker-list">
-        <h3>Список производителей</h3>
-        <table id="maker-table">
-            <!-- Здесь будет таблица производителей -->
-        </table>
-    </div>
-</div>
-
-
-<!-- Вкладка "Управление технической информацией" -->
-<div id="technical-content" class="tab-content" style="display: none;">
-    <h2>Создание и управление технической информацией</h2>
-
-<!-- Вкладки -->
-<ul class="tabs">
-    <li><a href="#" id="tab-create" onclick="showTab('create-content')">Создать техническую информацию</a></li>
-    <li><a href="#" id="tab-show" onclick="showTab('show-content')">Показать техническую информацию</a></li>
-</ul>
-
-<!-- Контент для вкладки "Создать" -->
-<div id="create-content" class="tab-content" style="display: none;">
-    <h2>Создать данные</h2>
-    <ul>
-        <li><a href="#" onclick="showForm('create-status-form')">Создать статус</a></li>
-        <li><a href="#" onclick="showForm('create-place-form')">Создать Место</a></li>
-        <li><a href="#" onclick="showForm('create-vetcare-form')">Создать тип ветобработки</a></li>
-    </ul>
-
-    <!-- Формы для создания данных -->
-    <div id="create-status-form" style="display: none;">
-        <h3>Форма создания статуса</h3>
-        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
-        <form id="status-form">
-            <label for="status-type">Название статуса:</label>
-            <input type="text" id="status-type" name="status_type" required>
-            <button type="submit">Создать статус</button>
-        </form>
-    </div>
-
-    <div id="create-place-form" style="display: none;">
-        <h3>Форма создания места</h3>
-        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
-        <form id="place-form">
-            <label for="sheepfold">Овчарня:</label>
-            <input type="text" id="sheepfold" name="sheepfold" required>
-            <label for="compartment">Отсек:</label>
-            <input type="text" id="compartment" name="compartment" required>
-            <button type="submit">Создать место</button>
-        </form>
-    </div>
-    
-    <div id="create-vetcare-form" style="display: none;">
-        <h3>Форма создания типа ветобработки</h3>
-        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
-        <form id="veterinary-care-form">
-            <label for="care-type">Тип ветобработки:</label>
-            <input type="text" id="care-type" name="care_type" required>
-            <button type="submit">Создать тип ветобработки</button>
-        </form>
-    </div>
-</div>
-
-<!-- Контент для вкладки "Показать" -->
-<div id="show-content" class="tab-content" style="display: none;">
-    <h2>Показать данные</h2>
-    <ul>
-        <li><button id="show-status-list">Показать статусы</button></li>
-        <li><button id="show-place-list">Показать места</button></li>
-        <li><button id="show-veterinary-care-list">Показать типы ветобработки</button></li>        
-    </ul>
-
-    <!-- Места для вывода данных -->
-    <h3>Список статусов</h3>
-    <ul id="status-list"></ul>
-
-    <h3>Список мест</h3>
-    <ul id="place-list"></ul>
-
-    <h3>Список типов ветобработок</h3>
-    <ul id="veterinary-care-list"></ul>
-</div>
-<!-- Контейнеры для списков -->
-<div id="status-list" style="display: none;"></div>
-<div id="place-list" style="display: none;"></div>
-<div id="veterinary-care-list" style="display: none;"></div>
-</div>
 {% endblock %}
 
 

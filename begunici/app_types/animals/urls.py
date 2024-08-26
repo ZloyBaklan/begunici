@@ -9,7 +9,8 @@ router = DefaultRouter()
 router.register(r'maker', MakerViewSet)
 
 urlpatterns = [
-    path('', include(router.urls)),
+    #path('', include(router.urls)),
+    path('', include(router.urls)),  # Добавляем имя для animals
     # Любые кастомные маршруты, которые не обрабатываются ViewSet
     path('ewe-to-sheep/<int:ewe_id>/', views.ewe_to_sheep, name='ewe_to_sheep'),
     path('lamb-to-ram-or-ewe/<int:lamb_id>/', views.lamb_to_ram_or_ewe, name='lamb_to_ram_or_ewe'),

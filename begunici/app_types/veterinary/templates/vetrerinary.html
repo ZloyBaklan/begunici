@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Управление технической информацией{% endblock %}
+
+{% block content %}
+<h1>Управление технической информацией</h1>
+
+<!-- Вкладки -->
+<ul class="tabs">
+    <li><a href="#" id="tab-create" onclick="showTab('create-veterinary-content')">Создать техническую информацию</a></li>
+    <li><a href="#" id="tab-show" onclick="showTab('show-veterinary-content')">Показать техническую информацию</a></li>
+</ul>
+
+<!-- Контент для вкладки "Создать" -->
+<div id="create-veterinary-content" class="tab-content" style="display: none;">
+    <h2>Создать данные</h2>
+    <ul>
+        <li><a href="#" onclick="showForm('create-status-form')">Создать статус</a></li>
+        <li><a href="#" onclick="showForm('create-place-form')">Создать Место</a></li>
+        <li><a href="#" onclick="showForm('create-vetcare-form')">Создать тип ветобработки</a></li>
+    </ul>
+
+    <!-- Формы для создания данных -->
+    <div id="create-status-form" style="display: none;">
+        <h3>Форма создания статуса</h3>
+        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
+        <form id="status-form">
+            <label for="status-type">Название статуса:</label>
+            <input type="text" id="status-type" name="status_type" required>
+            <button type="submit">Создать статус</button>
+        </form>
+    </div>
+
+    <div id="create-place-form" style="display: none;">
+        <h3>Форма создания места</h3>
+        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
+        <form id="place-form">
+            <label for="sheepfold">Овчарня:</label>
+            <input type="text" id="sheepfold" name="sheepfold" required>
+            <label for="compartment">Отсек:</label>
+            <input type="text" id="compartment" name="compartment" required>
+            <button type="submit">Создать место</button>
+        </form>
+    </div>
+
+    <div id="create-vetcare-form" style="display: none;">
+        <h3>Форма создания типа ветобработки</h3>
+        {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
+        <form id="veterinary-care-form">
+            <label for="care-type">Тип ветобработки:</label>
+            <input type="text" id="care-type" name="care_type" required>
+            <button type="submit">Создать тип ветобработки</button>
+        </form>
+    </div>
+</div>
+
+<!-- Контент для вкладки "Показать" -->
+<div id="show-veterinary-content" class="tab-content" style="display: none;">
+    <h2>Показать данные</h2>
+    <ul>
+        <li><a href="#" id="show-status-list">Показать статусы</a></li>
+        <li><a href="#" id="show-place-list">Показать места</a></li>
+        <li><a href="#" id="show-veterinary-care-list">Показать типы ветобработки</a></li>
+    </ul>
+
+    <div id="status-list"></div>
+    <div id="place-list"></div>
+    <div id="veterinary-care-list"></div>
+</div>
+
+{% endblock %}
