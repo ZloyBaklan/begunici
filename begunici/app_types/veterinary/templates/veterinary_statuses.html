@@ -1,0 +1,53 @@
+
+{% extends 'base.html' %}
+
+
+{% load static %}
+
+{% block content %}
+    <h1>Управление статусами</h1>
+    
+    <!-- Поле для поиска -->
+    <input type="text" id="status-search" placeholder="Поиск по статусам...">
+    <button type="button" onclick="searchStatuses()">Найти</button>
+
+
+    
+
+        
+  {%csrf_token%}
+  <form id="create-status-form">
+    <label for="status-type">Название статуса:</label>
+    <input type="text" id="status-type" name="status-type" placeholder="Введите название статуса">
+
+    <label for="status-date">Дата статуса:</label>
+    <input type="date" id="status-date" name="status-date">
+
+    <label for="status-color">Цвет статуса:</label>
+    <input type="color" id="status-color" name="status-color" value="#FFFFFF">
+  </form>
+  <!-- Кнопка для открытия формы создания статуса -->
+  <button type="button" id="create-status-button" onclick="createStatus()">Создать статус</button>
+
+
+
+    <!-- Список статусов -->
+    <table>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Название статуса</th>
+                <th>Дата статуса</th>
+                <th>Цвет статуса</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody id="status-list"></tbody>
+    </table>
+
+    <!-- Сообщение об ошибке или успехе -->
+    <div id="status-message" style="display: none;"></div>
+
+    <script src="{% static 'js/vet_statuses.js' %}"></script>
+
+{% endblock %}

@@ -1,32 +1,31 @@
 {% load static %}
-{% load static %}
+<!-- base.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Управление системой{% endblock %}</title>
+    <title>{% block title %}Ферма Бегуницы{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <script defer src="{% static 'js/main.js' %}"></script>
 </head>
 <body>
     <header>
+        <h1>Ферма Бегуницы</h1>
         <nav>
             <ul>
                 <li><a href="{% url 'index' %}">Главная</a></li>
-           </ul>
+            </ul>
         </nav>
     </header>
-
     <main>
         {% block content %}
-        <!-- Контент будет здесь -->
+        <!-- Контент каждой страницы будет здесь -->
         {% endblock %}
     </main>
-
     <footer>
-        <p>&copy; 2024 Ферма Бегуницы</p>
+        <p>© 2024 Ферма Бегуницы</p>
     </footer>
+    <script src="{% static 'js/main.js' %}"></script>
 </body>
 </html>
 

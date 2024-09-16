@@ -1,6 +1,16 @@
 from rest_framework import serializers
-from .models import Maker, Ram, Ewe, Sheep, Lambing
+from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
 from begunici.app_types.veterinary.serializers import TagSerializer, StatusSerializer, PlaceSerializer, WeightRecordSerializer, VeterinarySerializer
+
+
+class AnimalSerializer(serializers.ModelSerializer):
+    tag = serializers.StringRelatedField()  # Отображаем бирку как строку
+    
+    class Meta:
+        model = AnimalBase
+        fields = ['tag', 'animal_status', 'birth_date', 'age', 'weight_records', 'veterinary_history', 'place']
+
+
 
 # Сериализатор для производитель (Maker)
 class MakerSerializer(serializers.ModelSerializer):

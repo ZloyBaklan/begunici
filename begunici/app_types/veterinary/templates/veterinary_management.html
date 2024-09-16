@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Управление технической информацией</h1>
+
+<ul>
+    <li><a href="{% url 'veterinary:veterinary_statuses' %}">Управление статусами</a></li>
+    <li><a href="{% url 'veterinary:veterinary_places' %}">Управление овчарнями</a></li>
+    <li><a href="{% url 'veterinary:veterinary_cares' %}">Управление ветеринарным уходом</a></li>
+</ul>
+
+<!-- Сюда можно вставить JS код для управления данными или контентом на странице -->
+{% endblock %}
+

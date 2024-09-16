@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+    <h1>Управление ветобработками</h1>
+
+    <!-- Поле для поиска -->
+    <input type="text" id="care-search" placeholder="Поиск по обработкам...">
+    <button type="button" onclick="searchCares()">Найти</button>
+
+    <form id="create-care-form">
+        <label for="care-type">Тип обработки:</label>
+        <input type="text" id="care-type" name="care-type" placeholder="Введите тип обработки">
+
+        <label for="care-name">Название обработки:</label>
+        <input type="text" id="care-name" name="care-name" placeholder="Введите название">
+
+        <label for="medication">Препарат/материал:</label>
+        <input type="text" id="medication" name="medication" placeholder="Введите название препарата">
+
+        <label for="purpose">Цель обработки:</label>
+        <input type="text" id="purpose" name="purpose" placeholder="Введите цель обработки">
+
+        <button type="button" id="create-care-button" onclick="handleCreateOrUpdateCare()">Создать обработку</button>
+    </form>
+
+    <!-- Список обработок -->
+    <table>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Тип обработки</th>
+                <th>Название</th>
+                <th>Препарат</th>
+                <th>Цель</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody id="care-list"></tbody>
+    </table>
+
+    <div id="care-message" style="display: none;"></div>
+
+    <script src="{% static 'js/vet_cares.js' %}"></script>
+{% endblock %}

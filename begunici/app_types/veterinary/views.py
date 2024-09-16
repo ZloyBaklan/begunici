@@ -3,6 +3,8 @@ from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from django.shortcuts import render
+from django.views.generic import TemplateView
 from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
 from .serializers import (
     StatusSerializer, TagSerializer, VeterinarySerializer, VeterinaryCareSerializer
@@ -62,3 +64,40 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
         changes = WeightRecord.get_weight_changes(tag)
         serializer = WeightChangeSerializer(changes, many=True)
         return Response(serializer.data)
+
+
+# Представление для отображения страницы управления технической информацией
+class VeterinaryManagementView(TemplateView):
+    template_name = 'veterinary_management.html'  # Указываем шаблон
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Можно добавить контекст для шаблона, если нужно
+        return context
+
+# Классовое представление для рендеринга страницы управления статусами
+class VeterinaryStatusesView(TemplateView):
+    template_name = 'veterinary_statuses.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Можно добавить контекст для шаблона, если нужно
+        return context
+
+# Классовое представление для рендеринга страницы управления овчарнями
+class VeterinaryPlacesView(TemplateView):
+    template_name = 'veterinary_places.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Можно добавить контекст для шаблона, если нужно
+        return context
+
+# Классовое представление для рендеринга страницы управления уходом
+class VeterinaryCaresView(TemplateView):
+    template_name = 'veterinary_cares.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Можно добавить контекст для шаблона, если нужно
+        return context

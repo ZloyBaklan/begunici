@@ -92,7 +92,7 @@ async function showList(url, listElementId, headers) {
 }
 
 // Логика обработки кнопок будет здесь
-import { getVeterinaryData, createVeterinaryData } from './veterinary.js';
+import { getVeterinaryData, createVeterinaryData } from './vet_statuses.js';
 import { getAnimalData, createAnimalData } from './animals.js';
 
 // Обработчики для показа данных

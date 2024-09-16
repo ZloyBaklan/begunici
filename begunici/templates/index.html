@@ -3,15 +3,14 @@
 {% block title %}Главная{% endblock %}
 
 {% block content %}
-<h1>Добро пожаловать в систему управления</h1>
-<p>Пожалуйста, выберите раздел:</p>
-
-<ul>
-    <li><a href="{% url 'animals:maker-list' %}">Управление животными</a></li>
-    <li><a href="{% url 'veterinary:veterinary-care-list' %}">Управление технической информацией</a></li>
-</ul>
-
+    <h2>Добро пожаловать на ферму</h2>
+    <p>Выберите раздел:</p>
+    <ul>
+        <li><a href="{% url 'veterinary:veterinary-management' %}">Управление технической информацией</a></li>
+        <li><a href="{% url 'animals:animals' %}">Управление животными</a></li>
+    </ul>
 {% endblock %}
+
 
 
 

@@ -2,9 +2,10 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
+from django.shortcuts import render
 
-from .models import Maker, Ram, Ewe, Sheep, Lambing
-from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer
+from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
+from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, AnimalSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 
 class MakerViewSet(viewsets.ModelViewSet):
@@ -64,3 +65,35 @@ class LambingViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]  # Доступ без аутентификации
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['ewe', 'maker', 'actual_lambing_date', 'planned_lambing_date']
+
+class AnimalViewSet(viewsets.ViewSet):
+
+    @action(detail=False, methods=['get'])
+    def archive(self, request):
+        # Фильтруем архивные животные по статусу "Убыл", "Убой", "Продажа"
+        archived_statuses = ['Убыл', 'Убой', 'Продажа']
+        sheep_queryset = Sheep.objects.filter(animal_status__status_type__in=archived_statuses)
+        ram_queryset = Ram.objects.filter(animal_status__status_type__in=archived_statuses)
+        ewe_queryset = Ewe.objects.filter(animal_status__status_type__in=archived_statuses)
+        maker_queryset = Maker.objects.filter(animal_status__status_type__in=archived_statuses)
+
+        # Сериализуем данные
+        sheep_data = SheepSerializer(sheep_queryset, many=True).data
+        ram_data = RamSerializer(ram_queryset, many=True).data
+        ewe_data = EweSerializer(ewe_queryset, many=True).data
+        maker_data = MakerSerializer(maker_queryset, many=True).data
+
+        # Возвращаем данные всех архивных животных
+        return Response({
+            'sheep': sheep_data,
+            'rams': ram_data,
+            'ewes': ewe_data,
+            'makers': maker_data
+        })
+
+# Представление для главной страницы
+def animals(request):
+    return render(request, 'animals.html')
+
+def create_animal(request):
+    return render(request, 'create_animal.html')

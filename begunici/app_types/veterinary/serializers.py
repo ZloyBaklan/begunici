@@ -28,6 +28,14 @@ class StatusSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+    
+    def validate_status_type(self, value):
+        """
+        Проверяем, что статус с таким названием не существует.
+        """
+        if Status.objects.filter(status_type=value).exists():
+            raise serializers.ValidationError("Статус с таким названием уже существует.")
+        return value
 
 # Сериализатор для места
 class PlaceSerializer(serializers.ModelSerializer):
@@ -53,6 +61,17 @@ class PlaceSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+
+    def validate(self, data):
+        """
+        Проверяем, что сочетание овчарня + отсек уникально.
+        """
+        sheepfold = data.get('sheepfold')
+        compartment = data.get('compartment')
+
+        if Place.objects.filter(sheepfold=sheepfold, compartment=compartment).exists():
+            raise serializers.ValidationError("Овчарня с таким отсеком уже существует.")
+        return data
 
 
 class VeterinaryCareSerializer(serializers.ModelSerializer):

@@ -14,37 +14,7 @@
 <!-- Контент для вкладки "Создать животное" -->
 <div id="create-animal-content" class="tab-content" style="display: none;">
     <h2>Создать животное</h2>
-    {% csrf_token %}  <!-- Обязательно для защиты CSRF -->
-    <form id="maker-form">
-        <label for="maker-tag">Бирка:</label>
-        <select id="maker-tag"></select>
-
-        <label for="maker-status">Статус:</label>
-        <select id="maker-status"></select>
-
-        <label for="maker-birth-date">Дата рождения:</label>
-        <input type="date" id="maker-birth-date">
-
-        <label for="maker-last-weight">Последний вес:</label>
-        <input type="text" id="maker-last-weight">
-
-        <label for="maker-last-weight-date">Дата последнего взвешивания:</label>
-        <input type="date" id="maker-last-weight-date">
-
-        <label for="maker-working-condition">Рабочее состояние:</label>
-        <input type="text" id="maker-working-condition">
-
-        <label for="maker-place">Место:</label>
-        <select id="maker-place"></select>
-
-        <label for="maker-veterinary-care">Последняя ветобработка:</label>
-        <select id="maker-veterinary-care"></select>
-
-        <label for="maker-plemstatus">Племенной статус:</label>
-        <input type="text" id="maker-plemstatus">
-
-        <button type="submit">Создать производителя</button>
-    </form>
+    
 </div>
 
 <!-- Контент для вкладки "Показать животных" -->

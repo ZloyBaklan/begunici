@@ -2,9 +2,9 @@ from django.db import models
 from django.utils import timezone
 
 class Status(models.Model):
-    status_type = models.CharField(max_length=200, verbose_name='Название статуса')
+    status_type = models.CharField(max_length=200, unique=True, verbose_name='Название статуса')
     date_of_status = models.DateField(verbose_name='Дата статуса', default=timezone.now)  # Дата по умолчанию - текущая
-    color = models.CharField(max_length=7, verbose_name='Цвет статуса', default='#FFFFFF')  # Цвет статуса, по умолчанию белый
+    color = models.CharField(max_length=7, unique=True, verbose_name='Цвет статуса', default='#FFFFFF')  # Цвет статуса, по умолчанию белый
 
     def __str__(self):
         return self.status_type
@@ -77,25 +77,17 @@ class WeightRecord(models.Model):
         return weight_changes
 
 class VeterinaryCare(models.Model):
-    CARE_CHOICES = [
-        ('VACCINATION', 'Вакцинация'),
-        ('HAIRCUT', 'Стрижка'),
-        ('PEST_CONTROL', 'Обработка от паразитов'),
-        ('MEDICAL_TREATMENT', 'Лечение'),
-        ('OTHER', 'Прочее'),
-    ]
-    
-    care_type = models.CharField(max_length=50, choices=CARE_CHOICES, verbose_name='Тип обработки')
+    care_type = models.CharField(max_length=100, verbose_name='Тип обработки')
     care_name = models.CharField(max_length=200, verbose_name='Название обработки')  # Название прививки/обработки
     medication = models.CharField(max_length=200, verbose_name='Препарат/материал', blank=True, null=True)  # Лекарство или материал, если есть
     purpose = models.CharField(max_length=200, verbose_name='Цель обработки', blank=True, null=True)  # Причина/цель обработки
 
     def __str__(self):
-        return self.get_care_type_display()
-
-    def get_care_type_display(self):
-        return dict(self.CARE_CHOICES).get(self.care_type, 'Неизвестный тип')
-
+        return self.care_type
+    
+    class Meta:
+        unique_together = ('care_type', 'care_name', 'medication')
+    
 
 class Veterinary(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
