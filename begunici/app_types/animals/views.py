@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from django.shortcuts import render
+from django.views.generic import TemplateView
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
 from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, AnimalSerializer
@@ -97,3 +98,12 @@ def animals(request):
 
 def create_animal(request):
     return render(request, 'create_animal.html')
+
+# Классовое представление для рендеринга страницы управления уходом
+class MakersView(TemplateView):
+    template_name = 'makers.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Можно добавить контекст для шаблона, если нужно
+        return context

@@ -1,28 +1,19 @@
 {% extends 'base.html' %}
-
+{% load static %}
 {% block title %}Управление животными{% endblock %}
 
 {% block content %}
 <h1>Управление животными</h1>
 
-<!-- Вкладки -->
-<ul class="tabs">
-    <li><a href="#" id="tab-create" onclick="showTab('create-animal-content')">Создать животное</a></li>
-    <li><a href="#" id="tab-show" onclick="showTab('show-animal-content')">Показать животных</a></li>
-</ul>
-
-<!-- Контент для вкладки "Создать животное" -->
-<div id="create-animal-content" class="tab-content" style="display: none;">
-    <h2>Создать животное</h2>
-    
-</div>
+<!-- Кнопка для создания нового животного -->
+<li><a href="{% url 'animals:create_animal' %}">Добавить животное</a></li>
 
 <!-- Контент для вкладки "Показать животных" -->
-<div id="show-animal-content" class="tab-content" style="display: none;">
+<li><div id="show-animal-content" class="tab-content" style="display: none;">
     <h2>Список животных</h2>
     <table id="maker-table">
         <!-- Данные будут загружаться динамически -->
     </table>
-</div>
+</div></li>
 
 {% endblock %}

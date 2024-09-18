@@ -10,6 +10,7 @@ class AnimalBase(models.Model):
     animal_status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
     birth_date = models.DateField(verbose_name='Дата рождения', null=True, blank=True)
     age = models.DecimalField(verbose_name='Возраст (в месяцах)', max_digits=5, decimal_places=1, null=True, blank=True)
+    note = models.CharField(max_length=100, verbose_name='Примечание', null=True, blank=True)
 
     weight_records = models.ManyToManyField(
         WeightRecord,
@@ -85,7 +86,7 @@ class AnimalBase(models.Model):
 
 
 class Maker(AnimalBase):
-    name = models.CharField(max_length=100, verbose_name='Имя')
+    
     plemstatus = models.CharField(max_length=200, verbose_name='Племенной статус')
     working_condition = models.CharField(max_length=200, verbose_name='Рабочее состояние')  # Текущий статус работы
     working_condition_date = models.DateField(verbose_name='Дата установки статуса', null=True, blank=True)  # Дата установки рабочего состояния

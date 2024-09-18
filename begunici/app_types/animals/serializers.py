@@ -8,8 +8,7 @@ class AnimalSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = AnimalBase
-        fields = ['tag', 'animal_status', 'birth_date', 'age', 'weight_records', 'veterinary_history', 'place']
-
+        fields = '__all__'
 
 
 # Сериализатор для производитель (Maker)

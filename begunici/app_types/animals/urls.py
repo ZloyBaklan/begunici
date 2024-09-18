@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    MakerViewSet, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, AnimalViewSet, animals, create_animal
+    MakerViewSet, MakersView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, AnimalViewSet, animals, create_animal
 )
 
 # Создаем маршруты для ViewSet
@@ -18,7 +18,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('main/', animals, name='animals'),  # Главная страница
     path('create/', create_animal, name='create_animal'),  # Маршрут для создания животных
-
+    path('makers/', MakersView.as_view(), name='makers'),  # Маршрут для страницы управления типами ухода
 ]
 
 

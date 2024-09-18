@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block content %}
+    <h1>Управление производителями</h1>
+    
+    <!-- Поле для поиска производителей -->
+    <input type="text" id="maker-search" placeholder="Поиск по производителям...">
+    <button onclick="searchMakers()">Найти</button>
+
+    <button id="create-maker-button" onclick="handleCreateOrUpdateMaker()">Создать производителя</button>
+
+    <form id="create-maker-form">
+    <label for="tag">Бирка:</label>
+    <input type="text" id="tag" name="tag" placeholder="Введите бирку">
+
+    <label for="animal_status">Статус животного:</label>
+    <input type="text" id="animal_status" name="animal_status" placeholder="Введите статус">
+
+    <label for="birth_date">Дата рождения:</label>
+    <input type="date" id="birth_date" name="birth_date">
+
+    <label for="plemstatus">Племенной статус:</label>
+    <input type="text" id="plemstatus" name="plemstatus" placeholder="Введите племенной статус">
+
+    <label for="working_condition">Рабочее состояние:</label>
+    <input type="text" id="working_condition" name="working_condition" placeholder="Введите рабочее состояние">
+    
+    <label for="working_condition_date">Дата рабочего состояния:</label>
+    <input type="date" id="working_condition_date" name="working_condition_date" required>
+
+    <!-- История взвешиваний -->
+    <label for="weight_records">История взвешиваний:</label>
+    <select id="weight_records" name="weight_records" multiple></select>
+
+    <!-- История ветобработок -->
+    <label for="veterinary_history">История ветобработок:</label>
+    <select id="veterinary_history" name="veterinary_history" multiple></select>
+
+    <!-- Место -->
+    <label for="place">Место:</label>
+    <select id="place" name="place" required></select>
+
+    <label for="note">Примечание:</label>
+    <input type="text" id="note" name="note" placeholder="Введите примечание">
+
+    </form>
+
+    <!-- Таблица производителей -->
+    <table>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Бирка</th>
+                <th>Статус</th>
+                <th>Дата Рождения</th>
+                <th>Племенной статус</th>
+                <th>Текущий статус работы</th>
+                <th>Действия</th>
+                <th>Примечание</th>
+            </tr>
+        </thead>
+        <tbody id="maker-list"></tbody>
+    </table>
+    <!-- Сообщение об ошибке или успехе -->
+    <div id="maker-message" style="display: none;"></div>
+
+    <script src="{% static 'js/maker.js' %}"></script>
+{% endblock %}
