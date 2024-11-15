@@ -1,4 +1,4 @@
-// Получение CSRF-токена для запросов
+// Функция для получения CSRF-токена из cookies
 function getCSRFToken() {
     let cookieValue = null;
     const name = 'csrftoken';
@@ -15,17 +15,39 @@ function getCSRFToken() {
     return cookieValue;
 }
 
+// Функция для выполнения API-запросов
+async function apiRequest(url, method = 'GET', body = null) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCSRFToken(),
+    };
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error(`Ошибка API [${response.status}]:`, errorData);
+            throw new Error(errorData.detail || 'Ошибка API');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка сети:', error);
+        throw error; // Пробрасываем ошибку для обработки в вызывающем коде
+    }
+}
+
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchStatuses();  // Загружаем список статусов при загрузке страницы
 
-    // Проверяем наличие формы статуса и привязываем кнопку создания к функции создания статуса
     const createStatusButton = document.querySelector('#create-status-button');
     if (createStatusButton) {
-        // Назначаем событие для создания/обновления статуса
         createStatusButton.onclick = handleCreateOrUpdateStatus;
     }
 });
+
 
 // Функция, которая переключается между созданием и обновлением
 function handleCreateOrUpdateStatus() {
@@ -37,63 +59,35 @@ function handleCreateOrUpdateStatus() {
     }
 }
 
-// Функция создания нового статуса
-// Создание нового статуса
-// Функция создания статуса через API
+/// Функция создания нового статуса
 async function createStatus() {
-    const statusType = document.getElementById('status-type').value;
-    const statusDate = document.getElementById('status-date').value;
-    const statusColor = document.getElementById('status-color').value;
-
     const data = {
-        status_type: statusType,
-        date_of_status: statusDate || null,  // Если дата не указана, оставляем null
-        color: statusColor
+        status_type: document.getElementById('status-type').value,
+        date_of_status: document.getElementById('status-date').value || null,
+        color: document.getElementById('status-color').value
     };
 
     try {
-        const response = await fetch('/veterinary/status/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),  // Добавляем CSRF токен
-            },
-            body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-        console.log('Ответ от сервера:', result);  // Выводим ответ сервера в консоль для дебага
-
-        if (response.ok) {
-            alert('Статус успешно создан');
-            document.getElementById('create-status-form').reset();  // Очистка формы
-            fetchStatuses();  // Обновляем список статусов
-            resetButton();  // Сбрасываем состояние кнопки на "Создать"
-        } else {
-            alert('Ошибка создания статуса: ' + result.detail);
-        }
+        await apiRequest('/veterinary/status/', 'POST', data);
+        alert('Статус успешно создан');
+        document.getElementById('create-status-form').reset();
+        fetchStatuses();
+        resetButton();
     } catch (error) {
-        console.error('Ошибка:', error);
-        alert('Произошла ошибка при создании статуса');
+        console.error('Ошибка создания статуса:', error);
+        alert(`Ошибка: ${error.message}`);
     }
 }
 
 
+// Функция загрузки списка статусов
 async function fetchStatuses() {
     try {
-        // Запрашиваем список статусов с API
-        const response = await fetch('/veterinary/status/');
-        if (!response.ok) {
-            throw new Error('Ошибка при загрузке статусов');
-        }
-        const statuses = await response.json();
-        
-        // Выводим статусы в таблицу
+        const statuses = await apiRequest('/veterinary/status/');
         const statusTable = document.getElementById('status-list');
-        statusTable.innerHTML = '';  // Очищаем старую таблицу
+        statusTable.innerHTML = '';
 
         statuses.forEach((status, index) => {
-            // Создаем строку для каждого статуса
             const row = `<tr>
                 <td>${index + 1}</td>
                 <td>${status.status_type}</td>
@@ -104,7 +98,6 @@ async function fetchStatuses() {
                     <button onclick="deleteStatus(${status.id})">Удалить</button>
                 </td>
             </tr>`;
-            // Добавляем строку в таблицу
             statusTable.innerHTML += row;
         });
     } catch (error) {
@@ -113,88 +106,62 @@ async function fetchStatuses() {
 }
 
 
-
-
-// Функция удаления статуса
-async function deleteStatus(statusId) {
-    const csrfToken = getCSRFToken();
-    try {
-        const response = await fetch(`/veterinary/status/${statusId}/`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRFToken': csrfToken,
-            }
-        });
-
-        if (response.ok) {
-            alert('Статус успешно удален');
-            fetchStatuses();  // Обновляем список статусов
-        } else {
-            alert('Ошибка при удалении статуса');
-        }
-    } catch (error) {
-        console.error('Ошибка при удалении статуса:', error);
-    }
-}
-
-
-// Функция для редактирования статуса
 async function editStatus(statusId) {
     try {
-        // Загружаем данные статуса для редактирования
-        const response = await fetch(`/veterinary/status/${statusId}/`);
-        if (!response.ok) {
-            throw new Error('Ошибка при получении данных статуса');
-        }
-        const status = await response.json();
+        const status = await apiRequest(`/veterinary/status/${statusId}/`);
 
-        // Заполняем форму редактирования данными статуса
+        // Заполняем поля формы данными статуса для редактирования
         document.getElementById('status-type').value = status.status_type;
         document.getElementById('status-date').value = status.date_of_status || '';
         document.getElementById('status-color').value = status.color || '#FFFFFF';
 
+        // Меняем текст кнопки на "Сохранить изменения" и привязываем действие
         const createStatusButton = document.getElementById('create-status-button');
         createStatusButton.innerText = 'Сохранить изменения';
         createStatusButton.setAttribute('data-id', statusId);
-
+        createStatusButton.onclick = () => updateStatus(statusId); // Привязываем функцию обновления
     } catch (error) {
         console.error('Ошибка при редактировании статуса:', error);
+        alert('Произошла ошибка при попытке редактирования статуса.');
     }
 }
 
-// Функция для обновления статуса
-async function updateStatus(statusId) {
-    const statusType = document.getElementById('status-type').value;
-    const statusDate = document.getElementById('status-date').value;
-    const statusColor = document.getElementById('status-color').value;
-
-    const data = {
-        status_type: statusType,
-        date_of_status: statusDate ? statusDate : null,
-        color: statusColor
-    };
+// Функция удаления статуса
+async function deleteStatus(statusId) {
+    if (!confirm('Вы уверены, что хотите удалить статус?')) return;
 
     try {
-        const response = await fetch(`/veterinary/status/${statusId}/`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),
-            },
-            body: JSON.stringify(data),
-        });
+        await apiRequest(`/veterinary/status/${statusId}/`, 'DELETE');
+        alert('Статус успешно удален');
+        fetchStatuses();
+    } catch (error) {
+        console.error('Ошибка при удалении статуса:', error);
+        alert('Ошибка при удалении статуса');
+    }
+}
 
-        if (response.ok) {
-            alert('Статус успешно обновлен');
-            fetchStatuses();  // Обновляем список статусов
-            resetButton();  // Сбрасываем состояние кнопки на "Создать"
-        } else {
-            const errorData = await response.json();
-            alert('Ошибка обновления статуса: ' + errorData.detail);
-        }
+
+
+
+// Функция для обновления статуса
+async function updateStatus(statusId) {
+    const data = {
+        status_type: document.getElementById('status-type').value,
+        date_of_status: document.getElementById('status-date').value || null,
+        color: document.getElementById('status-color').value
+    };
+    console.log('Отправляемые данные:', data); // Логируем данные
+    try {
+        await apiRequest(`/veterinary/status/${statusId}/`, 'PUT', data);
+        alert('Статус успешно обновлен');
+        
+        fetchStatuses();
+        resetButton();
+        document.getElementById('create-status-form').reset();
+        
     } catch (error) {
         console.error('Ошибка при обновлении статуса:', error);
-        alert('Произошла ошибка при обновлении статуса');
+        alert(`Ошибка: ${error.message}`);
     }
 }
 
@@ -224,3 +191,11 @@ function resetButton() {
     createStatusButton.removeAttribute('data-id');
     createStatusButton.onclick = handleCreateOrUpdateStatus;  // Назначаем обработчик для создания/обновления
 }
+
+// not working
+function clearForm() {
+    document.getElementById('status-type').value = '';
+    document.getElementById('status-date').value = '';
+    document.getElementById('status-color').value = '#FFFFFF'; // Устанавливаем цвет по умолчанию (например, белый)
+}
+

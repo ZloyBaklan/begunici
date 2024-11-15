@@ -140,6 +140,9 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Ignore staticfiles, которые генерируются collectstatic
+staticfiles/
+
 # mypy
 .mypy_cache/
 .dmypy.json

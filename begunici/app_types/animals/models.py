@@ -14,14 +14,12 @@ class AnimalBase(models.Model):
 
     weight_records = models.ManyToManyField(
         WeightRecord,
-        related_name='%(class)s_weight_records',
         verbose_name='История взвешиваний',
         blank=True
     )
 
     veterinary_history = models.ManyToManyField(
         Veterinary,
-        related_name='%(class)s_veterinary_history',
         verbose_name='История ветобработок',
         blank=True
     )
@@ -30,7 +28,6 @@ class AnimalBase(models.Model):
         Place,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='%(class)s_place_history',
         verbose_name='Место'
     )
     
@@ -47,8 +44,11 @@ class AnimalBase(models.Model):
         if self.birth_date and not self.is_archived():
             current_date = date.today()
             delta = relativedelta(current_date, self.birth_date)
-            self.age = round(delta.years * 12 + delta.months + delta.days / 30, 1)  # Округляем до 1 знака
-            self.save()
+        # Рассчитываем возраст и округляем до одного знака после запятой
+            calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
+            if self.age != calculated_age:
+                self.age = calculated_age  # Обновляем только если возраст изменился
+
 
     # Проверка, является ли животное архивным
     def is_archived(self):
@@ -107,10 +107,10 @@ class Maker(AnimalBase):
         self.working_condition_date = date.today()  # Устанавливаем текущую дату
         self.save()
 
-    # Переопределение метода save для проверки обновлений
-    def save(self, *args, **kwargs):
-        # Можно добавить любую логику перед сохранением, например проверку условий
-        super(Maker, self).save(*args, **kwargs)
+    '''
+    Можно прописать как-то функционал, чтобы перевести Ram в Maker
+    '''
+
 
 class Lambing(models.Model):
     ewe = models.ForeignKey('Sheep', on_delete=models.CASCADE, verbose_name='Овца (Мать)')
@@ -145,6 +145,8 @@ class Ram(AnimalBase):
     mother_tag = models.ForeignKey('Sheep', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Мать')
     father_tag = models.ForeignKey('Maker', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Отец')
 
+    # Другие поля Ram
+
     def __str__(self):
         return f"Баран {self.tag.tag_number}"
 
@@ -162,12 +164,16 @@ class Ewe(AnimalBase):
             tag=self.tag,
             animal_status=self.animal_status,
             birth_date=self.birth_date,
-            weight_records=self.weight_records,
-            veterinary_history=self.veterinary_history,
             place=self.place,
             mother_tag=self.mother_tag,
             father_tag=self.father_tag
         )
+
+        # Now add the many-to-many fields
+        sheep.weight_records.set(self.weight_records.all())
+        sheep.veterinary_history.set(self.veterinary_history.all())
+
+
         self.delete()  # Удаляем объект ярки
         return sheep
 
@@ -175,7 +181,7 @@ class Ewe(AnimalBase):
 class Sheep(AnimalBase):
     mother_tag = models.ForeignKey('Sheep', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Мать')
     father_tag = models.ForeignKey('Maker', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Отец')
-    lambing_history = models.ManyToManyField('Lambing', related_name='sheep_lambings', verbose_name='История окотов')
+    lambing_history = models.ManyToManyField('Lambing', related_name='sheep_lambings', blank=True, verbose_name='История окотов')
     
     def __str__(self):
         return f"Овца {self.tag.tag_number}"
@@ -199,7 +205,6 @@ class Sheep(AnimalBase):
                     birth_date=lambing.actual_lambing_date,
                     mother_tag=self,
                     father_tag=maker,
-                    weight_records=lamb_data['weight']
                 )
             else:
                 Ewe.objects.create(
@@ -207,7 +212,6 @@ class Sheep(AnimalBase):
                     birth_date=lambing.actual_lambing_date,
                     mother_tag=self,
                     father_tag=maker,
-                    weight_records=lamb_data['weight']
                 )
 
         self.save()

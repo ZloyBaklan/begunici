@@ -8,6 +8,12 @@ class Status(models.Model):
 
     def __str__(self):
         return self.status_type
+    
+    def save(self, *args, **kwargs):
+        if not self.date_of_status:
+            self.date_of_status = timezone.now()
+        super().save(*args, **kwargs)
+
 
 
 '''Статус через админку и вебку имеет дату создания, но в случае выставления статуса в поле(его обновления), нужно чтобы дата обновлялась на текущую'''
@@ -32,12 +38,12 @@ class Tag(models.Model):
         return self.tag_number
 
 class Place(models.Model):
-    sheepfold = models.CharField(max_length=200, verbose_name='Овчарня')
-    compartment = models.CharField(max_length=200, verbose_name='Отсек')
+    sheepfold = models.CharField(max_length=200, verbose_name='Овчарня-Отсек')
+    # compartment = models.CharField(max_length=200, verbose_name='Отсек')
     date_of_transfer = models.DateField(verbose_name='Дата перевода', default=timezone.now)  # Дата перевода по умолчанию
 
     def __str__(self):
-        return f"{self.sheepfold} - {self.compartment}"
+        return self.sheepfold
 
 
 class WeightRecord(models.Model):

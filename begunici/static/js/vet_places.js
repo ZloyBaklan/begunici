@@ -39,12 +39,10 @@ function handleCreateOrUpdatePlace() {
 // Функция создания овчарни через API
 async function createPlace() {
     const placeSheepfold = document.getElementById('place-sheepfold').value;
-    const placeCompartment = document.getElementById('place-compartment').value;
     const dateOfTransfer = document.getElementById('place-date').value;
 
     const data = {
         sheepfold: placeSheepfold,
-        compartment: placeCompartment,
         date_of_transfer: dateOfTransfer || null
     };
 
@@ -91,7 +89,6 @@ async function fetchPlaces() {
             const row = `<tr>
                 <td>${index + 1}</td>
                 <td>${place.sheepfold}</td>
-                <td>${place.compartment}</td>
                 <td>${place.date_of_transfer || 'Нет даты'}</td>
                 <td>
                     <button onclick="editPlace(${place.id})">Редактировать</button>
@@ -139,7 +136,6 @@ async function editPlace(placeId) {
 
         // Заполняем форму редактирования данными овчарни
         document.getElementById('place-sheepfold').value = place.sheepfold;
-        document.getElementById('place-compartment').value = place.compartment;
         document.getElementById('place-date').value = place.date_of_transfer || '';
 
         const createPlaceButton = document.getElementById('add-place-button');
@@ -153,12 +149,10 @@ async function editPlace(placeId) {
 // Функция для обновления овчарни
 async function updatePlace(placeId) {
     const placeSheepfold = document.getElementById('place-sheepfold').value;
-    const placeCompartment = document.getElementById('place-compartment').value;
     const dateOfTransfer = document.getElementById('place-date').value;
 
     const data = {
         sheepfold: placeSheepfold,
-        compartment: placeCompartment,
         date_of_transfer: dateOfTransfer ? dateOfTransfer : null
     };
 
@@ -197,8 +191,7 @@ function searchPlaces() {
         const cells = rows[i].getElementsByTagName('td');
         if (cells.length > 0) {
             const sheepfoldName = cells[1].innerText.toLowerCase();
-            const compartmentName = cells[2].innerText.toLowerCase();
-            if (sheepfoldName.indexOf(input) > -1 || compartmentName.indexOf(input) > -1) {
+            if (sheepfoldName.indexOf(input) > -1) {
                 rows[i].style.display = '';
             } else {
                 rows[i].style.display = 'none';

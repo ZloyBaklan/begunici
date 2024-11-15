@@ -4,67 +4,79 @@
 
 {% block content %}
     <h1>Управление производителями</h1>
+
     
-    <!-- Поле для поиска производителей -->
-    <input type="text" id="maker-search" placeholder="Поиск по производителям...">
-    <button onclick="searchMakers()">Найти</button>
 
-    <button id="create-maker-button" onclick="handleCreateOrUpdateMaker()">Создать производителя</button>
+    <!-- Кнопка для раскрытия формы создания производителя -->
+    <button id="toggle-create-maker-form" onclick="toggleForm()">▼ Создать производителя</button>
+    <!-- Форма создания производителя, изначально скрытая -->
+    <input type="text" id="maker-search" placeholder="Поиск производителей...">
 
-    <form id="create-maker-form">
-    <label for="tag">Бирка:</label>
-    <input type="text" id="tag" name="tag" placeholder="Введите бирку">
+    <form id="create-maker-form" style="display:none;">
+        {% csrf_token %}
 
-    <label for="animal_status">Статус животного:</label>
-    <input type="text" id="animal_status" name="animal_status" placeholder="Введите статус">
+        <label for="tag">Бирка:</label>
+        <input type="text" id="tag" name="tag" placeholder="Введите бирку">
 
-    <label for="birth_date">Дата рождения:</label>
-    <input type="date" id="birth_date" name="birth_date">
+        <label for="animal_status">Статус животного:</label>
+        <select id="animal_status" name="animal_status"></select>
 
-    <label for="plemstatus">Племенной статус:</label>
-    <input type="text" id="plemstatus" name="plemstatus" placeholder="Введите племенной статус">
+        <label for="birth_date">Дата рождения:</label>
+        <input type="date" id="birth_date" name="birth_date">
 
-    <label for="working_condition">Рабочее состояние:</label>
-    <input type="text" id="working_condition" name="working_condition" placeholder="Введите рабочее состояние">
-    
-    <label for="working_condition_date">Дата рабочего состояния:</label>
-    <input type="date" id="working_condition_date" name="working_condition_date" required>
+        <label for="plemstatus">Племенной статус:</label>
+        <input type="text" id="plemstatus" name="plemstatus" placeholder="Введите племенной статус">
+        
+        <label for="place">Овчарня:</label>
+        <select id="place" name="place"></select>
 
-    <!-- История взвешиваний -->
-    <label for="weight_records">История взвешиваний:</label>
-    <select id="weight_records" name="weight_records" multiple></select>
+        <label for="working_condition">Рабочее состояние:</label>
+        <input type="text" id="working_condition" name="working_condition" placeholder="Введите рабочее состояние">
 
-    <!-- История ветобработок -->
-    <label for="veterinary_history">История ветобработок:</label>
-    <select id="veterinary_history" name="veterinary_history" multiple></select>
+        <label for="note">Примечание:</label>
+        <input type="text" id="note" name="note" placeholder="Введите примечание">
 
-    <!-- Место -->
-    <label for="place">Место:</label>
-    <select id="place" name="place" required></select>
-
-    <label for="note">Примечание:</label>
-    <input type="text" id="note" name="note" placeholder="Введите примечание">
-
+        <button type="button" id="create-maker-button" onclick="saveMaker()">Создать производителя</button>
     </form>
 
     <!-- Таблица производителей -->
     <table>
+        <!-- Поле для поиска производителей -->
+    
         <thead>
             <tr>
                 <th>№</th>
                 <th>Бирка</th>
                 <th>Статус</th>
-                <th>Дата Рождения</th>
-                <th>Племенной статус</th>
+                <th>Возраст</th>
+                <th>Овчарня</th>
                 <th>Текущий статус работы</th>
-                <th>Действия</th>
+                <th>Вес</th>
+                <th>Ветобработка</th>
                 <th>Примечание</th>
+                <th>Действия</th>
             </tr>
         </thead>
         <tbody id="maker-list"></tbody>
     </table>
+    <div id="pagination"></div> <!-- Контейнер для кнопок пагинации -->
+
     <!-- Сообщение об ошибке или успехе -->
     <div id="maker-message" style="display: none;"></div>
 
-    <script src="{% static 'js/maker.js' %}"></script>
+    <!-- Подключение скриптов -->
+    <script src="{% static 'js/makers.js' %}"></script>
+    <script>
+    
+
+        function toggleForm() {
+            const form = document.getElementById('create-maker-form');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function searchMakers() {
+            const query = document.getElementById('maker-search').value;
+            fetchMakers(query); // Поиск производителей
+        }
+    </script>
 {% endblock %}

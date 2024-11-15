@@ -11,11 +11,8 @@
     {%csrf_token%}
     <form id="create-place-form">
         
-        <label for="place-sheepfold">Овчарня:</label>
+        <label for="place-sheepfold">Овчарня-Отсек:</label>
         <input type="text" id="place-sheepfold" name="place-sheepfold" placeholder="Введите название овчарни">
-        
-        <label for="place-compartment">Отсек:</label>
-        <input type="text" id="place-compartment" name="place-compartment" placeholder="Введите номер отсека">
         
         <label for="place-date">Дата перевода:</label>
         <input type="date" id="place-date" name="place-date">
@@ -28,8 +25,7 @@
         <thead>
             <tr>
                 <th>№</th>
-                <th>Овчарня</th>
-                <th>Отсек</th>
+                <th>Овчарня-Отсек</th>
                 <th>Дата перевода</th>
                 <th>Действия</th>
             </tr>
@@ -41,5 +37,6 @@
     <div id="place-message" style="display: none;"></div>
 
     <script src="{% static 'js/vet_places.js' %}"></script>
+    
     
 {% endblock %}

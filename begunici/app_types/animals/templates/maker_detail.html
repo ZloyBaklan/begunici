@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maker Detail</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <h1>Maker Details for {{ maker.tag }}</h1>
+
+    <table class="detail-table">
+        <tr>
+            <th>Бирка:</th>
+            <td>{{ maker.tag }}</td>
+        </tr>
+        <tr>
+            <th>Статус:</th>
+            <td style=" color: {{ maker.status_color }} ">{{ maker.animal_status }}</td>
+        </tr>
+        <tr>
+            <th>Возраст:</th>
+            <td>{{ maker.age }}</td>
+        </tr>
+        <tr>
+            <th>Текущий статус работы:</th>
+            <td>{{ maker.working_condition }}</td>
+        </tr>
+        <tr>
+            <th>Вес:</th>
+            <td>{{ maker.weight_records }}</td>
+        </tr>
+        <tr>
+            <th>Вет обработка:</th>
+            <td>{{ maker.veterinary_history }}</td>
+        </tr>
+        <tr>
+            <th>Примечание:</th>
+            <td>{{ maker.note }}</td>
+        </tr>
+    </table>
+
+    <div class="actions">
+        <button onclick="editMaker({{ maker.id }})">Редактировать</button>
+        <button onclick="deleteMaker({{ maker.id }})">Удалить</button>
+        <button onclick="window.history.back()">Назад</button>
+    </div>
+
+    <script src="{% static 'js/makers.js' %}"></script>
+</body>
+</html>

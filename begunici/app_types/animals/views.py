@@ -6,104 +6,103 @@ from django.shortcuts import render
 from django.views.generic import TemplateView
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
-from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, AnimalSerializer
-from django_filters.rest_framework import DjangoFilterBackend
+from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer
+from rest_framework.filters import SearchFilter
+from rest_framework.pagination import PageNumberPagination
 
-class MakerViewSet(viewsets.ModelViewSet):
+class PaginationSetting(PageNumberPagination):
+    page_size = 20  # Количество записей на странице
+    page_size_query_param = 'page_size'  # Возможность менять размер страницы
+    max_page_size = 100  # Максимальное количество записей на странице
+    
+class AnimalBaseViewSet(viewsets.ModelViewSet):
+    permission_classes = [AllowAny]
+    filter_backends = [SearchFilter]
+    
+    
+    def handle_exception(self, exc):
+        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+class MakerViewSet(AnimalBaseViewSet):
     queryset = Maker.objects.all()
     serializer_class = MakerSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tag', 'animal_status']
+    pagination_class = PaginationSetting  # Добавляем пагинацию
+    search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
+
 
     @action(detail=True, methods=['post'])
     def update_working_condition(self, request, pk=None):
-        maker = self.get_object()
-        new_condition = request.data.get('working_condition')
-        maker.update_working_condition(new_condition)
-        return Response({'status': 'Рабочее состояние обновлено'}, status=status.HTTP_200_OK)
+        try:
+            maker = self.get_object()
+            new_condition = request.data.get('working_condition')
+            maker.update_working_condition(new_condition)
+            return Response({'status': 'Рабочее состояние обновлено'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return self.handle_exception(e)
+    
 
-class RamViewSet(viewsets.ModelViewSet):
+class RamViewSet(AnimalBaseViewSet):
     queryset = Ram.objects.all()
     serializer_class = RamSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tag', 'animal_status', 'mother_tag', 'father_tag']
+    
 
-class EweViewSet(viewsets.ModelViewSet):
+class EweViewSet(AnimalBaseViewSet):
     queryset = Ewe.objects.all()
     serializer_class = EweSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tag', 'animal_status', 'mother_tag', 'father_tag']
+    
 
     @action(detail=True, methods=['post'])
     def to_sheep(self, request, pk=None):
-        ewe = self.get_object()
-        sheep = ewe.to_sheep()  # Преобразование ярки в овцу
-        return Response({'status': 'Ярка преобразована в овцу', 'new_sheep': SheepSerializer(sheep).data})
+        try:
+            ewe = self.get_object()
+            sheep = ewe.to_sheep()
+            return Response({'status': 'Ярка преобразована в овцу', 'new_sheep': SheepSerializer(sheep).data})
+        except Exception as e:
+            return self.handle_exception(e)
 
-class SheepViewSet(viewsets.ModelViewSet):
+class SheepViewSet(AnimalBaseViewSet):
     queryset = Sheep.objects.all()
     serializer_class = SheepSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tag', 'animal_status', 'mother_tag', 'father_tag']
+    
 
     @action(detail=True, methods=['post'])
     def add_lambing(self, request, pk=None):
-        sheep = self.get_object()
-        maker_id = request.data.get('maker_id')
-        actual_lambing_date = request.data.get('actual_lambing_date')
-        lambs_data = request.data.get('lambs_data')
+        try:
+            sheep = self.get_object()
+            maker_id = request.data.get('maker_id')
+            actual_lambing_date = request.data.get('actual_lambing_date')
+            lambs_data = request.data.get('lambs_data')
 
-        lambing = sheep.add_lambing(maker_id, actual_lambing_date, lambs_data)
-        return Response({'status': 'Окот добавлен', 'lambing': LambingSerializer(lambing).data})
+            maker = Maker.objects.get(id=maker_id)
+            lambing = sheep.add_lambing(maker, actual_lambing_date, lambs_data)
+            return Response({'status': 'Окот добавлен', 'lambing': LambingSerializer(lambing).data}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return self.handle_exception(e)
 
 class LambingViewSet(viewsets.ModelViewSet):
     queryset = Lambing.objects.all()
     serializer_class = LambingSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['ewe', 'maker', 'actual_lambing_date', 'planned_lambing_date']
+    permission_classes = [AllowAny]
+    filter_backends = [SearchFilter]
 
-class AnimalViewSet(viewsets.ViewSet):
-
-    @action(detail=False, methods=['get'])
-    def archive(self, request):
-        # Фильтруем архивные животные по статусу "Убыл", "Убой", "Продажа"
-        archived_statuses = ['Убыл', 'Убой', 'Продажа']
-        sheep_queryset = Sheep.objects.filter(animal_status__status_type__in=archived_statuses)
-        ram_queryset = Ram.objects.filter(animal_status__status_type__in=archived_statuses)
-        ewe_queryset = Ewe.objects.filter(animal_status__status_type__in=archived_statuses)
-        maker_queryset = Maker.objects.filter(animal_status__status_type__in=archived_statuses)
-
-        # Сериализуем данные
-        sheep_data = SheepSerializer(sheep_queryset, many=True).data
-        ram_data = RamSerializer(ram_queryset, many=True).data
-        ewe_data = EweSerializer(ewe_queryset, many=True).data
-        maker_data = MakerSerializer(maker_queryset, many=True).data
-
-        # Возвращаем данные всех архивных животных
-        return Response({
-            'sheep': sheep_data,
-            'rams': ram_data,
-            'ewes': ewe_data,
-            'makers': maker_data
-        })
-
-# Представление для главной страницы
-def animals(request):
-    return render(request, 'animals.html')
-
-def create_animal(request):
-    return render(request, 'create_animal.html')
-
-# Классовое представление для рендеринга страницы управления уходом
 class MakersView(TemplateView):
     template_name = 'makers.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Можно добавить контекст для шаблона, если нужно
         return context
+
+class MakerDetailView(TemplateView):
+    template_name = 'maker_detail.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        return context
+
+# Представления для страниц
+
+def animals(request):
+    return render(request, 'animals.html')
+
+def create_animal(request):
+    return render(request, 'create_animal.html')

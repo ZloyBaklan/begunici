@@ -91,21 +91,5 @@ async function showList(url, listElementId, headers) {
     }
 }
 
-// Логика обработки кнопок будет здесь
-import { getVeterinaryData, createVeterinaryData } from './vet_statuses.js';
-import { getAnimalData, createAnimalData } from './maker.js';
-
-// Обработчики для показа данных
-document.getElementById('show-status-list').addEventListener('click', function () {
-    showList('/api/status/', 'status-list', ['status_type']);
-});
-
-document.getElementById('show-place-list').addEventListener('click', function () {
-    showList('/api/place/', 'place-list', ['sheepfold', 'compartment']);
-});
-
-document.getElementById('show-veterinary-care-list').addEventListener('click', function () {
-    showList('/api/veterinary-care/', 'veterinary-care-list', ['care_type']);
-});
 
 // При необходимости можно добавить другие обработчики для других вкладок

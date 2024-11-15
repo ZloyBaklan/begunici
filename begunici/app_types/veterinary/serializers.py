@@ -16,23 +16,23 @@ class StatusSerializer(serializers.ModelSerializer):
         return status
 
     def update(self, instance, validated_data):
-        # Логика обновления статуса
+        print("Полученные данные:", validated_data)  # Лог входящих данных
         instance.status_type = validated_data.get('status_type', instance.status_type)
-        instance.color = validated_data.get('color', instance.color)  # Обновляем цвет
-        # Проверяем, если дата вручную не указана, обновляем на текущую
+        instance.color = validated_data.get('color', instance.color)
         date_of_status = validated_data.get('date_of_status', None)
-        if date_of_status is None:
-            instance.date_of_status = timezone.now()  # Обновляем на текущую дату
-        else:
-            instance.date_of_status = date_of_status  # Устанавливаем вручную, если передана
-        
+        instance.date_of_status = date_of_status if date_of_status else timezone.now()
         instance.save()
         return instance
     
     def validate_status_type(self, value):
-        """
-        Проверяем, что статус с таким названием не существует.
-        """
+        """Проверяем, что статус с таким названием уникален."""
+        # Получаем текущий экземпляр, если он существует
+        instance = getattr(self, 'instance', None)
+        if instance:
+            # Если текущий объект имеет то же значение, пропускаем проверку
+            if instance.status_type == value:
+                return value
+        # Если объект новый или значение изменено, проверяем на уникальность
         if Status.objects.filter(status_type=value).exists():
             raise serializers.ValidationError("Статус с таким названием уже существует.")
         return value
@@ -50,7 +50,7 @@ class PlaceSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Логика обновления места
         instance.sheepfold = validated_data.get('sheepfold', instance.sheepfold)
-        instance.compartment = validated_data.get('compartment', instance.compartment)
+        #instance.compartment = validated_data.get('compartment', instance.compartment)
         
         # Проверяем, если дата перевода вручную не указана, обновляем на текущую
         date_of_transfer = validated_data.get('date_of_transfer', None)
@@ -67,9 +67,9 @@ class PlaceSerializer(serializers.ModelSerializer):
         Проверяем, что сочетание овчарня + отсек уникально.
         """
         sheepfold = data.get('sheepfold')
-        compartment = data.get('compartment')
+        #compartment = data.get('compartment')
 
-        if Place.objects.filter(sheepfold=sheepfold, compartment=compartment).exists():
+        if Place.objects.filter(sheepfold=sheepfold).exists():
             raise serializers.ValidationError("Овчарня с таким отсеком уже существует.")
         return data
 

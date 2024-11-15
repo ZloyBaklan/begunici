@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.shortcuts import render
 from django.views.generic import TemplateView
+from rest_framework.exceptions import ValidationError
 from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
 from .serializers import (
     StatusSerializer, TagSerializer, VeterinarySerializer, VeterinaryCareSerializer
@@ -15,6 +16,11 @@ class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all()
     serializer_class = StatusSerializer
     permission_classes = [AllowAny]  # Доступ без аутентификации
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
 
 class PlaceViewSet(viewsets.ModelViewSet):
     queryset = Place.objects.all()
