@@ -33,7 +33,7 @@ class AnimalBase(models.Model):
     
     class Meta:
         abstract = True
-
+        
     # Получение даты последнего перевода
     @property
     def last_transfer_date(self):
@@ -94,6 +94,7 @@ class Maker(AnimalBase):
     class Meta:
         verbose_name = "Производитель"
         verbose_name_plural = "Производители"
+
 
     def __str__(self):
         return f"Производитель: {self.tag.tag_number}"

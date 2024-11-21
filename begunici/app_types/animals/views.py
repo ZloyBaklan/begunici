@@ -24,7 +24,7 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 class MakerViewSet(AnimalBaseViewSet):
-    queryset = Maker.objects.all()
+    queryset = Maker.objects.all().order_by('id')  # Убедитесь, что порядок задан
     serializer_class = MakerSerializer
     pagination_class = PaginationSetting  # Добавляем пагинацию
     search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']

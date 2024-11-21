@@ -41,10 +41,12 @@
 
     <!-- Таблица производителей -->
     <table>
-        <!-- Поле для поиска производителей -->
-    
         <thead>
             <tr>
+                <th>
+                    <label for="select-all">Выбрать все записи страницы</label>
+                    <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)">
+                </th> <!-- Чекбокс для выбора всех -->
                 <th>№</th>
                 <th>Бирка</th>
                 <th>Статус</th>
@@ -54,11 +56,14 @@
                 <th>Вес</th>
                 <th>Ветобработка</th>
                 <th>Примечание</th>
-                <th>Действия</th>
             </tr>
         </thead>
         <tbody id="maker-list"></tbody>
     </table>
+    
+    <!-- Кнопка для удаления выбранных -->
+    <button id="delete-selected-button" style="display:none;" onclick="deleteSelectedMakers()">Удалить выбранные</button>
+    
     <div id="pagination"></div> <!-- Контейнер для кнопок пагинации -->
 
     <!-- Сообщение об ошибке или успехе -->

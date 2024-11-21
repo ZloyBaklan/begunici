@@ -138,6 +138,12 @@ async function fetchMakers(page = 1, query = '') {
 
         response.results.forEach((maker, index) => {
             const row = `<tr>
+            <td>
+                <input type="checkbox" class="select-maker" 
+                data-id="${maker.id}" 
+                data-tag="${maker.tag.tag_number}" 
+                onclick="toggleSelectMaker(this)">
+            </td>
             <td>${(page - 1) * pageSize + index + 1}</td>
             <td><a href="/animals/maker/${maker.tag.id}/">${maker.tag.tag_number}</a></td>
             <td style="background-color:${maker.animal_status ? maker.animal_status.color : '#FFFFFF'}">
@@ -149,15 +155,10 @@ async function fetchMakers(page = 1, query = '') {
             <td>${maker.weight_records.length > 0 ? maker.weight_records[0] : 'Нет записей'}</td>
             <td>${maker.veterinary_history.length > 0 ? maker.veterinary_history[0] : 'Нет записей'}</td>
             <td>${maker.note}</td>
-            <td>
-                <button onclick="editMaker(${maker.id})">Редактировать</button>
-                <button onclick="deleteMaker(${maker.id})">Удалить</button>
-            </td>
             </tr>`;
             makerList.innerHTML += row;
         });
-
-        // Обновляем пагинацию
+        updateCheckboxStates(); // Восстанавливаем состояние чекбоксов
         updatePagination(response);
     } catch (error) {
         console.error('Ошибка при загрузке производителей:', error);
@@ -175,21 +176,91 @@ function getColorForStatus(status) {
     }
 }
 
+let selectedMakers = new Map(); // Хранение {id: true/false}
+
+// Функция для управления чекбоксами всех записей
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.select-maker');
+    checkboxes.forEach(cb => {
+        const makerId = cb.dataset.id;
+        const tag = cb.dataset.tag;
+
+        cb.checked = checkbox.checked;
+        selectedMakers.set(makerId, { tag, isSelected: checkbox.checked });
+    });
+    console.log('Текущее состояние selectedMakers после выбора всех:', selectedMakers); // Отладочный вывод
+    toggleDeleteButton();
+}
 
 
-// Функция для удаления производителя
-async function deleteMaker(makerId) {
-    if (!confirm('Вы уверены, что хотите удалить производителя?')) return;
+// Функция для управления отдельным чекбоксом
+function toggleSelectMaker(checkbox) {
+    const makerId = checkbox.dataset.id;
+    const tag = checkbox.dataset.tag;
+
+    selectedMakers.set(makerId, { tag, isSelected: checkbox.checked });
+    console.log('Текущее состояние selectedMakers:', selectedMakers); // Отладочный вывод
+    toggleDeleteButton();
+}
+
+
+// Функция для отображения кнопки удаления
+function toggleDeleteButton() {
+    const deleteButton = document.getElementById('delete-selected-button');
+    deleteButton.style.display = Array.from(selectedMakers.values()).some(value => value) ? 'block' : 'none';
+}
+
+// Обновление состояния чекбоксов при загрузке страницы
+function updateCheckboxStates() {
+    const checkboxes = document.querySelectorAll('.select-maker');
+    checkboxes.forEach(cb => {
+        const id = cb.dataset.id;
+        if (selectedMakers.has(id)) {
+            cb.checked = selectedMakers.get(id); // Устанавливаем состояние из selectedMakers
+        }
+    });
+}
+
+
+function getTagFromTable(makerId) {
+    const row = document.querySelector(`.select-maker[data-id="${makerId}"]`);
+    if (row) {
+        return row.closest('tr').querySelector('td:nth-child(3)').innerText.trim(); // Извлекаем бирку
+    }
+    return 'Неизвестно';
+}
+
+// Функция для удаления выбранных записей
+async function deleteSelectedMakers() {
+    const selectedIds = Array.from(selectedMakers.entries())
+        .filter(([id, { isSelected }]) => isSelected)
+        .map(([id, { tag }]) => ({ id, tag }));
+
+    console.log('Выбранные для удаления:', selectedIds); // Отладочный вывод
+
+    if (selectedIds.length === 0) {
+        alert('Нет выбранных записей для удаления');
+        return;
+    }
+
+    const tags = selectedIds.map(item => item.tag);
+    const confirmMessage = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    if (!confirm(confirmMessage)) return;
 
     try {
-        await apiRequest(`/animals/maker/${makerId}/`, 'DELETE');
-        alert('Производитель успешно удален');
-        fetchMakers();
+        for (const { id } of selectedIds) {
+            await apiRequest(`/animals/maker/${id}/`, 'DELETE');
+            selectedMakers.delete(id); // Удаляем из состояния
+        }
+        alert('Выбранные записи успешно удалены');
+        fetchMakers(currentPage); // Обновляем текущую страницу
+        toggleDeleteButton(); // Скрываем кнопку
     } catch (error) {
-        console.error('Ошибка при удалении производителя:', error);
-        alert('Ошибка при удалении производителя');
+        console.error('Ошибка при удалении выбранных записей:', error);
+        alert('Ошибка при удалении записей');
     }
 }
+
 
 // Обновление функции редактирования для работы с новым полем
 async function editMaker(makerId) {
