@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
+from .vet_models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
 
 admin.site.register(Status)
 admin.site.register(Place)

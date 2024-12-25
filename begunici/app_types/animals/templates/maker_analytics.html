@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<h1>Аналитика для производителя: {{ maker.tag.tag_number }}</h1>
+
+<!-- График изменения веса -->
+<h3>График изменения веса</h3>
+<canvas id="weight-chart"></canvas>
+
+<!-- Календарь ветобработок -->
+<h3>Календарь ветобработок</h3>
+<ul>
+    {% for record in vet_history %}
+    <li>{{ record.date_of_care }} - {{ record.care_name }} ({{ record.purpose }})</li>
+    {% empty %}
+    <li>Нет данных о ветобработках.</li>
+    {% endfor %}
+</ul>
+
+<!-- Список детей -->
+<h3>Список детей</h3>
+<table>
+    <tr>
+        <th>Бирка</th>
+        <th>Тип</th>
+        <th>Дата рождения</th>
+    </tr>
+    {% for child in children %}
+    <tr>
+        <td>{{ child.tag.tag_number }}</td>
+        <td>{{ child.__class__.__name__ }}</td>
+        <td>{{ child.birth_date }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="3">Нет данных о потомках.</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const weightData = JSON.parse('{{ weight_history|safe }}');
+    const labels = weightData.map(record => record.weight_date);
+    const data = weightData.map(record => record.weight);
+
+    const ctx = document.getElementById('weight-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Вес (кг)',
+                data: data,
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 2,
+                fill: false,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+        }
+    });
+</script>
+{% endblock %}

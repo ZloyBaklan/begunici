@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
-from begunici.app_types.veterinary.models import Place, Tag, Status
-from begunici.app_types.veterinary.serializers import TagSerializer, StatusSerializer, PlaceSerializer, WeightRecordSerializer, VeterinarySerializer
+from begunici.app_types.veterinary.vet_models import Place, Tag, Status, Veterinary, WeightRecord
+from begunici.app_types.veterinary.vet_serializers import StatusSerializer, PlaceSerializer, WeightRecordSerializer, VeterinarySerializer, TagSerializer
 
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
@@ -24,13 +24,24 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         queryset=Status.objects.all(), write_only=True, source='animal_status'
     )  # Для записи используется PrimaryKeyRelatedField
     tag = serializers.CharField()  # Бирка как строка (для создания/редактирования)
-    weight_records = WeightRecordSerializer(many=True, required=False)
-    veterinary_history = VeterinarySerializer(many=True, required=False)
+    #tag_number = serializers.CharField(source='tag.tag_number', write_only=True)  # Для ввода номера бирки
+    weight_records = serializers.SerializerMethodField()
+    veterinary_history = serializers.SerializerMethodField()
     place = PlaceSerializer(read_only=True)  # Для чтения полного объекта
     place_id = serializers.PrimaryKeyRelatedField(
         queryset=Place.objects.all(), write_only=True, source='place'
     )  # Для записи идентификатора места
+    is_archived = serializers.BooleanField(read_only=True)
+    mother = TagSerializer(read_only=True)  # Для отображения полной информации о матери
+    mother_id = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(), write_only=True, source='mother', allow_null=True, required=False
+    )  # Для указания идентификатора матери
 
+    father = TagSerializer(read_only=True)  # Для отображения полной информации об отце
+    father_id = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(), write_only=True, source='father', allow_null=True, required=False
+    )  # Для указания идентификатора отца
+    children = serializers.SerializerMethodField()
 
     class Meta:
         model = AnimalBase
@@ -50,15 +61,30 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         tag_number = validated_data.pop('tag', None)
         if tag_number and instance.tag.tag_number != tag_number:
             instance.tag.update_tag(tag_number)
-        
-
         return super().update(instance, validated_data)
+
+    
+    def get_weight_records(self, obj):
+        # Получаем записи веса через тег
+        weight_records = WeightRecord.objects.filter(tag=obj.tag).order_by('-weight_date')
+        return WeightRecordSerializer(weight_records, many=True).data
+
+    def get_veterinary_history(self, obj):
+        # Получаем записи ветобработок через тег
+        vet_history = Veterinary.objects.filter(tag=obj.tag).select_related('veterinary_care').order_by('-date_of_care')
+        return VeterinarySerializer(vet_history, many=True).data
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        # Добавляем поле sheepfold для отображения в клиенте
-        representation['tag'] = {'id': instance.tag.id, 'tag_number': instance.tag.tag_number}
+        if instance.tag:
+            representation['tag'] = {
+                'id': instance.tag.id,
+                'tag_number': instance.tag.tag_number
+            }
+        else:
+            representation['tag'] = None
         return representation
+
 
 class MakerSerializer(AnimalBaseSerializer):
     plemstatus = serializers.CharField(max_length=200)
@@ -68,6 +94,11 @@ class MakerSerializer(AnimalBaseSerializer):
     class Meta(AnimalBaseSerializer.Meta):
         model = Maker
         fields = '__all__'
+    
+    def get_children(self, obj):
+        # Используем метод get_children из модели Maker
+        children = obj.get_children()
+        return MakerSerializer(children, many=True).data
 
     
 
@@ -92,6 +123,11 @@ class SheepSerializer(AnimalBaseSerializer):
     def get_lambing_history(self, obj):
         lambings = Lambing.objects.filter(ewe=obj)
         return LambingSerializer(lambings, many=True).data
+    
+    def get_children(self, obj):
+        # Используем метод get_children из модели Sheep
+        children = obj.get_children()
+        return SheepSerializer(children, many=True).data
 
 
 

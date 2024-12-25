@@ -45,6 +45,15 @@ class Place(models.Model):
     def __str__(self):
         return self.sheepfold
 
+class PlaceMovement(models.Model):
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
+    old_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, related_name='old_place', verbose_name='Старое место')
+    new_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, related_name='new_place', verbose_name='Новое место')
+    transfer_date = models.DateField(verbose_name='Дата перевода', default=timezone.now)
+
+    def __str__(self):
+        return f"{self.tag.tag_number}: {self.old_place} -> {self.new_place} ({self.transfer_date})"
+
 
 class WeightRecord(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
@@ -97,9 +106,9 @@ class VeterinaryCare(models.Model):
 
 class Veterinary(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
-    place = models.ForeignKey(Place, on_delete=models.CASCADE, verbose_name='Место')
-    status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
-    veterinary_care = models.ForeignKey(VeterinaryCare, on_delete=models.SET_NULL, null=True, verbose_name='Тип ветобработки')
+    # place = models.ForeignKey(Place, on_delete=models.CASCADE, verbose_name='Место')
+    # status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
+    veterinary_care = models.ForeignKey(VeterinaryCare, on_delete=models.SET_NULL, null=True, verbose_name='Вет-обработка')
     date_of_care = models.DateField(verbose_name='Дата обработки', default=timezone.now)
     comments = models.TextField(verbose_name='Примечания', blank=True, null=True)  # Доп. комментарии
 

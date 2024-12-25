@@ -21,7 +21,7 @@ from .views import index  # Импортируем view для главной с
 urlpatterns = [
     path('admin/', admin.site.urls),  # Панель администратора
     path('', index, name='index'),  # Главная страница
-    path('veterinary/', include(('begunici.app_types.veterinary.urls', 'veterinary'), namespace='veterinary')),  # Подключаем urls для veterinary с namespace
+    path('veterinary/', include(('begunici.app_types.veterinary.vet_urls', 'veterinary'), namespace='veterinary')),  # Подключаем urls для veterinary с namespace
     path('animals/', include(('begunici.app_types.animals.urls', 'animals'), namespace='animals')),  # Подключаем urls для animals с namespace
 ]
 

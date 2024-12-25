@@ -32,9 +32,7 @@ async function apiRequest(url, method = 'GET', body = null) {
             throw new Error(errorData.detail || 'Ошибка API');
         }
         // Если это DELETE, не пытаемся обработать тело ответа
-        if (method === 'DELETE') {
-            return;
-        }
+        if (method === 'DELETE') return;
         return await response.json();
     } catch (error) {
         console.error('Ошибка сети:', error);
@@ -43,6 +41,7 @@ async function apiRequest(url, method = 'GET', body = null) {
     
 }
 
+
 document.addEventListener('DOMContentLoaded', function () {
     fetchMakers();  // Загрузка списка производителей при загрузке страницы
     loadAnimalStatuses();
@@ -50,7 +49,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const createMakerButton = document.querySelector('#create-maker-button');
     if (createMakerButton) {
-        createMakerButton.onclick = () => saveMaker();  // Привязываем событие к кнопке
+        createMakerButton.onclick = saveMaker;  // Привязываем событие к кнопке
     }
 });
 
@@ -89,35 +88,6 @@ async function loadPlaces() {
 }
 
 
-// Функция для создания/обновления производителя
-async function saveMaker(isUpdate = false, makerId = null) {
-    const method = isUpdate ? 'PUT' : 'POST';
-    const url = isUpdate ? `/animals/maker/${makerId}/` : '/animals/maker/';
-
-    const data = {
-        tag: document.getElementById('tag').value,
-        animal_status_id: parseInt(document.getElementById('animal_status').value), // Исправлено имя поля
-        birth_date: document.getElementById('birth_date').value,
-        plemstatus: document.getElementById('plemstatus').value,
-        working_condition: document.getElementById('working_condition').value,
-        note: document.getElementById('note').value,
-        place_id: parseInt(document.getElementById('place').value), // Передаём ID места
-        
-    };
-
-    console.log('Отправляемые данные:', data); // Логируем данные для отладки
-    try {
-        await apiRequest(url, method, data);
-        alert(isUpdate ? 'Производитель успешно обновлен' : 'Производитель успешно создан');
-        document.getElementById('create-maker-form').reset();
-        fetchMakers();
-        resetButton();
-    } catch (error) {
-        console.error('Ошибка при сохранении производителя:', error);
-        alert(`Ошибка: ${error.message}`);
-    }
-}
-
 // Функция для скрытия/показа формы создания производителя
 function toggleForm() {
     const form = document.getElementById('create-maker-form');
@@ -126,44 +96,97 @@ function toggleForm() {
     toggleButton.innerText = form.style.display === 'none' ? '▼ Создать производителя' : '▲ Скрыть форму';
 }
 
+// Создание нового производителя
+async function saveMaker() {
+    const url = '/animals/maker/';
+    const method = 'POST';
+
+    const data = {
+        tag: document.getElementById('tag').value,
+        animal_status_id: parseInt(document.getElementById('animal_status').value),
+        birth_date: document.getElementById('birth_date').value,
+        plemstatus: document.getElementById('plemstatus').value,
+        working_condition: document.getElementById('working_condition').value,
+        note: document.getElementById('note').value,
+        place_id: parseInt(document.getElementById('place').value), // Передаём ID места,
+    };
+    
+    console.log('Отправляемые данные:', data); // Логируем данные для отладки
+
+    if (!data.tag || !data.animal_status_id || !data.place_id) {
+        alert('Пожалуйста, заполните обязательные поля: бирка, статус, место.');
+        return;
+    }
+
+    try {
+        await apiRequest(url, method, data);
+        alert('Производитель успешно создан');
+        document.getElementById('create-maker-form').reset();
+        fetchMakers();
+    } catch (error) {
+        console.error('Ошибка при создании производителя:', error);
+        alert('Ошибка: Проверьте корректность введенных данных');
+    }
+}
+
+
 let currentPage = 1; // Текущая страница
 const pageSize = 3; // Количество записей на странице
-// Функция для загрузки списка производителей
+
+// Загрузка списка производителей
 async function fetchMakers(page = 1, query = '') {
     try {
         const response = await apiRequest(`/animals/maker/?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(query)}`);
-        console.log('Ответ от сервера:', response); // Логируем ответ от API
-        const makerList = document.getElementById('maker-list');
-        makerList.innerHTML = '';
 
-        response.results.forEach((maker, index) => {
-            const row = `<tr>
+        // Проверка структуры ответа
+        const makers = Array.isArray(response) ? response : response.results;
+
+        if (makers) {
+            renderMakers(makers);
+            updatePagination(response);
+        } else {
+            console.error('Некорректный ответ от API:', response);
+            alert('Ошибка: данные производителей не найдены.');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке производителей:', error);
+        alert('Ошибка при загрузке списка производителей.');
+    }
+}
+
+
+// Рендеринг списка производителей
+function renderMakers(makers) {
+    const makerList = document.getElementById('maker-list');
+    makerList.innerHTML = '';
+    makers.forEach((maker, index) => {
+        const row = `<tr>
             <td>
                 <input type="checkbox" class="select-maker" 
                 data-id="${maker.id}" 
                 data-tag="${maker.tag.tag_number}" 
                 onclick="toggleSelectMaker(this)">
             </td>
-            <td>${(page - 1) * pageSize + index + 1}</td>
-            <td><a href="/animals/maker/${maker.tag.id}/">${maker.tag.tag_number}</a></td>
+            <td>${(currentPage - 1) * pageSize + index + 1}</td>
+            <td><a href="/animals/maker/${maker.id}/info/">${maker.tag.tag_number}</a></td>
             <td style="background-color:${maker.animal_status ? maker.animal_status.color : '#FFFFFF'}">
-                    ${maker.animal_status ? maker.animal_status.status_type : 'Нет статуса'}
+                ${maker.animal_status ? maker.animal_status.status_type : 'Нет статуса'}
             </td>
-            <td>${maker.age ? `${maker.age} мес.` : 'Нет данных'}</td> <!-- Отображаем возраст в том виде, как он приходит из модели -->
-            <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td> <!-- Используем place.sheepfold -->
+            <td>${maker.age ? `${maker.age} мес.` : 'Нет данных'}</td>
+            <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
+            <td>${maker.weight_records && maker.weight_records.length > 0 
+                ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
+                : 'Нет записей'}</td>
+            <td>${maker.veterinary_history && maker.veterinary_history.length > 0 
+                ? `${maker.veterinary_history[0].date_of_care}: ${maker.veterinary_history[0].veterinary_care.care_name}` 
+                : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
-            <td>${maker.weight_records.length > 0 ? maker.weight_records[0] : 'Нет записей'}</td>
-            <td>${maker.veterinary_history.length > 0 ? maker.veterinary_history[0] : 'Нет записей'}</td>
             <td>${maker.note}</td>
-            </tr>`;
-            makerList.innerHTML += row;
-        });
-        updateCheckboxStates(); // Восстанавливаем состояние чекбоксов
-        updatePagination(response);
-    } catch (error) {
-        console.error('Ошибка при загрузке производителей:', error);
-    }
+        </tr>`;
+        makerList.innerHTML += row;
+    });
 }
+
 
 
 // Получение цвета для статуса
@@ -261,29 +284,6 @@ async function deleteSelectedMakers() {
     }
 }
 
-
-// Обновление функции редактирования для работы с новым полем
-async function editMaker(makerId) {
-    try {
-        const maker = await apiRequest(`/animals/maker/${makerId}/`);
-
-        // Заполняем поля формы
-        document.getElementById('tag').value = maker.tag.tag_number;  // Бирка
-        document.getElementById('animal_status').value = maker.animal_status ? maker.animal_status.id : '';  // Статус
-        document.getElementById('birth_date').value = maker.birth_date;
-        document.getElementById('note').value = maker.note;
-        document.getElementById('plemstatus').value = maker.plemstatus;
-        document.getElementById('working_condition').value = maker.working_condition;
-        document.getElementById('place').value = maker.place ? maker.place.id : '';  // Статус;
-
-        const createButton = document.getElementById('create-maker-button');
-        createButton.innerText = 'Сохранить изменения';
-        createButton.setAttribute('data-id', makerId);
-        createButton.onclick = () => saveMaker(true, makerId);
-    } catch (error) {
-        console.error('Ошибка при редактировании производителя:', error);
-    }
-}
 
 
 // Функция для сброса состояния кнопки

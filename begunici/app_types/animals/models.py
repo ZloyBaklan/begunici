@@ -1,6 +1,7 @@
 from django.db import models
 from datetime import date, timedelta
-from begunici.app_types.veterinary.models import Tag, Status, Veterinary, Place, WeightRecord, VeterinaryCare
+from dateutil.relativedelta import relativedelta
+from begunici.app_types.veterinary.vet_models import Tag, Status, Veterinary, Place, WeightRecord, VeterinaryCare
 
 
 from dateutil.relativedelta import relativedelta
@@ -11,6 +12,24 @@ class AnimalBase(models.Model):
     birth_date = models.DateField(verbose_name='Дата рождения', null=True, blank=True)
     age = models.DecimalField(verbose_name='Возраст (в месяцах)', max_digits=5, decimal_places=1, null=True, blank=True)
     note = models.CharField(max_length=100, verbose_name='Примечание', null=True, blank=True)
+    is_archived = models.BooleanField(default=False, verbose_name='В архиве')
+    # Новые поля для родителей
+    mother = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_mother',
+        verbose_name='Мать'
+    )
+    father = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_father',
+        verbose_name='Отец'
+    )
 
     weight_records = models.ManyToManyField(
         WeightRecord,
@@ -41,55 +60,47 @@ class AnimalBase(models.Model):
 
     # Расчет возраста
     def calculate_age(self):
-        if self.birth_date and not self.is_archived():
+        if self.birth_date:
             current_date = date.today()
             delta = relativedelta(current_date, self.birth_date)
-        # Рассчитываем возраст и округляем до одного знака после запятой
             calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
-            if self.age != calculated_age:
-                self.age = calculated_age  # Обновляем только если возраст изменился
+            self.age = calculated_age
 
 
-    # Проверка, является ли животное архивным
-    def is_archived(self):
-        return self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']
-
-    # Фиксация возраста при смене статуса на архивный
-    def set_fixed_age(self):
-        if self.is_archived():
-            current_date = date.today()
-            delta = relativedelta(current_date, self.birth_date)
-            self.age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
-            self.save()
-
-    # Переопределение метода сохранения
     def save(self, *args, **kwargs):
-        if self.is_archived():
-            self.set_fixed_age()  # Фиксируем возраст
+        if self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']:
+            self.is_archived = True
         else:
-            self.calculate_age()  # Рассчитываем возраст
+            self.is_archived = False
+            self.calculate_age()
         super(AnimalBase, self).save(*args, **kwargs)
-
-    # Метод для изменения места
-    def transfer_place(self, new_place):
-        self.place = new_place
-        self.save()
-
-    # Метод для обновления статуса
-    def update_status(self, new_status):
-        self.animal_status = new_status
-        if self.is_archived():
-            self.set_fixed_age()  # Фиксируем возраст при архивировании
-        self.save()
+  
+    
 
 
 
 
 class Maker(AnimalBase):
-    
     plemstatus = models.CharField(max_length=200, verbose_name='Племенной статус')
     working_condition = models.CharField(max_length=200, verbose_name='Рабочее состояние')  # Текущий статус работы
     working_condition_date = models.DateField(verbose_name='Дата установки статуса', null=True, blank=True)  # Дата установки рабочего состояния
+
+    mother = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='maker_children_mother',
+        verbose_name='Мать'
+    )
+    father = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='maker_children_father',
+        verbose_name='Отец'
+    )
 
     class Meta:
         verbose_name = "Производитель"
@@ -107,10 +118,19 @@ class Maker(AnimalBase):
         self.working_condition = new_condition
         self.working_condition_date = date.today()  # Устанавливаем текущую дату
         self.save()
+    
+    def get_children(self):
+        # Проверяем, что объект имеет тег
+        if not self.tag:
+            return Maker.objects.none()  # Возвращаем пустой QuerySet, если tag отсутствует
 
-    '''
-    Можно прописать как-то функционал, чтобы перевести Ram в Maker
-    '''
+        # Фильтруем по полям mother и father, связанным с тегом
+        return Maker.objects.filter(
+            models.Q(mother=self.tag) | models.Q(father=self.tag)
+        )
+
+
+
 
 
 class Lambing(models.Model):
@@ -143,8 +163,22 @@ class Lambing(models.Model):
         super(Lambing, self).save(*args, **kwargs)
 
 class Ram(AnimalBase):
-    mother_tag = models.ForeignKey('Sheep', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Мать')
-    father_tag = models.ForeignKey('Maker', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Отец')
+    mother = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_mother_ram',
+        verbose_name='Мать'
+    )
+    father = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_father_ram',
+        verbose_name='Отец'
+    )
 
     # Другие поля Ram
 
@@ -153,8 +187,22 @@ class Ram(AnimalBase):
 
 
 class Ewe(AnimalBase):
-    mother_tag = models.ForeignKey('Sheep', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Мать')
-    father_tag = models.ForeignKey('Maker', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Отец')
+    mother = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_mother_ewe',
+        verbose_name='Мать'
+    )
+    father = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_father_ewe',
+        verbose_name='Отец'
+    )
 
     def __str__(self):
         return f"Ярка {self.tag.tag_number}"
@@ -166,22 +214,32 @@ class Ewe(AnimalBase):
             animal_status=self.animal_status,
             birth_date=self.birth_date,
             place=self.place,
-            mother_tag=self.mother_tag,
-            father_tag=self.father_tag
+            mother=self.mother,
+            father=self.father
         )
-
-        # Now add the many-to-many fields
         sheep.weight_records.set(self.weight_records.all())
         sheep.veterinary_history.set(self.veterinary_history.all())
-
-
-        self.delete()  # Удаляем объект ярки
+        self.delete()
         return sheep
 
 
 class Sheep(AnimalBase):
-    mother_tag = models.ForeignKey('Sheep', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Мать')
-    father_tag = models.ForeignKey('Maker', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Отец')
+    mother = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_mother_sheep',
+        verbose_name='Мать'
+    )
+    father = models.ForeignKey(
+        Tag,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children_father_sheep',
+        verbose_name='Отец'
+    )
     lambing_history = models.ManyToManyField('Lambing', related_name='sheep_lambings', blank=True, verbose_name='История окотов')
     
     def __str__(self):
@@ -232,3 +290,13 @@ class Sheep(AnimalBase):
         Проверяем, если уже есть новый окот.
         """
         return not self.lambing_history.filter(actual_lambing_date__isnull=True).exists()  # Проверяем, есть ли незаконченный окот
+    def get_children(self):
+        # Проверяем, что объект имеет тег
+        if not self.tag:
+            return Sheep.objects.none()  # Возвращаем пустой QuerySet, если tag отсутствует
+
+        # Фильтруем по полям mother и father, связанным с тегом
+        return Sheep.objects.filter(
+            models.Q(mother=self.tag) | models.Q(father=self.tag)
+        )
+    

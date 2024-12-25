@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone  # Не забудь импортировать timezone
 
-from .models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place
+from .vet_models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place, PlaceMovement
 
 
 # Сериализатор для статусов
@@ -73,6 +73,14 @@ class PlaceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Овчарня с таким отсеком уже существует.")
         return data
 
+class PlaceMovementSerializer(serializers.ModelSerializer):
+    old_place = PlaceSerializer(read_only=True)
+    new_place = PlaceSerializer(read_only=True)
+
+    class Meta:
+        model = PlaceMovement
+        fields = '__all__'
+
 
 class VeterinaryCareSerializer(serializers.ModelSerializer):
     class Meta:
@@ -97,7 +105,7 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
         return instance
 
 class VeterinarySerializer(serializers.ModelSerializer):
-    veterinary_care = VeterinaryCareSerializer()
+    veterinary_care = VeterinaryCareSerializer()  # Используем вложенный сериализатор
 
     class Meta:
         model = Veterinary
@@ -107,8 +115,12 @@ class VeterinarySerializer(serializers.ModelSerializer):
         """
         Создание новой записи о ветобработке для животного.
         """
-        veterinary_care_data = validated_data.pop('veterinary_care')
-        veterinary_care = VeterinaryCare.objects.create(**veterinary_care_data)
+        veterinary_care_data = validated_data.pop('veterinary_care', None)
+        if veterinary_care_data:
+            veterinary_care = VeterinaryCare.objects.create(**veterinary_care_data)
+        else:
+            veterinary_care = None
+
         veterinary = Veterinary.objects.create(veterinary_care=veterinary_care, **validated_data)
         return veterinary
 
@@ -120,19 +132,16 @@ class VeterinarySerializer(serializers.ModelSerializer):
 
         if veterinary_care_data:
             veterinary_care = instance.veterinary_care
-            veterinary_care.care_type = veterinary_care_data.get('care_type', veterinary_care.care_type)
-            veterinary_care.care_name = veterinary_care_data.get('care_name', veterinary_care.care_name)
-            veterinary_care.medication = veterinary_care_data.get('medication', veterinary_care.medication)
-            veterinary_care.purpose = veterinary_care_data.get('purpose', veterinary_care.purpose)
+            for field, value in veterinary_care_data.items():
+                setattr(veterinary_care, field, value)
             veterinary_care.save()
 
-        instance.place = validated_data.get('place', instance.place)
-        instance.status = validated_data.get('status', instance.status)
-        instance.date_of_care = validated_data.get('date_of_care', instance.date_of_care)
-        instance.comments = validated_data.get('comments', instance.comments)
-        instance.save()
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
 
+        instance.save()
         return instance
+
 
 
 # Сериализатор для бирки (Tag)
@@ -154,25 +163,10 @@ class WeightRecordSerializer(serializers.ModelSerializer):
         model = WeightRecord
         fields = '__all__'
 
-    def create(self, validated_data):
-        """
-        Создание новой записи веса.
-        """
-        return WeightRecord.objects.create(**validated_data)
-
-    def update(self, instance, validated_data):
-        """
-        Обновление существующей записи веса.
-        """
-        instance.weight = validated_data.get('weight', instance.weight)
-        # Проверяем, если дата перевода вручную не указана, обновляем на текущую
-        weight_date = validated_data.get('weight_date', None)
-        if weight_date is None:
-            instance.weight_date = timezone.now()  # Обновляем на текущую дату
-        else:
-            instance.weight_date = weight_date  # Устанавливаем вручную, если передана
-        instance.save()
-        return instance
+    def validate(self, data):
+        if 'tag' not in data:
+            raise serializers.ValidationError("Поле 'tag' обязательно.")
+        return data
 
 # Сериализатор для изменения веса
 class WeightChangeSerializer(serializers.Serializer):

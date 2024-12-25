@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    MakerViewSet, MakersView, MakerDetailView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, animals, create_animal
+    MakerViewSet, MakersView, MakerDetailView, MakerAnalyticsView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, animals, create_animal
 )
 
 # Создаем маршруты для ViewSet
@@ -15,12 +15,20 @@ router.register(r'lambing', LambingViewSet)     # Маршрут для окот
 
 # Подключаем router для управления всеми ViewSet
 urlpatterns = [
+    path('maker/<int:pk>/info/', MakerDetailView.as_view(), name='maker-detail'),
+    path('makers/<int:pk>/analytics/', MakerAnalyticsView.as_view(), name='maker-analytics'),
     path('', include(router.urls)),
+    path('maker/<int:pk>/api/', MakerViewSet.as_view({'get': 'retrieve_api'}), name='maker-api'),
+    path('maker/<int:pk>/update_parents/', MakerViewSet.as_view({'patch': 'update_parents'}), name='update-parents'),
+    #path('maker/<int:pk>/weight_history/', MakerViewSet.as_view({'get': 'weight_history'}), name='weight-history'),
+    #path('maker/<int:pk>/add_weight/', MakerViewSet.as_view({'post': 'add_weight'}), name='add-weight'),
+    #path('maker/<int:pk>/vet_history/', MakerViewSet.as_view({'get': 'vet_history'}), name='vet-history'),
+    #path('maker/<int:pk>/place_history/', MakerViewSet.as_view({'get': 'place_history'}), name='place-history'),
+    #path('maker/place_movement/', MakerViewSet.as_view({'post': 'add_place_movement'}), name='add-place-movement'),
+    #path('maker/<int:pk>/place_movement/', MakerViewSet.as_view({'put': 'update_place_movement'}), name='update-place-movement'),
     path('main/', animals, name='animals'),  # Главная страница
     path('create/', create_animal, name='create_animal'),  # Маршрут для создания животных
     path('makers/', MakersView.as_view(), name='makers'),  # Маршрут для страницы управления типами ухода
-    path('maker/<str:tag>/', MakerDetailView.as_view(), name='maker-detail'),
-
-]
+    ]
 
 

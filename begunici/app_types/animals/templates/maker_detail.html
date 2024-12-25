@@ -1,51 +1,153 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maker Detail</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-</head>
-<body>
-    <h1>Maker Details for {{ maker.tag }}</h1>
+{% extends 'base.html' %}
+{% load static %}
 
-    <table class="detail-table">
+{% block content %}
+<div id="maker-detail" data-maker-id="{{ maker.id }}">
+    <h1>Детальная страница: {{ maker.tag.tag_number }}</h1>
+
+    <!-- Навигация -->
+    <nav>
+        <button id="analytics-button" type="button">Аналитика</button>
+    </nav>
+
+    <!-- Основная информация -->
+    <h2>Основная информация</h2>
+    <table>
+        <tr><th>Бирка</th><td>{{ maker.tag.tag_number }}</td></tr>
+        <tr><th>Статус</th><td>{{ maker.animal_status }}</td></tr>
+        <tr><th>Возраст</th><td>{{ maker.age }} мес.</td></tr>
+        <tr><th>Рабочее состояние</th><td>{{ maker.working_condition }}</td></tr>
+        <tr><th>Место</th><td>{{ maker.place.sheepfold }}</td></tr>
         <tr>
-            <th>Бирка:</th>
-            <td>{{ maker.tag }}</td>
+            <th>Мать</th>
+            <td>
+                <span id="mother-display"></span>
+                <a id="mother-link" href="#">Ссылка на страничку</a>
+            </td>
         </tr>
         <tr>
-            <th>Статус:</th>
-            <td style=" color: {{ maker.status_color }} ">{{ maker.animal_status }}</td>
+            <th>Отец</th>
+            <td>Бирка:
+                <span id="father-display"></span>
+                Ссылка: <a id="father-link" href="#">перейти</a>
+            </td>
         </tr>
-        <tr>
-            <th>Возраст:</th>
-            <td>{{ maker.age }}</td>
-        </tr>
-        <tr>
-            <th>Текущий статус работы:</th>
-            <td>{{ maker.working_condition }}</td>
-        </tr>
-        <tr>
-            <th>Вес:</th>
-            <td>{{ maker.weight_records }}</td>
-        </tr>
-        <tr>
-            <th>Вет обработка:</th>
-            <td>{{ maker.veterinary_history }}</td>
-        </tr>
-        <tr>
-            <th>Примечание:</th>
-            <td>{{ maker.note }}</td>
-        </tr>
+        
+        
+        <tr><th>Примечание</th><td>{{ maker.note }}</td></tr>
+        
     </table>
-
-    <div class="actions">
-        <button onclick="editMaker({{ maker.id }})">Редактировать</button>
-        <button onclick="deleteMaker({{ maker.id }})">Удалить</button>
-        <button onclick="window.history.back()">Назад</button>
+    <!-- Последний вес -->
+    <h3>Последний вес</h3>
+    <div id="last-weight">
+        <p>Дата последнего взвешивания: <span id="last-weight-date">-</span></p>
+        <p>Вес: <span id="last-weight-value">-</span></p>
+    </div>
+    <!-- Форма добавления веса -->
+    <h3>Добавить взвешивание</h3>
+    <div id="add-weight-form">
+        <label for="edit-weight-date">Дата:</label>
+        <input type="date" id="edit-weight-date">
+        <label for="edit-weight-value">Вес:</label>
+        <input type="number" id="edit-weight-value" step="0.1">
+        <button type="button" onclick="addWeightRecord()">Добавить</button>
     </div>
 
-    <script src="{% static 'js/makers.js' %}"></script>
+    <!-- Последняя ветобработка -->
+    <h3>Последняя ветобработка</h3>
+    <div>
+        <p>Дата: <span id="last-vet-date">-</span></p>
+        <p>Название обработки: <span id="last-vet-name">-</span></p>
+        <p>Тип обработки: <span id="last-vet-type">-</span></p>
+        <p>Препарат/материал: <span id="last-vet-medication">-</span></p>
+        <p>Цель обработки: <span id="last-vet-purpose">-</span></p>
+    </div>
+
+
+
+    <!-- Форма добавления ветобработки -->
+    <h3>Добавить ветобработку</h3>
+    <div id="add-vet-care-form">
+        <select id="vet-treatment-select">
+            <option value="">Выберите обработку</option>
+        </select>
+
+        <p id="treatment-type">Тип: -</p>
+        <p id="treatment-description">Цель: -</p>
+        <p id="treatment-medicine">Препарат: -</p>
+
+        <label for="vet-treatment-date">Дата:</label>
+        <input type="date" id="vet-treatment-date">
+
+        <label for="vet-treatment-comments">Комментарии:</label>
+        <textarea id="vet-treatment-comments" rows="3" placeholder="Добавьте комментарий (необязательно)"></textarea>
+
+        <button type="button" onclick="addVetRecord()">Добавить</button>
+    </div>
+
+
+
+
+
+
+
+
+    <!-- Форма для редактирования -->
+    <h2>Редактировать данные</h2>
+    <form id="edit-maker-form">
+
+        {% csrf_token %}
+
+        <label>Бирка:</label>
+        <input type="text" id="tag" value="{{ maker.tag.tag_number }}">
+
+        <label>Статус животного:</label>
+        <select id="animal_status"></select>
+
+        <label>Дата рождения:</label>
+        <input type="date" id="birth_date" value="{{ maker.birth_date }}">
+
+        <label>Племенной статус:</label>
+        <input type="text" id="plemstatus" value="{{ maker.plemstatus }}">
+        
+        <label>Овчарня:</label>
+        <select id="place"></select>
+
+        <label>Рабочее состояние:</label>
+        <input type="text" id="working_condition" value="{{ maker.working_condition }}">
+
+        <label>Примечание:</label>
+        <input type="text" id="note" value="{{ maker.note }}">
+
+
+        <button type="button" onclick="saveMakerDetails()">Сохранить</button>
+
+
+        <h4>Редактировать родителей</h4>
+        <label for="mother-select">Мама:</label>
+        <select id="mother-select">
+            <option value="">Выберите маму</option>
+        </select>
+        <input type="text" id="mother-input" placeholder="Введите бирку вручную">
+
+        <label for="father-select">Папа:</label>
+        <select id="father-select">
+            <option value="">Выберите папу</option>
+        </select>
+        <input type="text" id="father-input" placeholder="Введите бирку вручную">
+
+        <button type="button" onclick="updateParents()">Сохранить</button>
+
+    </form>
+</div>
+    
+
+   <!-- Кнопка возврата -->
+   <button onclick="window.history.back()">Назад</button> 
+
+    
+</div>
+    
 </body>
-</html>
+<script src="{% static 'js/maker_detail.js' %}"></script>
+{% endblock %}
