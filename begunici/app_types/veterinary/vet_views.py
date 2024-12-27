@@ -3,6 +3,7 @@ from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
+
 from datetime import datetime
 from django.shortcuts import render
 from django.views.generic import TemplateView
@@ -162,6 +163,8 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 

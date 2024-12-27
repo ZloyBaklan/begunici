@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    MakerViewSet, MakersView, MakerDetailView, MakerAnalyticsView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, animals, create_animal
+    MakerViewSet, MakersView, MakerDetailView, MakerAnalyticsView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, animals, create_animal, ArchiveViewSet
 )
 
 # Создаем маршруты для ViewSet
@@ -11,7 +11,7 @@ router.register(r'ram', RamViewSet)             # Маршрут для бара
 router.register(r'ewe', EweViewSet)             # Маршрут для ярок
 router.register(r'sheep', SheepViewSet)         # Маршрут для овец
 router.register(r'lambing', LambingViewSet)     # Маршрут для окотов
-#router.register(r'archive', AnimalViewSet, basename='archive')     # Маршрут для архива
+router.register(r'archive', ArchiveViewSet, basename='archive')  # Архив животных
 
 # Подключаем router для управления всеми ViewSet
 urlpatterns = [

@@ -65,7 +65,12 @@ class AnimalBase(models.Model):
             delta = relativedelta(current_date, self.birth_date)
             calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
             self.age = calculated_age
-
+    def get_animal_type(self):
+        """
+        Возвращает тип животного для каждого наследника.
+        Должен быть переопределён в дочерних классах.
+        """
+        raise NotImplementedError("Метод get_animal_type должен быть переопределён в дочерних классах.")
 
     def save(self, *args, **kwargs):
         if self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']:
@@ -73,6 +78,11 @@ class AnimalBase(models.Model):
         else:
             self.is_archived = False
             self.calculate_age()
+        
+        # Автоматическое заполнение animal_type в Tag
+        if self.tag:
+            self.tag.animal_type = self.get_animal_type()  # Используем метод get_animal_type
+            self.tag.save()
         super(AnimalBase, self).save(*args, **kwargs)
   
     
@@ -119,15 +129,14 @@ class Maker(AnimalBase):
         self.working_condition_date = date.today()  # Устанавливаем текущую дату
         self.save()
     
+    def get_animal_type(self):
+        return "Maker"
+    
     def get_children(self):
-        # Проверяем, что объект имеет тег
-        if not self.tag:
-            return Maker.objects.none()  # Возвращаем пустой QuerySet, если tag отсутствует
-
-        # Фильтруем по полям mother и father, связанным с тегом
-        return Maker.objects.filter(
-            models.Q(mother=self.tag) | models.Q(father=self.tag)
-        )
+        """
+        Возвращает список детей производителя.
+        """
+        return Maker.objects.filter(models.Q(mother=self.tag) | models.Q(father=self.tag))
 
 
 
@@ -179,6 +188,8 @@ class Ram(AnimalBase):
         related_name='children_father_ram',
         verbose_name='Отец'
     )
+    def get_animal_type(self):
+        return "Ram"
 
     # Другие поля Ram
 
@@ -206,6 +217,9 @@ class Ewe(AnimalBase):
 
     def __str__(self):
         return f"Ярка {self.tag.tag_number}"
+    
+    def get_animal_type(self):
+        return "Ewe"
 
     # Метод для преобразования Ярки в Овцу после случки
     def to_sheep(self):
@@ -244,6 +258,9 @@ class Sheep(AnimalBase):
     
     def __str__(self):
         return f"Овца {self.tag.tag_number}"
+    
+    def get_animal_type(self):
+        return "Sheep"
 
     # Метод для добавления нового окота
     def add_lambing(self, maker, actual_lambing_date, lambs_data):
@@ -290,13 +307,10 @@ class Sheep(AnimalBase):
         Проверяем, если уже есть новый окот.
         """
         return not self.lambing_history.filter(actual_lambing_date__isnull=True).exists()  # Проверяем, есть ли незаконченный окот
+    
     def get_children(self):
-        # Проверяем, что объект имеет тег
-        if not self.tag:
-            return Sheep.objects.none()  # Возвращаем пустой QuerySet, если tag отсутствует
-
-        # Фильтруем по полям mother и father, связанным с тегом
-        return Sheep.objects.filter(
-            models.Q(mother=self.tag) | models.Q(father=self.tag)
-        )
+        """
+        Возвращает список детей производителя.
+        """
+        return Sheep.objects.filter(models.Q(mother=self.tag) | models.Q(father=self.tag))
     

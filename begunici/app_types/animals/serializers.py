@@ -32,6 +32,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         queryset=Place.objects.all(), write_only=True, source='place'
     )  # Для записи идентификатора места
     is_archived = serializers.BooleanField(read_only=True)
+    archived_date = serializers.SerializerMethodField()  # Новое поле для даты архивирования
     mother = TagSerializer(read_only=True)  # Для отображения полной информации о матери
     mother_id = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), write_only=True, source='mother', allow_null=True, required=False
@@ -42,6 +43,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         queryset=Tag.objects.all(), write_only=True, source='father', allow_null=True, required=False
     )  # Для указания идентификатора отца
     children = serializers.SerializerMethodField()
+    
 
     class Meta:
         model = AnimalBase
@@ -52,6 +54,16 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         tag_number = validated_data.pop('tag', None)
         if tag_number:
             tag, created = Tag.objects.get_or_create(tag_number=tag_number)
+            # Устанавливаем animal_type в зависимости от типа животного
+            if isinstance(self.Meta.model, Maker):
+                tag.animal_type = "Maker"
+            elif isinstance(self.Meta.model, Sheep):
+                tag.animal_type = "Sheep"
+            elif isinstance(self.Meta.model, Ewe):
+                tag.animal_type = "Ewe"
+            elif isinstance(self.Meta.model, Ram):
+                tag.animal_type = "Ram"
+            tag.save()
             validated_data['tag'] = tag
 
         return super().create(validated_data)
@@ -74,22 +86,34 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         vet_history = Veterinary.objects.filter(tag=obj.tag).select_related('veterinary_care').order_by('-date_of_care')
         return VeterinarySerializer(vet_history, many=True).data
 
+    def get_archived_date(self, obj):
+        """
+        Возвращаем дату архивирования на основе даты статуса.
+        """
+        if obj.is_archived and obj.animal_status:
+            return obj.animal_status.date_of_status
+        return None
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         if instance.tag:
             representation['tag'] = {
                 'id': instance.tag.id,
-                'tag_number': instance.tag.tag_number
+                'tag_number': instance.tag.tag_number,
+                'animal_type': instance.tag.animal_type  # Добавляем animal_type
             }
         else:
             representation['tag'] = None
+        
+        # Добавляем дату архивирования в представление
+        representation['archived_date'] = self.get_archived_date(instance)
         return representation
 
 
 class MakerSerializer(AnimalBaseSerializer):
     plemstatus = serializers.CharField(max_length=200)
     working_condition = serializers.CharField(max_length=200)
-    
+    working_condition_date = serializers.DateField(required=False, allow_null=True)  # Добавляем поле даты
 
     class Meta(AnimalBaseSerializer.Meta):
         model = Maker
@@ -98,7 +122,7 @@ class MakerSerializer(AnimalBaseSerializer):
     def get_children(self, obj):
         # Используем метод get_children из модели Maker
         children = obj.get_children()
-        return MakerSerializer(children, many=True).data
+        return [{'id': child.id, 'tag_number': child.tag.tag_number} for child in children]
 
     
 
@@ -138,3 +162,37 @@ class LambingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lambing
         fields = '__all__'
+
+
+class ArchiveAnimalSerializer(serializers.Serializer):
+    """
+    Полиморфный сериализатор для архива животных.
+    """
+    id = serializers.IntegerField()
+    tag = TagSerializer()
+    animal_status = StatusSerializer()
+    place = PlaceSerializer()
+    is_archived = serializers.BooleanField()
+    animal_type = serializers.CharField()
+    birth_date = serializers.DateField()
+    age = serializers.DecimalField(max_digits=5, decimal_places=1)
+
+    def to_representation(self, instance):
+        """
+        Возвращает полиморфные данные в зависимости от класса животного.
+        """
+        if isinstance(instance, Maker):
+            serializer = MakerSerializer(instance)
+        elif isinstance(instance, Sheep):
+            serializer = SheepSerializer(instance)
+        elif isinstance(instance, Ewe):
+            serializer = EweSerializer(instance)
+        elif isinstance(instance, Ram):
+            serializer = RamSerializer(instance)
+        else:
+            raise ValueError("Неизвестный тип животного.")
+        
+        representation = serializer.data
+        representation['animal_type'] = instance.tag.animal_type if instance.tag else "Unknown"
+        return representation
+

@@ -1,3 +1,4 @@
+from itertools import chain
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -7,8 +8,10 @@ from django.views.generic import TemplateView
 from django.http import Http404
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
-from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer
-from rest_framework.filters import SearchFilter
+from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, ArchiveAnimalSerializer
+from rest_framework.viewsets import GenericViewSet
+from rest_framework.mixins import ListModelMixin
+from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 
 from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary, PlaceMovement, Place, Tag
@@ -35,15 +38,26 @@ class MakerViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='update_working_condition')
     def update_working_condition(self, request, pk=None):
+        """
+        Обновление рабочего состояния производителя с установкой даты.
+        """
         try:
             maker = self.get_object()
             new_condition = request.data.get('working_condition')
+            if not new_condition:
+                return Response({'error': 'Не указано новое рабочее состояние.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Вызываем метод модели для обновления состояния
             maker.update_working_condition(new_condition)
-            return Response({'status': 'Рабочее состояние обновлено'}, status=status.HTTP_200_OK)
+            
+            # Сериализуем и возвращаем обновлённый объект
+            serializer = self.get_serializer(maker)
+            return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
             return self.handle_exception(e)
+
 
     @action(detail=True, methods=['post'], url_path='add_weight')
     def add_weight(self, request, pk=None):
@@ -179,13 +193,6 @@ class MakerViewSet(viewsets.ModelViewSet):
 
 
 
-
-
-
-
-
-
-
 class RamViewSet(AnimalBaseViewSet):
     queryset = Ram.objects.filter(is_archived=False)
     serializer_class = RamSerializer
@@ -275,6 +282,37 @@ class MakerAnalyticsView(TemplateView):
             raise Http404("Производитель не найден")
 
         return context
+
+class ArchiveViewSet(ListModelMixin, GenericViewSet):
+    """
+    ViewSet для общего архива животных.
+    """
+    serializer_class = ArchiveAnimalSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
+    ordering_fields = ['birth_date', 'age', 'tag__tag_number']
+
+    def get_queryset(self):
+        """
+        Получаем архив всех животных, объединяя модели Maker, Sheep, Ewe и Ram.
+        """
+        animal_type = self.request.query_params.get('type', None)
+
+        if animal_type == 'Maker':
+            return Maker.objects.filter(is_archived=True)
+        elif animal_type == 'Sheep':
+            return Sheep.objects.filter(is_archived=True)
+        elif animal_type == 'Ewe':
+            return Ewe.objects.filter(is_archived=True)
+        elif animal_type == 'Ram':
+            return Ram.objects.filter(is_archived=True)
+
+        makers = Maker.objects.filter(is_archived=True)
+        sheep = Sheep.objects.filter(is_archived=True)
+        ewes = Ewe.objects.filter(is_archived=True)
+        rams = Ram.objects.filter(is_archived=True)
+
+        return list(chain(makers, sheep, ewes, rams))
 
 
 # Представления для страниц

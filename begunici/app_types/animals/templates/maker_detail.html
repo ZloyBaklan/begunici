@@ -8,6 +8,8 @@
     <!-- Навигация -->
     <nav>
         <button id="analytics-button" type="button">Аналитика</button>
+        <a href="/animals/archive/" class="btn btn-secondary">Архив</a>
+
     </nav>
 
     <!-- Основная информация -->
@@ -124,16 +126,10 @@
 
 
         <h4>Редактировать родителей</h4>
-        <label for="mother-select">Мама:</label>
-        <select id="mother-select">
-            <option value="">Выберите маму</option>
-        </select>
+        <label>Мама:</label>
         <input type="text" id="mother-input" placeholder="Введите бирку вручную">
 
-        <label for="father-select">Папа:</label>
-        <select id="father-select">
-            <option value="">Выберите папу</option>
-        </select>
+        <label>Папа:</label>
         <input type="text" id="father-input" placeholder="Введите бирку вручную">
 
         <button type="button" onclick="updateParents()">Сохранить</button>

@@ -58,9 +58,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Загрузка подробной информации о производителе
         await loadMakerDetails(makerId);
 
-        // Обновление информации о родителях (поля mother-display и father-display)
-        await updateParentDisplay(makerId);
-
         // Загрузка списка доступных родителей (опции для select)
         await loadParents(makerId);
 
@@ -333,33 +330,6 @@ function updateParentDisplay(mother, father) {
         document.getElementById('father-link').href = '#';
     }
 }
-
-
-
-
-async function loadParentOptions(motherId = null, fatherId = null) {
-    try {
-        const motherItems = await apiRequest('/animals/sheep/');
-        const fatherItems = await apiRequest('/animals/maker/');
-
-        // Проверка данных
-        if (motherItems.length === 0) {
-            console.warn('Нет доступных мам для выбора');
-        }
-
-        if (fatherItems.length === 0) {
-            console.warn('Нет доступных пап для выбора');
-        }
-
-        // Загрузка данных в select
-        await loadSelectOptions('mother-select', motherItems, motherId);
-        await loadSelectOptions('father-select', fatherItems, fatherId);
-    } catch (error) {
-        console.error('Ошибка загрузки данных для родителей:', error);
-    }
-}
-
-
 
 
 

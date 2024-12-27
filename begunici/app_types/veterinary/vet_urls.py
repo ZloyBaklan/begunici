@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .vet_views import (
-    StatusViewSet, PlaceViewSet, VeterinaryCareViewSet, PlaceMovementViewSet,
+    StatusViewSet, PlaceViewSet, VeterinaryCareViewSet, PlaceMovementViewSet, 
     VeterinaryViewSet, TagViewSet, WeightRecordViewSet, VeterinaryManagementView, VeterinaryStatusesView, VeterinaryPlacesView, VeterinaryCaresView
 )
 
@@ -15,6 +15,8 @@ router.register(r'care', VeterinaryCareViewSet)
 router.register(r'veterinary', VeterinaryViewSet)
 router.register(r'tag', TagViewSet)
 router.register(r'weight-record', WeightRecordViewSet)
+
+
 #router.register(r'place_movement', PlaceMovementViewSet)
 
 urlpatterns = [
