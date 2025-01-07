@@ -4,6 +4,8 @@
 
 {% block content %}
     <h1>Управление производителями</h1>
+    <a href="/animals/main_archive/?type=Maker" class="btn btn-secondary" id="archive-maker-button">Архив Производителей</a>
+
 
     
 
@@ -64,11 +66,27 @@
     
     <!-- Кнопка для удаления выбранных -->
     <button id="delete-selected-button" style="display:none;" onclick="deleteSelectedMakers()">Удалить выбранные</button>
+    <button id="archive-selected-button" style="display:none;" onclick="openArchiveModal()">Перенести в архив</button>
+
     
     <div id="pagination"></div> <!-- Контейнер для кнопок пагинации -->
 
-    <!-- Сообщение об ошибке или успехе -->
-    <div id="maker-message" style="display: none;"></div>
+    <div id="delete-modal" style="display:none;">
+        <h2>Подтверждение удаления</h2>
+        <p id="delete-modal-message"></p>
+        <button id="delete-confirm-button">Да</button>
+        <button onclick="closeDeleteModal()">Нет</button>
+    </div>
+    
+
+    <div id="archive-modal" style="display:none;">
+        <h2>Перенос в архив</h2>
+        <p>Выберите статус, который будет установлен для выбранных животных:</p>
+        <select id="archive-status-select"></select>
+        <button onclick="applyArchiveStatus()">Применить</button>
+        <button onclick="closeArchiveModal()">Отмена</button>
+    </div>
+    
 
     <!-- Подключение скриптов -->
     <script src="{% static 'js/makers.js' %}"></script>
@@ -85,4 +103,6 @@
             fetchMakers(query); // Поиск производителей
         }
     </script>
+
+
 {% endblock %}

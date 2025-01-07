@@ -1,4 +1,5 @@
 from django.urls import path, include
+from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 from .views import (
     MakerViewSet, MakersView, MakerDetailView, MakerAnalyticsView, RamViewSet, EweViewSet, SheepViewSet, LambingViewSet, animals, create_animal, ArchiveViewSet
@@ -17,6 +18,7 @@ router.register(r'archive', ArchiveViewSet, basename='archive')  # Архив ж
 urlpatterns = [
     path('maker/<int:pk>/info/', MakerDetailView.as_view(), name='maker-detail'),
     path('makers/<int:pk>/analytics/', MakerAnalyticsView.as_view(), name='maker-analytics'),
+    path('main_archive/', TemplateView.as_view(template_name='archive.html'), name='main_archive'),
     path('', include(router.urls)),
     path('maker/<int:pk>/api/', MakerViewSet.as_view({'get': 'retrieve_api'}), name='maker-api'),
     path('maker/<int:pk>/update_parents/', MakerViewSet.as_view({'patch': 'update_parents'}), name='update-parents'),

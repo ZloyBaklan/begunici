@@ -169,30 +169,42 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     Полиморфный сериализатор для архива животных.
     """
     id = serializers.IntegerField()
-    tag = TagSerializer()
-    animal_status = StatusSerializer()
-    place = PlaceSerializer()
-    is_archived = serializers.BooleanField()
+    tag_number = serializers.CharField()
     animal_type = serializers.CharField()
+    status = serializers.CharField(source='animal_status__status_type', allow_null=True)
+    date_of_status = serializers.DateField(source='animal_status__date_of_status', allow_null=True)
+    place = serializers.CharField(source='place__sheepfold', allow_null=True)
     birth_date = serializers.DateField()
     age = serializers.DecimalField(max_digits=5, decimal_places=1)
 
     def to_representation(self, instance):
-        """
-        Возвращает полиморфные данные в зависимости от класса животного.
-        """
-        if isinstance(instance, Maker):
-            serializer = MakerSerializer(instance)
-        elif isinstance(instance, Sheep):
-            serializer = SheepSerializer(instance)
-        elif isinstance(instance, Ewe):
-            serializer = EweSerializer(instance)
-        elif isinstance(instance, Ram):
-            serializer = RamSerializer(instance)
-        else:
-            raise ValueError("Неизвестный тип животного.")
-        
-        representation = serializer.data
-        representation['animal_type'] = instance.tag.animal_type if instance.tag else "Unknown"
-        return representation
+        # Если instance — это словарь (после использования .values())
+        if isinstance(instance, dict):
+            return {
+                'id': instance['id'],
+                'tag_number': instance['tag__tag_number'],
+                'animal_type': instance['tag__animal_type'],
+                'status': instance.get('animal_status__status_type', 'Нет данных'),
+                'archived_date': instance['animal_status__date_of_status'],
+                'place': instance.get('place__sheepfold', 'Нет данных'),
+                'birth_date': instance['birth_date'],
+                'age': instance['age'],
+            }
+        # Если instance — это объект модели
+        tag_number = instance.tag.tag_number if instance.tag else 'Нет данных'
+        animal_type = instance.tag.animal_type if instance.tag else 'Unknown'
+        return {
+            'id': instance.id,
+            'tag_number': tag_number,
+            'animal_type': animal_type,
+            'status': instance.animal_status.status_type if instance.animal_status else 'Нет данных',
+            'archived_date': instance.animal_status.date_of_status if instance.animal_status else 'Нет данных',
+            'place': instance.place.sheepfold if instance.place else 'Нет данных',
+            'birth_date': instance.birth_date,
+            'age': instance.age,
+        }
+
+
+
+
 

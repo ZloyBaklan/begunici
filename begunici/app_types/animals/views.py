@@ -1,4 +1,3 @@
-from itertools import chain
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -307,12 +306,23 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
         elif animal_type == 'Ram':
             return Ram.objects.filter(is_archived=True)
 
-        makers = Maker.objects.filter(is_archived=True)
-        sheep = Sheep.objects.filter(is_archived=True)
-        ewes = Ewe.objects.filter(is_archived=True)
-        rams = Ram.objects.filter(is_archived=True)
+        # Объединение всех архивированных животных в один список
+        makers = Maker.objects.filter(is_archived=True).values(
+            'id', 'tag__tag_number', 'tag__animal_type', 'animal_status__status_type', 'animal_status__date_of_status',  'place__sheepfold', 'birth_date', 'age'
+        )
+        sheep = Sheep.objects.filter(is_archived=True).values(
+            'id', 'tag__tag_number', 'tag__animal_type', 'animal_status__status_type', 'animal_status__date_of_status',  'place__sheepfold', 'birth_date', 'age'
+        )
+        ewes = Ewe.objects.filter(is_archived=True).values(
+            'id', 'tag__tag_number', 'tag__animal_type', 'animal_status__status_type', 'animal_status__date_of_status',  'place__sheepfold', 'birth_date', 'age'
+        )
+        rams = Ram.objects.filter(is_archived=True).values(
+            'id', 'tag__tag_number', 'tag__animal_type', 'animal_status__status_type', 'animal_status__date_of_status',  'place__sheepfold', 'birth_date', 'age'
+        )
 
-        return list(chain(makers, sheep, ewes, rams))
+        return makers.union(sheep, ewes, rams)
+
+
 
 
 # Представления для страниц

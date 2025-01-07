@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 </head>
 <body>
+    
     <header>
         <h1>Ферма Бегуницы</h1>
         <nav>
@@ -21,6 +22,11 @@
         {% block content %}
         <!-- Контент каждой страницы будет здесь -->
         {% endblock %}
+        <!-- Кнопка возврата -->
+    <div>
+    <button onclick="window.history.back()">Назад</button>
+    <button onclick="window.history.forward()">Вперед</button>
+    </div>  
     </main>
     <footer>
         <p>© 2024 Ферма Бегуницы</p>

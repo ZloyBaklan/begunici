@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fetchMakers();  // Загрузка списка производителей при загрузке страницы
     loadAnimalStatuses();
     loadPlaces();
+    setupArchiveButton(); // Устанавливаем URL для кнопки архива
 
     const createMakerButton = document.querySelector('#create-maker-button');
     if (createMakerButton) {
@@ -230,7 +231,11 @@ function toggleSelectMaker(checkbox) {
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
     const deleteButton = document.getElementById('delete-selected-button');
-    deleteButton.style.display = Array.from(selectedMakers.values()).some(value => value) ? 'block' : 'none';
+    const archiveButton = document.getElementById('archive-selected-button');
+    const hasSelection = Array.from(selectedMakers.values()).some(value => value.isSelected);
+
+    deleteButton.style.display = hasSelection ? 'block' : 'none';
+    archiveButton.style.display = hasSelection ? 'block' : 'none';
 }
 
 // Обновление состояния чекбоксов при загрузке страницы
@@ -266,24 +271,37 @@ async function deleteSelectedMakers() {
         return;
     }
 
+    // Подготавливаем список бирок для отображения
     const tags = selectedIds.map(item => item.tag);
-    const confirmMessage = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
-    if (!confirm(confirmMessage)) return;
+    const modal = document.getElementById('delete-modal');
+    const modalMessage = document.getElementById('delete-modal-message');
+    const confirmButton = document.getElementById('delete-confirm-button');
 
-    try {
-        for (const { id } of selectedIds) {
-            await apiRequest(`/animals/maker/${id}/`, 'DELETE');
-            selectedMakers.delete(id); // Удаляем из состояния
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modal.style.display = 'block';
+
+    confirmButton.onclick = async () => {
+        try {
+            for (const { id } of selectedIds) {
+                await apiRequest(`/animals/maker/${id}/`, 'DELETE');
+                selectedMakers.delete(id); // Удаляем из состояния
+            }
+            alert('Выбранные записи успешно удалены');
+            fetchMakers(currentPage); // Обновляем текущую страницу
+            toggleDeleteButton(); // Скрываем кнопку
+            modal.style.display = 'none'; // Закрываем модальное окно
+        } catch (error) {
+            console.error('Ошибка при удалении выбранных записей:', error);
+            alert('Ошибка при удалении записей');
         }
-        alert('Выбранные записи успешно удалены');
-        fetchMakers(currentPage); // Обновляем текущую страницу
-        toggleDeleteButton(); // Скрываем кнопку
-    } catch (error) {
-        console.error('Ошибка при удалении выбранных записей:', error);
-        alert('Ошибка при удалении записей');
-    }
+    };
 }
 
+
+function closeDeleteModal() {
+    const modal = document.getElementById('delete-modal');
+    modal.style.display = 'none';
+}
 
 
 // Функция для сброса состояния кнопки
@@ -331,3 +349,70 @@ document.getElementById('maker-search').addEventListener('input', () => {
 });
 
 
+function openArchiveModal() {
+    const modal = document.getElementById('archive-modal');
+    modal.style.display = 'block';
+
+    loadArchiveStatuses();
+}
+function closeArchiveModal() {
+    const modal = document.getElementById('archive-modal');
+    modal.style.display = 'none';
+}
+async function loadArchiveStatuses() {
+    try {
+        const statuses = await apiRequest('/veterinary/status/');
+        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
+
+        const statusSelect = document.getElementById('archive-status-select');
+        statusSelect.innerHTML = ''; // Очистка существующих опций
+
+        if (archiveStatuses.length === 0) {
+            alert('Нет статусов для переноса в архив. Создайте необходимые статусы.');
+            closeArchiveModal();
+            return;
+        }
+
+        archiveStatuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.text = status.status_type;
+            statusSelect.add(option);
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке статусов:', error);
+    }
+}
+async function applyArchiveStatus() {
+    const selectedIds = Array.from(selectedMakers.entries())
+        .filter(([id, { isSelected }]) => isSelected)
+        .map(([id]) => id);
+
+    if (selectedIds.length === 0) {
+        alert('Нет выбранных записей для переноса.');
+        return;
+    }
+
+    const statusId = document.getElementById('archive-status-select').value;
+    if (!statusId) {
+        alert('Выберите статус.');
+        return;
+    }
+
+    try {
+        for (const id of selectedIds) {
+            await apiRequest(`/animals/maker/${id}/`, 'PATCH', { animal_status_id: statusId });
+        }
+        alert('Выбранные записи успешно перенесены в архив.');
+        closeArchiveModal();
+        fetchMakers(currentPage); // Обновляем текущую страницу
+    } catch (error) {
+        console.error('Ошибка при переносе в архив:', error);
+        alert('Ошибка при переносе записей.');
+    }
+}
+
+function setupArchiveButton() {
+    const archiveButton = document.getElementById('archive-maker-button');
+    archiveButton.href = `/animals/main_archive/?type=Maker`; // Фиксируем тип как Maker
+}

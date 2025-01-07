@@ -63,3 +63,18 @@ th {
 .pagination-button:hover {
     background-color: #e9ecef;
 }
+
+#filter-container {
+    margin-bottom: 20px;
+}
+
+#archive-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#archive-table th, #archive-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
