@@ -15,9 +15,7 @@ router.register(r'care', VeterinaryCareViewSet)
 router.register(r'veterinary', VeterinaryViewSet)
 router.register(r'tag', TagViewSet)
 router.register(r'weight-record', WeightRecordViewSet)
-
-
-#router.register(r'place_movement', PlaceMovementViewSet)
+router.register(r'place_movement', PlaceMovementViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  # Добавляем имя для veterinary

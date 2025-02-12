@@ -263,7 +263,7 @@ async function addVetRecord() {
     
 async function loadVetTreatments() {
     try {
-        const treatments = await apiRequest('/veterinary/care/all_cares/');
+        const treatments = await apiRequest('/veterinary/care/');
         console.log('Ответ сервера для ветобработок:', treatments);
 
         const select = document.getElementById('vet-treatment-select');

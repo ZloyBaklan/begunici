@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone  # Не забудь импортировать timezone
 
-from .vet_models import Veterinary, Status, Tag, VeterinaryCare, WeightRecord, Place, PlaceMovement
+from .vet_models import Veterinary, Status, StatusHistory, Tag, VeterinaryCare, WeightRecord, Place, PlaceMovement
 
 
 # Сериализатор для статусов
@@ -20,7 +20,7 @@ class StatusSerializer(serializers.ModelSerializer):
         instance.status_type = validated_data.get('status_type', instance.status_type)
         instance.color = validated_data.get('color', instance.color)
         date_of_status = validated_data.get('date_of_status', None)
-        instance.date_of_status = date_of_status if date_of_status else timezone.now()
+        instance.date_of_status = date_of_status if date_of_status else timezone.now().date()
         instance.save()
         return instance
     
@@ -36,6 +36,15 @@ class StatusSerializer(serializers.ModelSerializer):
         if Status.objects.filter(status_type=value).exists():
             raise serializers.ValidationError("Статус с таким названием уже существует.")
         return value
+
+class StatusHistorySerializer(serializers.ModelSerializer):
+    old_status = StatusSerializer(read_only=True)  # Отображает старый статус по его `__str__` реализации
+    new_status = StatusSerializer(read_only=True)  # Отображает новый статус по его `__str__` реализации
+
+    class Meta:
+        model = StatusHistory
+        fields = '__all__'
+
 
 # Сериализатор для места
 class PlaceSerializer(serializers.ModelSerializer):
@@ -55,7 +64,7 @@ class PlaceSerializer(serializers.ModelSerializer):
         # Проверяем, если дата перевода вручную не указана, обновляем на текущую
         date_of_transfer = validated_data.get('date_of_transfer', None)
         if date_of_transfer is None:
-            instance.date_of_transfer = timezone.now()  # Обновляем на текущую дату
+            instance.date_of_transfer = timezone.now().date()  # Обновляем на текущую дату
         else:
             instance.date_of_transfer = date_of_transfer  # Устанавливаем вручную, если передана
         
@@ -76,10 +85,11 @@ class PlaceSerializer(serializers.ModelSerializer):
 class PlaceMovementSerializer(serializers.ModelSerializer):
     old_place = PlaceSerializer(read_only=True)
     new_place = PlaceSerializer(read_only=True)
-
     class Meta:
         model = PlaceMovement
         fields = '__all__'
+    
+    
 
 
 class VeterinaryCareSerializer(serializers.ModelSerializer):

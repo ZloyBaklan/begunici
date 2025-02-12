@@ -4,7 +4,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from datetime import datetime
+from django.utils import timezone
 from django.shortcuts import render
 from django.views.generic import TemplateView
 from rest_framework.exceptions import ValidationError
@@ -13,6 +13,13 @@ from .vet_serializers import (
     StatusSerializer, TagSerializer, VeterinarySerializer, VeterinaryCareSerializer
     , WeightRecordSerializer, WeightChangeSerializer, PlaceSerializer, PlaceMovementSerializer
 )
+from rest_framework.pagination import PageNumberPagination
+
+class PlaceMovementPagination(PageNumberPagination):
+    page_size = 5  # Количество записей на странице
+    page_size_query_param = 'page_size'  # Параметр для изменения размера страницы через запрос
+    max_page_size = 100  # Максимальное количество записей на странице
+
 
 class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all()
@@ -28,11 +35,31 @@ class PlaceViewSet(viewsets.ModelViewSet):
     queryset = Place.objects.all()
     serializer_class = PlaceSerializer
     permission_classes = [AllowAny]  # Доступ без аутентификации
+    
 
 class PlaceMovementViewSet(viewsets.ModelViewSet):
-    queryset = PlaceMovement.objects.all().order_by('-transfer_date')
+    queryset = PlaceMovement.objects.select_related('new_place', 'old_place').order_by('-new_place__date_of_transfer')
     serializer_class = PlaceMovementSerializer
     permission_classes = [AllowAny]
+    pagination_class = PlaceMovementPagination  # Указываем кастомный пагинатор
+
+    
+    def create(self, request, *args, **kwargs):
+        tag_id = request.data.get('tag')
+        old_place_id = request.data.get('old_place')
+        new_place_id = request.data.get('new_place')
+        date_of_transfer = request.data.get('-new_place__date_of_transfer', timezone.now().date())
+
+        # Проверяем наличие уже существующей записи
+        if PlaceMovement.objects.filter(
+            tag_id=tag_id, 
+            old_place_id=old_place_id, 
+            new_place_id=new_place_id, 
+            date_of_transfer=date_of_transfer
+        ).exists():
+            return Response({'error': 'Такое перемещение уже существует.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return super().create(request, *args, **kwargs)
 
 
 
@@ -155,7 +182,7 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
 
         try:
             # Проверка и преобразование даты
-            weight_date = datetime.strptime(weight_date, '%Y-%m-%d').date()
+            weight_date = timezone.now().date()
             tag = Tag.objects.get(id=tag_id)
             WeightRecord.objects.create(tag=tag, weight=weight, weight_date=weight_date)
             return Response({'status': 'Weight record added successfully'}, status=status.HTTP_201_CREATED)

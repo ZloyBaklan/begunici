@@ -1,21 +1,6 @@
 from django.db import models
 from django.utils import timezone
 
-class Status(models.Model):
-    status_type = models.CharField(max_length=200, unique=True, verbose_name='Название статуса')
-    date_of_status = models.DateField(verbose_name='Дата статуса', default=timezone.now)  # Дата по умолчанию - текущая
-    color = models.CharField(max_length=7, unique=True, verbose_name='Цвет статуса', default='#FFFFFF')  # Цвет статуса, по умолчанию белый
-
-    def __str__(self):
-        return self.status_type
-    
-    def save(self, *args, **kwargs):
-        if not self.date_of_status:
-            self.date_of_status = timezone.now()
-        super().save(*args, **kwargs)
-
-
-
 '''Статус через админку и вебку имеет дату создания, но в случае выставления статуса в поле(его обновления), нужно чтобы дата обновлялась на текущую'''
 # Приложение animals
 
@@ -37,28 +22,114 @@ class Tag(models.Model):
     def __str__(self):
         return self.tag_number
 
+
+class Status(models.Model):
+    status_type = models.CharField(max_length=200, unique=True, verbose_name='Название статуса')
+    date_of_status = models.DateField(verbose_name='Дата статуса', default=timezone.now().date())  # Дата по умолчанию - текущая
+    color = models.CharField(max_length=7, unique=True, verbose_name='Цвет статуса', default='#FFFFFF')  # Цвет статуса, по умолчанию белый
+
+    def __str__(self):
+        return self.status_type
+
+    
+
+class StatusHistory(models.Model):
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        verbose_name='Бирка',
+        related_name='status_history'
+    )
+    old_status = models.ForeignKey(
+        Status,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='old_status',
+        verbose_name='Старый статус'
+    )
+    new_status = models.ForeignKey(
+        Status,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='new_status',
+        verbose_name='Новый статус'
+    )
+
+    def save(self, *args, **kwargs):
+        # Обновляем дату перевода в `Place` для нового места
+        if self.new_status:
+            self.new_status.date_of_status = timezone.now().date()  # Устанавливаем текущую дату перевода
+            self.new_status.save()
+
+        super(StatusHistory, self).save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.tag.tag_number}: {self.old_status} -> {self.new_status} ({self.new_status.date_of_status})"
+
+
+
 class Place(models.Model):
     sheepfold = models.CharField(max_length=200, verbose_name='Овчарня-Отсек')
-    # compartment = models.CharField(max_length=200, verbose_name='Отсек')
-    date_of_transfer = models.DateField(verbose_name='Дата перевода', default=timezone.now)  # Дата перевода по умолчанию
+    date_of_transfer = models.DateField(verbose_name='Дата перевода', default=timezone.now().date())  # Дата перевода по умолчанию
 
     def __str__(self):
         return self.sheepfold
 
 class PlaceMovement(models.Model):
-    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
-    old_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, related_name='old_place', verbose_name='Старое место')
-    new_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, related_name='new_place', verbose_name='Новое место')
-    transfer_date = models.DateField(verbose_name='Дата перевода', default=timezone.now)
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка', related_name="place_movements")
+    old_place = models.ForeignKey(
+        Place,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='place_movements_from',
+        verbose_name='Предыдущее место'
+    )
+    new_place = models.ForeignKey(
+        Place,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='place_movements_to',
+        verbose_name='Новое место'
+    )
+    class Meta:
+        unique_together = ('tag', 'old_place', 'new_place')
+
+    def save(self, *args, **kwargs):
+        # Проверяем, существует ли уже такая запись
+        if not self.pk and PlaceMovement.objects.filter(
+            tag=self.tag,
+            old_place=self.old_place,
+            new_place=self.new_place
+        ).exists():
+            return  # Если запись уже существует, не сохраняем её
+
+        # Если указано новое место, обновляем его дату перевода
+        if self.new_place:
+            self.new_place.date_of_transfer = timezone.now().date()
+            self.new_place.save()
+
+        super(PlaceMovement, self).save(*args, **kwargs)
+
+    @property
+    def date_of_transfer(self):
+        """
+        Дата перевода берется из связанного нового места, если оно существует.
+        """
+        return self.new_place.date_of_transfer if self.new_place else None
 
     def __str__(self):
-        return f"{self.tag.tag_number}: {self.old_place} -> {self.new_place} ({self.transfer_date})"
+        return f"{self.tag.tag_number}: {self.old_place} -> {self.new_place} ({self.date_of_transfer})"
+
 
 
 class WeightRecord(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Бирка')
     weight = models.DecimalField(max_digits=5, decimal_places=2, verbose_name='Вес (кг)')
-    weight_date = models.DateField(verbose_name='Дата взвешивания',  default=timezone.now)
+    weight_date = models.DateField(verbose_name='Дата взвешивания',  default=timezone.now().date())
 
     def __str__(self):
         return f"Вес: {self.weight} кг, Дата: {self.weight_date}"
@@ -109,7 +180,7 @@ class Veterinary(models.Model):
     # place = models.ForeignKey(Place, on_delete=models.CASCADE, verbose_name='Место')
     # status = models.ForeignKey(Status, on_delete=models.SET_NULL, null=True, verbose_name='Статус')
     veterinary_care = models.ForeignKey(VeterinaryCare, on_delete=models.SET_NULL, null=True, verbose_name='Вет-обработка')
-    date_of_care = models.DateField(verbose_name='Дата обработки', default=timezone.now)
+    date_of_care = models.DateField(verbose_name='Дата обработки', default=timezone.now().date())
     comments = models.TextField(verbose_name='Примечания', blank=True, null=True)  # Доп. комментарии
 
     def __str__(self):

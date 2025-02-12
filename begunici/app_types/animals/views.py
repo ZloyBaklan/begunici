@@ -7,17 +7,17 @@ from django.views.generic import TemplateView
 from django.http import Http404
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
-from .serializers import MakerSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, ArchiveAnimalSerializer
+from .serializers import MakerSerializer, MakerChildSerializer, RamSerializer, EweSerializer, SheepSerializer, LambingSerializer, ArchiveAnimalSerializer
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 
-from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary, PlaceMovement, Place, Tag
-from begunici.app_types.veterinary.vet_views import WeightRecordSerializer, VeterinarySerializer, PlaceSerializer, PlaceMovementSerializer
+from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary, PlaceMovement, Tag, StatusHistory
+from begunici.app_types.veterinary.vet_serializers import WeightRecordSerializer, VeterinarySerializer, PlaceMovementSerializer, StatusHistorySerializer
 
 class PaginationSetting(PageNumberPagination):
-    page_size = 20  # Количество записей на странице
+    page_size = 10  # Количество записей на странице
     page_size_query_param = 'page_size'  # Возможность менять размер страницы
     max_page_size = 100  # Максимальное количество записей на странице
     
@@ -36,6 +36,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     serializer_class = MakerSerializer
     filter_backends = [SearchFilter]
     search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
+    pagination_class = PaginationSetting  # Добавляем пагинацию
 
     @action(detail=True, methods=['post'], url_path='update_working_condition')
     def update_working_condition(self, request, pk=None):
@@ -102,21 +103,74 @@ class MakerViewSet(viewsets.ModelViewSet):
         """
         Получаем историю ветобработок для животного.
         """
-        try:
-            maker = self.get_object()
-            vet_history = Veterinary.objects.filter(tag=maker.tag).select_related('veterinary_care').order_by('-date_of_care')
-            serializer = VeterinarySerializer(vet_history, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        maker = self.get_object()
+        vet_history = Veterinary.objects.filter(tag=maker.tag).select_related('veterinary_care').order_by('-date_of_care')
+        # Применяем пагинацию
+        page = self.paginate_queryset(vet_history)
+        if page is not None:
+            serializer = VeterinarySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        # Если пагинация не настроена, возвращаем все записи (лучше избегать этого)
+        serializer = VeterinarySerializer(vet_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
     @action(detail=True, methods=['get'], url_path='place_history')
     def place_history(self, request, pk=None):
+        """
+        Возвращает историю перемещений для конкретного животного с поддержкой пагинации.
+        """
+        maker = self.get_object()  # Получаем объект Maker по pk
+        place_movements = PlaceMovement.objects.filter(tag=maker.tag).order_by('-new_place__date_of_transfer')
+        
+        # Применяем пагинацию
+        page = self.paginate_queryset(place_movements)
+        if page is not None:
+            serializer = PlaceMovementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        # Если пагинация не настроена, возвращаем все записи (лучше избегать этого)
+        serializer = PlaceMovementSerializer(place_movements, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+    
+    @action(detail=True, methods=['get'], url_path='status_history')
+    def status_history(self, request, pk=None):
+        """
+        Возвращает историю статусов для конкретного животного с поддержкой пагинации.
+        """
+        maker = self.get_object()  # Получаем объект Maker
+        status_history = StatusHistory.objects.filter(tag=maker.tag).order_by('-new_status__date_of_status')
+
+        # Применяем пагинацию
+        page = self.paginate_queryset(status_history)
+        if page is not None:
+            serializer = StatusHistorySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        # Если пагинация не настроена, возвращаем все записи (не рекомендуется)
+        serializer = StatusHistorySerializer(status_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+    # Дети
+    @action(detail=True, methods=['get'], url_path='children')
+    def children(self, request, pk=None):
         maker = self.get_object()
-        movements = PlaceMovement.objects.filter(tag=maker.tag).order_by('-transfer_date')
-        serializer = PlaceMovementSerializer(movements, many=True)
-        return Response(serializer.data)
+        children = maker.get_children()
+        # Применяем пагинацию
+        page = self.paginate_queryset(children)
+        if page is not None:
+            serializer = MakerChildSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        # Если пагинация не настроена, возвращаем все записи (не рекомендуется)
+        serializer = MakerChildSerializer(children, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
     
     @action(detail=True, methods=['post'], url_path='add_place_movement')
     def add_place_movement(self, request, pk=None):
@@ -125,7 +179,7 @@ class MakerViewSet(viewsets.ModelViewSet):
             'tag': maker.tag.id,
             'old_place': request.data.get('old_place'),
             'new_place': request.data.get('new_place'),
-            'transfer_date': request.data.get('transfer_date'),
+            'date_of_transfer': request.data.get('new_place__date_of_transfer'),
         }
         serializer = PlaceMovementSerializer(data=movement_data)
         serializer.is_valid(raise_exception=True)
@@ -255,6 +309,7 @@ class MakerDetailView(TemplateView):
             raise Http404("Производитель не найден")
         return context
 
+
 class MakerAnalyticsView(TemplateView):
     template_name = 'maker_analytics.html'
 
@@ -264,23 +319,38 @@ class MakerAnalyticsView(TemplateView):
         
         try:
             maker = Maker.objects.get(pk=maker_id)
-            # Получаем историю веса
-            weight_history = WeightRecord.objects.filter(tag=maker.tag).order_by('weight_date')
-            # Получаем историю ветобработок
-            vet_history = Veterinary.objects.filter(tag=maker.tag).order_by('date_of_care')
-            # Получаем "детей" (ярки и бараны)
-            children = Sheep.objects.filter(father_tag=maker).union(Ewe.objects.filter(father_tag=maker)
-)
-
-            # Добавляем данные в контекст
-            context['maker'] = maker
-            context['weight_history'] = weight_history
-            context['vet_history'] = vet_history
-            context['children'] = children
+            context['maker'] = MakerSerializer(maker).data
         except Maker.DoesNotExist:
             raise Http404("Производитель не найден")
-
+        # Используем метод сериализации детей
+        serialized_maker = MakerSerializer(maker).data
+        # Используем обновленный сериализатор для детей
+        children = maker.get_children()  # Получаем детей через метод модели
+        children_serialized = MakerChildSerializer(children, many=True).data
+        context.update({
+            'maker': serialized_maker,
+            'children': children_serialized,  # Дети уже сериализованы
+            'status_history': StatusHistorySerializer(
+                StatusHistory.objects.filter(tag=maker.tag).order_by('-id'),
+                many=True
+            ).data,
+            'place_movements': PlaceMovementSerializer(
+                PlaceMovement.objects.filter(tag=maker.tag).order_by('-new_place__date_of_transfer'),
+                many=True
+            ).data,
+            'veterinary_history': VeterinarySerializer(
+                Veterinary.objects.filter(tag=maker.tag).order_by('-date_of_care'),
+                many=True
+            ).data,
+            'weight_records': WeightRecordSerializer(
+                WeightRecord.objects.filter(tag=maker.tag).order_by('-weight_date'),
+                many=True
+            ).data,
+        })
         return context
+
+
+
 
 class ArchiveViewSet(ListModelMixin, GenericViewSet):
     """
@@ -290,6 +360,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
     ordering_fields = ['birth_date', 'age', 'tag__tag_number']
+    pagination_class = PaginationSetting  # Добавляем пагинацию
 
     def get_queryset(self):
         """

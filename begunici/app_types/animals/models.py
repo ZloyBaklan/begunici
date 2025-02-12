@@ -1,7 +1,9 @@
 from django.db import models
-from datetime import date, timedelta
+from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
 from dateutil.relativedelta import relativedelta
-from begunici.app_types.veterinary.vet_models import Tag, Status, Veterinary, Place, WeightRecord, VeterinaryCare
+from begunici.app_types.veterinary.vet_models import Tag, Status, Veterinary, Place, WeightRecord, PlaceMovement, StatusHistory
 
 
 from dateutil.relativedelta import relativedelta
@@ -52,16 +54,20 @@ class AnimalBase(models.Model):
     
     class Meta:
         abstract = True
-        
-    # Получение даты последнего перевода
+    
+    # Автоматическое добавление place_movements через related_name
     @property
-    def last_transfer_date(self):
-        return self.place.date_of_transfer if self.place else None
+    def place_movements(self):
+        return self.tag.place_movements.all()
+    
+    @property
+    def status_history(self):
+        return self.tag.status_history.all()
 
     # Расчет возраста
     def calculate_age(self):
         if self.birth_date:
-            current_date = date.today()
+            current_date = timezone.now().date()
             delta = relativedelta(current_date, self.birth_date)
             calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
             self.age = calculated_age
@@ -83,6 +89,29 @@ class AnimalBase(models.Model):
         if self.tag:
             self.tag.animal_type = self.get_animal_type()  # Используем метод get_animal_type
             self.tag.save()
+        
+        # Обработка изменений места (создание записи о перемещении)
+        if self.place and self.pk:
+            old_place = self.__class__.objects.get(pk=self.pk).place
+            print(f"Старое место: {old_place}, Новое место: {self.place}")
+            if old_place != self.place:
+                movement = PlaceMovement.objects.create(
+                    tag=self.tag,
+                    old_place=old_place,
+                    new_place=self.place
+                )
+                print(f"Создано перемещение: {movement}")
+
+        #  Обработка изменений статуса
+        if self.animal_status and self.pk:
+            old_status = self.__class__.objects.get(pk=self.pk).animal_status
+            if old_status != self.animal_status:
+                StatusHistory.objects.create(
+                    tag=self.tag,
+                    old_status=old_status if old_status else None,
+                    new_status=self.animal_status
+                )
+
         super(AnimalBase, self).save(*args, **kwargs)
   
     
@@ -126,7 +155,7 @@ class Maker(AnimalBase):
         Обновление рабочего состояния и установка даты.
         """
         self.working_condition = new_condition
-        self.working_condition_date = date.today()  # Устанавливаем текущую дату
+        self.working_condition_date = timezone.now().date()  # Устанавливаем текущую дату
         self.save()
     
     def get_animal_type(self):
@@ -134,11 +163,9 @@ class Maker(AnimalBase):
     
     def get_children(self):
         """
-        Возвращает список детей производителя.
+        Возвращает всех детей данного производителя.
         """
-        return Maker.objects.filter(models.Q(mother=self.tag) | models.Q(father=self.tag))
-
-
+        return Maker.objects.filter(Q(mother=self.tag) | Q(father=self.tag))
 
 
 
@@ -161,7 +188,7 @@ class Lambing(models.Model):
         Рассчитываем планируемую дату окота (155 дней от даты случки)
         """
         if not self.planned_lambing_date:
-            self.planned_lambing_date = date.today() + timedelta(days=155)
+            self.planned_lambing_date = timezone.now().date() + timedelta(days=155)
 
     def save(self, *args, **kwargs):
         """
@@ -299,7 +326,7 @@ class Sheep(AnimalBase):
         Если уже есть окот, то новая дата.
         """
         if not self.planned_lambing_date or self.is_new_lambing():
-            self.planned_lambing_date = date.today() + timedelta(days=155)
+            self.planned_lambing_date = timezone.now().date() + timedelta(days=155)
         self.save()
 
     def is_new_lambing(self):

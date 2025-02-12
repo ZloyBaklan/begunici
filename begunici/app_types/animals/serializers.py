@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
-from begunici.app_types.veterinary.vet_models import Place, Tag, Status, Veterinary, WeightRecord
-from begunici.app_types.veterinary.vet_serializers import StatusSerializer, PlaceSerializer, WeightRecordSerializer, VeterinarySerializer, TagSerializer
+from begunici.app_types.veterinary.vet_models import Place, PlaceMovement, Tag, Status, Veterinary, WeightRecord, StatusHistory
+from begunici.app_types.veterinary.vet_serializers import StatusSerializer, PlaceSerializer, WeightRecordSerializer, VeterinarySerializer, TagSerializer, PlaceMovementSerializer, StatusHistorySerializer
 
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
@@ -43,6 +43,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         queryset=Tag.objects.all(), write_only=True, source='father', allow_null=True, required=False
     )  # Для указания идентификатора отца
     children = serializers.SerializerMethodField()
+    place_movements = PlaceMovementSerializer(many=True, read_only=True)
+    status_history = StatusHistorySerializer(many=True, read_only=True)
     
 
     class Meta:
@@ -114,17 +116,64 @@ class MakerSerializer(AnimalBaseSerializer):
     plemstatus = serializers.CharField(max_length=200)
     working_condition = serializers.CharField(max_length=200)
     working_condition_date = serializers.DateField(required=False, allow_null=True)  # Добавляем поле даты
-
+    
+    
     class Meta(AnimalBaseSerializer.Meta):
         model = Maker
         fields = '__all__'
     
     def get_children(self, obj):
-        # Используем метод get_children из модели Maker
         children = obj.get_children()
-        return [{'id': child.id, 'tag_number': child.tag.tag_number} for child in children]
-
+        return MakerChildSerializer(children, many=True).data
     
+    def get_place_history(self, obj):
+        place_movements = PlaceMovement.objects.filter(tag=obj.tag).order_by('-new_place__date_of_transfer')
+        return [
+            {
+                'old_place': movement.old_place,
+                'new_place': movement.new_place,
+                'date_of_transfer': movement.new_place.date_of_transfer,
+            }
+            for movement in place_movements
+        ]
+    def get_status_history(self, obj):
+        status_history = StatusHistory.objects.filter(tag=obj.tag).order_by('-new_status__date_of_status')
+        return [
+            {
+                'old_status': status_i.old_status,
+                'new_status': status_i.new_status,
+                'date_of_status': status_i.new_status.date_of_status,
+            }
+            for status_i in status_history
+        ]
+
+            
+
+class MakerChildSerializer(serializers.ModelSerializer):
+    link = serializers.SerializerMethodField()
+    tag_number = serializers.CharField(source='tag.tag_number', read_only=True)
+    animal_type = serializers.CharField(source='tag.animal_type', read_only=True)
+    is_archived = serializers.BooleanField(read_only=True)
+    archive_status = serializers.CharField(source='animal_status.status_type', read_only=True)  # Статус
+    archive_date = serializers.DateField(source='animal_status.date_of_status', read_only=True)  # Дата статуса
+
+    class Meta:
+        model = Maker
+        fields = ['id', 'tag_number', 'animal_type', 'age', 'link', 'is_archived', 'archive_status', 'archive_date']
+
+
+    def get_link(self, obj):
+        animal_type_to_route = {
+            'Maker': 'maker',
+            'Sheep': 'sheep',
+            'Ewe': 'ewe',
+            'Ram': 'ram',
+        }
+        # Генерируем ссылку в зависимости от типа животного
+        return f"/animals/{animal_type_to_route.get(obj.tag.animal_type, 'unknown')}/{obj.id}/info/"
+
+
+
 
 class RamSerializer(AnimalBaseSerializer):
     class Meta(AnimalBaseSerializer.Meta):
@@ -153,6 +202,22 @@ class SheepSerializer(AnimalBaseSerializer):
         children = obj.get_children()
         return SheepSerializer(children, many=True).data
 
+class SheepChildSerializer(serializers.ModelSerializer):
+    link = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Sheep
+        fields = ['id', 'tag', 'age', 'link']
+
+    def get_link(self, obj):
+        animal_type_to_route = {
+            'Maker': 'maker',
+            'Sheep': 'sheep',
+            'Ewe': 'ewe',
+            'Ram': 'ram',
+        }
+        # Генерируем ссылку в зависимости от типа животного
+        return f"/animals/{animal_type_to_route.get(obj.tag.animal_type, 'unknown')}/{obj.id}/info/"
 
 
 class LambingSerializer(serializers.ModelSerializer):
