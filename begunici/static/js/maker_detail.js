@@ -50,16 +50,24 @@ async function handleError(response) {
 
 // Загрузка данных при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
-    const makerId = document.getElementById('maker-detail').dataset.makerId;
+    const makerDetail = document.getElementById('maker-detail');
+    const tagNumber = makerDetail ? makerDetail.dataset.tagNumber : null;
 
-    console.log('ID производителя:', makerId);
+if (!tagNumber) {
+    console.error("Ошибка: tagNumber не найден в dataset");
+} else {
+    console.log("Получен tagNumber:", tagNumber);
+}
+
+
+    console.log('tag производителя:', tagNumber);
 
     try {
         // Загрузка подробной информации о производителе
-        await loadMakerDetails(makerId);
+        await loadMakerDetails(tagNumber);
 
         // Загрузка списка доступных родителей (опции для select)
-        await loadParents(makerId);
+        await loadParents(tagNumber);
 
         // Загрузка списка ветобработок
         await loadVetTreatments();
@@ -68,7 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const analyticsButton = document.getElementById('analytics-button');
         if (analyticsButton) {
             analyticsButton.onclick = () => {
-                window.location.href = `/animals/makers/${makerId}/analytics/`;
+                window.location.href = `/animals/makers/${tagNumber}/analytics/`;
             };
         }
     } catch (error) {
@@ -112,9 +120,9 @@ function formatDateToOutput(dateString) {
 }
 
 
-async function loadMakerDetails(makerId) {
+async function loadMakerDetails(tagNumber) {
     try {
-        const maker = await apiRequest(`/animals/maker/${makerId}/api/`);
+        const maker = await apiRequest(`/animals/maker/${tagNumber}/api/`);
         console.log('Данные производителя:', maker); // Отладка данных
         document.getElementById('tag').value = maker.tag.tag_number;
         document.getElementById('birth_date').value = maker.birth_date ? formatDateToInput(maker.birth_date) : ''; // Преобразуем дату
@@ -125,8 +133,8 @@ async function loadMakerDetails(makerId) {
         await Promise.all([
             loadSelectOptions('animal_status', '/veterinary/status/', maker.animal_status?.id),
             loadSelectOptions('place', '/veterinary/place/', maker.place?.id),
-            loadLastWeight(makerId),
-            loadLastVetCare(makerId)
+            loadLastWeight(tagNumber),
+            loadLastVetCare(tagNumber)
         ]);
     } catch (error) {
         console.error('Ошибка загрузки производителя:', error);
@@ -136,9 +144,9 @@ async function loadMakerDetails(makerId) {
 
 
 // Загрузка последнего веса
-async function loadLastWeight(makerId) {
+async function loadLastWeight(tagNumber) {
     try {
-        const weights = await apiRequest(`/animals/maker/${makerId}/weight_history/`);
+        const weights = await apiRequest(`/animals/maker/${tagNumber}/weight_history/`);
         if (weights.length) {
             const lastWeight = weights[0]; // Берем самый последний вес
             document.getElementById('last-weight-date').textContent = formatDateToOutput(lastWeight.weight_date);
@@ -153,19 +161,22 @@ async function loadLastWeight(makerId) {
 }
 
 
-async function loadLastVetCare(makerId) {
+async function loadLastVetCare(tagNumber) {
     try {
-        const vetCares = await apiRequest(`/animals/maker/${makerId}/vet_history/`);
-        console.log('История ветобработок:', vetCares);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/vet_history/`);
+        console.log('История ветобработок:', response);
 
-        if (vetCares.length) {
-            const lastCare = vetCares[0]; // Берем первую запись
+        // Проверяем, есть ли `results`, и берём первый элемент
+        if (response.results && response.results.length > 0) {
+            const lastCare = response.results[0];
+
             document.getElementById('last-vet-date').textContent = lastCare.date_of_care || '-';
             document.getElementById('last-vet-name').textContent = lastCare.veterinary_care?.care_name || 'Не указано';
             document.getElementById('last-vet-type').textContent = lastCare.veterinary_care?.care_type || 'Не указан';
             document.getElementById('last-vet-medication').textContent = lastCare.veterinary_care?.medication || 'Не указан';
             document.getElementById('last-vet-purpose').textContent = lastCare.veterinary_care?.purpose || 'Нет цели';
         } else {
+            // Если нет данных, ставим прочерки
             ['last-vet-date', 'last-vet-name', 'last-vet-type', 'last-vet-medication', 'last-vet-purpose']
                 .forEach(id => document.getElementById(id).textContent = '-');
         }
@@ -175,8 +186,9 @@ async function loadLastVetCare(makerId) {
 }
 
 
+
 async function saveMakerDetails() {
-    const makerId = document.getElementById('maker-detail').dataset.makerId;
+    const tagNumber = document.getElementById('maker-detail').dataset.tagNumber;
 
     const data = {
         tag: document.getElementById('tag').value,
@@ -189,7 +201,7 @@ async function saveMakerDetails() {
     };
 
     try {
-        await apiRequest(`/animals/maker/${makerId}/`, 'PATCH', data);
+        await apiRequest(`/animals/maker/${tagNumber}/`, 'PATCH', data);
         alert('Данные успешно сохранены');
     } catch (error) {
         console.error('Ошибка сохранения данных:', error);
@@ -201,7 +213,7 @@ async function saveMakerDetails() {
 
 // Добавление взвешивания
 async function addWeightRecord() {
-    const tagId = parseInt(document.getElementById('maker-detail').dataset.makerId); // ID вместо строки
+    const tagNum = document.getElementById('maker-detail').dataset.tagNumber; // ID вместо строки
     const weight = document.getElementById('edit-weight-value').value;
     const weightDate = document.getElementById('edit-weight-date').value;
 
@@ -211,7 +223,7 @@ async function addWeightRecord() {
     }
 
     const data = {
-        tag: parseInt(tagId), // Преобразуем ID в число
+        tag_number: tagNum, // Преобразуем ID в число
         weight: parseFloat(weight),
         weight_date: weightDate, // Формат: yyyy-MM-dd
     };
@@ -219,7 +231,7 @@ async function addWeightRecord() {
     try {
         await apiRequest('/veterinary/weight-record/', 'POST', data);
         alert('Вес добавлен!');
-        await loadLastWeight(tagId);
+        await loadLastWeight(tagNum);
     } catch (error) {
         console.error('Ошибка при добавлении веса:', error);
         alert('Ошибка при добавлении веса.');
@@ -228,7 +240,7 @@ async function addWeightRecord() {
 
 
 async function addVetRecord() {
-    const makerId = document.getElementById('maker-detail').dataset.makerId;
+    const tagNumber = document.getElementById('maker-detail').dataset.tagNumber;
     const treatmentId = document.getElementById('vet-treatment-select').value;
     const careDate = document.getElementById('vet-treatment-date').value;
 
@@ -238,7 +250,7 @@ async function addVetRecord() {
     }
 
     const data = {
-        tag: makerId, // Указываем ID производителя
+        tag_number: tagNumber, // Указываем ID производителя
         treatment_id: parseInt(treatmentId),
         date_of_care: careDate, // Дата обработки
         comments: document.getElementById('vet-treatment-comments').value || ''
@@ -249,7 +261,7 @@ async function addVetRecord() {
     try {
         await apiRequest('/veterinary/veterinary/vetcare/', 'POST', data);
         alert('Ветобработка добавлена!');
-        await loadLastVetCare(makerId); // Обновляем отображение последней обработки
+        await loadLastVetCare(tagNumber); // Обновляем отображение последней обработки
     } catch (error) {
         console.error('Ошибка добавления ветобработки:', error);
     }
@@ -298,9 +310,9 @@ function displayTreatmentDetails() {
 }
 
 
-async function loadParents(makerId) {
+async function loadParents(tagNumber) {
     try {
-        const maker = await apiRequest(`/animals/maker/${makerId}/`);
+        const maker = await apiRequest(`/animals/maker/${tagNumber}/`);
         const mother = maker.mother;
         const father = maker.father;
 
@@ -316,7 +328,7 @@ function updateParentDisplay(mother, father) {
 
     if (mother) {
         motherDisplay.textContent = mother.tag_number;
-        document.getElementById('mother-link').href = `/animals/sheep/${mother.id}/info/`;
+        document.getElementById('mother-link').href = `/animals/sheep/${mother.tag_number}/info/`;
     } else {
         motherDisplay.textContent = 'Нет данных';
         document.getElementById('mother-link').href = '#';
@@ -324,7 +336,7 @@ function updateParentDisplay(mother, father) {
 
     if (father) {
         fatherDisplay.textContent = father.tag_number;
-        document.getElementById('father-link').href = `/animals/maker/${father.id}/info/`;
+        document.getElementById('father-link').href = `/animals/maker/${father.tag_number}/info/`;
     } else {
         fatherDisplay.textContent = 'Нет данных';
         document.getElementById('father-link').href = '#';
@@ -335,7 +347,7 @@ function updateParentDisplay(mother, father) {
 
 
 async function updateParents() {
-    const makerId = document.getElementById('maker-detail').dataset.makerId; // ID производителя
+    const tagNumber = document.getElementById('maker-detail').dataset.tagNumber; // ID производителя
     const motherTagNumber = document.getElementById('mother-input').value.trim(); // Бирка мамы
     const fatherTagNumber = document.getElementById('father-input').value.trim(); // Бирка папы
 
@@ -346,13 +358,13 @@ async function updateParents() {
 
     try {
         // Отправляем запрос на обновление родителей
-        await apiRequest(`/animals/maker/${makerId}/update_parents/`, 'PATCH', {
+        await apiRequest(`/animals/maker/${tagNumber}/update_parents/`, 'PATCH', {
             mother_tag_number: motherTagNumber || null,
             father_tag_number: fatherTagNumber || null,
         });
 
         alert('Родители успешно обновлены!');
-        await loadParents(makerId); // Обновляем данные родителей на странице
+        await loadParents(tagNumber); // Обновляем данные родителей на странице
     } catch (error) {
         console.error('Ошибка обновления родителей:', error);
         alert('Ошибка при обновлении родителей');

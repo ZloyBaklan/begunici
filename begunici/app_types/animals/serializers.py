@@ -100,7 +100,6 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         representation = super().to_representation(instance)
         if instance.tag:
             representation['tag'] = {
-                'id': instance.tag.id,
                 'tag_number': instance.tag.tag_number,
                 'animal_type': instance.tag.animal_type  # Добавляем animal_type
             }
@@ -159,7 +158,7 @@ class MakerChildSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Maker
-        fields = ['id', 'tag_number', 'animal_type', 'age', 'link', 'is_archived', 'archive_status', 'archive_date']
+        fields = ['tag_number', 'animal_type', 'age', 'link', 'is_archived', 'archive_status', 'archive_date']
 
 
     def get_link(self, obj):
@@ -170,7 +169,8 @@ class MakerChildSerializer(serializers.ModelSerializer):
             'Ram': 'ram',
         }
         # Генерируем ссылку в зависимости от типа животного
-        return f"/animals/{animal_type_to_route.get(obj.tag.animal_type, 'unknown')}/{obj.id}/info/"
+        return f"/animals/{animal_type_to_route.get(obj.tag.animal_type, 'unknown')}/{obj.tag.tag_number}/info/"
+
 
 
 
@@ -233,7 +233,6 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     """
     Полиморфный сериализатор для архива животных.
     """
-    id = serializers.IntegerField()
     tag_number = serializers.CharField()
     animal_type = serializers.CharField()
     status = serializers.CharField(source='animal_status__status_type', allow_null=True)
@@ -246,7 +245,6 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         # Если instance — это словарь (после использования .values())
         if isinstance(instance, dict):
             return {
-                'id': instance['id'],
                 'tag_number': instance['tag__tag_number'],
                 'animal_type': instance['tag__animal_type'],
                 'status': instance.get('animal_status__status_type', 'Нет данных'),
@@ -259,7 +257,6 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         tag_number = instance.tag.tag_number if instance.tag else 'Нет данных'
         animal_type = instance.tag.animal_type if instance.tag else 'Unknown'
         return {
-            'id': instance.id,
             'tag_number': tag_number,
             'animal_type': animal_type,
             'status': instance.animal_status.status_type if instance.animal_status else 'Нет данных',

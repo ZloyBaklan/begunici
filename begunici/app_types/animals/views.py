@@ -38,6 +38,15 @@ class MakerViewSet(viewsets.ModelViewSet):
     search_fields = ['tag__tag_number', 'animal_status__status_type', 'place__sheepfold']
     pagination_class = PaginationSetting  # Добавляем пагинацию
 
+    def get_object(self):
+        print(f"DEBUG: self.kwargs содержат: {self.kwargs}")  # Логируем входные данные
+        tag_number = self.kwargs['pk']
+        print(f"Получен tag_number из URL: {tag_number}")  # Логируем значение
+        """
+        Переопределяем метод, чтобы искать объект по `tag_number`, а не по `pk`.
+        """
+        return Maker.objects.get(tag__tag_number=tag_number)
+
     @action(detail=True, methods=['post'], url_path='update_working_condition')
     def update_working_condition(self, request, pk=None):
         """
@@ -63,7 +72,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     def add_weight(self, request, pk=None):
         maker = self.get_object()
         weight_data = {
-            'tag': maker.tag.id,
+            'tag_number': maker.tag,
             'weight': request.data.get('weight'),
             'weight_date': request.data.get('date'),
         }
@@ -78,7 +87,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     def add_vet_care(self, request, pk=None):
         maker = self.get_object()
         vet_data = {
-            'tag': maker.tag.id,
+            'tag_number': maker,
             'care_type': request.data.get('care_type'),
             'care_name': request.data.get('care_name'),
             'medication': request.data.get('medication'),
@@ -93,7 +102,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='weight_history')
     def weight_history(self, request, pk=None):
         maker = self.get_object()
-        history = WeightRecord.objects.filter(tag=maker.tag).order_by('-weight_date')
+        history = WeightRecord.objects.filter(tag__tag_number=maker.tag.tag_number).order_by('-weight_date')
         serializer = WeightRecordSerializer(history, many=True)
         return Response(serializer.data)
 
@@ -105,7 +114,7 @@ class MakerViewSet(viewsets.ModelViewSet):
         """
 
         maker = self.get_object()
-        vet_history = Veterinary.objects.filter(tag=maker.tag).select_related('veterinary_care').order_by('-date_of_care')
+        vet_history = Veterinary.objects.filter(tag__tag_number=maker.tag.tag_number).select_related('veterinary_care').order_by('-date_of_care')
         # Применяем пагинацию
         page = self.paginate_queryset(vet_history)
         if page is not None:
@@ -122,8 +131,8 @@ class MakerViewSet(viewsets.ModelViewSet):
         """
         Возвращает историю перемещений для конкретного животного с поддержкой пагинации.
         """
-        maker = self.get_object()  # Получаем объект Maker по pk
-        place_movements = PlaceMovement.objects.filter(tag=maker.tag).order_by('-new_place__date_of_transfer')
+        maker = self.get_object()  # Получаем объект Maker по tag_number
+        place_movements = PlaceMovement.objects.filter(tag__tag_number=maker.tag.tag_number).order_by('-new_place__date_of_transfer')
         
         # Применяем пагинацию
         page = self.paginate_queryset(place_movements)
@@ -143,7 +152,7 @@ class MakerViewSet(viewsets.ModelViewSet):
         Возвращает историю статусов для конкретного животного с поддержкой пагинации.
         """
         maker = self.get_object()  # Получаем объект Maker
-        status_history = StatusHistory.objects.filter(tag=maker.tag).order_by('-new_status__date_of_status')
+        status_history = StatusHistory.objects.filter(tag__tag_number=maker.tag.tag_number).order_by('-new_status__date_of_status')
 
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
@@ -176,7 +185,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     def add_place_movement(self, request, pk=None):
         maker = self.get_object()
         movement_data = {
-            'tag': maker.tag.id,
+            'tag_number': maker.tag.tag_number,
             'old_place': request.data.get('old_place'),
             'new_place': request.data.get('new_place'),
             'date_of_transfer': request.data.get('new_place__date_of_transfer'),
@@ -273,7 +282,7 @@ class SheepViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=['post'], url_path='add_lambing')
     def add_lambing(self, request, pk=None):
         sheep = self.get_object()
-        maker = Maker.objects.get(pk=request.data.get('maker_id'))
+        maker = Maker.objects.get(tag_number=request.data.get('maker_id'))
         lambing = sheep.add_lambing(
             maker=maker,
             actual_lambing_date=request.data.get('actual_lambing_date'),
@@ -299,13 +308,13 @@ class MakerDetailView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        maker_id = self.kwargs.get('pk')
-        maker = Maker.objects.filter(pk=maker_id).first()
+        tag_number = self.kwargs.get('tag_number')
+        maker = Maker.objects.filter(tag__tag_number=tag_number).first()
         try:
-            maker = Maker.objects.get(pk=maker_id)
+            maker = Maker.objects.get(tag__tag_number=tag_number)
             context['maker'] = maker
         except Maker.DoesNotExist:
-            print(f"Maker with pk={maker_id} not found")  # Отладочная информация
+            print(f"Maker with tag_number={tag_number} not found")  # Отладочная информация
             raise Http404("Производитель не найден")
         return context
 
@@ -315,11 +324,11 @@ class MakerAnalyticsView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        maker_id = self.kwargs.get('pk')
-        
+        tag_number = self.kwargs.get('tag_number')
+        maker = Maker.objects.filter(tag__tag_number=tag_number).first()
         try:
-            maker = Maker.objects.get(pk=maker_id)
-            context['maker'] = MakerSerializer(maker).data
+            maker = Maker.objects.get(tag__tag_number=tag_number)
+            context['maker'] = maker
         except Maker.DoesNotExist:
             raise Http404("Производитель не найден")
         # Используем метод сериализации детей

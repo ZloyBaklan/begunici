@@ -82,23 +82,23 @@ class VeterinaryViewSet(viewsets.ModelViewSet):
     serializer_class = VeterinarySerializer
     permission_classes = [AllowAny]  # Доступ без аутентификации
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['veterinary_care__care_type', 'date_of_care', 'tag']  # Фильтрация по типу обработки, дате и бирке
+    filterset_fields = ['veterinary_care__care_type', 'date_of_care', 'tag_number']  # Фильтрация по типу обработки, дате и бирке
 
     @action(detail=False, methods=['post'], url_path='vetcare')
     def add_vet_care(self, request):
         """
         Добавление ветобработки животному.
         """
-        tag_id = request.data.get('tag')
+        tag_number = request.data.get('tag_number')  # Используем `tag_number`
         treatment_id = request.data.get('treatment_id')
         date_of_care = request.data.get('date_of_care')
 
-        if not tag_id or not treatment_id or not date_of_care:
+        if not tag_number or not treatment_id or not date_of_care:
             return Response({'error': 'Все поля обязательны'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Получаем объекты
-            tag = Tag.objects.get(id=tag_id)
+            tag = Tag.objects.get(tag_number=tag_number)
             veterinary_care = VeterinaryCare.objects.get(id=treatment_id)
 
             # Создаем новую запись
@@ -142,16 +142,38 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
     serializer_class = WeightRecordSerializer
     permission_classes = [AllowAny]  # Доступ без аутентификации
 
+    def create(self, request, *args, **kwargs):
+        tag_number = request.data.get('tag_number')
+        
+        if not tag_number:
+            return Response({'error': 'Бирка обязательна'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            tag = Tag.objects.get(tag_number=tag_number)
+        except Tag.DoesNotExist:
+            return Response({'error': 'Бирка не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Формируем новые данные с объектом tag
+        data = request.data.copy()
+        data['tag'] = tag.id  # Передаём ID найденного объекта
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
     @action(detail=False, methods=['get'])
     def weight_history(self, request):
         """
         Получаем всю историю веса по бирке, переданной через query parameter.
         """
-        tag_id = request.query_params.get('tag')
-        if not tag_id:
-            return Response({'error': 'Tag ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        tag_number = request.query_params.get('tag_number')  # Используем `tag_number`
+        if not tag_number:
+            return Response({'error': 'Tag number is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        history = WeightRecord.get_weight_history(tag_id)
+        history = WeightRecord.get_weight_history(tag_number)
         serializer = WeightRecordSerializer(history, many=True)
         return Response(serializer.data)
 
@@ -161,11 +183,11 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
         """
         Получаем изменения веса для животного.
         """
-        tag_id = request.query_params.get('tag')
-        if not tag_id:
-            return Response({'error': 'Tag ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        tag_number = request.query_params.get('tag_number')  # Используем `tag_number`
+        if not tag_number:
+            return Response({'error': 'Tag number is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        changes = WeightRecord.get_weight_changes(tag_id)
+        changes = WeightRecord.get_weight_changes(tag_number)
         return Response(changes)
 
     @action(detail=False, methods=['post'])
@@ -173,17 +195,17 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
         """
         Добавление новой записи веса.
         """
-        tag_id = request.data.get('tag')
+        tag_number = request.data.get('tag_number')  # Используем `tag_number`
         weight = request.data.get('weight')
         weight_date = request.data.get('weight_date')
 
-        if not tag_id or not weight or not weight_date:
+        if not tag_number or not weight or not weight_date:
             return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Проверка и преобразование даты
             weight_date = timezone.now().date()
-            tag = Tag.objects.get(id=tag_id)
+            tag = Tag.objects.get(tag_number=tag_number)  # Теперь ищем по `tag_number`
             WeightRecord.objects.create(tag=tag, weight=weight, weight_date=weight_date)
             return Response({'status': 'Weight record added successfully'}, status=status.HTTP_201_CREATED)
         except Tag.DoesNotExist:

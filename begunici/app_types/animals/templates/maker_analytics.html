@@ -2,7 +2,7 @@
 {% load static %}
 
 {% block content %}
-<div id="analytics-detail" data-maker-id="{{ maker.id }}">
+<div id="analytics-detail" data-maker-id="{{ maker.tag.tag_number }}">
     <h1>Аналитика: {{ maker.tag.tag_number }}</h1>
 
     <!-- График веса -->

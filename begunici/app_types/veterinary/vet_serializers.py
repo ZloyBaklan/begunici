@@ -116,6 +116,7 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
 
 class VeterinarySerializer(serializers.ModelSerializer):
     veterinary_care = VeterinaryCareSerializer()  # Используем вложенный сериализатор
+    tag_number = serializers.CharField(source='tag.tag_number', read_only=True)  # Добавляем `tag_number`
 
     class Meta:
         model = Veterinary
@@ -169,14 +170,25 @@ class TagSerializer(serializers.ModelSerializer):
         return instance
 
 class WeightRecordSerializer(serializers.ModelSerializer):
+    tag_number = serializers.CharField(source='tag.tag_number', read_only=True)  # Добавляем номер бирки
+    
+    def validate_tag_number(self, value):
+        """ Проверяем, существует ли tag_number """
+        if not Tag.objects.filter(tag_number=value).exists():
+            raise serializers.ValidationError("Бирка с таким номером не найдена.")
+        return value
+
+    def create(self, validated_data):
+        """ Подменяем tag_number на объект Tag перед созданием записи """
+        tag_number = validated_data.pop('tag')
+        tag = Tag.objects.get(tag_number=tag_number)
+        validated_data['tag'] = tag
+        return super().create(validated_data)
+    
     class Meta:
         model = WeightRecord
         fields = '__all__'
 
-    def validate(self, data):
-        if 'tag' not in data:
-            raise serializers.ValidationError("Поле 'tag' обязательно.")
-        return data
 
 # Сериализатор для изменения веса
 class WeightChangeSerializer(serializers.Serializer):

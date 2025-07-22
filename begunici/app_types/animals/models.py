@@ -79,40 +79,65 @@ class AnimalBase(models.Model):
         raise NotImplementedError("Метод get_animal_type должен быть переопределён в дочерних классах.")
 
     def save(self, *args, **kwargs):
+        """
+        Переопределяем сохранение, учитывая:
+        1. Архивирование животного при изменении статуса.
+        2. Обновление `animal_type` у `Tag`.
+        3. Создание записей о перемещении (`PlaceMovement`).
+        4. Создание записей об изменении статуса (`StatusHistory`).
+        """
+        is_new = self.pk is None  # Проверяем, создаётся ли новый объект
+        old_place = None
+        old_status = None
+
+        # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in ['Убыл', 'Убой', 'Продажа']:
             self.is_archived = True
         else:
             self.is_archived = False
             self.calculate_age()
-        
-        # Автоматическое заполнение animal_type в Tag
+
+        # 🔹 Автоматическое заполнение `animal_type` у `Tag`
         if self.tag:
-            self.tag.animal_type = self.get_animal_type()  # Используем метод get_animal_type
+            self.tag.animal_type = self.get_animal_type()
             self.tag.save()
-        
-        # Обработка изменений места (создание записи о перемещении)
-        if self.place and self.pk:
-            old_place = self.__class__.objects.get(pk=self.pk).place
-            print(f"Старое место: {old_place}, Новое место: {self.place}")
-            if old_place != self.place:
-                movement = PlaceMovement.objects.create(
-                    tag=self.tag,
-                    old_place=old_place,
-                    new_place=self.place
-                )
-                print(f"Создано перемещение: {movement}")
 
-        #  Обработка изменений статуса
-        if self.animal_status and self.pk:
-            old_status = self.__class__.objects.get(pk=self.pk).animal_status
-            if old_status != self.animal_status:
-                StatusHistory.objects.create(
-                    tag=self.tag,
-                    old_status=old_status if old_status else None,
-                    new_status=self.animal_status
-                )
+        # 🔹 Поиск предыдущего места (`old_place`) перед обновлением
+        if not is_new and self.tag:
+            try:
+                existing_obj = self.__class__.objects.get(tag__tag_number=self.tag.tag_number)
+                old_place = existing_obj.place
+            except self.__class__.DoesNotExist:
+                old_place = None  # Если объекта нет, значит он создаётся впервые
 
-        super(AnimalBase, self).save(*args, **kwargs)
+        # 🔹 Создание записи о перемещении, если место изменилось
+        if self.place and self.tag and old_place and old_place != self.place:
+            movement = PlaceMovement.objects.create(
+                tag=self.tag,
+                old_place=old_place,
+                new_place=self.place
+            )
+            print(f"✅ Создано перемещение: {movement}")
+
+        # 🔹 Поиск предыдущего статуса (`old_status`) перед обновлением
+        if not is_new and self.tag:
+            try:
+                existing_obj = self.__class__.objects.get(tag__tag_number=self.tag.tag_number)
+                old_status = existing_obj.animal_status
+            except self.__class__.DoesNotExist:
+                old_status = None
+
+        # 🔹 Создание записи в `StatusHistory`, если статус изменился
+        if self.animal_status and self.tag and old_status != self.animal_status:
+            StatusHistory.objects.create(
+                tag=self.tag,
+                old_status=old_status if old_status else None,
+                new_status=self.animal_status
+            )
+
+        # 🔹 Сохранение объекта
+        super().save(*args, **kwargs)  # Обращаемся к `super()`, чтобы не зависеть от названия родителя
+
   
     
 
@@ -165,7 +190,7 @@ class Maker(AnimalBase):
         """
         Возвращает всех детей данного производителя.
         """
-        return Maker.objects.filter(Q(mother=self.tag) | Q(father=self.tag))
+        return Maker.objects.filter(Q(mother__tag_number=self.tag.tag_number) | Q(father__tag_number=self.tag.tag_number))
 
 
 
@@ -339,5 +364,5 @@ class Sheep(AnimalBase):
         """
         Возвращает список детей производителя.
         """
-        return Sheep.objects.filter(models.Q(mother=self.tag) | models.Q(father=self.tag))
+        return Sheep.objects.filter(Q(mother__tag_number=self.tag.tag_number) | Q(father__tag_number=self.tag.tag_number))
     

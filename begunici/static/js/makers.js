@@ -163,13 +163,12 @@ function renderMakers(makers) {
     makers.forEach((maker, index) => {
         const row = `<tr>
             <td>
-                <input type="checkbox" class="select-maker" 
-                data-id="${maker.id}" 
+                <input type="checkbox" class="select-maker"  
                 data-tag="${maker.tag.tag_number}" 
                 onclick="toggleSelectMaker(this)">
             </td>
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
-            <td><a href="/animals/maker/${maker.id}/info/">${maker.tag.tag_number}</a></td>
+            <td><a href="/animals/maker/${maker.tag.tag_number}/info/">${maker.tag.tag_number}</a></td>
             <td style="background-color:${maker.animal_status ? maker.animal_status.color : '#FFFFFF'}">
                 ${maker.animal_status ? maker.animal_status.status_type : 'Нет статуса'}
             </td>
@@ -206,11 +205,10 @@ let selectedMakers = new Map(); // Хранение {id: true/false}
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.select-maker');
     checkboxes.forEach(cb => {
-        const makerId = cb.dataset.id;
-        const tag = cb.dataset.tag;
+        const tagNumber= cb.dataset.tag;
 
         cb.checked = checkbox.checked;
-        selectedMakers.set(makerId, { tag, isSelected: checkbox.checked });
+        selectedMakers.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
     });
     console.log('Текущее состояние selectedMakers после выбора всех:', selectedMakers); // Отладочный вывод
     toggleDeleteButton();
@@ -219,10 +217,9 @@ function toggleSelectAll(checkbox) {
 
 // Функция для управления отдельным чекбоксом
 function toggleSelectMaker(checkbox) {
-    const makerId = checkbox.dataset.id;
-    const tag = checkbox.dataset.tag;
+    const tagNumber = checkbox.dataset.tag;;
 
-    selectedMakers.set(makerId, { tag, isSelected: checkbox.checked });
+    selectedMakers.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
     console.log('Текущее состояние selectedMakers:', selectedMakers); // Отладочный вывод
     toggleDeleteButton();
 }
@@ -242,16 +239,16 @@ function toggleDeleteButton() {
 function updateCheckboxStates() {
     const checkboxes = document.querySelectorAll('.select-maker');
     checkboxes.forEach(cb => {
-        const id = cb.dataset.id;
-        if (selectedMakers.has(id)) {
-            cb.checked = selectedMakers.get(id); // Устанавливаем состояние из selectedMakers
+        const tagNumber = cb.dataset.tag;
+        if (selectedMakers.has(tagNumber)) {
+            cb.checked = selectedMakers.get(tagNumber).isSelected; // Устанавливаем состояние из selectedMakers
         }
     });
 }
 
 
-function getTagFromTable(makerId) {
-    const row = document.querySelector(`.select-maker[data-id="${makerId}"]`);
+function getTagFromTable(tagNumber) {
+    const row = document.querySelector(`.select-maker[data-tag="${tagNumber}"]`);
     if (row) {
         return row.closest('tr').querySelector('td:nth-child(3)').innerText.trim(); // Извлекаем бирку
     }
@@ -260,19 +257,20 @@ function getTagFromTable(makerId) {
 
 // Функция для удаления выбранных записей
 async function deleteSelectedMakers() {
-    const selectedIds = Array.from(selectedMakers.entries())
-        .filter(([id, { isSelected }]) => isSelected)
-        .map(([id, { tag }]) => ({ id, tag }));
+    const selectedTags = Array.from(selectedMakers.entries())
+        .filter(([tagNumber, { isSelected }]) => isSelected)
+        .map(([tagNumber]) => tagNumber);
 
-    console.log('Выбранные для удаления:', selectedIds); // Отладочный вывод
 
-    if (selectedIds.length === 0) {
+    console.log('Выбранные для удаления:', selectedTags); // Отладочный вывод
+
+    if (selectedTags.length === 0) {
         alert('Нет выбранных записей для удаления');
         return;
     }
 
     // Подготавливаем список бирок для отображения
-    const tags = selectedIds.map(item => item.tag);
+    const tags = selectedTags.map(item => item.tag);
     const modal = document.getElementById('delete-modal');
     const modalMessage = document.getElementById('delete-modal-message');
     const confirmButton = document.getElementById('delete-confirm-button');
@@ -282,9 +280,9 @@ async function deleteSelectedMakers() {
 
     confirmButton.onclick = async () => {
         try {
-            for (const { id } of selectedIds) {
-                await apiRequest(`/animals/maker/${id}/`, 'DELETE');
-                selectedMakers.delete(id); // Удаляем из состояния
+            for (const { tag } of selectedTags) {
+                await apiRequest(`/animals/maker/${tag}/`, 'DELETE');
+                selectedMakers.delete(tag); // Удаляем из состояния
             }
             alert('Выбранные записи успешно удалены');
             fetchMakers(currentPage); // Обновляем текущую страницу
@@ -384,11 +382,12 @@ async function loadArchiveStatuses() {
     }
 }
 async function applyArchiveStatus() {
-    const selectedIds = Array.from(selectedMakers.entries())
-        .filter(([id, { isSelected }]) => isSelected)
-        .map(([id]) => id);
+    const selectedTags = Array.from(selectedMakers.entries())
+        .filter(([tagNumber, { isSelected }]) => isSelected)
+        .map(([tagNumber]) => tagNumber);
 
-    if (selectedIds.length === 0) {
+
+    if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');
         return;
     }
@@ -400,8 +399,8 @@ async function applyArchiveStatus() {
     }
 
     try {
-        for (const id of selectedIds) {
-            await apiRequest(`/animals/maker/${id}/`, 'PATCH', { animal_status_id: statusId });
+        for (const tag of selectedTags) {
+            await apiRequest(`/animals/maker/${tag}/`, 'PATCH', { animal_status_id: statusId });
         }
         alert('Выбранные записи успешно перенесены в архив.');
         closeArchiveModal();

@@ -46,22 +46,33 @@ async function apiRequest(url, method = 'GET', body = null) {
 
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const makerId = document.getElementById('analytics-detail').dataset.makerId;
+    if (!analyticsDetail) {
+        console.error("Ошибка: Элемент #analytics-detail не найден!");
+        return;
+    }
 
+    const tagNumber = analyticsDetail.dataset.tagNumber;
+    
+    if (!tagNumber) {
+        console.error("Ошибка: tagNumber отсутствует в dataset!");
+        return;
+    }
+
+    console.log("Получен tagNumber:", tagNumber);
     try {
-        await loadWeightHistory(makerId);
-        await loadChildren(makerId);
-        await loadVetCalendar(makerId);
-        await loadStatusHistory(makerId);
-        await loadPlaceHistory(makerId);
+        await loadWeightHistory(tagNumber);
+        await loadChildren(tagNumber);
+        await loadVetCalendar(tagNumber);
+        await loadStatusHistory(tagNumber);
+        await loadPlaceHistory(tagNumber);
     } catch (error) {
         console.error('Ошибка загрузки данных аналитики:', error);
     }
 });
 
-async function loadWeightHistory(makerId) {
+async function loadWeightHistory(tagNumber) {
     try {
-        const response = await apiRequest(`/animals/maker/${makerId}/weight_history/`);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/weight_history/`);
         const weightData = response.map(record => ({
             date: new Date(record.weight_date),
             weight: parseFloat(record.weight),
@@ -99,9 +110,9 @@ function renderWeightChart(data) {
 
 const analyticsPageSize = 3;
 
-async function loadChildren(makerId, page = 1) {
+async function loadChildren(tagNumber, page = 1) {
     try {
-        const response = await apiRequest(`/animals/maker/${makerId}/children/?page=${page}&page_size=${analyticsPageSize}`);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/children/?page=${page}&page_size=${analyticsPageSize}`);
         console.log('Дети:', response); // Убедитесь, что объект приходит корректно
 
         const childrenList = document.getElementById('children-list');
@@ -116,8 +127,8 @@ async function loadChildren(makerId, page = 1) {
             row.innerHTML = `
                 
                 <td>
-                    ${child.is_archived ? `<span style="color: red; cursor: pointer;" onclick="onChildClick(${makerId}, ${child.id})">${child.tag_number}</span>` :
-                    `<a href="#" onclick="onChildClick(${makerId}, ${child.id})">${child.tag_number}</a>`}
+                    ${child.is_archived ? `<span style="color: red; cursor: pointer;" onclick="onChildClick(${tagNumber}, ${child.tag_number})">${child.tag_number}</span>` :
+                    `<a href="#" onclick="onChildClick(${tagNumber}, ${child.tag_number})">${child.tag_number}</a>`}
                 </td>
                 <td>${child.animal_type}</td>
                 <td>${child.age}</td>
@@ -127,8 +138,8 @@ async function loadChildren(makerId, page = 1) {
         prevButton.disabled = !response.previous;
         nextButton.disabled = !response.next;
 
-        prevButton.onclick = () => loadChildren(makerId, page - 1);
-        nextButton.onclick = () => loadChildren(makerId, page + 1);
+        prevButton.onclick = () => loadChildren(tagNumber, page - 1);
+        nextButton.onclick = () => loadChildren(tagNumber, page + 1);
 
         document.getElementById('children-count').textContent = response.count;;
     } catch (error) {
@@ -137,9 +148,9 @@ async function loadChildren(makerId, page = 1) {
 }
 
 
-async function loadVetCalendar(makerId, page = 1) {
+async function loadVetCalendar(tagNumber, page = 1) {
     try {
-        const response = await apiRequest(`/animals/maker/${makerId}/vet_history/?page=${page}&page_size=${analyticsPageSize}`);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/vet_history/?page=${page}&page_size=${analyticsPageSize}`);
         const Vetcalendar = document.getElementById('vet-calendar');
         const prevButton = document.getElementById('vet-calendar-prev');
         const nextButton = document.getElementById('vet-calendar-next');
@@ -158,17 +169,17 @@ async function loadVetCalendar(makerId, page = 1) {
         prevButton.disabled = !response.previous;
         nextButton.disabled = !response.next;
 
-        prevButton.onclick = () => loadVetCalendar(makerId, page - 1);
-        nextButton.onclick = () => loadVetCalendar(makerId, page + 1);
+        prevButton.onclick = () => loadVetCalendar(tagNumber, page - 1);
+        nextButton.onclick = () => loadVetCalendar(tagNumber, page + 1);
 
     } catch (error) {
         console.error('Ошибка загрузки календаря ветобработок:', error);
     }
 }
 
-async function loadStatusHistory(makerId, page = 1) {
+async function loadStatusHistory(tagNumber, page = 1) {
     try {
-        const response = await apiRequest(`/animals/maker/${makerId}/status_history/?page=${page}&page_size=${analyticsPageSize}`);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/status_history/?page=${page}&page_size=${analyticsPageSize}`);
         const statusHistoryList = document.getElementById('status-history-list');
         const prevButton = document.getElementById('status-history-prev');
         const nextButton = document.getElementById('status-history-next');
@@ -189,8 +200,8 @@ async function loadStatusHistory(makerId, page = 1) {
         prevButton.disabled = !response.previous;
         nextButton.disabled = !response.next;
 
-        prevButton.onclick = () => loadStatusHistory(makerId, page - 1);
-        nextButton.onclick = () => loadStatusHistory(makerId, page + 1);
+        prevButton.onclick = () => loadStatusHistory(tagNumber, page - 1);
+        nextButton.onclick = () => loadStatusHistory(tagNumber, page + 1);
 
     } catch (error) {
         console.error('Ошибка загрузки истории статусов:', error);
@@ -301,16 +312,16 @@ function renderTableWithPagination(data, tableBodyId, pageSize = 3) {
 
 
 
-async function onChildClick(makerId, childId) {
+async function onChildClick(tagNumber, childTagNumber) {
     try {
         // Делаем запрос на API для получения всех детей производителя
-        const response = await apiRequest(`/animals/maker/${makerId}/children/`);
+        const response = await apiRequest(`/animals/maker/${tagNumber}/children/`);
 
         // Ищем конкретного ребёнка по ID
-        const child = response.results.find(c => c.id === childId);
+        const child = response.results.find(c => c.tag_number === childTagNumber);
 
         if (!child) {
-            console.error(`Ребёнок с ID ${childId} не найден.`);
+            console.error(`Ребёнок с ID ${childTagNumber} не найден.`);
             return;
         }
 
