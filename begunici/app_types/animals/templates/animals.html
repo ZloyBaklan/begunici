@@ -3,17 +3,78 @@
 {% block title %}Управление животными{% endblock %}
 
 {% block content %}
-<h1>Управление животными</h1>
+<div class="container mt-4">
+    <h1>Управление животными</h1>
 
-<!-- Кнопка для создания нового животного -->
-<li><a href="{% url 'animals:create_animal' %}">Добавить животное</a></li>
 
-<!-- Контент для вкладки "Показать животных" -->
-<li><div id="show-animal-content" class="tab-content" style="display: none;">
-    <h2>Список животных</h2>
-    <table id="maker-table">
-        <!-- Данные будут загружаться динамически -->
-    </table>
-</div></li>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Управление животными по типам</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:makers' %}" class="btn btn-secondary w-100 mb-2">
+                                Производители
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:rams' %}" class="btn btn-secondary w-100 mb-2">
+                                Бараны
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:ewes' %}" class="btn btn-secondary w-100 mb-2">
+                                Ярки
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:sheeps' %}" class="btn btn-secondary w-100 mb-2">
+                                Овцы
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Архив</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-12">
+                            <a href="{% url 'animals:main_archive' %}" class="btn btn-secondary w-100 mb-2">Общий архив</a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:main_archive' %}?type=Maker" class="btn btn-outline-secondary w-100 mb-2">
+                                Архив производителей
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:main_archive' %}?type=Ram" class="btn btn-outline-secondary w-100 mb-2">
+                                Архив баранов
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:main_archive' %}?type=Ewe" class="btn btn-outline-secondary w-100 mb-2">
+                                Архив ярок
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:main_archive' %}?type=Sheep" class="btn btn-outline-secondary w-100 mb-2">
+                                Архив овец
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
+</div>
 {% endblock %}

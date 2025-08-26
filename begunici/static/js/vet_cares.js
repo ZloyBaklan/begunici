@@ -1,19 +1,4 @@
-// Получение CSRF-токена для запросов
-function getCSRFToken() {
-    let cookieValue = null;
-    const name = 'csrftoken';
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
+import { getCSRFToken } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchCares();  // Загружаем список ветобработок при загрузке страницы
@@ -165,12 +150,11 @@ async function updateCare(careId) {
 
 // Удаление ветобработки
 async function deleteCare(careId) {
-    const csrfToken = getCSRFToken();
     try {
         const response = await fetch(`/veterinary/care/${careId}/`, {
             method: 'DELETE',
             headers: {
-                'X-CSRFToken': csrfToken,
+                'X-CSRFToken': getCSRFToken(),
             }
         });
 

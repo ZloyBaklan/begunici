@@ -1,22 +1,467 @@
-<!-- create_animal.html -->
 {% extends 'base.html' %}
 {% load static %}
+
 {% block content %}
-<h1>Выбор животного для создания</h1>
+<div class="container mt-4">
+    <h1>Создание животных</h1>
+    
+    <!-- Кнопка для тестирования API -->
+    <div class="mb-3">
+        <button class="btn btn-info" onclick="testAPI()">Тест API</button>
+    </div>
+    
+    <!-- Вкладки для выбора типа животного -->
+    <ul class="nav nav-tabs" id="animalTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="maker-tab" data-bs-toggle="tab" data-bs-target="#maker" type="button" role="tab" aria-controls="maker" aria-selected="true">Создать производителя</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ram-tab" data-bs-toggle="tab" data-bs-target="#ram" type="button" role="tab" aria-controls="ram" aria-selected="false">Создать барана</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ewe-tab" data-bs-toggle="tab" data-bs-target="#ewe" type="button" role="tab" aria-controls="ewe" aria-selected="false">Создать ярку</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sheep-tab" data-bs-toggle="tab" data-bs-target="#sheep" type="button" role="tab" aria-controls="sheep" aria-selected="false">Создать овцу</button>
+        </li>
+    </ul>
 
-<!-- Вкладки для выбора типа животного -->
-<ul class="nav nav-tabs" id="animalTabs" role="tablist">
+    <!-- Содержимое вкладок -->
+    <div class="tab-content" id="animalTabContent">
+        <!-- Вкладка производителя -->
+        <div class="tab-pane fade show active" id="maker" role="tabpanel" aria-labelledby="maker-tab">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>Создать производителя</h5>
+                </div>
+                <div class="card-body">
+                    <form id="create-maker-form">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="maker-tag">Бирка:</label>
+                                    <input type="text" class="form-control" id="maker-tag" name="tag" placeholder="Введите бирку" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="maker-animal_status">Статус животного:</label>
+                                    <select class="form-control" id="maker-animal_status" name="animal_status"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="maker-birth_date">Дата рождения:</label>
+                                    <input type="date" class="form-control" id="maker-birth_date" name="birth_date">
+                                </div>
+                                <div class="form-group">
+                                    <label for="maker-plemstatus">Племенной статус:</label>
+                                    <input type="text" class="form-control" id="maker-plemstatus" name="plemstatus" placeholder="Введите племенной статус">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="maker-place">Овчарня:</label>
+                                    <select class="form-control" id="maker-place" name="place"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="maker-working_condition">Рабочее состояние:</label>
+                                    <input type="text" class="form-control" id="maker-working_condition" name="working_condition" placeholder="Введите рабочее состояние">
+                                </div>
+                                <div class="form-group">
+                                    <label for="maker-note">Примечание:</label>
+                                    <input type="text" class="form-control" id="maker-note" name="note" placeholder="Введите примечание">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="createMaker()">Создать производителя</button>
+                    </form>
+                </div>
+            </div>
+        </div>
 
-    <li class="nav-item"><a href="{% url 'animals:makers' %}">Создать производителя</a></li>
-    <li class="nav-item">
-        <a class="nav-link" id="ewe-tab" data-toggle="tab" href="#ewe" role="tab" aria-controls="ewe" aria-selected="false">Создать ярку</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" id="ram-tab" data-toggle="tab" href="#ram" role="tab" aria-controls="ram" aria-selected="false">Создать барана</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" id="sheep-tab" data-toggle="tab" href="#sheep" role="tab" aria-controls="sheep" aria-selected="false">Создать овцу</a>
-    </li>
-</ul>
- 
+        <!-- Вкладка барана -->
+        <div class="tab-pane fade" id="ram" role="tabpanel" aria-labelledby="ram-tab">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>Создать барана</h5>
+                </div>
+                <div class="card-body">
+                    <form id="create-ram-form">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="ram-tag">Бирка:</label>
+                                    <input type="text" class="form-control" id="ram-tag" name="tag" placeholder="Введите бирку" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ram-animal_status">Статус животного:</label>
+                                    <select class="form-control" id="ram-animal_status" name="animal_status"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ram-birth_date">Дата рождения:</label>
+                                    <input type="date" class="form-control" id="ram-birth_date" name="birth_date">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="ram-place">Овчарня:</label>
+                                    <select class="form-control" id="ram-place" name="place"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ram-note">Примечание:</label>
+                                    <input type="text" class="form-control" id="ram-note" name="note" placeholder="Введите примечание">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="createRam()">Создать барана</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вкладка ярки -->
+        <div class="tab-pane fade" id="ewe" role="tabpanel" aria-labelledby="ewe-tab">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>Создать ярку</h5>
+                </div>
+                <div class="card-body">
+                    <form id="create-ewe-form">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="ewe-tag">Бирка:</label>
+                                    <input type="text" class="form-control" id="ewe-tag" name="tag" placeholder="Введите бирку" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ewe-animal_status">Статус животного:</label>
+                                    <select class="form-control" id="ewe-animal_status" name="animal_status"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ewe-birth_date">Дата рождения:</label>
+                                    <input type="date" class="form-control" id="ewe-birth_date" name="birth_date">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="ewe-place">Овчарня:</label>
+                                    <select class="form-control" id="ewe-place" name="place"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ewe-note">Примечание:</label>
+                                    <input type="text" class="form-control" id="ewe-note" name="note" placeholder="Введите примечание">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="createEwe()">Создать ярку</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вкладка овцы -->
+        <div class="tab-pane fade" id="sheep" role="tabpanel" aria-labelledby="sheep-tab">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>Создать овцу</h5>
+                </div>
+                <div class="card-body">
+                    <form id="create-sheep-form">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="sheep-tag">Бирка:</label>
+                                    <input type="text" class="form-control" id="sheep-tag" name="tag" placeholder="Введите бирку" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="sheep-animal_status">Статус животного:</label>
+                                    <select class="form-control" id="sheep-animal_status" name="animal_status"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="sheep-birth_date">Дата рождения:</label>
+                                    <input type="date" class="form-control" id="sheep-birth_date" name="birth_date">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="sheep-place">Овчарня:</label>
+                                    <select class="form-control" id="sheep-place" name="place"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="sheep-note">Примечание:</label>
+                                    <input type="text" class="form-control" id="sheep-note" name="note" placeholder="Введите примечание">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="createSheep()">Создать овцу</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Загружаем данные для всех форм
+    loadStatuses();
+    loadPlaces();
+});
+
+function testAPI() {
+    console.log('Testing API endpoints...');
+    
+    // Тестируем статусы
+    fetch('/veterinary/status/')
+        .then(response => {
+            console.log('Status API response status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Status API data:', data);
+            alert('Статусы API работает! Данные: ' + JSON.stringify(data).substring(0, 200) + '...');
+        })
+        .catch(error => {
+            console.error('Status API error:', error);
+            alert('Ошибка статусов API: ' + error.message);
+        });
+    
+    // Тестируем овчарни
+    fetch('/veterinary/place/')
+        .then(response => {
+            console.log('Place API response status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Place API data:', data);
+            alert('Овчарни API работает! Данные: ' + JSON.stringify(data).substring(0, 200) + '...');
+        })
+        .catch(error => {
+            console.error('Place API error:', error);
+            alert('Ошибка овчарен API: ' + error.message);
+        });
+}
+
+function loadStatuses() {
+    fetch('/veterinary/status/')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Statuses data:', data); // Отладочная информация
+            const statusSelects = [
+                'maker-animal_status', 'ram-animal_status', 'ewe-animal_status', 'sheep-animal_status'
+            ];
+            statusSelects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                if (select) {
+                    select.innerHTML = '<option value="">Выберите статус</option>';
+                    // Проверяем, есть ли пагинация (results) или данные возвращаются напрямую
+                    const statuses = data.results || data;
+                    if (Array.isArray(statuses)) {
+                        statuses.forEach(status => {
+                            const option = document.createElement('option');
+                            option.value = status.id;
+                            option.textContent = status.status_type;
+                            select.appendChild(option);
+                        });
+                    } else {
+                        console.error('Statuses data is not an array:', statuses);
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading statuses:', error);
+            alert('Ошибка загрузки статусов: ' + error.message);
+        });
+}
+
+function loadPlaces() {
+    fetch('/veterinary/place/')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Places data:', data); // Отладочная информация
+            const placeSelects = [
+                'maker-place', 'ram-place', 'ewe-place', 'sheep-place'
+            ];
+            placeSelects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                if (select) {
+                    select.innerHTML = '<option value="">Выберите овчарню</option>';
+                    // Проверяем, есть ли пагинация (results) или данные возвращаются напрямую
+                    const places = data.results || data;
+                    if (Array.isArray(places)) {
+                        places.forEach(place => {
+                            const option = document.createElement('option');
+                            option.value = place.id;
+                            option.textContent = place.sheepfold;
+                            select.appendChild(option);
+                        });
+                    } else {
+                        console.error('Places data is not an array:', places);
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading places:', error);
+            alert('Ошибка загрузки овчарен: ' + error.message);
+        });
+}
+
+function createMaker() {
+    const formData = new FormData(document.getElementById('create-maker-form'));
+    const data = {
+        tag: formData.get('tag'),
+        animal_status_id: formData.get('animal_status') || null,
+        birth_date: formData.get('birth_date') || null,
+        plemstatus: formData.get('plemstatus') || '',
+        place_id: formData.get('place') || null,
+        working_condition: formData.get('working_condition') || '',
+        note: formData.get('note') || ''
+    };
+
+    fetch('/animals/maker/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.id) {
+            alert('Производитель создан успешно!');
+            document.getElementById('create-maker-form').reset();
+        } else {
+            alert('Ошибка при создании производителя: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при создании производителя');
+    });
+}
+
+function createRam() {
+    const formData = new FormData(document.getElementById('create-ram-form'));
+    const data = {
+        tag: formData.get('tag'),
+        animal_status_id: formData.get('animal_status') || null,
+        birth_date: formData.get('birth_date') || null,
+        place_id: formData.get('place') || null,
+        note: formData.get('note') || ''
+    };
+
+    fetch('/animals/ram/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.id) {
+            alert('Баран создан успешно!');
+            document.getElementById('create-ram-form').reset();
+        } else {
+            alert('Ошибка при создании барана: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при создании барана');
+    });
+}
+
+function createEwe() {
+    const formData = new FormData(document.getElementById('create-ewe-form'));
+    const data = {
+        tag: formData.get('tag'),
+        animal_status_id: formData.get('animal_status') || null,
+        birth_date: formData.get('birth_date') || null,
+        place_id: formData.get('place') || null,
+        note: formData.get('note') || ''
+    };
+
+    fetch('/animals/ewe/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.id) {
+            alert('Ярка создана успешно!');
+            document.getElementById('create-ewe-form').reset();
+        } else {
+            alert('Ошибка при создании ярки: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при создании ярки');
+    });
+}
+
+function createSheep() {
+    const formData = new FormData(document.getElementById('create-sheep-form'));
+    const data = {
+        tag: formData.get('tag'),
+        animal_status_id: formData.get('animal_status') || null,
+        birth_date: formData.get('birth_date') || null,
+        place_id: formData.get('place') || null,
+        note: formData.get('note') || ''
+    };
+
+    fetch('/animals/sheep/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.id) {
+            alert('Овца создана успешно!');
+            document.getElementById('create-sheep-form').reset();
+        } else {
+            alert('Ошибка при создании овцы: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при создании овцы');
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Функция для получения CSRF токена из формы
+function getCSRFToken() {
+    const token = document.querySelector('[name=csrfmiddlewaretoken]');
+    return token ? token.value : getCookie('csrftoken');
+}
+</script>
 {% endblock %}

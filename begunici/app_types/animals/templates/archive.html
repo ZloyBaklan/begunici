@@ -1,39 +1,63 @@
 {% extends 'base.html' %}
+
 {% load static %}
+
 {% block content %}
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Архив животных</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-</head>
-<body>
     <h1>Архив животных</h1>
-    <div>
-        <label for="type-filter">Тип животных:</label>
-        <select id="type-filter">
-            <option value="">Все</option>
-            <option value="Maker">Производитель</option>
-            <option value="Sheep">Овца</option>
-            <option value="Ewe">Ярка</option>
-            <option value="Ram">Баран</option>
+    
+    <!-- Фильтры для архива -->
+    <div class="filters">
+        <label for="animal-type-filter">Тип животного:</label>
+        <select id="animal-type-filter" onchange="filterArchive()">
+            <option value="">Все животные</option>
+            <option value="Maker">Производители</option>
+            <option value="Ram">Бараны</option>
+            <option value="Ewe">Ярки</option>
+            <option value="Sheep">Овцы</option>
         </select>
-        <button onclick="fetchArchive()">Применить фильтр</button>
+        
+        <label for="status-filter">Статус:</label>
+        <select id="status-filter" onchange="filterArchive()">
+            <option value="">Все статусы</option>
+            <option value="Убой">Убой</option>
+            <option value="Продажа">Продажа</option>
+            <option value="Выбыл">Выбыл</option>
+        </select>
+        
+        <input type="text" id="archive-search" placeholder="Поиск по бирке..." oninput="filterArchive()">
     </div>
+
+    <!-- Таблица архива -->
     <table>
         <thead>
             <tr>
+                <th>№</th>
+                <th>Тип животного</th>
                 <th>Бирка</th>
-                <th>Тип</th>
                 <th>Статус</th>
+                <th>Дата статуса</th>
                 <th>Возраст</th>
-                <th>Дата рождения</th>
                 <th>Овчарня</th>
+                <th>Действия</th>
             </tr>
         </thead>
-        <tbody id="archive-table-body"></tbody>
+        <tbody id="archive-list"></tbody>
     </table>
-    
-</body>
-<script src="{% static 'js/archive.js' %}"></script>
+
+    <div id="pagination"></div>
+
+    <!-- Подключение скриптов -->
+    <script type="module" src="{% static 'js/archive.js' %}"></script>
+    <script>
+        function filterArchive() {
+            const animalType = document.getElementById('animal-type-filter').value;
+            const status = document.getElementById('status-filter').value;
+            const search = document.getElementById('archive-search').value;
+            
+            // Вызываем функцию фильтрации из модуля
+            if (typeof filterArchiveData === 'function') {
+                filterArchiveData(animalType, status, search);
+            }
+        }
+    </script>
 {% endblock %}

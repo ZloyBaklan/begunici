@@ -15,12 +15,11 @@ function showTab(tabId) {
 // Функция для отправки данных через fetch
 async function sendData(url, data) {
     try {
-        const csrfToken = getCSRFToken();
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
+                'X-CSRFToken': getCSRFToken()
             },
             body: JSON.stringify(data),
         });
@@ -60,7 +59,7 @@ async function showList(url, listElementId, headers) {
         // Создаем таблицу только если есть данные
         if (data.results.length > 0) {
             let table = '<table>';
-            
+
             // Заголовки таблицы
             let headerRow = '<tr>';
             headerRow += '<th>№</th>';  // Добавляем столбец для нумерации

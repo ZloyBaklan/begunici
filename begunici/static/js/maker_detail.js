@@ -1,52 +1,38 @@
-// Получение CSRF-токена из cookies
+// ! UTILS.sj cannot be importted due to injection html
+// TODO Resolve that
 function getCSRFToken() {
-    const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
-    return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+    const cookies = document.cookie.split(";").map(c => c.trim());
+    const tokenCookie = cookies.find(c => c.startsWith("csrftoken="));
+    
+    if (!tokenCookie) return undefined;
+
+    return decodeURIComponent(tokenCookie.split("=")[1]);
 }
 
-// Универсальный запрос к API
-async function apiRequest(url, method = 'GET', body = null) {
-    const headers = { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() };
-    const options = { method, headers };
-    if (body) options.body = JSON.stringify(body);
+async function apiRequest(url, method, body) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCSRFToken(),
+    }
 
-    console.log(`Запрос: ${method} ${url}`, body || '');
+    const options = { method, headers }
+    if (body) options.body = JSON.stringify(body)
 
     try {
-        const response = await fetch(url, options);
+        const response = await fetch(url, options)
 
-        // Обработка ошибок
         if (!response.ok) {
-            await handleError(response);
+            const errorData = await response.json();
+            console.error(`Ошибка API [${response.status}]:`, errorData);
+            throw new Error(errorData.detail || 'Ошибка API');
         }
-
-        // Обработка пустого тела (204 No Content)
-        if (response.status === 204) return {};
-
-        const jsonResponse = await response.json();
-        console.log('Ответ JSON:', jsonResponse);
-        return jsonResponse;
-
+        
+        return await response.json();
     } catch (error) {
-        console.error('Ошибка запроса:', error.message);
-        alert(`Ошибка: ${error.message}`);
+        console.error('Ошибка сети:', error);
         throw error;
     }
 }
-
-// Обработчик ошибок ответа сервера
-async function handleError(response) {
-    let errorMessage = `Ошибка: ${response.statusText}`;
-    try {
-        const errorText = await response.text();
-        errorMessage = JSON.parse(errorText).detail || errorMessage;
-    } catch {
-        // Если ответ не JSON, оставляем стандартное сообщение
-    }
-    console.error('Ошибка API:', errorMessage);
-    throw new Error(errorMessage);
-}
-
 
 // Загрузка данных при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {

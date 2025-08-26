@@ -1,57 +1,14 @@
-// Обновленный функционал аналитики (maker_analytics.js)
-
-function getCSRFToken() {
-    let cookieValue = null;
-    const name = 'csrftoken';
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-// Функция для выполнения API-запросов
-async function apiRequest(url, method = 'GET', body = null) {
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCSRFToken(),
-    };
-    const options = { method, headers };
-    if (body) options.body = JSON.stringify(body);
-
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error(`Ошибка API [${response.status}]:`, errorData);
-            throw new Error(errorData.detail || 'Ошибка API');
-        }
-        // Если это DELETE, не пытаемся обработать тело ответа
-        if (method === 'DELETE') return;
-        return await response.json();
-    } catch (error) {
-        console.error('Ошибка сети:', error);
-        throw error; // Пробрасываем ошибку для обработки в вызывающем коде
-    }
-    
-}
-
-
-
+import { apiRequest } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const analyticsDetail = document.getElementById("analytics-detail")
+    
     if (!analyticsDetail) {
         console.error("Ошибка: Элемент #analytics-detail не найден!");
         return;
     }
 
-    const tagNumber = analyticsDetail.dataset.tagNumber;
+    const tagNumber = analyticsDetail.dataset.makerId;
     
     if (!tagNumber) {
         console.error("Ошибка: tagNumber отсутствует в dataset!");

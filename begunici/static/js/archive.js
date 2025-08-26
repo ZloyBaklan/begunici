@@ -1,94 +1,133 @@
-function getCSRFToken() {
-    let cookieValue = null;
-    const name = 'csrftoken';
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
+import { apiRequest } from "./utils.js";
+
+let allArchiveData = []; // Храним все данные архива
+
+document.addEventListener('DOMContentLoaded', function () {
+    fetchArchive();  // Загружаем архив при загрузке страницы
+});
+
+// Функция загрузки архива
+async function fetchArchive() {
+    try {
+        const archive = await apiRequest('/animals/archive/');
+        allArchiveData = archive.results || archive;
+        displayArchive(allArchiveData);
+    } catch (error) {
+        console.error('Ошибка при загрузке архива:', error);
     }
-    return cookieValue;
 }
 
-// Функция для выполнения API-запросов
-async function apiRequest(url, method = 'GET', body = null) {
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCSRFToken(),
-    };
-    const options = { method, headers };
-    if (body) options.body = JSON.stringify(body);
+// Функция отображения архива
+function displayArchive(data) {
+    const archiveTable = document.getElementById('archive-list');
+    archiveTable.innerHTML = '';
 
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error(`Ошибка API [${response.status}]:`, errorData);
-            throw new Error(errorData.detail || 'Ошибка API');
+    data.forEach((animal, index) => {
+        const row = document.createElement('tr');
+        
+        // Получаем данные с учетом формата ArchiveAnimalSerializer
+        const tagNumber = animal.tag_number;
+        const animalTypeCode = animal.animal_type;
+        const status = animal.status || 'Не указан';
+        const archivedDate = animal.archived_date || 'Не указана';
+        const age = animal.age || 'Не указан';
+        const place = animal.place || 'Не указано';
+        
+        // Определяем тип животного и URL
+        let animalType = 'Неизвестно';
+        let detailUrl = '';
+        
+        if (animalTypeCode === 'Maker') {
+            animalType = 'Производитель';
+            detailUrl = `/animals/maker/${tagNumber}/info/`;
+        } else if (animalTypeCode === 'Ram') {
+            animalType = 'Баран';
+            detailUrl = `/animals/ram/${tagNumber}/info/`;
+        } else if (animalTypeCode === 'Ewe') {
+            animalType = 'Ярка';
+            detailUrl = `/animals/ewe/${tagNumber}/info/`;
+        } else if (animalTypeCode === 'Sheep') {
+            animalType = 'Овца';
+            detailUrl = `/animals/sheep/${tagNumber}/info/`;
         }
-        // Если это DELETE, не пытаемся обработать тело ответа
-        if (method === 'DELETE') return;
-        return await response.json();
-    } catch (error) {
-        console.error('Ошибка сети:', error);
-        throw error; // Пробрасываем ошибку для обработки в вызывающем коде
+        
+        row.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${animalType}</td>
+            <td><a href="${detailUrl}">${tagNumber}</a></td>
+            <td>${status}</td>
+            <td>${archivedDate}</td>
+            <td>${age}</td>
+            <td>${place}</td>
+            <td>
+                <button onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">Восстановить</button>
+            </td>
+        `;
+        archiveTable.appendChild(row);
+    });
+}
+
+// Функция фильтрации архива
+function filterArchiveData(animalType, status, search) {
+    let filteredData = allArchiveData;
+    
+    // Фильтр по типу животного
+    if (animalType) {
+        filteredData = filteredData.filter(animal => animal.animal_type === animalType);
     }
     
+    // Фильтр по статусу
+    if (status) {
+        filteredData = filteredData.filter(animal => 
+            animal.status && animal.status === status
+        );
+    }
+    
+    // Фильтр по поиску
+    if (search) {
+        const searchLower = search.toLowerCase();
+        filteredData = filteredData.filter(animal => 
+            animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
+        );
+    }
+    
+    displayArchive(filteredData);
 }
 
-
-async function fetchArchive() {
-    const type = document.getElementById('type-filter').value; // Получаем выбранный тип из фильтра
-    const url = `/animals/archive/${type ? `?type=${type}` : ''}`; // Формируем URL для запроса
-    const tableBody = document.getElementById('archive-table-body');
-    tableBody.innerHTML = ''; // Очищаем таблицу перед добавлением данных
+// Функция восстановления животного из архива
+async function restoreAnimal(animalType, tagNumber) {
+    const confirmRestore = confirm(`Вы уверены, что хотите восстановить животное ${tagNumber} из архива?`);
+    if (!confirmRestore) return;
 
     try {
-        const data = await apiRequest(url); // Запрос данных архива
-
-        if (data.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="6">Нет данных для отображения.</td></tr>`;
-            return;
+        // Определяем URL для восстановления в зависимости от типа животного
+        let restoreUrl = '';
+        switch (animalType) {
+            case 'Maker':
+                restoreUrl = `/animals/maker/${tagNumber}/restore/`;
+                break;
+            case 'Ram':
+                restoreUrl = `/animals/ram/${tagNumber}/restore/`;
+                break;
+            case 'Ewe':
+                restoreUrl = `/animals/ewe/${tagNumber}/restore/`;
+                break;
+            case 'Sheep':
+                restoreUrl = `/animals/sheep/${tagNumber}/restore/`;
+                break;
+            default:
+                throw new Error('Неизвестный тип животного');
         }
-
-        // Заполняем таблицу данными
-        data.forEach(item => {
-            const row = `
-                <tr>
-                    <td>${item.tag_number}</td>
-                    <td>${item.animal_type}</td>
-                    <td>${item.status}</td>
-                    <td>${item.age}</td>
-                    <td>${item.birth_date}</td>
-                    <td>${item.place}</td>
-                </tr>
-            `;
-            tableBody.innerHTML += row;
-        });
+        
+        await apiRequest(restoreUrl, 'POST');
+        alert('Животное успешно восстановлено из архива');
+        fetchArchive(); // Обновляем список архива
     } catch (error) {
-        console.error('Ошибка загрузки архива:', error);
-        tableBody.innerHTML = `<tr><td colspan="6">Ошибка загрузки данных.</td></tr>`;
+        console.error('Ошибка при восстановлении животного:', error);
+        alert('Ошибка при восстановлении животного');
     }
 }
 
-// Автоматическая загрузка при открытии страницы
-document.addEventListener('DOMContentLoaded', async () => {
-    // Получаем параметр type из URL
-    const params = new URLSearchParams(window.location.search);
-    const type = params.get('type');
-
-    if (type) {
-        // Устанавливаем фильтр в поле выбора типа, если параметр передан
-        const typeFilter = document.getElementById('type-filter');
-        if (typeFilter) {
-            typeFilter.value = type;
-        }
-    }
-
-    // Загружаем данные архива с учетом типа
-    await fetchArchive();
-});
+// Экспортируем функцию фильтрации для использования в HTML
+window.filterArchiveData = filterArchiveData;
+window.restoreAnimal = restoreAnimal;

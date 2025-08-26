@@ -1,46 +1,4 @@
-// Функция для получения CSRF-токена из cookies
-function getCSRFToken() {
-    let cookieValue = null;
-    const name = 'csrftoken';
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-// Функция для выполнения API-запросов
-async function apiRequest(url, method = 'GET', body = null) {
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCSRFToken(),
-    };
-    const options = { method, headers };
-    if (body) options.body = JSON.stringify(body);
-
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error(`Ошибка API [${response.status}]:`, errorData);
-            throw new Error(errorData.detail || 'Ошибка API');
-        }
-        // Если это DELETE, не пытаемся обработать тело ответа
-        if (method === 'DELETE') return;
-        return await response.json();
-    } catch (error) {
-        console.error('Ошибка сети:', error);
-        throw error; // Пробрасываем ошибку для обработки в вызывающем коде
-    }
-    
-}
-
+import { apiRequest } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchMakers();  // Загрузка списка производителей при загрузке страницы
@@ -163,9 +121,9 @@ function renderMakers(makers) {
     makers.forEach((maker, index) => {
         const row = `<tr>
             <td>
-                <input type="checkbox" class="select-maker"  
-                data-tag="${maker.tag.tag_number}" 
-                onclick="toggleSelectMaker(this)">
+                <input type="checkbox" 
+                class="select-maker"  
+                data-tag="${maker.tag.tag_number}">
             </td>
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td><a href="/animals/maker/${maker.tag.tag_number}/info/">${maker.tag.tag_number}</a></td>
@@ -185,6 +143,8 @@ function renderMakers(makers) {
         </tr>`;
         makerList.innerHTML += row;
     });
+    
+    document.querySelectorAll('.select-maker').forEach(cb => cb.addEventListener('click', e => toggleSelectMaker(e.target)))
 }
 
 
@@ -217,10 +177,10 @@ function toggleSelectAll(checkbox) {
 
 // Функция для управления отдельным чекбоксом
 function toggleSelectMaker(checkbox) {
-    const tagNumber = checkbox.dataset.tag;;
+    const tagNumber = checkbox.dataset.tag;
 
     selectedMakers.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
-    console.log('Текущее состояние selectedMakers:', selectedMakers); // Отладочный вывод
+    console.log('Текущее состояние selectedMakers: \n', selectedMakers); // Отладочный вывод
     toggleDeleteButton();
 }
 
@@ -280,7 +240,7 @@ async function deleteSelectedMakers() {
 
     confirmButton.onclick = async () => {
         try {
-            for (const { tag } of selectedTags) {
+            for (const tag of selectedTags) {
                 await apiRequest(`/animals/maker/${tag}/`, 'DELETE');
                 selectedMakers.delete(tag); // Удаляем из состояния
             }
@@ -353,10 +313,18 @@ function openArchiveModal() {
 
     loadArchiveStatuses();
 }
+
+// Экспортируем функцию для глобального доступа
+window.openArchiveModal = openArchiveModal;
+
 function closeArchiveModal() {
     const modal = document.getElementById('archive-modal');
     modal.style.display = 'none';
 }
+
+// Экспортируем функцию для глобального доступа
+window.closeArchiveModal = closeArchiveModal;
+
 async function loadArchiveStatuses() {
     try {
         const statuses = await apiRequest('/veterinary/status/');
@@ -410,6 +378,9 @@ async function applyArchiveStatus() {
         alert('Ошибка при переносе записей.');
     }
 }
+
+// Экспортируем функцию для глобального доступа
+window.applyArchiveStatus = applyArchiveStatus;
 
 function setupArchiveButton() {
     const archiveButton = document.getElementById('archive-maker-button');

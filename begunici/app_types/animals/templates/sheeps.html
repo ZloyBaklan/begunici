@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block content %}
+    <h1>Управление овцами</h1>
+    <a href="/animals/main_archive/?type=Sheep" class="btn btn-secondary" id="archive-sheep-button">Архив Овец</a>
+
+    <!-- Кнопка для раскрытия формы создания овцы -->
+    <button id="toggle-create-sheep-form" onclick="toggleForm()">▼ Создать овцу</button>
+    <!-- Форма создания овцы, изначально скрытая -->
+    <input type="text" id="sheep-search" placeholder="Поиск овец...">
+
+    <form id="create-sheep-form" style="display:none;">
+        {% csrf_token %}
+
+        <label for="tag">Бирка:</label>
+        <input type="text" id="tag" name="tag" placeholder="Введите бирку">
+
+        <label for="animal_status">Статус животного:</label>
+        <select id="animal_status" name="animal_status"></select>
+
+        <label for="birth_date">Дата рождения:</label>
+        <input type="date" id="birth_date" name="birth_date">
+
+        <label for="place">Овчарня:</label>
+        <select id="place" name="place"></select>
+
+        <label for="note">Примечание:</label>
+        <input type="text" id="note" name="note" placeholder="Введите примечание">
+
+        <button type="button" id="create-sheep-button">Создать овцу</button>
+
+    </form>
+
+    <!-- Таблица овец -->
+    <table>
+        <thead>
+            <tr>
+                <th>
+                    <label for="select-all">Выбрать все записи страницы</label>
+                    <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)">
+                </th>
+                <th>№</th>
+                <th>Бирка</th>
+                <th>Статус</th>
+                <th>Возраст</th>
+                <th>Овчарня</th>
+                <th>Последнее Взвешивание</th>
+                <th>Последняя Ветобработка</th>
+                <th>Примечание</th>
+            </tr>
+        </thead>
+        <tbody id="sheep-list"></tbody>
+    </table>
+    
+    <!-- Кнопка для удаления выбранных -->
+    <button id="delete-selected-button" style="display:none;" onclick="deleteSelectedSheeps()">Удалить выбранные</button>
+    <button id="archive-selected-button" style="display:none;" onclick="openArchiveModal()">Перенести в архив</button>
+
+    
+    <div id="pagination"></div>
+
+    <div id="delete-modal" style="display:none;">
+        <h2>Подтверждение удаления</h2>
+        <p id="delete-modal-message"></p>
+        <button id="delete-confirm-button">Да</button>
+        <button onclick="closeDeleteModal()">Нет</button>
+    </div>
+    
+
+    <div id="archive-modal" style="display:none;">
+        <h2>Перенос в архив</h2>
+        <p>Выберите статус, который будет установлен для выбранных животных:</p>
+        <select id="archive-status-select"></select>
+        <button onclick="applyArchiveStatus()">Применить</button>
+        <button onclick="closeArchiveModal()">Отмена</button>
+    </div>
+    
+
+    <!-- Подключение скриптов -->
+    <script type="module" src="{% static 'js/sheeps.js' %}"></script>
+    <script>
+    
+
+        function toggleForm() {
+            const form = document.getElementById('create-sheep-form');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleSelectAll(checkbox) {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]:not(#select-all)');
+            checkboxes.forEach(cb => cb.checked = checkbox.checked);
+            updateDeleteButtons();
+        }
+
+        function updateDeleteButtons() {
+            const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
+            const deleteButton = document.getElementById('delete-selected-button');
+            const archiveButton = document.getElementById('archive-selected-button');
+            
+            if (selectedCheckboxes.length > 0) {
+                deleteButton.style.display = 'inline-block';
+                archiveButton.style.display = 'inline-block';
+            } else {
+                deleteButton.style.display = 'none';
+                archiveButton.style.display = 'none';
+            }
+        }
+
+        function deleteSelectedSheeps() {
+            const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
+            const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            
+            if (selectedIds.length === 0) {
+                alert('Выберите овец для удаления');
+                return;
+            }
+            
+            const message = `Вы уверены, что хотите удалить ${selectedIds.length} овец?`;
+            document.getElementById('delete-modal-message').textContent = message;
+            document.getElementById('delete-modal').style.display = 'block';
+            
+            document.getElementById('delete-confirm-button').onclick = function() {
+                // Вызываем функцию удаления из модуля
+                deleteSelectedSheeps();
+                document.getElementById('delete-modal').style.display = 'none';
+            };
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').style.display = 'none';
+        }
+
+        function openArchiveModal() {
+            const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
+            const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            
+            if (selectedIds.length === 0) {
+                alert('Выберите овец для архивирования');
+                return;
+            }
+            
+            // Загружаем статусы для архивирования
+            fetch('/veterinary/status/')
+                .then(response => response.json())
+                .then(statuses => {
+                    const select = document.getElementById('archive-status-select');
+                    select.innerHTML = '';
+                    statuses.forEach(status => {
+                        if (['Убой', 'Продажа', 'Выбыл'].includes(status.status_type)) {
+                            const option = document.createElement('option');
+                            option.value = status.id;
+                            option.textContent = status.status_type;
+                            select.appendChild(option);
+                        }
+                    });
+                    document.getElementById('archive-modal').style.display = 'block';
+                });
+        }
+
+        function closeArchiveModal() {
+            document.getElementById('archive-modal').style.display = 'none';
+        }
+
+        function applyArchiveStatus() {
+            const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
+            const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            const statusId = document.getElementById('archive-status-select').value;
+            
+            if (!statusId) {
+                alert('Выберите статус для архивирования');
+                return;
+            }
+            
+            // Вызываем функцию архивирования из модуля
+            archiveSelectedSheeps(statusId);
+            document.getElementById('archive-modal').style.display = 'none';
+        }
+    </script>
+{% endblock %}

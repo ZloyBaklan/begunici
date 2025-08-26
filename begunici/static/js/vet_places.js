@@ -1,20 +1,4 @@
-// Получение CSRF-токена для запросов
-function getCSRFToken() {
-    let cookieValue = null;
-    const name = 'csrftoken';
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
+import { getCSRFToken } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchPlaces();  // Загружаем список овчарен при загрузке страницы
@@ -41,10 +25,17 @@ async function createPlace() {
     const placeSheepfold = document.getElementById('place-sheepfold').value;
     const dateOfTransfer = document.getElementById('place-date').value;
 
+    if (!placeSheepfold.trim()) {
+        alert('Пожалуйста, введите название овчарни');
+        return;
+    }
+
     const data = {
         sheepfold: placeSheepfold,
         date_of_transfer: dateOfTransfer || null
     };
+
+    console.log('Creating place with data:', data);
 
     try {
         const response = await fetch('/veterinary/place/', {
@@ -76,26 +67,36 @@ async function createPlace() {
 // Функция для загрузки списка овчарен
 async function fetchPlaces() {
     try {
+        console.log('Fetching places...');
         const response = await fetch('/veterinary/place/');
+        console.log('Places response status:', response.status);
+        
         if (!response.ok) {
             throw new Error('Ошибка при загрузке овчарен');
         }
         const places = await response.json();
+        console.log('Places data:', places);
 
         const placeTable = document.getElementById('place-list');
         placeTable.innerHTML = '';  // Очищаем старый список
 
         places.forEach((place, index) => {
-            const row = `<tr>
+            const row = document.createElement('tr');
+            row.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${place.sheepfold}</td>
                 <td>${place.date_of_transfer || 'Нет даты'}</td>
                 <td>
-                    <button onclick="editPlace(${place.id})">Редактировать</button>
-                    <button onclick="deletePlace(${place.id})">Удалить</button>
+                    <button class="edit-place-btn" data-id="${place.id}">Редактировать</button>
+                    <button class="delete-place-btn" data-id="${place.id}">Удалить</button>
                 </td>
-            </tr>`;
-            placeTable.innerHTML += row;
+            `;
+            
+            // Добавляем обработчики событий
+            row.querySelector('.edit-place-btn').addEventListener('click', () => editPlace(place.id));
+            row.querySelector('.delete-place-btn').addEventListener('click', () => deletePlace(place.id));
+            
+            placeTable.appendChild(row);
         });
     } catch (error) {
         console.error('Ошибка при загрузке овчарен:', error);
@@ -104,12 +105,11 @@ async function fetchPlaces() {
 
 // Функция удаления овчарни
 async function deletePlace(placeId) {
-    const csrfToken = getCSRFToken();
     try {
         const response = await fetch(`/veterinary/place/${placeId}/`, {
             method: 'DELETE',
             headers: {
-                'X-CSRFToken': csrfToken,
+                'X-CSRFToken': getCSRFToken(),
             }
         });
 
