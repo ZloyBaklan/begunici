@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Заметки{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2>Заметки</h2>
+
+  <div class="mb-3 d-flex gap-2 align-items-center">
+    <button class="btn btn-outline-secondary" id="mode-week">Неделя</button>
+    <button class="btn btn-outline-secondary" id="mode-month">Месяц</button>
+    <button class="btn btn-outline-secondary" id="mode-year">Год</button>
+
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-outline-primary" id="btn-today">Сегодня</button>
+      <button class="btn btn-success" id="btn-add">+ Заметка</button>
+    </div>
+  </div>
+
+  <div id="notes-calendar"></div>
+
+  <!-- Простая форма добавления -->
+  <div class="card mt-3" id="note-form-card" style="display:none;">
+    <div class="card-body">
+      <h5 class="card-title">Новая заметка</h5>
+      <textarea class="form-control" id="note-text" rows="3" placeholder="Например: вакцинация, перевод, роды, убой..."></textarea>
+      <div class="mt-2 d-flex gap-2">
+        <button class="btn btn-primary" id="note-save">Сохранить</button>
+        <button class="btn btn-outline-secondary" id="note-cancel">Отмена</button>
+      </div>
+      <div class="text-muted mt-2" id="note-hint"></div>
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'js/notes.js' %}"></script>
+{% endblock %}

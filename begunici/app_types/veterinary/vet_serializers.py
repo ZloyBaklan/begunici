@@ -15,6 +15,8 @@ from .vet_models import (
 
 # Сериализатор для статусов
 class StatusSerializer(serializers.ModelSerializer):
+    date_of_status = serializers.DateTimeField()
+    
     class Meta:
         model = Status
         fields = "__all__"
@@ -30,10 +32,15 @@ class StatusSerializer(serializers.ModelSerializer):
         instance.color = validated_data.get("color", instance.color)
         date_of_status = validated_data.get("date_of_status", None)
         instance.date_of_status = (
-            date_of_status if date_of_status else timezone.now().date()
+            date_of_status if date_of_status else timezone.now()
         )
         instance.save()
         return instance
+
+    def validate_date_of_status(self, value):
+        if value and value > timezone.now():
+            raise serializers.ValidationError("Дата и время статуса не может быть в будущем.")
+        return value
 
     def validate_status_type(self, value):
         """Проверяем, что статус с таким названием уникален."""
@@ -83,8 +90,8 @@ class PlaceSerializer(serializers.ModelSerializer):
         date_of_transfer = validated_data.get("date_of_transfer", None)
         if date_of_transfer is None:
             instance.date_of_transfer = (
-                timezone.now().date()
-            )  # Обновляем на текущую дату
+                timezone.now()
+            )  # Обновляем на текущую дату и время
         else:
             instance.date_of_transfer = (
                 date_of_transfer  # Устанавливаем вручную, если передана
@@ -93,16 +100,26 @@ class PlaceSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-    def validate(self, data):
-        """
-        Проверяем, что сочетание овчарня + отсек уникально.
-        """
-        sheepfold = data.get("sheepfold")
-        # compartment = data.get('compartment')
+    def validate_date_of_transfer(self, value):
+        if value and value > timezone.now():
+            raise serializers.ValidationError("Дата и время перемещения не может быть в будущем.")
+        return value
 
-        if Place.objects.filter(sheepfold=sheepfold).exists():
-            raise serializers.ValidationError("Овчарня с таким отсеком уже существует.")
-        return data
+    def validate_sheepfold(self, value):
+        """Проверяем, что овчарня с таким названием уникальна."""
+        instance = getattr(self, "instance", None)
+        query = Place.objects.filter(sheepfold=value)
+        if instance:
+            query = query.exclude(pk=instance.pk)
+        if query.exists():
+            raise serializers.ValidationError("Овчарня с таким названием уже существует.")
+        return value
+
+
+class VeterinaryCareSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VeterinaryCare
+        fields = "__all__"
 
 
 class PlaceMovementSerializer(serializers.ModelSerializer):
@@ -113,75 +130,14 @@ class PlaceMovementSerializer(serializers.ModelSerializer):
         model = PlaceMovement
         fields = "__all__"
 
-
-class VeterinaryCareSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = VeterinaryCare
-        fields = "__all__"
-
-    def create(self, validated_data):
-        """
-        Создание новой записи ветобработки.
-        """
-        return VeterinaryCare.objects.create(**validated_data)
-
     def update(self, instance, validated_data):
         """
-        Обновление существующего типа ветобработки.
+        Обновление существующего перемещения.
         """
-        instance.care_type = validated_data.get("care_type", instance.care_type)
-        instance.care_name = validated_data.get("care_name", instance.care_name)
-        instance.medication = validated_data.get("medication", instance.medication)
-        instance.purpose = validated_data.get("purpose", instance.purpose)
-        instance.save()
+        # Этот метод не должен обновлять ветобработку, исправляем логику
         return instance
 
 
-class VeterinarySerializer(serializers.ModelSerializer):
-    veterinary_care = VeterinaryCareSerializer()  # Используем вложенный сериализатор
-    tag_number = serializers.CharField(
-        source="tag.tag_number", read_only=True
-    )  # Добавляем `tag_number`
-
-    class Meta:
-        model = Veterinary
-        fields = "__all__"
-
-    def create(self, validated_data):
-        """
-        Создание новой записи о ветобработке для животного.
-        """
-        veterinary_care_data = validated_data.pop("veterinary_care", None)
-        if veterinary_care_data:
-            veterinary_care = VeterinaryCare.objects.create(**veterinary_care_data)
-        else:
-            veterinary_care = None
-
-        veterinary = Veterinary.objects.create(
-            veterinary_care=veterinary_care, **validated_data
-        )
-        return veterinary
-
-    def update(self, instance, validated_data):
-        """
-        Обновление существующей записи о ветобработке.
-        """
-        veterinary_care_data = validated_data.pop("veterinary_care", None)
-
-        if veterinary_care_data:
-            veterinary_care = instance.veterinary_care
-            for field, value in veterinary_care_data.items():
-                setattr(veterinary_care, field, value)
-            veterinary_care.save()
-
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-
-        instance.save()
-        return instance
-
-
-# Сериализатор для бирки (Tag)
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
@@ -192,32 +148,53 @@ class TagSerializer(serializers.ModelSerializer):
 
         if new_tag_number and new_tag_number != instance.tag_number:
             instance.update_tag(new_tag_number)  # Вызываем метод для обновления бирки
-
         return instance
 
 
-class WeightRecordSerializer(serializers.ModelSerializer):
-    tag_number = serializers.CharField(
-        source="tag.tag_number", read_only=True
-    )  # Добавляем номер бирки
+class VeterinarySerializer(serializers.ModelSerializer):
+    # Поля для чтения (read-only)
+    tag = TagSerializer(read_only=True)
+    veterinary_care = VeterinaryCareSerializer(read_only=True)
 
-    def validate_tag_number(self, value):
-        """Проверяем, существует ли tag_number"""
-        if not Tag.objects.filter(tag_number=value).exists():
-            raise serializers.ValidationError("Бирка с таким номером не найдена.")
+    # Поля для записи (write-only)
+    tag_write = serializers.SlugRelatedField(
+        queryset=Tag.objects.all(),
+        slug_field='tag_number',
+        write_only=True,
+        source='tag'
+    )
+    veterinary_care_write = serializers.PrimaryKeyRelatedField(
+        queryset=VeterinaryCare.objects.all(),
+        write_only=True,
+        source='veterinary_care'
+    )
+
+    class Meta:
+        model = Veterinary
+        fields = [
+            'id', 'tag', 'veterinary_care', 'date_of_care', 'comments',
+            'tag_write', 'veterinary_care_write'
+        ]
+
+    def validate_date_of_care(self, value):
+        if value > timezone.now():
+            raise serializers.ValidationError("Дата и время обработки не может быть в будущем.")
         return value
 
-    def create(self, validated_data):
-        """Подменяем tag_number на объект Tag перед созданием записи"""
-        tag_number = validated_data.pop("tag")
-        tag = Tag.objects.get(tag_number=tag_number)
-        validated_data["tag"] = tag
-        return super().create(validated_data)
+
+class WeightRecordSerializer(serializers.ModelSerializer):
+    # Для чтения
+    tag = TagSerializer(read_only=True)
+    tag_write = serializers.SlugRelatedField(
+        queryset=Tag.objects.all(),
+        slug_field='tag_number',
+        write_only=True,
+        source='tag'
+    )
 
     class Meta:
         model = WeightRecord
-        fields = "__all__"
-
+        fields = ['id', 'tag', 'weight', 'weight_date', 'tag_write']
 
 # Сериализатор для изменения веса
 class WeightChangeSerializer(serializers.Serializer):

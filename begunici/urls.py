@@ -17,11 +17,15 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from django.contrib.auth import views as auth_views
 from .views import index  # Импортируем view для главной страницы
 
 urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора
+    
+    path("site/", include("begunici.app_types.public_site.urls")), # Публичный сайт — отдельно, чтобы ничего не ломать, но потом перенос всего под слеш app/
     path("", index, name="index"),  # Главная страница
+    path("logout/", auth_views.LogoutView.as_view(), name="logout"),  # Выход
     path(
         "veterinary/",
         include(
@@ -33,4 +37,6 @@ urlpatterns = [
         "animals/",
         include(("begunici.app_types.animals.urls", "animals"), namespace="animals"),
     ),  # Подключаем urls для animals с namespace
+    path("notes/", include("begunici.app_types.notes.urls", namespace="notes")),
+
 ]

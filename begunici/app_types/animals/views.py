@@ -1,25 +1,31 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.permissions import AllowAny
 from django.shortcuts import render
 from django.views.generic import TemplateView
-from django.http import Http404
+from django.http import Http404, HttpResponse
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
 from .serializers import (
     MakerSerializer,
     MakerChildSerializer,
     RamSerializer,
+    RamChildSerializer,
     EweSerializer,
+    EweChildSerializer,
     SheepSerializer,
+    SheepChildSerializer,
     LambingSerializer,
     ArchiveAnimalSerializer,
+    UniversalChildSerializer,
 )
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
+from django.db.models import Count, Q
+from datetime import datetime, timedelta
 
 from begunici.app_types.veterinary.vet_models import (
     WeightRecord,
@@ -27,6 +33,7 @@ from begunici.app_types.veterinary.vet_models import (
     PlaceMovement,
     Tag,
     StatusHistory,
+    Status,
 )
 from begunici.app_types.veterinary.vet_serializers import (
     WeightRecordSerializer,
@@ -184,7 +191,7 @@ class MakerViewSet(viewsets.ModelViewSet):
         maker = self.get_object()  # Получаем объект Maker
         status_history = StatusHistory.objects.filter(
             tag__tag_number=maker.tag.tag_number
-        ).order_by("-new_status__date_of_status")
+        ).order_by("-change_date")
 
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
@@ -291,9 +298,27 @@ class MakerViewSet(viewsets.ModelViewSet):
     def restore(self, request, pk=None):
         """Восстановление производителя из архива"""
         maker = self.get_object()
-        maker.is_archived = False
-        maker.save()
-        return Response({"success": "Maker restored from archive"}, status=status.HTTP_200_OK)
+        
+        # Находим активный статус (не архивный)
+        try:
+            active_status = Status.objects.filter(
+                status_type__in=["Активный", "Здоровый", "Рабочий"]
+            ).first()
+            if not active_status:
+                # Если нет подходящего статуса, берем любой неархивный
+                active_status = Status.objects.exclude(
+                    status_type__in=["Убыл", "Убой", "Продажа"]
+                ).first()
+            
+            if active_status:
+                maker.animal_status = active_status
+            
+            maker.is_archived = False
+            maker.save()
+            
+            return Response({"success": "Maker restored from archive"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RamViewSet(AnimalBaseViewSet):
@@ -369,27 +394,91 @@ class RamViewSet(AnimalBaseViewSet):
     def children(self, request, pk=None):
         ram = self.get_object()
         children = ram.get_children()
-        return Response(RamSerializer(children, many=True).data)
+        # Применяем пагинацию
+        page = self.paginate_queryset(children)
+        if page is not None:
+            serializer = RamChildSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        return Response(RamChildSerializer(children, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         ram = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=ram.tag).order_by("-id")
+        status_history = StatusHistory.objects.filter(tag=ram.tag).order_by("-change_date")
+        # Применяем пагинацию
+        page = self.paginate_queryset(status_history)
+        if page is not None:
+            serializer = StatusHistorySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(StatusHistorySerializer(status_history, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         ram = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=ram.tag).order_by("-id")
+        place_movements = PlaceMovement.objects.filter(tag=ram.tag).order_by("-new_place__date_of_transfer")
+        # Применяем пагинацию
+        page = self.paginate_queryset(place_movements)
+        if page is not None:
+            serializer = PlaceMovementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(PlaceMovementSerializer(place_movements, many=True).data)
+
+    @action(detail=True, methods=["get"], url_path="weight_history")
+    def weight_history(self, request, pk=None):
+        ram = self.get_object()
+        history = WeightRecord.objects.filter(
+            tag__tag_number=ram.tag.tag_number
+        ).order_by("-weight_date")
+        serializer = WeightRecordSerializer(history, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="vet_history")
+    def vet_history(self, request, pk=None):
+        ram = self.get_object()
+        vet_history = (
+            Veterinary.objects.filter(tag__tag_number=ram.tag.tag_number)
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        # Применяем пагинацию
+        page = self.paginate_queryset(vet_history)
+        if page is not None:
+            serializer = VeterinarySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = VeterinarySerializer(vet_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление барана из архива"""
         ram = self.get_object()
-        ram.is_archived = False
-        ram.save()
-        return Response({"success": "Ram restored from archive"}, status=status.HTTP_200_OK)
+        
+        # Находим активный статус (не архивный)
+        try:
+            active_status = Status.objects.filter(
+                status_type__in=["Активный", "Здоровый", "Рабочий"]
+            ).first()
+            if not active_status:
+                # Если нет подходящего статуса, берем любой неархивный
+                active_status = Status.objects.exclude(
+                    status_type__in=["Убыл", "Убой", "Продажа"]
+                ).first()
+            
+            if active_status:
+                ram.animal_status = active_status
+            
+            ram.is_archived = False
+            ram.save()
+            
+            return Response({"success": "Ram restored from archive"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["get"], url_path="api")
+    def retrieve_api(self, request, pk=None):
+        ram = self.get_object()
+        serializer = self.get_serializer(ram)
+        return Response(serializer.data)
 
 
 class EweViewSet(AnimalBaseViewSet):
@@ -412,8 +501,8 @@ class EweViewSet(AnimalBaseViewSet):
         """
         return Ewe.objects.get(tag__tag_number=tag_number)
 
-    @action(detail=True, methods=["post"])
-    def to_sheep(self, request, pk=None, url_path="to_sheep"):
+    @action(detail=True, methods=["post"], url_path="to_sheep")
+    def to_sheep(self, request, pk=None):
         try:
             ewe = self.get_object()
             sheep = ewe.to_sheep()
@@ -479,27 +568,91 @@ class EweViewSet(AnimalBaseViewSet):
     def children(self, request, pk=None):
         ewe = self.get_object()
         children = ewe.get_children()
-        return Response(EweSerializer(children, many=True).data)
+        # Применяем пагинацию
+        page = self.paginate_queryset(children)
+        if page is not None:
+            serializer = EweChildSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        return Response(EweChildSerializer(children, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         ewe = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=ewe.tag).order_by("-id")
+        status_history = StatusHistory.objects.filter(tag=ewe.tag).order_by("-change_date")
+        # Применяем пагинацию
+        page = self.paginate_queryset(status_history)
+        if page is not None:
+            serializer = StatusHistorySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(StatusHistorySerializer(status_history, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         ewe = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=ewe.tag).order_by("-id")
+        place_movements = PlaceMovement.objects.filter(tag=ewe.tag).order_by("-new_place__date_of_transfer")
+        # Применяем пагинацию
+        page = self.paginate_queryset(place_movements)
+        if page is not None:
+            serializer = PlaceMovementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(PlaceMovementSerializer(place_movements, many=True).data)
+
+    @action(detail=True, methods=["get"], url_path="weight_history")
+    def weight_history(self, request, pk=None):
+        ewe = self.get_object()
+        history = WeightRecord.objects.filter(
+            tag__tag_number=ewe.tag.tag_number
+        ).order_by("-weight_date")
+        serializer = WeightRecordSerializer(history, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="vet_history")
+    def vet_history(self, request, pk=None):
+        ewe = self.get_object()
+        vet_history = (
+            Veterinary.objects.filter(tag__tag_number=ewe.tag.tag_number)
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        # Применяем пагинацию
+        page = self.paginate_queryset(vet_history)
+        if page is not None:
+            serializer = VeterinarySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = VeterinarySerializer(vet_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление ярки из архива"""
         ewe = self.get_object()
-        ewe.is_archived = False
-        ewe.save()
-        return Response({"success": "Ewe restored from archive"}, status=status.HTTP_200_OK)
+        
+        # Находим активный статус (не архивный)
+        try:
+            active_status = Status.objects.filter(
+                status_type__in=["Активный", "Здоровый", "Рабочий"]
+            ).first()
+            if not active_status:
+                # Если нет подходящего статуса, берем любой неархивный
+                active_status = Status.objects.exclude(
+                    status_type__in=["Убыл", "Убой", "Продажа"]
+                ).first()
+            
+            if active_status:
+                ewe.animal_status = active_status
+            
+            ewe.is_archived = False
+            ewe.save()
+            
+            return Response({"success": "Ewe restored from archive"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["get"], url_path="api")
+    def retrieve_api(self, request, pk=None):
+        ewe = self.get_object()
+        serializer = self.get_serializer(ewe)
+        return Response(serializer.data)
 
 
 class SheepViewSet(AnimalBaseViewSet):
@@ -586,34 +739,305 @@ class SheepViewSet(AnimalBaseViewSet):
     def children(self, request, pk=None):
         sheep = self.get_object()
         children = sheep.get_children()
-        return Response(SheepSerializer(children, many=True).data)
+        # Применяем пагинацию
+        page = self.paginate_queryset(children)
+        if page is not None:
+            serializer = SheepChildSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        return Response(SheepChildSerializer(children, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         sheep = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=sheep.tag).order_by("-id")
+        status_history = StatusHistory.objects.filter(tag=sheep.tag).order_by("-change_date")
+        # Применяем пагинацию
+        page = self.paginate_queryset(status_history)
+        if page is not None:
+            serializer = StatusHistorySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(StatusHistorySerializer(status_history, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         sheep = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=sheep.tag).order_by("-id")
+        place_movements = PlaceMovement.objects.filter(tag=sheep.tag).order_by("-new_place__date_of_transfer")
+        # Применяем пагинацию
+        page = self.paginate_queryset(place_movements)
+        if page is not None:
+            serializer = PlaceMovementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(PlaceMovementSerializer(place_movements, many=True).data)
+
+    @action(detail=True, methods=["get"], url_path="weight_history")
+    def weight_history(self, request, pk=None):
+        sheep = self.get_object()
+        history = WeightRecord.objects.filter(
+            tag__tag_number=sheep.tag.tag_number
+        ).order_by("-weight_date")
+        serializer = WeightRecordSerializer(history, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="vet_history")
+    def vet_history(self, request, pk=None):
+        sheep = self.get_object()
+        vet_history = (
+            Veterinary.objects.filter(tag__tag_number=sheep.tag.tag_number)
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        # Применяем пагинацию
+        page = self.paginate_queryset(vet_history)
+        if page is not None:
+            serializer = VeterinarySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = VeterinarySerializer(vet_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление овцы из архива"""
         sheep = self.get_object()
-        sheep.is_archived = False
-        sheep.save()
-        return Response({"success": "Sheep restored from archive"}, status=status.HTTP_200_OK)
+        
+        # Находим активный статус (не архивный)
+        try:
+            active_status = Status.objects.filter(
+                status_type__in=["Активный", "Здоровый", "Рабочий"]
+            ).first()
+            if not active_status:
+                # Если нет подходящего статуса, берем любой неархивный
+                active_status = Status.objects.exclude(
+                    status_type__in=["Убыл", "Убой", "Продажа"]
+                ).first()
+            
+            if active_status:
+                sheep.animal_status = active_status
+            
+            sheep.is_archived = False
+            sheep.save()
+            
+            return Response({"success": "Sheep restored from archive"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["get"], url_path="api")
+    def retrieve_api(self, request, pk=None):
+        sheep = self.get_object()
+        serializer = self.get_serializer(sheep)
+        return Response(serializer.data)
 
 
 class LambingViewSet(viewsets.ModelViewSet):
-    queryset = Lambing.objects.all()
+    queryset = Lambing.objects.all().order_by('-start_date')
     serializer_class = LambingSerializer
     permission_classes = [AllowAny]
     filter_backends = [SearchFilter]
+    search_fields = ['sheep__tag__tag_number', 'ewe__tag__tag_number', 'maker__tag__tag_number', 'ram__tag__tag_number']
+    pagination_class = PaginationSetting
+
+    def get_queryset(self):
+        """Фильтрация по активности окота"""
+        queryset = super().get_queryset()
+        is_active = self.request.query_params.get('is_active', None)
+        
+        if is_active is not None:
+            if is_active.lower() == 'true':
+                queryset = queryset.filter(is_active=True)
+            elif is_active.lower() == 'false':
+                queryset = queryset.filter(is_active=False)
+        
+        return queryset
+
+    @action(detail=True, methods=['post'], url_path='complete')
+    def complete_lambing(self, request, pk=None):
+        """Завершить окот (простое завершение без детей)"""
+        try:
+            lambing = self.get_object()
+            lambing.complete_lambing()
+            return Response(
+                {"success": "Окот завершен"}, 
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'], url_path='complete-with-children')
+    def complete_lambing_with_children(self, request, pk=None):
+        """Завершить окот с созданием детей"""
+        try:
+            from datetime import datetime
+            
+            lambing = self.get_object()
+            
+            # Получаем данные из запроса
+            actual_date_str = request.data.get('actual_lambing_date')
+            number_of_lambs = request.data.get('number_of_lambs', 0)
+            note = request.data.get('note', '')
+            lambs_data = request.data.get('lambs', [])
+            
+            if not actual_date_str:
+                return Response(
+                    {"error": "Необходимо указать дату фактических родов"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Преобразуем строку даты в объект date
+            try:
+                actual_date = datetime.strptime(actual_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {"error": "Неверный формат даты. Используйте YYYY-MM-DD"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Обновляем данные окота
+            lambing.actual_lambing_date = actual_date
+            lambing.number_of_lambs = number_of_lambs
+            if note:
+                lambing.note = note
+            lambing.is_active = False
+            lambing.save()
+            
+            # Создаем детей, если они указаны
+            created_children = []
+            mother = lambing.get_mother()
+            father = lambing.get_father()
+            
+            for lamb_data in lambs_data:
+                try:
+                    # Создаем бирку для ребенка
+                    tag, created = Tag.objects.get_or_create(
+                        tag_number=lamb_data['tag_number']
+                    )
+                    
+                    if not created:
+                        return Response(
+                            {"error": f"Бирка {lamb_data['tag_number']} уже используется"}, 
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # Определяем тип животного и создаем его
+                    if lamb_data['gender'] == 'male':
+                        # Создаем барана
+                        child = Ram.objects.create(
+                            tag=tag,
+                            birth_date=actual_date,
+                            mother=mother.tag if mother else None,
+                            father=father.tag if father else None,
+                            animal_status_id=lamb_data.get('animal_status_id'),
+                            place_id=lamb_data.get('place_id'),
+                            note=lamb_data.get('note', '')
+                        )
+                        tag.animal_type = 'Ram'
+                    else:
+                        # Создаем ярку
+                        child = Ewe.objects.create(
+                            tag=tag,
+                            birth_date=actual_date,
+                            mother=mother.tag if mother else None,
+                            father=father.tag if father else None,
+                            animal_status_id=lamb_data.get('animal_status_id'),
+                            place_id=lamb_data.get('place_id'),
+                            note=lamb_data.get('note', '')
+                        )
+                        tag.animal_type = 'Ewe'
+                    
+                    tag.save()
+                    created_children.append({
+                        'tag_number': tag.tag_number,
+                        'type': tag.animal_type,
+                        'gender': lamb_data['gender']
+                    })
+                    
+                except Exception as child_error:
+                    return Response(
+                        {"error": f"Ошибка создания ягненка {lamb_data['tag_number']}: {str(child_error)}"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            return Response({
+                "success": "Окот завершен",
+                "created_children": created_children,
+                "lambing": LambingSerializer(lambing).data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'], url_path='calendar')
+    def calendar_data(self, request):
+        """Получить данные для календаря ожидаемых родов"""
+        try:
+            # Получаем только активные окоты
+            active_lambings = Lambing.objects.filter(is_active=True)
+            
+            calendar_data = {}
+            for lambing in active_lambings:
+                date_str = lambing.planned_lambing_date.strftime('%Y-%m-%d')
+                mother = lambing.get_mother()
+                
+                if date_str not in calendar_data:
+                    calendar_data[date_str] = []
+                
+                calendar_data[date_str].append({
+                    'id': lambing.id,
+                    'mother_tag': mother.tag.tag_number if mother and mother.tag else 'Неизвестно',
+                    'mother_type': lambing.get_mother_type(),
+                    'father_tag': lambing.get_father().tag.tag_number if lambing.get_father() and lambing.get_father().tag else 'Неизвестно',
+                    'father_type': lambing.get_father_type(),
+                    'start_date': lambing.start_date.strftime('%Y-%m-%d')
+                })
+            
+            return Response(calendar_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'], url_path='by-animal')
+    def by_animal(self, request):
+        """Получить окоты для конкретного животного"""
+        animal_type = request.query_params.get('animal_type')
+        tag_number = request.query_params.get('tag_number')
+        
+        if not animal_type or not tag_number:
+            return Response(
+                {"error": "Необходимо указать animal_type и tag_number"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            if animal_type == 'sheep':
+                animal = Sheep.objects.get(tag__tag_number=tag_number)
+                lambings = Lambing.objects.filter(sheep=animal).order_by('-start_date')
+            elif animal_type == 'ewe':
+                animal = Ewe.objects.get(tag__tag_number=tag_number)
+                lambings = Lambing.objects.filter(ewe=animal).order_by('-start_date')
+            else:
+                return Response(
+                    {"error": "Неподдерживаемый тип животного"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = self.get_serializer(lambings, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except (Sheep.DoesNotExist, Ewe.DoesNotExist):
+            return Response(
+                {"error": "Животное не найдено"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class MakersView(TemplateView):
@@ -624,111 +1048,144 @@ class MakersView(TemplateView):
         return context
 
 
-class MakerDetailView(TemplateView):
-    template_name = "maker_detail.html"
+class AnimalDetailView(TemplateView):
+    template_name = "animal_detail.html" # Унифицированный шаблон
+    model = None
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         tag_number = self.kwargs.get("tag_number")
-        maker = Maker.objects.filter(tag__tag_number=tag_number).first()
         try:
-            maker = Maker.objects.get(tag__tag_number=tag_number)
-            context["maker"] = maker
-        except Maker.DoesNotExist:
-            print(
-                f"Maker with tag_number={tag_number} not found"
-            )  # Отладочная информация
-            raise Http404("Производитель не найден")
+            animal = self.model.objects.get(tag__tag_number=tag_number)
+            context["animal"] = animal
+            context["animal_type"] = self.model._meta.model_name
+        except self.model.DoesNotExist:
+            raise Http404(f"{self.model._meta.verbose_name.capitalize()} не найден")
+        return context
+
+class MakerDetailView(AnimalDetailView):
+    model = Maker
+
+class RamDetailView(AnimalDetailView):
+    model = Ram
+
+class EweDetailView(AnimalDetailView):
+    model = Ewe
+
+class SheepDetailView(AnimalDetailView):
+    model = Sheep
+
+
+class AnimalAnalyticsView(TemplateView):
+    template_name = "animal_analytics.html" # Унифицированный шаблон
+    model = None
+    serializer_class = None
+    child_serializer_class = None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tag_number = self.kwargs.get("tag_number")
+        
+        try:
+            animal = self.model.objects.get(tag__tag_number=tag_number)
+        except self.model.DoesNotExist:
+            raise Http404(f"{self.model._meta.verbose_name.capitalize()} не найден")
+
+        serialized_animal = self.serializer_class(animal).data
+        children = animal.get_children()
+        children_serialized = self.child_serializer_class(children, many=True).data if self.child_serializer_class else []
+
+        context.update({
+            "animal": serialized_animal,
+            "animal_type": self.model._meta.model_name,
+            "children": children_serialized,
+            "status_history": StatusHistorySerializer(
+                StatusHistory.objects.filter(tag=animal.tag).order_by("-change_date"),
+                many=True
+            ).data,
+            "place_movements": PlaceMovementSerializer(
+                PlaceMovement.objects.filter(tag=animal.tag).order_by("-new_place__date_of_transfer"),
+                many=True
+            ).data,
+            "veterinary_history": VeterinarySerializer(
+                Veterinary.objects.filter(tag=animal.tag).order_by("-date_of_care"),
+                many=True
+            ).data,
+            "weight_records": WeightRecordSerializer(
+                WeightRecord.objects.filter(tag=animal.tag).order_by("-weight_date"),
+                many=True
+            ).data,
+        })
+        return context
+
+class MakerAnalyticsView(AnimalAnalyticsView):
+    model = Maker
+    serializer_class = MakerSerializer
+    child_serializer_class = UniversalChildSerializer
+
+class RamAnalyticsView(AnimalAnalyticsView):
+    model = Ram
+    serializer_class = RamSerializer
+    child_serializer_class = UniversalChildSerializer
+
+class EweAnalyticsView(AnimalAnalyticsView):
+    model = Ewe
+    serializer_class = EweSerializer
+    child_serializer_class = UniversalChildSerializer
+
+class SheepAnalyticsView(AnimalAnalyticsView):
+    model = Sheep
+    serializer_class = SheepSerializer
+    child_serializer_class = UniversalChildSerializer  # Используем универсальный сериализатор для детей
+
+
+class ArchiveView(TemplateView):
+    """
+    Представление для страницы архива с поддержкой фильтрации по типу животного.
+    """
+    template_name = "archive.html"
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Получаем параметр type из URL
+        animal_type = self.request.GET.get('type', '')
+        context['animal_type'] = animal_type
         return context
 
 
-class RamDetailView(TemplateView):
-    template_name = "ram_detail.html"
+class AnimalActionsViewSet(viewsets.ViewSet):
+    permission_classes = [AllowAny]
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        tag_number = self.kwargs.get("tag_number")
+    @action(detail=False, methods=["post"], url_path="bulk_archive")
+    def bulk_archive(self, request):
+        animal_ids = request.data.get("animal_ids", [])
+        status_id = request.data.get("status_id")
+
+        if not animal_ids or not status_id:
+            return Response(
+                {"error": "Необходимо указать ID животных и статус."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
-            ram = Ram.objects.get(tag__tag_number=tag_number)
-            context["ram"] = ram
-        except Ram.DoesNotExist:
-            print(f"Ram with tag_number={tag_number} not found")
-            raise Http404("Баран не найден")
-        return context
+            archive_status = Status.objects.get(pk=status_id)
+        except Status.DoesNotExist:
+            return Response(
+                {"error": "Указанный статус не найден."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
+        updated_count = 0
+        animal_models = [Maker, Ram, Ewe, Sheep]
+        for model in animal_models:
+            # Мы используем tag__id, так как animal_ids - это ID бирок
+            queryset = model.objects.filter(tag__id__in=animal_ids)
+            updated_count += queryset.update(animal_status=archive_status)
 
-class EweDetailView(TemplateView):
-    template_name = "ewe_detail.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        tag_number = self.kwargs.get("tag_number")
-        try:
-            ewe = Ewe.objects.get(tag__tag_number=tag_number)
-            context["ewe"] = ewe
-        except Ewe.DoesNotExist:
-            print(f"Ewe with tag_number={tag_number} not found")
-            raise Http404("Ярка не найдена")
-        return context
-
-
-class SheepDetailView(TemplateView):
-    template_name = "sheep_detail.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        tag_number = self.kwargs.get("tag_number")
-        try:
-            sheep = Sheep.objects.get(tag__tag_number=tag_number)
-            context["sheep"] = sheep
-        except Sheep.DoesNotExist:
-            print(f"Sheep with tag_number={tag_number} not found")
-            raise Http404("Овца не найдена")
-        return context
-
-
-class MakerAnalyticsView(TemplateView):
-    template_name = "maker_analytics.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        tag_number = self.kwargs.get("tag_number")
-        maker = Maker.objects.filter(tag__tag_number=tag_number).first()
-        try:
-            maker = Maker.objects.get(tag__tag_number=tag_number)
-            context["maker"] = maker
-        except Maker.DoesNotExist:
-            raise Http404("Производитель не найден")
-        # Используем метод сериализации детей
-        serialized_maker = MakerSerializer(maker).data
-        # Используем обновленный сериализатор для детей
-        children = maker.get_children()  # Получаем детей через метод модели
-        children_serialized = MakerChildSerializer(children, many=True).data
-        context.update(
-            {
-                "maker": serialized_maker,
-                "children": children_serialized,  # Дети уже сериализованы
-                "status_history": StatusHistorySerializer(
-                    StatusHistory.objects.filter(tag=maker.tag).order_by("-id"),
-                    many=True,
-                ).data,
-                "place_movements": PlaceMovementSerializer(
-                    PlaceMovement.objects.filter(tag=maker.tag).order_by(
-                        "-new_place__date_of_transfer"
-                    ),
-                    many=True,
-                ).data,
-                "veterinary_history": VeterinarySerializer(
-                    Veterinary.objects.filter(tag=maker.tag).order_by("-date_of_care"),
-                    many=True,
-                ).data,
-                "weight_records": WeightRecordSerializer(
-                    WeightRecord.objects.filter(tag=maker.tag).order_by("-weight_date"),
-                    many=True,
-                ).data,
-            }
+        return Response(
+            {"success": f"Статус обновлен для {updated_count} животных."},
+            status=status.HTTP_200_OK,
         )
-        return context
 
 
 class ArchiveViewSet(ListModelMixin, GenericViewSet):
@@ -762,48 +1219,14 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             return Ram.objects.filter(is_archived=True)
 
         # Объединение всех архивированных животных в один список
-        makers = Maker.objects.filter(is_archived=True).values(
-            "id",
-            "tag__tag_number",
-            "tag__animal_type",
-            "animal_status__status_type",
-            "animal_status__date_of_status",
-            "place__sheepfold",
-            "birth_date",
-            "age",
-        )
-        sheep = Sheep.objects.filter(is_archived=True).values(
-            "id",
-            "tag__tag_number",
-            "tag__animal_type",
-            "animal_status__status_type",
-            "animal_status__date_of_status",
-            "place__sheepfold",
-            "birth_date",
-            "age",
-        )
-        ewes = Ewe.objects.filter(is_archived=True).values(
-            "id",
-            "tag__tag_number",
-            "tag__animal_type",
-            "animal_status__status_type",
-            "animal_status__date_of_status",
-            "place__sheepfold",
-            "birth_date",
-            "age",
-        )
-        rams = Ram.objects.filter(is_archived=True).values(
-            "id",
-            "tag__tag_number",
-            "tag__animal_type",
-            "animal_status__status_type",
-            "animal_status__date_of_status",
-            "place__sheepfold",
-            "birth_date",
-            "age",
-        )
+        makers = Maker.objects.filter(is_archived=True)
+        sheep = Sheep.objects.filter(is_archived=True)
+        ewes = Ewe.objects.filter(is_archived=True)
+        rams = Ram.objects.filter(is_archived=True)
 
-        return makers.union(sheep, ewes, rams)
+        # Объединяем QuerySet'ы
+        queryset = list(makers) + list(sheep) + list(ewes) + list(rams)
+        return queryset
 
 
 # Представления для страниц
@@ -815,3 +1238,318 @@ def animals(request):
 
 def create_animal(request):
     return render(request, "create_animal.html")
+
+
+# API для экспорта в Excel
+
+@api_view(['POST'])
+def export_to_excel(request):
+    # Пробуем импортировать openpyxl, если не получается - используем CSV
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill
+        from openpyxl.utils import get_column_letter
+        use_excel = True
+        print("Используем Excel формат (openpyxl)")
+    except ImportError as e:
+        print(f"openpyxl не доступен: {e}. Используем CSV формат.")
+        use_excel = False
+        import csv
+        import io
+    
+    try:
+        """
+        Экспорт животных в Excel с фильтрами:
+        - animal_type: 'maker', 'ram', 'ewe', 'sheep'
+        - limit: количество животных от начала списка
+        - weight_min: минимальный вес
+        - weight_max: максимальный вес
+        - age_min: минимальный возраст
+        - age_max: максимальный возраст
+        - include_details: включить родителей, детей и историю (true/false)
+        """
+        print(f"Получен запрос на экспорт: {request.data}")  # Отладочный вывод
+        animal_type = request.data.get('animal_type', 'maker')
+        limit = request.data.get('limit', None)
+        weight_min = request.data.get('weight_min', None)
+        weight_max = request.data.get('weight_max', None)
+        age_min = request.data.get('age_min', None)
+        age_max = request.data.get('age_max', None)
+        include_details = request.data.get('include_details', False)
+        
+        print(f"Параметры экспорта: type={animal_type}, limit={limit}, weight_min={weight_min}, weight_max={weight_max}, age_min={age_min}, age_max={age_max}, include_details={include_details}")
+        
+        # Выбираем модель
+        model_map = {
+            'maker': Maker,
+            'ram': Ram,
+            'ewe': Ewe,
+            'sheep': Sheep
+        }
+        
+        model = model_map.get(animal_type, Maker)
+        queryset = model.objects.filter(is_archived=False).order_by('id')
+        
+        # Применяем фильтры
+        if limit:
+            queryset = queryset[:int(limit)]
+        
+        # Фильтр по возрасту
+        if age_min is not None:
+            queryset = queryset.filter(age__gte=float(age_min))
+        if age_max is not None:
+            queryset = queryset.filter(age__lte=float(age_max))
+        
+        # Фильтр по весу (берём последний вес)
+        animals_list = []
+        for animal in queryset:
+            last_weight = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date').first()
+            weight_value = float(last_weight.weight) if last_weight else None
+            
+            # Проверяем фильтр по весу
+            if weight_min is not None and (weight_value is None or weight_value < float(weight_min)):
+                continue
+            if weight_max is not None and (weight_value is None or weight_value > float(weight_max)):
+                continue
+            
+            animals_list.append({
+                'animal': animal,
+                'last_weight': weight_value,
+                'last_weight_date': last_weight.weight_date if last_weight else None
+            })
+        
+        print(f"Найдено {len(animals_list)} животных для экспорта")
+        
+        # Заголовки
+        headers = ['№', 'Бирка', 'Статус', 'Возраст (мес)', 'Овчарня', 'Последний вес (кг)', 'Дата взвешивания']
+        
+        if animal_type == 'maker':
+            headers.extend(['Племенной статус', 'Рабочее состояние'])
+        
+        headers.append('Примечание')
+        
+        if include_details:
+            headers.extend(['Мать', 'Отец', 'Дети', 'История веса', 'История ветобработок'])
+        
+        # Подготавливаем данные для экспорта
+        export_data = []
+        for idx, item in enumerate(animals_list, start=1):
+            animal = item['animal']
+            row_data = [
+                idx,  # №
+                animal.tag.tag_number,
+                animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
+                animal.age if animal.age else '-',
+                animal.place.sheepfold if animal.place else 'Нет данных',
+                item['last_weight'] if item['last_weight'] else '-',
+                item['last_weight_date'].strftime('%Y-%m-%d') if item['last_weight_date'] else '-'
+            ]
+            
+            if animal_type == 'maker':
+                row_data.extend([
+                    animal.plemstatus if hasattr(animal, 'plemstatus') else '-',
+                    animal.working_condition if hasattr(animal, 'working_condition') else '-'
+                ])
+            
+            row_data.append(animal.note if animal.note else '')
+            
+            if include_details:
+                # Родители
+                mother = animal.mother.tag_number if animal.mother else 'Нет данных'
+                father = animal.father.tag_number if animal.father else 'Нет данных'
+                
+                # Дети
+                children = animal.get_children()
+                # Словарь переводов типов животных
+                type_translations = {
+                    'Maker': 'Производитель',
+                    'Ram': 'Баран',
+                    'Ewe': 'Ярка',
+                    'Sheep': 'Овца'
+                }
+                children_str = '; '.join([
+                    f"{child.tag.tag_number} ({type_translations.get(child.get_animal_type(), child.get_animal_type())}" + 
+                    (f", {child.age}мес" if child.age else "") + ")"
+                    for child in children[:10]  # Ограничиваем до 10 детей для читаемости
+                ]) if children else 'Нет данных'
+                
+                # История веса
+                weight_history = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date')[:5]
+                weight_str = '; '.join([f"{w.weight_date}: {w.weight}кг" for w in weight_history])
+                
+                # История ветобработок
+                vet_history = Veterinary.objects.filter(tag=animal.tag).select_related('veterinary_care').order_by('-date_of_care')[:5]
+                vet_str = '; '.join([f"{v.date_of_care}: {v.veterinary_care.care_name}" for v in vet_history])
+                
+                row_data.extend([mother, father, children_str, weight_str or 'Нет данных', vet_str or 'Нет данных'])
+            
+            export_data.append(row_data)
+        
+        # Создаем файл в зависимости от доступности openpyxl
+        if use_excel:
+            # Создаём Excel файл
+            wb = Workbook()
+            ws = wb.active
+            ws.title = f"{animal_type.capitalize()}s"
+            
+            # Стилизация заголовков
+            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF")
+            
+            # Добавляем заголовки
+            for col_num, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_num, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Добавляем данные
+            for row_num, row_data in enumerate(export_data, start=2):
+                for col_num, value in enumerate(row_data, 1):
+                    ws.cell(row=row_num, column=col_num, value=value)
+            
+            # Автоширина колонок
+            for col in range(1, len(headers) + 1):
+                ws.column_dimensions[get_column_letter(col)].width = 15
+            
+            # Сохраняем в response
+            filename = f"{animal_type}s_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            
+            response = HttpResponse(
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            wb.save(response)
+        else:
+            # Создаём CSV файл
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Добавляем заголовки
+            writer.writerow(headers)
+            
+            # Добавляем данные
+            for row_data in export_data:
+                writer.writerow(row_data)
+            
+            # Сохраняем в response
+            filename = f"{animal_type}s_{datetime.now().strftime('%Y-%m-%d')}.csv"
+            
+            response = HttpResponse(
+                output.getvalue(),
+                content_type='text/csv; charset=utf-8'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response
+    
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Ошибка экспорта: {error_details}")  # Для логов сервера
+        return Response(
+            {"error": f"Ошибка при создании Excel файла: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# API для статистики на главной странице
+
+@api_view(['GET'])
+def dashboard_statistics(request):
+    """
+    Возвращает статистику для главной страницы:
+    - Всего активных животных (по типам)
+    - Перенесено в архив за последний месяц (по типам и статусам)
+    - Родилось за последний месяц (только молодняк Ram и Ewe, по типам)
+    """
+    from django.utils import timezone
+    
+    # Дата месяц назад
+    one_month_ago = timezone.now().date() - timedelta(days=30)
+    
+    # 1. Всего активных животных
+    active_makers = Maker.objects.filter(is_archived=False).count()
+    active_rams = Ram.objects.filter(is_archived=False).count()
+    active_ewes = Ewe.objects.filter(is_archived=False).count()
+    active_sheep = Sheep.objects.filter(is_archived=False).count()
+    total_active = active_makers + active_rams + active_ewes + active_sheep
+    
+    # 2. Перенесено в архив за последний месяц
+    archive_statuses = ['Убыл', 'Убой', 'Продажа']
+    
+    archived_makers = Maker.objects.filter(
+        is_archived=True,
+        animal_status__status_type__in=archive_statuses,
+        animal_status__date_of_status__gte=one_month_ago
+    ).values('animal_status__status_type').annotate(count=Count('id'))
+    
+    archived_rams = Ram.objects.filter(
+        is_archived=True,
+        animal_status__status_type__in=archive_statuses,
+        animal_status__date_of_status__gte=one_month_ago
+    ).values('animal_status__status_type').annotate(count=Count('id'))
+    
+    archived_ewes = Ewe.objects.filter(
+        is_archived=True,
+        animal_status__status_type__in=archive_statuses,
+        animal_status__date_of_status__gte=one_month_ago
+    ).values('animal_status__status_type').annotate(count=Count('id'))
+    
+    archived_sheep = Sheep.objects.filter(
+        is_archived=True,
+        animal_status__status_type__in=archive_statuses,
+        animal_status__date_of_status__gte=one_month_ago
+    ).values('animal_status__status_type').annotate(count=Count('id'))
+    
+    # Подсчёт общего количества архивированных
+    total_archived_makers = sum(item['count'] for item in archived_makers)
+    total_archived_rams = sum(item['count'] for item in archived_rams)
+    total_archived_ewes = sum(item['count'] for item in archived_ewes)
+    total_archived_sheep = sum(item['count'] for item in archived_sheep)
+    total_archived = total_archived_makers + total_archived_rams + total_archived_ewes + total_archived_sheep
+    
+    # 3. Родилось за последний месяц (только молодняк)
+    born_rams = Ram.objects.filter(birth_date__gte=one_month_ago).count()
+    born_ewes = Ewe.objects.filter(birth_date__gte=one_month_ago).count()
+    total_born = born_rams + born_ewes
+    
+    return Response({
+        'active_animals': {
+            'total': total_active,
+            'by_type': {
+                'makers': active_makers,
+                'rams': active_rams,
+                'ewes': active_ewes,
+                'sheep': active_sheep
+            }
+        },
+        'archived_last_month': {
+            'total': total_archived,
+            'by_type': {
+                'makers': {
+                    'total': total_archived_makers,
+                    'by_status': list(archived_makers)
+                },
+                'rams': {
+                    'total': total_archived_rams,
+                    'by_status': list(archived_rams)
+                },
+                'ewes': {
+                    'total': total_archived_ewes,
+                    'by_status': list(archived_ewes)
+                },
+                'sheep': {
+                    'total': total_archived_sheep,
+                    'by_status': list(archived_sheep)
+                }
+            }
+        },
+        'born_last_month': {
+            'total': total_born,
+            'by_type': {
+                'rams': born_rams,
+                'ewes': born_ewes
+            }
+        }
+    })

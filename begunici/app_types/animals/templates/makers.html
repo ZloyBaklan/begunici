@@ -4,10 +4,10 @@
 
 {% block content %}
     <h1>Управление производителями</h1>
-    <a href="/animals/main_archive/?type=Maker" class="btn btn-secondary" id="archive-maker-button">Архив Производителей</a>
-
-
-    
+    <div class="action-buttons">
+        <a href="/animals/main_archive/?type=Maker" class="btn btn-secondary" id="archive-maker-button">Архив Производителей</a>
+        <button class="btn btn-success" onclick="openExportModal('maker')">📊 Экспорт в Excel</button>
+    </div>
 
     <!-- Кнопка для раскрытия формы создания производителя -->
     <button id="toggle-create-maker-form" onclick="toggleForm()">▼ Создать производителя</button>
@@ -86,10 +86,66 @@
         <button onclick="applyArchiveStatus()">Применить</button>
         <button onclick="closeArchiveModal()">Отмена</button>
     </div>
+
+    <!-- Модальное окно экспорта в Excel -->
+    <div id="export-modal" class="modal" style="display:none;">
+        <div class="modal-content export-modal-content">
+            <h2>Экспорт в Excel</h2>
+            
+            <div class="export-filters">
+                <!-- Фильтр по количеству -->
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="filter-limit-enabled"> 
+                        Экспортировать первые N животных
+                    </label>
+                    <input type="number" id="filter-limit" placeholder="Количество" min="1" disabled>
+                </div>
+                
+                <!-- Фильтр по весу -->
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="filter-weight-enabled"> 
+                        Фильтр по весу (кг)
+                    </label>
+                    <div class="range-inputs">
+                        <input type="number" id="filter-weight-min" placeholder="От" step="0.1" disabled>
+                        <input type="number" id="filter-weight-max" placeholder="До" step="0.1" disabled>
+                    </div>
+                </div>
+                
+                <!-- Фильтр по возрасту -->
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="filter-age-enabled"> 
+                        Фильтр по возрасту (месяцы)
+                    </label>
+                    <div class="range-inputs">
+                        <input type="number" id="filter-age-min" placeholder="От" step="0.1" disabled>
+                        <input type="number" id="filter-age-max" placeholder="До" step="0.1" disabled>
+                    </div>
+                </div>
+                
+                <!-- Включить детали -->
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="include-details"> 
+                        Включить родителей, детей и историю (вес, ветобработки)
+                    </label>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="performExport('maker')">Экспортировать</button>
+                <button class="btn btn-secondary" onclick="closeExportModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
     
 
     <!-- Подключение скриптов -->
     <script type="module" src="{% static 'js/makers.js' %}"></script>
+    <script src="{% static 'js/export-common.js' %}"></script>
     <script>
     
 
@@ -101,6 +157,11 @@
         function searchMakers() {
             const query = document.getElementById('maker-search').value;
             fetchMakers(query); // Поиск производителей
+        }
+
+        function toggleSelectAll(checkbox) {
+            // Используем функцию из makers.js
+            window.toggleSelectAll(checkbox);
         }
     </script>
 

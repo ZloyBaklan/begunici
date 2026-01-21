@@ -76,5 +76,139 @@
         </div>
     </div>
 
+    <!-- Календарь окотов -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Календарь ожидаемых окотов</h5>
+                    <a href="{% url 'animals:calendar' %}" class="btn btn-primary btn-sm">Открыть полный календарь</a>
+                </div>
+                <div class="card-body">
+                    <!-- Навигация по месяцам -->
+                    <div class="calendar-navigation mb-3 text-center">
+                        <button id="prevMonth" class="btn btn-outline-primary btn-sm">&lt; Предыдущий</button>
+                        <span id="currentMonth" class="mx-3 h6"></span>
+                        <button id="nextMonth" class="btn btn-outline-primary btn-sm">Следующий &gt;</button>
+                    </div>
+                    
+                    <!-- Мини-календарь -->
+                    <div class="calendar-container">
+                        <table class="table table-bordered calendar-table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Пн</th>
+                                    <th>Вт</th>
+                                    <th>Ср</th>
+                                    <th>Чт</th>
+                                    <th>Пт</th>
+                                    <th>Сб</th>
+                                    <th>Вс</th>
+                                </tr>
+                            </thead>
+                            <tbody id="calendarBody">
+                                <!-- Дни календаря будут добавлены через JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Легенда -->
+                    <div class="calendar-legend mt-2">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <div class="legend-item me-3">
+                                <span class="legend-color" style="background-color: #dc3545;"></span>
+                                <small>Ожидаемые роды</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
+
+<!-- Модальное окно для отображения информации о родах -->
+<div class="modal fade" id="lambingModal" tabindex="-1" aria-labelledby="lambingModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="lambingModalLabel">Ожидаемые роды</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="lambingModalBody">
+                <!-- Информация о родах будет добавлена через JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.calendar-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.calendar-table td {
+    height: 40px;
+    vertical-align: top;
+    position: relative;
+    cursor: pointer;
+    padding: 2px;
+    font-size: 0.8em;
+}
+
+.calendar-table td.other-month {
+    color: #ccc;
+    background-color: #f8f9fa;
+}
+
+.calendar-table td.has-lambing {
+    background-color: #dc3545 !important;
+    color: white;
+    font-weight: bold;
+}
+
+.calendar-table td.has-lambing:hover {
+    background-color: #c82333 !important;
+}
+
+.calendar-table td:hover {
+    background-color: #e9ecef;
+}
+
+.calendar-table td.has-lambing:hover {
+    background-color: #c82333 !important;
+}
+
+.day-number {
+    font-weight: bold;
+    margin-bottom: 1px;
+}
+
+.lambing-count {
+    font-size: 0.7em;
+    position: absolute;
+    bottom: 1px;
+    right: 2px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+}
+
+.legend-color {
+    width: 15px;
+    height: 15px;
+    display: inline-block;
+    margin-right: 5px;
+    border: 1px solid #ccc;
+}
+</style>
+
+<script src="{% static 'js/calendar.js' %}"></script>
 {% endblock %}

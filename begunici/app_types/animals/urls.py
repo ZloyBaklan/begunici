@@ -6,6 +6,9 @@ from .views import (
     MakersView,
     MakerDetailView,
     MakerAnalyticsView,
+    RamAnalyticsView,
+    EweAnalyticsView,
+    SheepAnalyticsView,
     RamViewSet,
     EweViewSet,
     SheepViewSet,
@@ -13,9 +16,13 @@ from .views import (
     animals,
     create_animal,
     ArchiveViewSet,
+    ArchiveView,
+    AnimalActionsViewSet,
     RamDetailView,
     EweDetailView,
     SheepDetailView,
+    dashboard_statistics,
+    export_to_excel,
 )
 
 # Создаем маршруты для ViewSet
@@ -26,6 +33,7 @@ router.register(r"ewe", EweViewSet)  # Маршрут для ярок
 router.register(r"sheep", SheepViewSet)  # Маршрут для овец
 router.register(r"lambing", LambingViewSet)  # Маршрут для окотов
 router.register(r"archive", ArchiveViewSet, basename="archive")  # Архив животных
+router.register(r"actions", AnimalActionsViewSet, basename="actions")  # Действия с животными
 
 # Подключаем router для управления всеми ViewSet
 urlpatterns = [
@@ -33,9 +41,24 @@ urlpatterns = [
         "maker/<str:tag_number>/info/", MakerDetailView.as_view(), name="maker-detail"
     ),
     path(
-        "makers/<str:tag_number>/analytics/",
+        "maker/<str:tag_number>/analytics/",
         MakerAnalyticsView.as_view(),
         name="maker-analytics",
+    ),
+    path(
+        "ram/<str:tag_number>/analytics/",
+        RamAnalyticsView.as_view(),
+        name="ram-analytics",
+    ),
+    path(
+        "ewe/<str:tag_number>/analytics/",
+        EweAnalyticsView.as_view(),
+        name="ewe-analytics",
+    ),
+    path(
+        "sheep/<str:tag_number>/analytics/",
+        SheepAnalyticsView.as_view(),
+        name="sheep-analytics",
     ),
     path(
         "ram/<str:tag_number>/info/", RamDetailView.as_view(), name="ram-detail"
@@ -48,7 +71,7 @@ urlpatterns = [
     ),
     path(
         "main_archive/",
-        TemplateView.as_view(template_name="archive.html"),
+        ArchiveView.as_view(),
         name="main_archive",
     ),
     path("", include(router.urls)),
@@ -59,17 +82,17 @@ urlpatterns = [
     ),
     path(
         "ram/<str:tag_number>/api/",
-        RamViewSet.as_view({"get": "retrieve"}),
+        RamViewSet.as_view({"get": "retrieve_api"}),
         name="ram-api",
     ),
     path(
         "ewe/<str:tag_number>/api/",
-        EweViewSet.as_view({"get": "retrieve"}),
+        EweViewSet.as_view({"get": "retrieve_api"}),
         name="ewe-api",
     ),
     path(
         "sheep/<str:tag_number>/api/",
-        SheepViewSet.as_view({"get": "retrieve"}),
+        SheepViewSet.as_view({"get": "retrieve_api"}),
         name="sheep-api",
     ),
     path(
@@ -177,7 +200,10 @@ urlpatterns = [
         SheepViewSet.as_view({"post": "restore"}),
         name="sheep-restore",
     ),
+    path("api/dashboard-statistics/", dashboard_statistics, name="dashboard-statistics"),  # API статистики
+    path("api/export-excel/", export_to_excel, name="export-excel"),  # API экспорта в Excel
     path("main/", animals, name="animals"),  # Главная страница
+    path("calendar/", TemplateView.as_view(template_name="calendar.html"), name="calendar"),  # Календарь окотов
     path(
         "create/", create_animal, name="create_animal"
     ),  # Маршрут для создания животных

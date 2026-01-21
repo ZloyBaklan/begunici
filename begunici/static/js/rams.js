@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchRams();  // Загружаем список баранов при загрузке страницы
@@ -21,14 +21,14 @@ document.addEventListener('DOMContentLoaded', function () {
 async function createRam() {
     const formData = new FormData(document.getElementById('create-ram-form'));
     const data = {
-        tag: formData.get('tag'),
-        animal_status_id: formData.get('animal_status') || null,
+        tag_number: formData.get('tag'),
+        animal_status_id: formData.get('animal_status') ? parseInt(formData.get('animal_status')) : null,
         birth_date: formData.get('birth_date') || null,
-        place_id: formData.get('place') || null,
+        place_id: formData.get('place') ? parseInt(formData.get('place')) : null,
         note: formData.get('note') || ''
     };
 
-    if (!data.tag) {
+    if (!data.tag_number) {
         alert('Пожалуйста, введите номер бирки');
         return;
     }
@@ -44,45 +44,68 @@ async function createRam() {
     }
 }
 
+let currentPage = 1;
+const pageSize = 10;
+
 // Функция загрузки списка баранов
-async function fetchRams() {
+async function fetchRams(page = 1, query = '') {
     try {
-        const rams = await apiRequest('/animals/ram/');
-        const ramTable = document.getElementById('ram-list');
-        ramTable.innerHTML = '';
+        const response = await apiRequest(`/animals/ram/?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(query)}`);
+        const rams = Array.isArray(response) ? response : response.results;
 
-        rams.results.forEach((ram, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="checkbox" value="${ram.tag.tag_number}" onchange="updateDeleteButtons()"></td>
-                <td>${index + 1}</td>
-                <td><a href="/animals/ram/${ram.tag.tag_number}/info/">${ram.tag.tag_number}</a></td>
-                <td>${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}</td>
-                <td>${ram.age || 'Не указан'}</td>
-                <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
-                <td>${ram.last_weight || 'Нет данных'}</td>
-                <td>${ram.last_vet_care || 'Нет данных'}</td>
-                <td>${ram.note || ''}</td>
-            `;
-            ramTable.appendChild(row);
-        });
-
-        // Обновляем пагинацию
-        updatePagination(rams);
+        if (rams) {
+            renderRams(rams);
+            updatePagination(response);
+        } else {
+            console.error('Некорректный ответ от API:', response);
+            alert('Ошибка: данные баранов не найдены.');
+        }
     } catch (error) {
         console.error('Ошибка при загрузке баранов:', error);
+        alert('Ошибка при загрузке списка баранов.');
     }
+}
+
+// Рендеринг списка баранов
+function renderRams(rams) {
+    const ramTable = document.getElementById('ram-list');
+    ramTable.innerHTML = '';
+    rams.forEach((ram, index) => {
+        const row = `<tr>
+            <td>
+                <input type="checkbox" 
+                class="select-ram"  
+                data-tag="${ram.tag.tag_number}">
+            </td>
+            <td>${(currentPage - 1) * pageSize + index + 1}</td>
+            <td><a href="/animals/ram/${ram.tag.tag_number}/info/">${ram.tag.tag_number}</a></td>
+            <td style="background-color:${ram.animal_status ? ram.animal_status.color : '#FFFFFF'}">
+                ${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}
+            </td>
+            <td>${ram.age || 'Не указан'}</td>
+            <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
+            <td>${ram.weight_records && ram.weight_records.length > 0 
+                ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 
+                : 'Нет записей'}</td>
+            <td>${ram.veterinary_history && ram.veterinary_history.length > 0 
+                ? `${formatDateToOutput(ram.veterinary_history[0].date_of_care)}: ${ram.veterinary_history[0].veterinary_care.care_name}` 
+                : 'Нет записей'}</td>
+            <td>${ram.note || ''}</td>
+        </tr>`;
+        ramTable.innerHTML += row;
+    });
+    
+    document.querySelectorAll('.select-ram').forEach(cb => cb.addEventListener('click', e => toggleSelectRam(e.target)))
 }
 
 // Функция загрузки статусов
 async function loadStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/status/');
+        const statuses = await apiRequest('/veterinary/api/status/');
         const select = document.getElementById('animal_status');
         select.innerHTML = '<option value="">Выберите статус</option>';
         
-        const statusesArray = statuses.results || statuses;
-        statusesArray.forEach(status => {
+        statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
@@ -93,143 +116,223 @@ async function loadStatuses() {
     }
 }
 
-// Функция загрузки овчарен
+// Функция загрузки мест
 async function loadPlaces() {
     try {
-        const places = await apiRequest('/veterinary/place/');
+        const places = await apiRequest('/veterinary/api/place/');
         const select = document.getElementById('place');
-        select.innerHTML = '<option value="">Выберите овчарню</option>';
+        select.innerHTML = '<option value="">Выберите место</option>';
         
-        const placesArray = places.results || places;
-        placesArray.forEach(place => {
+        places.forEach(place => {
             const option = document.createElement('option');
             option.value = place.id;
             option.textContent = place.sheepfold;
             select.appendChild(option);
         });
     } catch (error) {
-        console.error('Ошибка загрузки овчарен:', error);
+        console.error('Ошибка загрузки мест:', error);
     }
 }
 
 // Функция поиска баранов
-function searchRams() {
-    const input = document.getElementById('ram-search').value.toLowerCase();
-    const table = document.getElementById('ram-list');
-    const rows = table.getElementsByTagName('tr');
+async function searchRams() {
+    const searchTerm = document.getElementById('ram-search').value;
+    currentPage = 1;
+    fetchRams(currentPage, searchTerm);
+}
 
-    for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-        if (cells.length > 0) {
-            const tagNumber = cells[2].innerText.toLowerCase();
-            const status = cells[3].innerText.toLowerCase();
-            const place = cells[5].innerText.toLowerCase();
-            
-            if (tagNumber.indexOf(input) > -1 || status.indexOf(input) > -1 || place.indexOf(input) > -1) {
-                rows[i].style.display = '';
-            } else {
-                rows[i].style.display = 'none';
-            }
-        }
+// Остальные функции
+function toggleForm() {
+    const form = document.getElementById('create-ram-form');
+    const button = document.getElementById('toggle-create-ram-form');
+    
+    if (form.style.display === 'none' || form.style.display === '') {
+        form.style.display = 'block';
+        button.textContent = '▲ Скрыть форму создания барана';
+    } else {
+        form.style.display = 'none';
+        button.textContent = '▼ Создать барана';
     }
 }
 
-// Функция обновления пагинации
-function updatePagination(data) {
-    const pagination = document.getElementById('pagination');
-    if (!data.pagination) return;
+let selectedRams = new Map(); // Хранение {id: true/false}
 
-    let paginationHTML = '';
-    
-    if (data.pagination.previous) {
-        paginationHTML += `<button onclick="changePage('${data.pagination.previous}')">Предыдущая</button>`;
-    }
-    
-    if (data.pagination.next) {
-        paginationHTML += `<button onclick="changePage('${data.pagination.next}')">Следующая</button>`;
-    }
-    
-    pagination.innerHTML = paginationHTML;
+// Функция для управления чекбоксами всех записей
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.select-ram');
+    checkboxes.forEach(cb => {
+        const tagNumber= cb.dataset.tag;
+
+        cb.checked = checkbox.checked;
+        selectedRams.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+    });
+    console.log('Текущее состояние selectedRams после выбора всех:', selectedRams);
+    toggleDeleteButton();
 }
 
-// Функция смены страницы
-async function changePage(url) {
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        const ramTable = document.getElementById('ram-list');
-        ramTable.innerHTML = '';
+// Функция для управления отдельным чекбоксом
+function toggleSelectRam(checkbox) {
+    const tagNumber = checkbox.dataset.tag;
 
-        data.results.forEach((ram, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="checkbox" value="${ram.tag.tag_number}" onchange="updateDeleteButtons()"></td>
-                <td>${index + 1}</td>
-                <td><a href="/animals/ram/${ram.tag.tag_number}/info/">${ram.tag.tag_number}</a></td>
-                <td>${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}</td>
-                <td>${ram.age || 'Не указан'}</td>
-                <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
-                <td>${ram.last_weight || 'Нет данных'}</td>
-                <td>${ram.last_vet_care || 'Нет данных'}</td>
-                <td>${ram.note || ''}</td>
-            `;
-            ramTable.appendChild(row);
-        });
-
-        updatePagination(data);
-    } catch (error) {
-        console.error('Ошибка при смене страницы:', error);
-    }
+    selectedRams.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+    console.log('Текущее состояние selectedRams: \n', selectedRams);
+    toggleDeleteButton();
 }
 
-// Функция удаления выбранных баранов
+// Функция для отображения кнопки удаления
+function toggleDeleteButton() {
+    const deleteButton = document.getElementById('delete-selected-button');
+    const archiveButton = document.getElementById('archive-selected-button');
+    const hasSelection = Array.from(selectedRams.values()).some(value => value.isSelected);
+
+    deleteButton.style.display = hasSelection ? 'block' : 'none';
+    archiveButton.style.display = hasSelection ? 'block' : 'none';
+}
+
+// Функция для удаления выбранных записей
 async function deleteSelectedRams() {
-    const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
-    const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
-    
-    if (selectedIds.length === 0) {
-        alert('Выберите баранов для удаления');
-        return;
-    }
-    
-    const confirmDelete = confirm(`Вы уверены, что хотите удалить ${selectedIds.length} баранов?`);
-    if (!confirmDelete) return;
+    const selectedTags = Array.from(selectedRams.entries())
+        .filter(([tagNumber, { isSelected }]) => isSelected)
+        .map(([tagNumber]) => tagNumber);
 
-    try {
-        for (const id of selectedIds) {
-            await apiRequest(`/animals/ram/${id}/`, 'DELETE');
-        }
-        alert('Бараны успешно удалены');
-        fetchRams();
-    } catch (error) {
-        console.error('Ошибка при удалении баранов:', error);
-        alert('Ошибка при удалении баранов');
-    }
-}
+    console.log('Выбранные для удаления:', selectedTags);
 
-// Функция архивирования выбранных баранов
-async function archiveSelectedRams(statusId) {
-    const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(#select-all)');
-    const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
-    
-    if (selectedIds.length === 0) {
-        alert('Выберите баранов для архивирования');
+    if (selectedTags.length === 0) {
+        alert('Нет выбранных записей для удаления');
         return;
     }
 
-    try {
-        for (const id of selectedIds) {
-            await apiRequest(`/animals/ram/${id}/`, 'PATCH', { animal_status_id: statusId });
+    const tags = selectedTags.map(item => item.tag);
+    const modal = document.getElementById('delete-modal');
+    const modalMessage = document.getElementById('delete-modal-message');
+    const confirmButton = document.getElementById('delete-confirm-button');
+
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modal.style.display = 'block';
+
+    confirmButton.onclick = async () => {
+        try {
+            for (const tag of selectedTags) {
+                await apiRequest(`/animals/ram/${tag}/`, 'DELETE');
+                selectedRams.delete(tag);
+            }
+            alert('Выбранные записи успешно удалены');
+            fetchRams(currentPage);
+            toggleDeleteButton();
+            modal.style.display = 'none';
+        } catch (error) {
+            console.error('Ошибка при удалении выбранных записей:', error);
+            alert('Ошибка при удалении записей');
         }
-        alert('Бараны успешно перенесены в архив');
-        fetchRams();
+    };
+}
+
+function openArchiveModal() {
+    const modal = document.getElementById('archive-modal');
+    modal.style.display = 'block';
+    loadArchiveStatuses();
+}
+
+function closeArchiveModal() {
+    const modal = document.getElementById('archive-modal');
+    modal.style.display = 'none';
+}
+
+async function loadArchiveStatuses() {
+    try {
+        const statuses = await apiRequest('/veterinary/api/status/');
+        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
+
+        const statusSelect = document.getElementById('archive-status-select');
+        statusSelect.innerHTML = '';
+
+        if (archiveStatuses.length === 0) {
+            alert('Нет статусов для переноса в архив. Создайте необходимые статусы.');
+            closeArchiveModal();
+            return;
+        }
+
+        archiveStatuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.text = status.status_type;
+            statusSelect.add(option);
+        });
     } catch (error) {
-        console.error('Ошибка при архивировании баранов:', error);
-        alert('Ошибка при архивировании баранов');
+        console.error('Ошибка при загрузке статусов:', error);
     }
 }
 
-// Экспортируем функцию для глобального доступа
-window.archiveSelectedRams = archiveSelectedRams;
+async function applyArchiveStatus() {
+    const selectedTags = Array.from(selectedRams.entries())
+        .filter(([tagNumber, { isSelected }]) => isSelected)
+        .map(([tagNumber]) => tagNumber);
 
+    if (selectedTags.length === 0) {
+        alert('Нет выбранных записей для переноса.');
+        return;
+    }
+
+    const statusId = document.getElementById('archive-status-select').value;
+    if (!statusId) {
+        alert('Выберите статус.');
+        return;
+    }
+
+    try {
+        for (const tag of selectedTags) {
+            await apiRequest(`/animals/ram/${tag}/`, 'PATCH', { animal_status_id: statusId });
+        }
+        alert('Выбранные записи успешно перенесены в архив.');
+        closeArchiveModal();
+        fetchRams(currentPage);
+    } catch (error) {
+        console.error('Ошибка при переносе в архив:', error);
+        alert('Ошибка при переносе записей.');
+    }
+}
+
+function updatePagination(response) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+
+    if (response.previous) {
+        const prevButton = document.createElement('button');
+        prevButton.innerText = 'Предыдущая';
+        prevButton.onclick = () => {
+            currentPage--;
+            fetchRams(currentPage);
+        };
+        pagination.appendChild(prevButton);
+    }
+
+    if (response.next) {
+        const nextButton = document.createElement('button');
+        nextButton.innerText = 'Следующая';
+        nextButton.onclick = () => {
+            currentPage++;
+            fetchRams(currentPage);
+        };
+        pagination.appendChild(nextButton);
+    }
+
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = ` Страница ${currentPage}`;
+    pagination.appendChild(pageInfo);
+}
+
+function closeDeleteModal() {
+    const modal = document.getElementById('delete-modal');
+    modal.style.display = 'none';
+}
+
+// Экспортируем функции для глобального доступа
+window.toggleForm = toggleForm;
+window.openArchiveModal = openArchiveModal;
+window.closeArchiveModal = closeArchiveModal;
+window.closeDeleteModal = closeDeleteModal;
+window.applyArchiveStatus = applyArchiveStatus;
+window.deleteSelectedRams = deleteSelectedRams;
+window.toggleSelectAll = toggleSelectAll;
+window.toggleSelectRam = toggleSelectRam;
+window.toggleDeleteButton = toggleDeleteButton;

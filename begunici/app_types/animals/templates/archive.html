@@ -3,7 +3,19 @@
 {% load static %}
 
 {% block content %}
-    <h1>Архив животных</h1>
+    <h1>
+        {% if animal_type == 'Maker' %}
+            Архив производителей
+        {% elif animal_type == 'Ram' %}
+            Архив баранов
+        {% elif animal_type == 'Ewe' %}
+            Архив ярок
+        {% elif animal_type == 'Sheep' %}
+            Архив овец
+        {% else %}
+            Архив животных
+        {% endif %}
+    </h1>
     
     <!-- Фильтры для архива -->
     <div class="filters">
@@ -49,6 +61,9 @@
     <!-- Подключение скриптов -->
     <script type="module" src="{% static 'js/archive.js' %}"></script>
     <script>
+        // Передаем тип животного из контекста Django в JavaScript
+        window.initialAnimalType = '{{ animal_type }}';
+        
         function filterArchive() {
             const animalType = document.getElementById('animal-type-filter').value;
             const status = document.getElementById('status-filter').value;

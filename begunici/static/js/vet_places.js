@@ -1,4 +1,4 @@
-import { getCSRFToken } from "./utils.js";
+import { apiRequest } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchPlaces();  // Загружаем список овчарен при загрузке страницы
@@ -37,44 +37,27 @@ async function createPlace() {
 
     console.log('Creating place with data:', data);
 
-    try {
-        const response = await fetch('/veterinary/place/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),
-            },
-            body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-        console.log('Ответ от сервера:', result);
-
-        if (response.ok) {
-            alert('Овчарня успешно создана');
-            document.getElementById('create-place-form').reset();  // Очистка формы
-            fetchPlaces();  // Обновляем список овчарен
-            resetButton();  // Сбрасываем состояние кнопки на "Создать"
-        } else {
-            alert('Ошибка создания овчарни: ' + result.detail);
-        }
+        try {
+        await apiRequest('/veterinary/api/place/', 'POST', data);
+        alert('Овчарня успешно создана');
+        document.getElementById('create-place-form').reset();  // Очистка формы
+        fetchPlaces();  // Обновляем список овчарен
+        resetButton();  // Сбрасываем состояние кнопки на "Создать"
     } catch (error) {
         console.error('Ошибка:', error);
-        alert('Произошла ошибка при создании овчарни');
+        alert(`Произошла ошибка при создании овчарни: ${error.message}`);
     }
 }
 
 // Функция для загрузки списка овчарен
-async function fetchPlaces() {
+async function fetchPlaces(searchQuery = '') {
     try {
         console.log('Fetching places...');
-        const response = await fetch('/veterinary/place/');
-        console.log('Places response status:', response.status);
-        
-        if (!response.ok) {
-            throw new Error('Ошибка при загрузке овчарен');
+        let url = '/veterinary/api/place/';
+        if (searchQuery) {
+            url += `?search=${searchQuery}`;
         }
-        const places = await response.json();
+        const places = await apiRequest(url);
         console.log('Places data:', places);
 
         const placeTable = document.getElementById('place-list');
@@ -105,34 +88,23 @@ async function fetchPlaces() {
 
 // Функция удаления овчарни
 async function deletePlace(placeId) {
-    try {
-        const response = await fetch(`/veterinary/place/${placeId}/`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRFToken': getCSRFToken(),
-            }
-        });
+        const confirmDelete = confirm('Вы уверены, что хотите удалить эту овчарню?');
+    if (!confirmDelete) return;
 
-        if (response.ok) {
-            alert('Овчарня успешно удалена');
-            fetchPlaces();  // Обновляем список овчарен
-        } else {
-            alert('Ошибка при удалении овчарни');
-        }
+    try {
+        await apiRequest(`/veterinary/api/place/${placeId}/`, 'DELETE');
+        alert('Овчарня успешно удалена');
+        fetchPlaces();  // Обновляем список овчарен
     } catch (error) {
         console.error('Ошибка при удалении овчарни:', error);
+        alert(`Ошибка при удалении овчарни: ${error.message}`);
     }
 }
 
 // Функция для редактирования овчарни
 async function editPlace(placeId) {
-    try {
-        // Загружаем данные овчарни для редактирования
-        const response = await fetch(`/veterinary/place/${placeId}/`);
-        if (!response.ok) {
-            throw new Error('Ошибка при получении данных овчарни');
-        }
-        const place = await response.json();
+        try {
+        const place = await apiRequest(`/veterinary/api/place/${placeId}/`);
 
         // Заполняем форму редактирования данными овчарни
         document.getElementById('place-sheepfold').value = place.sheepfold;
@@ -156,49 +128,23 @@ async function updatePlace(placeId) {
         date_of_transfer: dateOfTransfer ? dateOfTransfer : null
     };
 
-    try {
-        const response = await fetch(`/veterinary/place/${placeId}/`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),
-            },
-            body: JSON.stringify(data),
-        });
-
-        if (response.ok) {
-            alert('Овчарня успешно обновлена');
-            resetButton();  // Сбрасываем состояние кнопки на "Создать"
-            fetchPlaces();  // Обновляем список овчарен
-            
-        } else {
-            const errorData = await response.json();
-            alert('Ошибка обновления овчарни: ' + errorData.detail);
-        }
+        try {
+        await apiRequest(`/veterinary/api/place/${placeId}/`, 'PUT', data);
+        alert('Овчарня успешно обновлена');
+        resetButton();  // Сбрасываем состояние кнопки на "Создать"
+        fetchPlaces();  // Обновляем список овчарен
     } catch (error) {
         console.error('Ошибка при обновлении овчарни:', error);
-        alert('Произошла ошибка при обновлении овчарни');
+        alert(`Произошла ошибка при обновлении овчарни: ${error.message}`);
     }
 }
 
 // Функция для поиска овчарен
 function searchPlaces() {
-    const input = document.getElementById('place-search').value.toLowerCase();
-    const table = document.getElementById('place-list');
-    const rows = table.getElementsByTagName('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-        if (cells.length > 0) {
-            const sheepfoldName = cells[1].innerText.toLowerCase();
-            if (sheepfoldName.indexOf(input) > -1) {
-                rows[i].style.display = '';
-            } else {
-                rows[i].style.display = 'none';
-            }
-        }
-    }
+    const query = document.getElementById('place-search').value;
+    fetchPlaces(query);
 }
+window.searchPlaces = searchPlaces; // Делаем функцию глобальной
 
 // Функция для сброса кнопки в режим создания
 function resetButton() {

@@ -39,7 +39,7 @@ async function createStatus() {
     console.log('Creating status with data:', data);
 
     try {
-        await apiRequest('/veterinary/status/', 'POST', data);
+                await apiRequest('/veterinary/api/status/', 'POST', data);
         alert('Статус успешно создан');
         document.getElementById('create-status-form').reset();
         fetchStatuses();
@@ -51,10 +51,14 @@ async function createStatus() {
 }
 
 // Функция загрузки списка статусов
-async function fetchStatuses() {
+async function fetchStatuses(searchQuery = '') {
     try {
         console.log('Fetching statuses...');
-        const statuses = await apiRequest('/veterinary/status/');
+        let url = '/veterinary/api/status/';
+        if (searchQuery) {
+            url += `?search=${searchQuery}`;
+        }
+        const statuses = await apiRequest(url);
         console.log('Statuses data:', statuses);
         
         const statusTable = document.getElementById('status-list');
@@ -91,7 +95,7 @@ async function fetchStatuses() {
 
 async function editStatus(statusId) {
     try {
-        const status = await apiRequest(`/veterinary/status/${statusId}/`);
+                const status = await apiRequest(`/veterinary/api/status/${statusId}/`);
 
         // Заполняем поля формы данными статуса для редактирования
         document.getElementById('status-type').value = status.status_type;
@@ -115,7 +119,7 @@ async function deleteStatus(statusId) {
     if (!confirmDelete) return;
 
     try {
-        await apiRequest(`/veterinary/status/${statusId}/`, 'DELETE');
+                await apiRequest(`/veterinary/api/status/${statusId}/`, 'DELETE');
         alert('Статус успешно удален');
         fetchStatuses();
     } catch (error) {
@@ -136,7 +140,7 @@ async function updateStatus(statusId) {
     };
     console.log('Отправляемые данные:', data); // Логируем данные
     try {
-        await apiRequest(`/veterinary/status/${statusId}/`, 'PUT', data);
+                await apiRequest(`/veterinary/api/status/${statusId}/`, 'PUT', data);
         alert('Статус успешно обновлен');
         
         fetchStatuses();
@@ -151,22 +155,10 @@ async function updateStatus(statusId) {
 
 // Функция для поиска статусов
 function searchStatuses() {
-    const input = document.getElementById('status-search').value.toLowerCase();
-    const table = document.getElementById('status-list');
-    const rows = table.getElementsByTagName('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-        if (cells.length > 0) {
-            const statusName = cells[1].innerText.toLowerCase();
-            if (statusName.indexOf(input) > -1) {
-                rows[i].style.display = '';
-            } else {
-                rows[i].style.display = 'none';
-            }
-        }
-    }
+    const query = document.getElementById('status-search').value;
+    fetchStatuses(query);
 }
+window.searchStatuses = searchStatuses; // Делаем функцию глобальной
 
 // Функция для сброса кнопки в режим создания
 function resetButton() {

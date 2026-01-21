@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchMakers();  // Загрузка списка производителей при загрузке страницы
@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // Функция для загрузки статусов животных
 async function loadAnimalStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/status/');
+        const statuses = await apiRequest('/veterinary/api/status/');
         const statusSelect = document.getElementById('animal_status');
         statusSelect.innerHTML = '';
         statuses.forEach(status => {
@@ -32,7 +32,7 @@ async function loadAnimalStatuses() {
 // Функция для загрузки мест (овчарня и отсек)
 async function loadPlaces() {
     try {
-        const places = await apiRequest('/veterinary/place/');
+        const places = await apiRequest('/veterinary/api/place/');
         const sheepfoldSelect = document.getElementById('place');
         sheepfoldSelect.innerHTML = '';
         places.forEach(place => {
@@ -61,7 +61,7 @@ async function saveMaker() {
     const method = 'POST';
 
     const data = {
-        tag: document.getElementById('tag').value,
+        tag_number: document.getElementById('tag').value,
         animal_status_id: parseInt(document.getElementById('animal_status').value),
         birth_date: document.getElementById('birth_date').value,
         plemstatus: document.getElementById('plemstatus').value,
@@ -72,7 +72,7 @@ async function saveMaker() {
     
     console.log('Отправляемые данные:', data); // Логируем данные для отладки
 
-    if (!data.tag || !data.animal_status_id || !data.place_id) {
+    if (!data.tag_number || !data.animal_status_id || !data.place_id) {
         alert('Пожалуйста, заполните обязательные поля: бирка, статус, место.');
         return;
     }
@@ -136,7 +136,7 @@ function renderMakers(makers) {
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${maker.veterinary_history && maker.veterinary_history.length > 0 
-                ? `${maker.veterinary_history[0].date_of_care}: ${maker.veterinary_history[0].veterinary_care.care_name}` 
+                ? `${formatDateToOutput(maker.veterinary_history[0].date_of_care)}: ${maker.veterinary_history[0].veterinary_care.care_name}` 
                 : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
             <td>${maker.note}</td>
@@ -327,7 +327,7 @@ window.closeArchiveModal = closeArchiveModal;
 
 async function loadArchiveStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/status/');
+        const statuses = await apiRequest('/veterinary/api/status/');
         const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
@@ -379,10 +379,16 @@ async function applyArchiveStatus() {
     }
 }
 
-// Экспортируем функцию для глобального доступа
+// Экспортируем функции для глобального доступа
 window.applyArchiveStatus = applyArchiveStatus;
+window.deleteSelectedMakers = deleteSelectedMakers;
+window.toggleSelectAll = toggleSelectAll;
+window.toggleSelectMaker = toggleSelectMaker;
+window.toggleDeleteButton = toggleDeleteButton;
 
 function setupArchiveButton() {
     const archiveButton = document.getElementById('archive-maker-button');
     archiveButton.href = `/animals/main_archive/?type=Maker`; // Фиксируем тип как Maker
 }
+
+// Функции экспорта теперь в export-common.js

@@ -14,9 +14,6 @@ from begunici.app_types.veterinary.vet_models import (
 )
 
 
-from dateutil.relativedelta import relativedelta
-
-
 class AnimalBase(models.Model):
     tag = models.OneToOneField(
         Tag, on_delete=models.CASCADE, verbose_name="Бирка"
@@ -42,7 +39,7 @@ class AnimalBase(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="children_mother",
+        related_name="%(class)s_children_mother",
         verbose_name="Мать",
     )
     father = models.ForeignKey(
@@ -50,7 +47,7 @@ class AnimalBase(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="children_father",
+        related_name="%(class)s_children_father",
         verbose_name="Отец",
     )
 
@@ -81,10 +78,22 @@ class AnimalBase(models.Model):
     # Расчет возраста
     def calculate_age(self):
         if self.birth_date:
-            current_date = timezone.now().date()
-            delta = relativedelta(current_date, self.birth_date)
-            calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
-            self.age = calculated_age
+            try:
+                current_date = timezone.now().date()
+                
+                # Убеждаемся, что birth_date - это объект date
+                if isinstance(self.birth_date, str):
+                    from datetime import datetime
+                    birth_date = datetime.strptime(self.birth_date, '%Y-%m-%d').date()
+                else:
+                    birth_date = self.birth_date
+                
+                delta = relativedelta(current_date, birth_date)
+                calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
+                self.age = calculated_age
+            except (ValueError, TypeError) as e:
+                # Если не удается вычислить возраст, устанавливаем None
+                self.age = None
 
     def get_animal_type(self):
         """
@@ -123,45 +132,29 @@ class AnimalBase(models.Model):
             self.tag.animal_type = self.get_animal_type()
             self.tag.save()
 
-        # 🔹 Поиск предыдущего места (`old_place`) перед обновлением
-        if not is_new and self.tag:
+        # 🔹 Получаем старые значения до сохранения
+        if not is_new:
             try:
-                existing_obj = self.__class__.objects.get(
-                    tag__tag_number=self.tag.tag_number
-                )
-                old_place = existing_obj.place
+                old_instance = self.__class__.objects.get(pk=self.pk)
+                old_place = old_instance.place
+                old_status = old_instance.animal_status
             except self.__class__.DoesNotExist:
-                old_place = None  # Если объекта нет, значит он создаётся впервые
-
-        # 🔹 Создание записи о перемещении, если место изменилось
-        if self.place and self.tag and old_place and old_place != self.place:
-            movement = PlaceMovement.objects.create(
-                tag=self.tag, old_place=old_place, new_place=self.place
-            )
-            print(f"✅ Создано перемещение: {movement}")
-
-        # 🔹 Поиск предыдущего статуса (`old_status`) перед обновлением
-        if not is_new and self.tag:
-            try:
-                existing_obj = self.__class__.objects.get(
-                    tag__tag_number=self.tag.tag_number
-                )
-                old_status = existing_obj.animal_status
-            except self.__class__.DoesNotExist:
-                old_status = None
-
-        # 🔹 Создание записи в `StatusHistory`, если статус изменился
-        if self.animal_status and self.tag and old_status != self.animal_status:
-            StatusHistory.objects.create(
-                tag=self.tag,
-                old_status=old_status if old_status else None,
-                new_status=self.animal_status,
-            )
+                pass  # old_place и old_status останутся None
 
         # 🔹 Сохранение объекта
-        super().save(
-            *args, **kwargs
-        )  # Обращаемся к `super()`, чтобы не зависеть от названия родителя
+        super().save(*args, **kwargs)
+
+        # 🔹 Создание записи о перемещении, если место изменилось
+        if not is_new and self.place and old_place != self.place:
+            PlaceMovement.objects.create(
+                tag=self.tag, old_place=old_place, new_place=self.place
+            )
+
+        # 🔹 Создание записи в `StatusHistory`, если статус изменился
+        if not is_new and self.animal_status and old_status != self.animal_status:
+            StatusHistory.objects.create(
+                tag=self.tag, old_status=old_status, new_status=self.animal_status
+            )
 
 
 class Maker(AnimalBase):
@@ -173,22 +166,6 @@ class Maker(AnimalBase):
         verbose_name="Дата установки статуса", null=True, blank=True
     )  # Дата установки рабочего состояния
 
-    mother = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="maker_children_mother",
-        verbose_name="Мать",
-    )
-    father = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="maker_children_father",
-        verbose_name="Отец",
-    )
 
     class Meta:
         verbose_name = "Производитель"
@@ -213,69 +190,140 @@ class Maker(AnimalBase):
 
     def get_children(self):
         """
-        Возвращает всех детей данного производителя.
+        Возвращает всех детей данного производителя (любого типа).
         """
-        return Maker.objects.filter(
-            Q(mother__tag_number=self.tag.tag_number)
-            | Q(father__tag_number=self.tag.tag_number)
-        )
+        children = []
+        # We need to query the base model to get all children, but since AnimalBase is abstract,
+        # we query each concrete subclass.
+        for model in [Ram, Ewe, Sheep, Maker]:
+            children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
+
+        # Sort children by birth date, for example
+        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        return children
 
 
 class Lambing(models.Model):
+    # Мать может быть либо овцой, либо яркой
+    sheep = models.ForeignKey(
+        "Sheep", on_delete=models.CASCADE, verbose_name="Овца (Мать)", 
+        null=True, blank=True, related_name="lambings"
+    )
     ewe = models.ForeignKey(
-        "Sheep", on_delete=models.CASCADE, verbose_name="Овца (Мать)"
+        "Ewe", on_delete=models.CASCADE, verbose_name="Ярка (Мать)", 
+        null=True, blank=True, related_name="lambings"
     )
+    
+    # Отец может быть либо производителем, либо бараном
     maker = models.ForeignKey(
-        "Maker", on_delete=models.CASCADE, verbose_name="Производитель (Отец)"
+        "Maker", on_delete=models.CASCADE, verbose_name="Производитель (Отец)",
+        null=True, blank=True, related_name="lambings_as_father"
     )
-    planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота")
+    ram = models.ForeignKey(
+        "Ram", on_delete=models.CASCADE, verbose_name="Баран (Отец)",
+        null=True, blank=True, related_name="lambings_as_father"
+    )
+    
+    start_date = models.DateField(verbose_name="Дата начала окота (случки)", default=timezone.now)
+    planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота", default=timezone.now)
     actual_lambing_date = models.DateField(
         verbose_name="Фактическая дата окота", null=True, blank=True
     )
     number_of_lambs = models.IntegerField(
         verbose_name="Количество ягнят", null=True, blank=True
     )
+    note = models.TextField(
+        verbose_name="Примечание", null=True, blank=True
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активный окот")
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Дата создания")
 
     def __str__(self):
-        return f"Окот {self.ewe.tag.tag_number} от производителя {self.maker.tag.tag_number}"
+        mother = self.sheep or self.ewe
+        father = self.maker or self.ram
+        return f"Окот {mother.tag.tag_number} от {father.tag.tag_number}"
 
     class Meta:
         verbose_name = "Окот"
         verbose_name_plural = "Окоты"
 
+    def get_mother(self):
+        """Возвращает мать (овцу или ярку)"""
+        return self.sheep or self.ewe
+    
+    def get_father(self):
+        """Возвращает отца (производителя или барана)"""
+        return self.maker or self.ram
+
+    def get_mother_type(self):
+        """Возвращает тип матери"""
+        if self.sheep:
+            return "Овца"
+        elif self.ewe:
+            return "Ярка"
+        return None
+    
+    def get_father_type(self):
+        """Возвращает тип отца"""
+        if self.maker:
+            return "Производитель"
+        elif self.ram:
+            return "Баран"
+        return None
+
     def calculate_planned_lambing_date(self):
         """
-        Рассчитываем планируемую дату окота (155 дней от даты случки)
+        Рассчитываем планируемую дату окота (6 месяцев от даты начала)
         """
-        if not self.planned_lambing_date:
-            self.planned_lambing_date = timezone.now().date() + timedelta(days=155)
+        if self.start_date:
+            self.planned_lambing_date = self.start_date + relativedelta(months=6)
+
+    def complete_lambing(self):
+        """Завершить окот"""
+        self.is_active = False
+        self.save()
+
+    def clean(self):
+        """Валидация модели"""
+        from django.core.exceptions import ValidationError
+        
+        # Проверяем, что указана только одна мать
+        if not (self.sheep or self.ewe):
+            raise ValidationError("Должна быть указана мать (овца или ярка)")
+        if self.sheep and self.ewe:
+            raise ValidationError("Нельзя указывать и овцу, и ярку одновременно")
+            
+        # Проверяем, что указан только один отец
+        if not (self.maker or self.ram):
+            raise ValidationError("Должен быть указан отец (производитель или баран)")
+        if self.maker and self.ram:
+            raise ValidationError("Нельзя указывать и производителя, и барана одновременно")
+            
+        # Проверяем, что у матери нет активного окота
+        mother = self.get_mother()
+        if mother and self.is_active:
+            # Проверяем активные окоты в зависимости от типа матери
+            if self.sheep:
+                existing_active = Lambing.objects.filter(sheep=self.sheep, is_active=True)
+            elif self.ewe:
+                existing_active = Lambing.objects.filter(ewe=self.ewe, is_active=True)
+            else:
+                existing_active = Lambing.objects.none()
+                
+            existing_active = existing_active.exclude(pk=self.pk)
+            if existing_active.exists():
+                raise ValidationError(f"У {mother.tag.tag_number} уже есть активный окот")
 
     def save(self, *args, **kwargs):
         """
         Переопределение метода save, чтобы рассчитать планируемую дату окота.
         """
-        if not self.planned_lambing_date:
+        if self.start_date and not self.planned_lambing_date:
             self.calculate_planned_lambing_date()
         super(Lambing, self).save(*args, **kwargs)
 
 
 class Ram(AnimalBase):
-    mother = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_mother_ram",
-        verbose_name="Мать",
-    )
-    father = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_father_ram",
-        verbose_name="Отец",
-    )
 
     class Meta:
         verbose_name = "Баран"
@@ -286,34 +334,22 @@ class Ram(AnimalBase):
 
     def get_children(self):
         """
-        Возвращает всех детей данного барана.
+        Возвращает всех детей данного барана (любого типа).
         """
-        return Ram.objects.filter(
-            Q(mother__tag_number=self.tag.tag_number)
-            | Q(father__tag_number=self.tag.tag_number)
-        )
+        children = []
+        # Ищем среди всех типов животных
+        for model in [Ram, Ewe, Sheep, Maker]:
+            children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
+
+        # Сортируем детей по дате рождения
+        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        return children
 
     def __str__(self):
         return f"Баран {self.tag.tag_number}"
 
 
 class Ewe(AnimalBase):
-    mother = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_mother_ewe",
-        verbose_name="Мать",
-    )
-    father = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_father_ewe",
-        verbose_name="Отец",
-    )
 
     class Meta:
         verbose_name = "Ярка"
@@ -327,15 +363,20 @@ class Ewe(AnimalBase):
 
     def get_children(self):
         """
-        Возвращает всех детей данной ярки.
+        Возвращает всех детей данной ярки (любого типа).
         """
-        return Ewe.objects.filter(
-            Q(mother__tag_number=self.tag.tag_number)
-            | Q(father__tag_number=self.tag.tag_number)
-        )
+        children = []
+        # Ищем среди всех типов животных
+        for model in [Ram, Ewe, Sheep, Maker]:
+            children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
+
+        # Сортируем детей по дате рождения
+        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        return children
 
     # Метод для преобразования Ярки в Овцу после случки
     def to_sheep(self):
+        # Создаем новую овцу с теми же данными
         sheep = Sheep.objects.create(
             tag=self.tag,
             animal_status=self.animal_status,
@@ -343,30 +384,20 @@ class Ewe(AnimalBase):
             place=self.place,
             mother=self.mother,
             father=self.father,
+            note=self.note,
         )
-        sheep.weight_records.set(self.weight_records.all())
-        sheep.veterinary_history.set(self.veterinary_history.all())
+        
+        # Переносим записи о весе (обновляем tag в записях)
+        from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary
+        WeightRecord.objects.filter(tag=self.tag).update(tag=self.tag)
+        Veterinary.objects.filter(tag=self.tag).update(tag=self.tag)
+        
+        # Удаляем ярку
         self.delete()
         return sheep
 
 
 class Sheep(AnimalBase):
-    mother = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_mother_sheep",
-        verbose_name="Мать",
-    )
-    father = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="children_father_sheep",
-        verbose_name="Отец",
-    )
     planned_lambing_date = models.DateField(
         verbose_name="Планируемая дата окота", null=True, blank=True
     )
@@ -389,12 +420,16 @@ class Sheep(AnimalBase):
 
     def get_children(self):
         """
-        Возвращает всех детей данной овцы.
+        Возвращает всех детей данной овцы (любого типа).
         """
-        return Sheep.objects.filter(
-            Q(mother__tag_number=self.tag.tag_number)
-            | Q(father__tag_number=self.tag.tag_number)
-        )
+        children = []
+        # Ищем среди всех типов животных
+        for model in [Ram, Ewe, Sheep, Maker]:
+            children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
+
+        # Сортируем детей по дате рождения
+        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        return children
 
     # Метод для добавления нового окота
     def add_lambing(self, maker, actual_lambing_date, lambs_data):

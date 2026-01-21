@@ -15,7 +15,7 @@ from .vet_views import (
 )
 
 # Создаем роутер
-router = DefaultRouter()
+router = DefaultRouter(trailing_slash=True)  # Добавляем trailing_slash
 
 # Регистрируем ViewSet'ы
 router.register(r"status", StatusViewSet)
@@ -27,7 +27,7 @@ router.register(r"weight-record", WeightRecordViewSet)
 router.register(r"place_movement", PlaceMovementViewSet)
 
 urlpatterns = [
-    path("", include(router.urls)),  # Добавляем имя для veterinary
+    path("api/", include(router.urls)),  # Возвращаем префикс /api/
     path(
         "management/", VeterinaryManagementView.as_view(), name="veterinary-management"
     ),  # Страница управления технической информацией

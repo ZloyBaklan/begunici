@@ -78,3 +78,261 @@ th {
     padding: 8px;
     text-align: left;
 }
+
+/* Стили для пагинации */
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.pagination-controls button {
+    padding: 5px 10px;
+    border: 1px solid #ddd;
+    background-color: #f9f9f9;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.pagination-controls button:hover:not(:disabled) {
+    background-color: #e9ecef;
+}
+
+.pagination-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination-controls .page-number {
+    min-width: 35px;
+}
+
+.pagination-controls .page-number.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+/* Стили для модального окна архива */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 400px;
+    text-align: center;
+}
+
+.modal-close {
+    margin-top: 15px;
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.modal-close:hover {
+    background-color: #0056b3;
+}
+
+/* Стили для главной страницы - статистика */
+.statistics-container {
+    margin: 20px 0;
+}
+
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.stat-card {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 20px;
+    border-radius: 6px;
+}
+
+.stat-card h4 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: #495057;
+}
+
+.stat-number {
+    font-size: 32px;
+    font-weight: bold;
+    margin: 10px 0;
+    text-align: center;
+    color: #007bff;
+}
+
+.stat-details {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #dee2e6;
+}
+
+.stat-details p {
+    margin: 5px 0;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    color: #6c757d;
+}
+
+.stat-details span {
+    font-weight: 500;
+    color: #495057;
+}
+
+.animal-type-section {
+    margin: 8px 0;
+}
+
+.animal-type-section strong {
+    color: #495057;
+}
+
+.status-breakdown {
+    margin-left: 15px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.status-breakdown div {
+    margin: 2px 0;
+}
+
+.navigation-section {
+    margin-top: 40px;
+}
+
+.navigation-section ul {
+    list-style: none;
+    padding: 0;
+}
+
+.navigation-section li {
+    margin: 10px 0;
+}
+
+.navigation-section a {
+    display: inline-block;
+    padding: 12px 24px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    transition: background-color 0.3s ease;
+}
+
+.navigation-section a:hover {
+    background-color: #0056b3;
+}
+
+/* Стили для модального окна экспорта */
+.export-modal-content {
+    max-width: 600px;
+    width: 90%;
+}
+
+.export-filters {
+    margin: 20px 0;
+}
+
+.filter-group {
+    margin: 15px 0;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.filter-group input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.range-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #545b62;
+}
+
+.btn-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: #218838;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}

@@ -1,0 +1,145 @@
+{% extends "base_public.html" %}
+{% load static %}
+
+{% block title %}Ферма Бегуницы{% endblock %}
+
+{% block content %}
+
+<section class="hero mb-5">
+
+  <div class="hero-media has-image"
+     style="background-image: url(&quot;{% static 'img/farm-wall.png' %}&quot;);">
+
+    <div class="hero-content">
+      <div class="hero-title">Ферма «Бегуницы»</div>
+      <div class="hero-kicker">
+        <span class="dot"></span>
+        <span>Австралийский Дорпер • фермерское хозяйство</span>
+      </div>
+
+      
+
+      <div class="hero-subtitle">
+        Разведение, натуральное мясо, 
+        ответственное фермерство и полный контроль качества.
+      </div>
+
+    </div>
+
+    <div class="hero-logo">
+      <img src="{% static 'img/logo.png' %}" alt="Логотип Ферма Бегуницы">
+    </div>
+  </div>
+</section>
+
+<section class="mb-5">
+  <h2 class="section-title">Почему мы</h2>
+  <div class="section-rule"></div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-seedling"></i></div>
+        <div class="feature-title">Натуральное кормление</div>
+        <p class="feature-text">
+          Животные выращиваются без интенсивных промышленных технологий и гормонов роста.
+        </p>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <div class="feature-title">Ветеринарный контроль</div>
+        <p class="feature-text">
+          Постоянный мониторинг состояния животных и прозрачный учёт всех процедур.
+        </p>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-truck"></i></div>
+        <div class="feature-title">Поставка под заказ</div>
+        <p class="feature-text">
+          Работаем напрямую с покупателями и партнёрами, без лишних посредников.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-5">
+  <h2 class="section-title">Основные направления</h2>
+  <div class="section-rule"></div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-title">Мясо дорпер</div>
+        <p class="feature-text">Высокое качество мяса с минимальным содержанием жира.</p>
+        <a href="{% url 'public_site:products' %}" class="text-decoration-none" style="color: var(--brand-red); font-weight: 800;">
+          Подробнее →
+        </a>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-title">Племенное разведение</div>
+        <p class="feature-text">Работа с породой дорпер и контроль генетических линий.</p>
+        <a href="{% url 'public_site:products' %}" class="text-decoration-none" style="color: var(--brand-red); font-weight: 800;">
+          Подробнее →
+        </a>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card">
+        <div class="feature-title">Сотрудничество</div>
+        <p class="feature-text">Готовы к партнёрству с фермами, магазинами и переработчиками.</p>
+        <a href="{% url 'public_site:contacts' %}" class="text-decoration-none" style="color: var(--brand-red); font-weight: 800;">
+          Связаться →
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section id="map" class="mb-5">
+  <h2 class="section-title">Где мы находимся</h2>
+  <div class="section-rule"></div>
+
+  <div class="feature-card mt-3">
+    <div class="mb-3">
+      <div class="fw-bold">
+        Россия, Ленинградская область, Ломоносовский район
+      </div>
+      <div class="text-muted small">
+        (59.571908, 29.186340)
+      </div>
+    </div>
+
+    <div class="ratio ratio-16x9">
+      <iframe
+        src="https://yandex.ru/map-widget/v1/?ll=29.186340%2C59.571908&z=14&pt=29.186340%2C59.571908%2Cpm2rdm"
+        frameborder="0"
+        loading="lazy">
+      </iframe>
+    </div>
+
+    <div class="mt-2">
+      <a class="text-decoration-none"
+         href="https://yandex.ru/maps/?ll=29.186340%2C59.571908&z=14"
+         target="_blank" rel="noopener">
+        Открыть в Яндекс.Картах →
+      </a>
+    </div>
+  </div>
+</section>
+
+
+
+{% endblock %}
+

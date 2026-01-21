@@ -3,13 +3,31 @@ import { apiRequest } from "./utils.js";
 let allArchiveData = []; // Храним все данные архива
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Устанавливаем начальный фильтр по типу животного, если он передан
+    const initialType = window.initialAnimalType || '';
+    if (initialType) {
+        const typeFilter = document.getElementById('animal-type-filter');
+        if (typeFilter) {
+            typeFilter.value = initialType;
+        }
+    }
+    
     fetchArchive();  // Загружаем архив при загрузке страницы
 });
 
 // Функция загрузки архива
 async function fetchArchive() {
     try {
-        const archive = await apiRequest('/animals/archive/');
+        // Получаем начальный тип животного из URL или глобальной переменной
+        const initialType = window.initialAnimalType || '';
+        let url = '/animals/archive/';
+        
+        // Добавляем параметр type если он есть
+        if (initialType) {
+            url += `?type=${encodeURIComponent(initialType)}`;
+        }
+        
+        const archive = await apiRequest(url);
         allArchiveData = archive.results || archive;
         displayArchive(allArchiveData);
     } catch (error) {
@@ -68,30 +86,58 @@ function displayArchive(data) {
 }
 
 // Функция фильтрации архива
-function filterArchiveData(animalType, status, search) {
-    let filteredData = allArchiveData;
-    
-    // Фильтр по типу животного
-    if (animalType) {
-        filteredData = filteredData.filter(animal => animal.animal_type === animalType);
+async function filterArchiveData(animalType, status, search) {
+    try {
+        // Строим URL с параметрами фильтрации
+        let url = '/animals/archive/';
+        const params = new URLSearchParams();
+        
+        if (animalType) {
+            params.append('type', animalType);
+        }
+        if (search) {
+            params.append('search', search);
+        }
+        
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
+        
+        // Делаем новый запрос с фильтрами
+        const archive = await apiRequest(url);
+        allArchiveData = archive.results || archive;
+        
+        // Дополнительная фильтрация по статусу (если API не поддерживает)
+        let filteredData = allArchiveData;
+        if (status) {
+            filteredData = filteredData.filter(animal => 
+                animal.status && animal.status === status
+            );
+        }
+        
+        displayArchive(filteredData);
+    } catch (error) {
+        console.error('Ошибка при фильтрации архива:', error);
+        // Fallback к локальной фильтрации
+        let filteredData = allArchiveData;
+        
+        if (animalType) {
+            filteredData = filteredData.filter(animal => animal.animal_type === animalType);
+        }
+        if (status) {
+            filteredData = filteredData.filter(animal => 
+                animal.status && animal.status === status
+            );
+        }
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filteredData = filteredData.filter(animal => 
+                animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
+            );
+        }
+        
+        displayArchive(filteredData);
     }
-    
-    // Фильтр по статусу
-    if (status) {
-        filteredData = filteredData.filter(animal => 
-            animal.status && animal.status === status
-        );
-    }
-    
-    // Фильтр по поиску
-    if (search) {
-        const searchLower = search.toLowerCase();
-        filteredData = filteredData.filter(animal => 
-            animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
-        );
-    }
-    
-    displayArchive(filteredData);
 }
 
 // Функция восстановления животного из архива

@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div id="analytics-detail" data-tag-number="{{ animal.tag.tag_number }}" data-animal-type="{{ animal_type }}">
+    <h1>Аналитика: {{ animal.tag.tag_number }}</h1>
+
+    <!-- График веса -->
+    <h3>График изменения веса</h3>
+    <canvas id="weight-chart"></canvas>
+
+    <!-- Календарь ветобработок -->
+    <h3>Календарь ветобработок</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Дата обработки</th>
+                <th>Название обработки</th>
+                <th>Комментарий</th>
+            </tr>
+        </thead>
+        <tbody id="vet-calendar">
+            <!-- Заполняется через JS -->
+        </tbody>
+    </table>
+    <div id="vet-calendar-pagination" class="pagination-controls">
+        <button id="vet-calendar-prev" disabled>Предыдущая</button>
+        <span id="vet-calendar-page-numbers"></span>
+        <button id="vet-calendar-next" disabled>Следующая</button>
+    </div>
+    
+
+    <!-- Список детей -->
+    <h3>Список детей</h3>
+    <div>
+        <label>
+            <input type="checkbox" id="hide-archived-children"> Скрыть архивных детей
+        </label>
+    </div>
+    Всего детей: <span id="children-count">0</span>
+    <table id="children-table">
+        <thead>
+            <tr>
+                <th>Бирка</th>           
+                <th>Тип животного</th>
+                <th>Возраст</th>
+                <th>Первый вес</th>
+            </tr>
+        </thead>
+        <tbody id="children-list"></tbody>
+    </table>
+    <div id="children-pagination" class="pagination-controls">
+        <button id="children-prev" disabled>Предыдущая</button>
+        <span id="children-page-numbers"></span>
+        <button id="children-next" disabled>Следующая</button>
+    </div>
+
+    <!-- История статусов -->
+    <h3>История статусов</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Дата изменения статуса</th>
+                <th>Новый статус</th>
+                <th>Старый статус</th>
+            </tr>
+        </thead>
+        <tbody id="status-history-list">
+            <!-- Заполняется через JS -->
+        </tbody>
+    </table>
+    <div id="status-pagination" class="pagination-controls">
+        <button id="status-history-prev" disabled>Предыдущая</button>
+        <span id="status-history-page-numbers"></span>
+        <button id="status-history-next" disabled>Следующая</button>
+    </div>
+
+    <!-- История перемещений -->
+    <h3>История перемещений</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Дата и время перевода</th>
+                <th>Новое место</th>
+                <th>Старое место</th>
+            </tr>
+        </thead>
+        <tbody id="place-history"></tbody>
+    </table>
+    <div id="place-pagination" class="pagination-controls">
+        <button id="place-history-prev" disabled>Предыдущая</button>
+        <span id="place-history-page-numbers"></span>
+        <button id="place-history-next" disabled>Следующая</button>
+    </div>
+    
+</div>
+
+<script type="module" src="{% static 'js/animal_analytics.js' %}"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}

@@ -213,7 +213,7 @@ function testAPI() {
     console.log('Testing API endpoints...');
     
     // Тестируем статусы
-    fetch('/veterinary/status/')
+    fetch('/veterinary/api/status/')
         .then(response => {
             console.log('Status API response status:', response.status);
             return response.json();
@@ -228,7 +228,7 @@ function testAPI() {
         });
     
     // Тестируем овчарни
-    fetch('/veterinary/place/')
+    fetch('/veterinary/api/place/')
         .then(response => {
             console.log('Place API response status:', response.status);
             return response.json();
@@ -244,8 +244,13 @@ function testAPI() {
 }
 
 function loadStatuses() {
-    fetch('/veterinary/status/')
-        .then(response => response.json())
+    fetch('/veterinary/api/status/')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             console.log('Statuses data:', data); // Отладочная информация
             const statusSelects = [
@@ -277,8 +282,13 @@ function loadStatuses() {
 }
 
 function loadPlaces() {
-    fetch('/veterinary/place/')
-        .then(response => response.json())
+    fetch('/veterinary/api/place/')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             console.log('Places data:', data); // Отладочная информация
             const placeSelects = [

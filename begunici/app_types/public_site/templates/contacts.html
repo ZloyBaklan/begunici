@@ -1,0 +1,99 @@
+{% extends "base_public.html" %}
+{% load static %}
+
+{% block title %}Контакты — Ферма Бегуницы{% endblock %}
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="fw-bold mb-1">Контакты</h1>
+    <div class="text-muted">Свяжитесь с нами — ответим и подскажем по наличию и заказу.</div>
+  </div>
+  <img
+    src="{% static 'img/logo.png' %}"
+    alt="Ферма Бегуницы"
+    style="height:90px; width:auto; opacity:0.95;"
+  >
+</div>
+
+<div class="row g-4">
+  <!-- Контакты -->
+  <div class="col-lg-5">
+    <div class="feature-card">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <div class="feature-icon"><i class="fa-solid fa-phone"></i></div>
+        <div class="fw-bold">Связь</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted small">Телефон</div>
+        <div class="fs-5 fw-bold">+7 (___) ___-__-__</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted small">Почта</div>
+        <div class="fs-5 fw-bold">farm@example.com</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted small">Адрес</div>
+        <div class="fw-bold">Россия, (область), (населённый пункт)</div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        <a class="btn btn-brand" href="#" role="button">
+          <i class="fa-brands fa-whatsapp"></i> WhatsApp
+        </a>
+        <a class="btn btn-ghost" href="#" role="button">
+          <i class="fa-brands fa-telegram"></i> Telegram
+        </a>
+      </div>
+
+      <hr class="my-4">
+
+      <div class="text-muted small">
+        Время ответа: обычно в течение дня.
+      </div>
+    </div>
+  </div>
+
+  <!-- Карта/схема -->
+  <div class="col-lg-7">
+    <div class="feature-card">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <div class="feature-icon"><i class="fa-solid fa-location-dot"></i></div>
+        <div class="fw-bold">Как нас найти</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="fw-bold">
+            Россия, Ленинградская область, Ломоносовский район
+        </div>
+        <div class="text-muted small">
+            (59.571908, 29.186340)
+        </div>
+        </div>
+
+        <div class="ratio ratio-16x9">
+        <iframe
+            src="https://yandex.ru/map-widget/v1/?ll=29.186340%2C59.571908&z=14&pt=29.186340%2C59.571908%2Cpm2rdm"
+            frameborder="0"
+            loading="lazy">
+        </iframe>
+        </div>
+
+        <div class="mt-2">
+        <a class="text-decoration-none"
+            href="https://yandex.ru/maps/?ll=29.186340%2C59.571908&z=14"
+            target="_blank" rel="noopener">
+            Открыть в Яндекс.Картах →
+        </a>
+        </div>
+
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}

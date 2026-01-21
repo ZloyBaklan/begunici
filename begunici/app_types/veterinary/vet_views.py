@@ -1,9 +1,8 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
-
 from django.utils import timezone
 from django.shortcuts import render
 from django.views.generic import TemplateView
@@ -23,37 +22,39 @@ from .vet_serializers import (
     VeterinarySerializer,
     VeterinaryCareSerializer,
     WeightRecordSerializer,
-    WeightChangeSerializer,
     PlaceSerializer,
     PlaceMovementSerializer,
 )
 from rest_framework.pagination import PageNumberPagination
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class PlaceMovementPagination(PageNumberPagination):
-    page_size = 5  # Количество записей на странице
-    page_size_query_param = (
-        "page_size"  # Параметр для изменения размера страницы через запрос
-    )
-    max_page_size = 100  # Максимальное количество записей на странице
+    page_size = 5
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 
 class StatusViewSet(viewsets.ModelViewSet):
-    queryset = Status.objects.all()
+    queryset = Status.objects.all().order_by("-date_of_status")
     serializer_class = StatusSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-
-    def update(self, request, *args, **kwargs):
-        try:
-            return super().update(request, *args, **kwargs)
-        except ValidationError as e:
-            return Response({"error": str(e)}, status=400)
+    permission_classes = [AllowAny]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["date_of_status"]
+    search_fields = ["status_type"]
 
 
 class PlaceViewSet(viewsets.ModelViewSet):
     queryset = Place.objects.all()
     serializer_class = PlaceSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
+    permission_classes = [AllowAny]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    search_fields = ["sheepfold"]
 
 
 class PlaceMovementViewSet(viewsets.ModelViewSet):
@@ -62,246 +63,63 @@ class PlaceMovementViewSet(viewsets.ModelViewSet):
     )
     serializer_class = PlaceMovementSerializer
     permission_classes = [AllowAny]
-    pagination_class = PlaceMovementPagination  # Указываем кастомный пагинатор
-
-    def create(self, request, *args, **kwargs):
-        tag_id = request.data.get("tag")
-        old_place_id = request.data.get("old_place")
-        new_place_id = request.data.get("new_place")
-        date_of_transfer = request.data.get(
-            "-new_place__date_of_transfer", timezone.now().date()
-        )
-
-        # Проверяем наличие уже существующей записи
-        if PlaceMovement.objects.filter(
-            tag_id=tag_id,
-            old_place_id=old_place_id,
-            new_place_id=new_place_id,
-            date_of_transfer=date_of_transfer,
-        ).exists():
-            return Response(
-                {"error": "Такое перемещение уже существует."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        return super().create(request, *args, **kwargs)
+    pagination_class = PlaceMovementPagination
 
 
 class VeterinaryCareViewSet(viewsets.ModelViewSet):
     queryset = VeterinaryCare.objects.all()
     serializer_class = VeterinaryCareSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-
-    @action(detail=False, methods=["get"], url_path="all_cares")
-    def get_cares(self, request):
-        """
-        Возвращает список всех существующих ветобработок.
-        """
-        cares = self.queryset
-        serializer = self.get_serializer(cares, many=True)
-        return Response(serializer.data)
+    permission_classes = [AllowAny]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["care_type", "care_name", "medication", "purpose"]
 
 
 class VeterinaryViewSet(viewsets.ModelViewSet):
     queryset = Veterinary.objects.all()
     serializer_class = VeterinarySerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-    filter_backends = [DjangoFilterBackend]
+    permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = [
         "veterinary_care__care_type",
         "date_of_care",
-        "tag_number",
-    ]  # Фильтрация по типу обработки, дате и бирке
-
-    @action(detail=False, methods=["post"], url_path="vetcare")
-    def add_vet_care(self, request):
-        """
-        Добавление ветобработки животному.
-        """
-        tag_number = request.data.get("tag_number")  # Используем `tag_number`
-        treatment_id = request.data.get("treatment_id")
-        date_of_care = request.data.get("date_of_care")
-
-        if not tag_number or not treatment_id or not date_of_care:
-            return Response(
-                {"error": "Все поля обязательны"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            # Получаем объекты
-            tag = Tag.objects.get(tag_number=tag_number)
-            veterinary_care = VeterinaryCare.objects.get(id=treatment_id)
-
-            # Создаем новую запись
-            Veterinary.objects.create(
-                tag=tag,
-                veterinary_care=veterinary_care,
-                date_of_care=date_of_care,
-                comments=request.data.get("comments", ""),
-            )
-
-            return Response(
-                {"status": "Ветобработка успешно добавлена"},
-                status=status.HTTP_201_CREATED,
-            )
-        except (Tag.DoesNotExist, VeterinaryCare.DoesNotExist):
-            return Response(
-                {"error": "Бирка или обработка не найдены"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        "tag__tag_number",
+    ]
+    search_fields = [
+        "tag__tag_number",
+        "veterinary_care__care_type",
+        "veterinary_care__care_name",
+        "veterinary_care__medication",
+        "veterinary_care__purpose",
+        "comments",
+    ]
 
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-
-    @action(detail=False, methods=["get"], url_path="search")
-    def search_tag(self, request):
-        """
-        Поиск бирки по номеру.
-        """
-        tag_number = request.query_params.get("tag_number", None)
-        if not tag_number:
-            return Response(
-                {"error": "tag_number is required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            tag = Tag.objects.get(tag_number=tag_number)
-            serializer = self.get_serializer(tag)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Tag.DoesNotExist:
-            return Response(
-                {"error": "Tag not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+    permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
 
 
 class WeightRecordViewSet(viewsets.ModelViewSet):
-    queryset = WeightRecord.objects.all().order_by("-weight_date")  # Сортировка по дате
+    queryset = WeightRecord.objects.all().order_by("-weight_date")
     serializer_class = WeightRecordSerializer
-    permission_classes = [AllowAny]  # Доступ без аутентификации
-
-    def create(self, request, *args, **kwargs):
-        tag_number = request.data.get("tag_number")
-
-        if not tag_number:
-            return Response(
-                {"error": "Бирка обязательна"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            tag = Tag.objects.get(tag_number=tag_number)
-        except Tag.DoesNotExist:
-            return Response(
-                {"error": "Бирка не найдена"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Формируем новые данные с объектом tag
-        data = request.data.copy()
-        data["tag"] = tag.id  # Передаём ID найденного объекта
-
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=False, methods=["get"])
-    def weight_history(self, request):
-        """
-        Получаем всю историю веса по бирке, переданной через query parameter.
-        """
-        tag_number = request.query_params.get("tag_number")  # Используем `tag_number`
-        if not tag_number:
-            return Response(
-                {"error": "Tag number is required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        history = WeightRecord.get_weight_history(tag_number)
-        serializer = WeightRecordSerializer(history, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=["get"])
-    def weight_changes(self, request):
-        """
-        Получаем изменения веса для животного.
-        """
-        tag_number = request.query_params.get("tag_number")  # Используем `tag_number`
-        if not tag_number:
-            return Response(
-                {"error": "Tag number is required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        changes = WeightRecord.get_weight_changes(tag_number)
-        return Response(changes)
-
-    @action(detail=False, methods=["post"])
-    def add_weight(self, request):
-        """
-        Добавление новой записи веса.
-        """
-        tag_number = request.data.get("tag_number")  # Используем `tag_number`
-        weight = request.data.get("weight")
-        weight_date = request.data.get("weight_date")
-
-        if not tag_number or not weight or not weight_date:
-            return Response(
-                {"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            # Проверка и преобразование даты
-            weight_date = timezone.now().date()
-            tag = Tag.objects.get(tag_number=tag_number)  # Теперь ищем по `tag_number`
-            WeightRecord.objects.create(tag=tag, weight=weight, weight_date=weight_date)
-            return Response(
-                {"status": "Weight record added successfully"},
-                status=status.HTTP_201_CREATED,
-            )
-        except Tag.DoesNotExist:
-            return Response(
-                {"error": "Tag not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
 
 
-# Представление для отображения страницы управления технической информацией
 class VeterinaryManagementView(TemplateView):
-    template_name = "veterinary_management.html"  # Указываем шаблон
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        # Можно добавить контекст для шаблона, если нужно
-        return context
+    template_name = "veterinary_management.html"
 
 
-# Классовое представление для рендеринга страницы управления статусами
 class VeterinaryStatusesView(TemplateView):
     template_name = "veterinary_statuses.html"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        # Можно добавить контекст для шаблона, если нужно
-        return context
 
-
-# Классовое представление для рендеринга страницы управления овчарнями
 class VeterinaryPlacesView(TemplateView):
     template_name = "veterinary_places.html"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        # Можно добавить контекст для шаблона, если нужно
-        return context
 
-
-# Классовое представление для рендеринга страницы управления уходом
 class VeterinaryCaresView(TemplateView):
     template_name = "veterinary_cares.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        # Можно добавить контекст для шаблона, если нужно
-        return context

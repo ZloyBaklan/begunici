@@ -40,6 +40,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "begunici.app_types.animals",
     "begunici.app_types.veterinary",  # Приложение для ветобработки и взвешивания
+    "begunici.app_types.notes",       # Приложение для заметок
+    'begunici.app_types.public_site', # Сайт визитка
     "rest_framework",  # Если используете Django REST Framework
 ]
 
@@ -51,7 +53,14 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    
+    "begunici.app_types.public_site.middleware.LoginRequiredExceptPublicMiddleware",
 ]
+
+# Настройки аутентификации
+LOGIN_URL = '/admin/login/'  # Перенаправление на страницу входа админки
+LOGIN_REDIRECT_URL = '/'     # Куда перенаправлять после входа
+LOGOUT_REDIRECT_URL = '/admin/login/'  # Куда перенаправлять после выхода
 
 ROOT_URLCONF = "begunici.urls"
 
@@ -77,17 +86,20 @@ WSGI_APPLICATION = "begunici.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+import os
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "begunici",
-        "USER": "admin",
-        "PASSWORD": "1234",
-        "HOST": "localhost",
-        "PORT": "5432",
+        "NAME": os.getenv("DB_NAME", "begunici"),
+        "USER": os.getenv("DB_USER", "admin"),
+        "PASSWORD": str(os.getenv("DB_PASSWORD", "1234")),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5433"),
         "OPTIONS": {
             "client_encoding": "UTF8",
         },
+        "CONN_MAX_AGE": 60,
     }
 }
 
@@ -141,9 +153,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",  # Разрешить доступ всем без аутентификации
+        "rest_framework.permissions.IsAuthenticated",  # Требовать аутентификацию
     ],
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
     ],
 }

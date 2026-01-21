@@ -1,12 +1,134 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Главная{% endblock %}
 
 {% block content %}
-<h2>Добро пожаловать на ферму</h2>
-<p>Выберите раздел:</p>
-<ul>
-    <li><a href="{% url 'veterinary:veterinary-management' %}">Управление технической информацией</a></li>
-    <li><a href="{% url 'animals:animals' %}">Управление животными</a></li>
-</ul>
+<div class="container">
+    <h2>Добро пожаловать на ферму Бегуницы</h2>
+    
+    <!-- Статистика -->
+    <div class="statistics-container">
+        <h3>Статистика</h3>
+        <div class="stats-cards">
+            <div class="stat-card">
+                <h4>Активные животные</h4>
+                <div class="stat-number" id="total-active">-</div>
+                <div class="stat-details">
+                    <p>Производители: <span id="active-makers">-</span></p>
+                    <p>Бараны: <span id="active-rams">-</span></p>
+                    <p>Ярки: <span id="active-ewes">-</span></p>
+                    <p>Овцы: <span id="active-sheep">-</span></p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <h4>Архивировано (месяц)</h4>
+                <div class="stat-number" id="total-archived">-</div>
+                <div class="stat-details">
+                    <div class="animal-type-section">
+                        <strong>Производители:</strong> <span id="archived-makers-total">-</span>
+                        <div class="status-breakdown" id="archived-makers-breakdown"></div>
+                    </div>
+                    <div class="animal-type-section">
+                        <strong>Бараны:</strong> <span id="archived-rams-total">-</span>
+                        <div class="status-breakdown" id="archived-rams-breakdown"></div>
+                    </div>
+                    <div class="animal-type-section">
+                        <strong>Ярки:</strong> <span id="archived-ewes-total">-</span>
+                        <div class="status-breakdown" id="archived-ewes-breakdown"></div>
+                    </div>
+                    <div class="animal-type-section">
+                        <strong>Овцы:</strong> <span id="archived-sheep-total">-</span>
+                        <div class="status-breakdown" id="archived-sheep-breakdown"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <h4>Родилось (месяц)</h4>
+                <div class="stat-number" id="total-born">-</div>
+                <div class="stat-details">
+                    <p>Бараны: <span id="born-rams">-</span></p>
+                    <p>Ярки: <span id="born-ewes">-</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Навигация -->
+    <div class="navigation-section">
+        <h3>Выберите раздел:</h3>
+        <ul>
+            <li><a href="{% url 'veterinary:veterinary-management' %}">Управление технической информацией</a></li>
+            <li><a href="{% url 'animals:animals' %}">Управление животными</a></li>
+            <li><a href="{% url 'notes:notes' %}">Заметки</a></li>
+        </ul>
+    </div>
+</div>
+
+<script>
+// Загрузка статистики при загрузке страницы
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/animals/api/dashboard-statistics/');
+        const data = await response.json();
+        
+        // Всего активных
+        document.getElementById('total-active').textContent = data.active_animals.total;
+        document.getElementById('active-makers').textContent = data.active_animals.by_type.makers;
+        document.getElementById('active-rams').textContent = data.active_animals.by_type.rams;
+        document.getElementById('active-ewes').textContent = data.active_animals.by_type.ewes;
+        document.getElementById('active-sheep').textContent = data.active_animals.by_type.sheep;
+        
+        // Архивировано
+        document.getElementById('total-archived').textContent = data.archived_last_month.total;
+        
+        // Функция для создания детализации по статусам
+        function createStatusBreakdown(statusData) {
+            if (!statusData || statusData.length === 0) {
+                return '';
+            }
+            
+            const statusMap = {
+                'Убыл': 'убыло',
+                'Убой': 'убой', 
+                'Продажа': 'продажа'
+            };
+            
+            return statusData.map(item => {
+                const statusName = statusMap[item.animal_status__status_type] || item.animal_status__status_type;
+                return `<div>${statusName}: ${item.count}</div>`;
+            }).join('');
+        }
+        
+        // Производители
+        document.getElementById('archived-makers-total').textContent = data.archived_last_month.by_type.makers.total;
+        document.getElementById('archived-makers-breakdown').innerHTML = 
+            createStatusBreakdown(data.archived_last_month.by_type.makers.by_status);
+        
+        // Бараны
+        document.getElementById('archived-rams-total').textContent = data.archived_last_month.by_type.rams.total;
+        document.getElementById('archived-rams-breakdown').innerHTML = 
+            createStatusBreakdown(data.archived_last_month.by_type.rams.by_status);
+        
+        // Ярки
+        document.getElementById('archived-ewes-total').textContent = data.archived_last_month.by_type.ewes.total;
+        document.getElementById('archived-ewes-breakdown').innerHTML = 
+            createStatusBreakdown(data.archived_last_month.by_type.ewes.by_status);
+        
+        // Овцы
+        document.getElementById('archived-sheep-total').textContent = data.archived_last_month.by_type.sheep.total;
+        document.getElementById('archived-sheep-breakdown').innerHTML = 
+            createStatusBreakdown(data.archived_last_month.by_type.sheep.by_status);
+        
+        // Родилось
+        document.getElementById('total-born').textContent = data.born_last_month.total;
+        document.getElementById('born-rams').textContent = data.born_last_month.by_type.rams;
+        document.getElementById('born-ewes').textContent = data.born_last_month.by_type.ewes;
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+    }
+});
+</script>
 {% endblock %}

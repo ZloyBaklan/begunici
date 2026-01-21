@@ -5,6 +5,11 @@ from django.utils import timezone
 # Приложение animals
 
 
+def get_current_date():
+    """Возвращает текущую дату для DateField"""
+    return timezone.now().date()
+
+
 class Tag(models.Model):
     tag_number = models.CharField(max_length=100, unique=True, verbose_name="Бирка")
     animal_type = models.CharField(max_length=100, verbose_name="Тип животного")
@@ -28,11 +33,11 @@ class Status(models.Model):
     status_type = models.CharField(
         max_length=200, unique=True, verbose_name="Название статуса"
     )
-    date_of_status = models.DateField(
-        verbose_name="Дата статуса", default=timezone.now().date()
-    )  # Дата по умолчанию - текущая
+    date_of_status = models.DateTimeField(
+        verbose_name="Дата и время статуса", default=timezone.now
+    )  # Дата и время по умолчанию - текущие
     color = models.CharField(
-        max_length=7, unique=True, verbose_name="Цвет статуса", default="#FFFFFF"
+        max_length=7, verbose_name="Цвет статуса", default="#FFFFFF"
     )  # Цвет статуса, по умолчанию белый
 
     def __str__(self):
@@ -62,26 +67,24 @@ class StatusHistory(models.Model):
         related_name="new_status",
         verbose_name="Новый статус",
     )
+    change_date = models.DateTimeField(
+        verbose_name="Дата и время изменения", default=timezone.now
+    )  # Собственная дата изменения статуса
 
     def save(self, *args, **kwargs):
-        # Обновляем дату перевода в `Place` для нового места
-        if self.new_status:
-            self.new_status.date_of_status = (
-                timezone.now().date()
-            )  # Устанавливаем текущую дату перевода
-            self.new_status.save()
-
+        # Убираем логику обновления date_of_status статуса
+        # Теперь используем собственное поле change_date
         super(StatusHistory, self).save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.tag.tag_number}: {self.old_status} -> {self.new_status} ({self.new_status.date_of_status})"
+        return f"{self.tag.tag_number}: {self.old_status} -> {self.new_status} ({self.change_date})"
 
 
 class Place(models.Model):
-    sheepfold = models.CharField(max_length=200, verbose_name="Овчарня-Отсек")
-    date_of_transfer = models.DateField(
-        verbose_name="Дата перевода", default=timezone.now().date()
-    )  # Дата перевода по умолчанию
+    sheepfold = models.CharField(max_length=200, unique=True, verbose_name="Овчарня-Отсек")
+    date_of_transfer = models.DateTimeField(
+        verbose_name="Дата и время перевода", default=timezone.now
+    )  # Дата и время перевода по умолчанию
 
     def __str__(self):
         return self.sheepfold
@@ -126,7 +129,7 @@ class PlaceMovement(models.Model):
 
         # Если указано новое место, обновляем его дату перевода
         if self.new_place:
-            self.new_place.date_of_transfer = timezone.now().date()
+            self.new_place.date_of_transfer = timezone.now()
             self.new_place.save()
 
         super(PlaceMovement, self).save(*args, **kwargs)
@@ -148,7 +151,7 @@ class WeightRecord(models.Model):
         max_digits=5, decimal_places=2, verbose_name="Вес (кг)"
     )
     weight_date = models.DateField(
-        verbose_name="Дата взвешивания", default=timezone.now().date()
+        verbose_name="Дата взвешивания", default=get_current_date
     )
 
     def __str__(self):
@@ -214,8 +217,8 @@ class Veterinary(models.Model):
         null=True,
         verbose_name="Вет-обработка",
     )
-    date_of_care = models.DateField(
-        verbose_name="Дата обработки", default=timezone.now().date()
+    date_of_care = models.DateTimeField(
+        verbose_name="Дата и время обработки", default=timezone.now
     )
     comments = models.TextField(
         verbose_name="Примечания", blank=True, null=True
@@ -225,8 +228,10 @@ class Veterinary(models.Model):
         return f"Ветобработка {self.veterinary_care} для {self.tag.tag_number}"
 
     class Meta:
-        unique_together = (
-            "tag",
-            "veterinary_care",
-            "date_of_care",
-        )  # Уникальность для комбинации бирка + ветобработка + дата
+        # Убираем ограничение unique_together, чтобы разрешить несколько одинаковых обработок в день
+        # unique_together = (
+        #     "tag",
+        #     "veterinary_care", 
+        #     "date_of_care",
+        # )
+        pass

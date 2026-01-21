@@ -1,4 +1,4 @@
-import { getCSRFToken } from "./utils.js";
+import { apiRequest } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchCares();  // Загружаем список ветобработок при загрузке страницы
@@ -34,55 +34,44 @@ async function createCare() {
     };
 
     try {
-        const response = await fetch('/veterinary/care/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),
-            },
-            body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-        if (response.ok) {
-            alert('Ветобработка успешно создана');
-            document.getElementById('create-care-form').reset();  // Очистка формы
-            fetchCares();  // Обновляем список ветобработок
-            resetButton();
-        } else {
-            alert('Ошибка создания: ' + result.detail);
-        }
+        await apiRequest('/veterinary/api/care/', 'POST', data);
+        alert('Ветобработка успешно создана');
+        document.getElementById('create-care-form').reset();  // Очистка формы
+        fetchCares();  // Обновляем список ветобработок
+        resetButton();
     } catch (error) {
         console.error('Ошибка:', error);
-        alert('Произошла ошибка при создании ветобработки');
+        alert(`Произошла ошибка при создании ветобработки: ${error.message}`);
     }
 }
 
 // Получение списка ветобработок
-async function fetchCares() {
+async function fetchCares(searchQuery = '') {
     try {
-        const response = await fetch('/veterinary/care/');
-        if (!response.ok) {
-            throw new Error('Ошибка при загрузке ветобработок');
+        let url = '/veterinary/api/care/';
+        if (searchQuery) {
+            url += `?search=${searchQuery}`;
         }
-        const cares = await response.json();
-
+        const cares = await apiRequest(url);
         const careTable = document.getElementById('care-list');
         careTable.innerHTML = '';  // Очищаем таблицу
 
         cares.forEach((care, index) => {
-            const row = `<tr>
+            const row = document.createElement('tr');
+            row.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${care.care_type}</td>
                 <td>${care.care_name}</td>
                 <td>${care.medication || 'Нет препарата'}</td>
                 <td>${care.purpose || 'Нет цели'}</td>
                 <td>
-                    <button onclick="editCare(${care.id})">Редактировать</button>
-                    <button onclick="deleteCare(${care.id})">Удалить</button>
+                    <button class="edit-care-btn" data-id="${care.id}">Редактировать</button>
+                    <button class="delete-care-btn" data-id="${care.id}">Удалить</button>
                 </td>
-            </tr>`;
-            careTable.innerHTML += row;
+            `;
+            row.querySelector('.edit-care-btn').addEventListener('click', () => editCare(care.id));
+            row.querySelector('.delete-care-btn').addEventListener('click', () => deleteCare(care.id));
+            careTable.appendChild(row);
         });
     } catch (error) {
         console.error('Ошибка при загрузке ветобработок:', error);
@@ -92,11 +81,7 @@ async function fetchCares() {
 // Редактирование ветобработки
 async function editCare(careId) {
     try {
-        const response = await fetch(`/veterinary/care/${careId}/`);
-        if (!response.ok) {
-            throw new Error('Ошибка при получении данных обработки');
-        }
-        const care = await response.json();
+        const care = await apiRequest(`/veterinary/api/care/${careId}/`);
 
         document.getElementById('care-type').value = care.care_type;
         document.getElementById('care-name').value = care.care_name;
@@ -126,67 +111,37 @@ async function updateCare(careId) {
     };
 
     try {
-        const response = await fetch(`/veterinary/care/${careId}/`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken(),
-            },
-            body: JSON.stringify(data),
-        });
-
-        if (response.ok) {
-            alert('Ветобработка успешно обновлена');
-            fetchCares();  // Обновляем список ветобработок
-            resetButton();
-        } else {
-            alert('Ошибка обновления');
-        }
+        await apiRequest(`/veterinary/api/care/${careId}/`, 'PUT', data);
+        alert('Ветобработка успешно обновлена');
+        fetchCares();  // Обновляем список ветобработок
+        resetButton();
     } catch (error) {
         console.error('Ошибка при обновлении:', error);
-        alert('Ошибка при обновлении обработки');
+        alert(`Ошибка при обновлении обработки: ${error.message}`);
     }
 }
 
 // Удаление ветобработки
 async function deleteCare(careId) {
-    try {
-        const response = await fetch(`/veterinary/care/${careId}/`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRFToken': getCSRFToken(),
-            }
-        });
+    const confirmDelete = confirm('Вы уверены, что хотите удалить эту обработку?');
+    if (!confirmDelete) return;
 
-        if (response.ok) {
-            alert('Ветобработка успешно удалена');
-            fetchCares();  // Обновляем список
-        } else {
-            alert('Ошибка при удалении обработки');
-        }
+    try {
+        await apiRequest(`/veterinary/api/care/${careId}/`, 'DELETE');
+        alert('Ветобработка успешно удалена');
+        fetchCares();  // Обновляем список
     } catch (error) {
         console.error('Ошибка при удалении обработки:', error);
+        alert(`Ошибка при удалении обработки: ${error.message}`);
     }
 }
 
 // Поиск по ветобработкам
 function searchCares() {
-    const input = document.getElementById('care-search').value.toLowerCase();
-    const table = document.getElementById('care-list');
-    const rows = table.getElementsByTagName('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-        if (cells.length > 0) {
-            const careName = cells[1].innerText.toLowerCase();
-            if (careName.indexOf(input) > -1) {
-                rows[i].style.display = '';
-            } else {
-                rows[i].style.display = 'none';
-            }
-        }
-    }
+    const query = document.getElementById('care-search').value;
+    fetchCares(query);
 }
+window.searchCares = searchCares; // Делаем функцию глобальной
 
 // Сброс кнопки на "Создать"
 function resetButton() {
