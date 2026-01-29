@@ -81,8 +81,8 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5>Календарь ожидаемых окотов</h5>
-                    <a href="{% url 'animals:calendar' %}" class="btn btn-primary btn-sm">Открыть полный календарь</a>
+                    <h5>Календарь</h5>
+                    <a href="{% url 'animals:calendar-notes' %}" class="btn btn-success btn-sm">Открыть заметки</a>
                 </div>
                 <div class="card-body">
                     <!-- Навигация по месяцам -->
@@ -118,6 +118,10 @@
                             <div class="legend-item me-3">
                                 <span class="legend-color" style="background-color: #dc3545;"></span>
                                 <small>Ожидаемые роды</small>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background-color: #28a745;"></span>
+                                <small>Заметки</small>
                             </div>
                         </div>
                     </div>
@@ -172,8 +176,28 @@
     font-weight: bold;
 }
 
+.calendar-table td.has-notes {
+    background-color: #28a745 !important;
+    color: white;
+    font-weight: bold;
+}
+
+.calendar-table td.has-both {
+    background: linear-gradient(45deg, #dc3545 50%, #28a745 50%) !important;
+    color: white;
+    font-weight: bold;
+}
+
 .calendar-table td.has-lambing:hover {
     background-color: #c82333 !important;
+}
+
+.calendar-table td.has-notes:hover {
+    background-color: #218838 !important;
+}
+
+.calendar-table td.has-both:hover {
+    background: linear-gradient(45deg, #c82333 50%, #218838 50%) !important;
 }
 
 .calendar-table td:hover {

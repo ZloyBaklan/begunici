@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchStatuses();  // Загружаем список статусов при загрузке страницы
@@ -69,7 +69,7 @@ async function fetchStatuses(searchQuery = '') {
             row.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${status.status_type}</td>
-                <td>${status.date_of_status || 'Нет даты'}</td>
+                <td>${formatDateToOutput(status.date_of_status) || 'Нет даты'}</td>
                 <td><input type="color" value="${status.color}" disabled></td>
                 <td>
                     <button class="edit-status-btn" data-id="${status.id}">

@@ -82,7 +82,7 @@ function renderSheeps(sheeps) {
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${sheep.age || 'Не указан'}</td>
+            <td>${sheep.age ? `${sheep.age} мес.` : 'Не указан'}</td>
             <td>${sheep.place ? sheep.place.sheepfold : 'Не указано'}</td>
             <td>${sheep.weight_records && sheep.weight_records.length > 0 
                 ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 

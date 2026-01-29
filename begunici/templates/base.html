@@ -22,7 +22,6 @@
                 <li><a href="{% url 'index' %}">Главная</a></li>
                 {% if user.is_authenticated %}
                     <li>Пользователь: {{ user.username }}</li>
-                    <li><a href="{% url 'notes:notes' %}">Заметки</a></li>
                     <li><a href="{% url 'logout' %}">Выйти</a></li>
                 {% endif %}
             </ul>

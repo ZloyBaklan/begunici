@@ -60,7 +60,7 @@ class LoginRequiredExceptPublicMiddleware:
 
         # Всё остальное требует логин
         if not request.user.is_authenticated:
-            login_url = reverse("login")  # /accounts/login/
-            return redirect(f"{login_url}?next={path}")
+            # Перенаправляем на публичную страницу вместо логина
+            return redirect("/site/")
 
         return self.get_response(request)

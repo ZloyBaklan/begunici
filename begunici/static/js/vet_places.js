@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchPlaces();  // Загружаем список овчарен при загрузке страницы
@@ -68,7 +68,7 @@ async function fetchPlaces(searchQuery = '') {
             row.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${place.sheepfold}</td>
-                <td>${place.date_of_transfer || 'Нет даты'}</td>
+                <td>${formatDateToOutput(place.date_of_transfer) || 'Нет даты'}</td>
                 <td>
                     <button class="edit-place-btn" data-id="${place.id}">Редактировать</button>
                     <button class="delete-place-btn" data-id="${place.id}">Удалить</button>

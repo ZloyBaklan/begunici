@@ -125,7 +125,9 @@ class AnimalBase(models.Model):
             self.is_archived = True
         else:
             self.is_archived = False
-            self.calculate_age()
+        
+        # 🔹 Вычисляем возраст независимо от статуса архивирования
+        self.calculate_age()
 
         # 🔹 Автоматическое заполнение `animal_type` у `Tag`
         if self.tag:
@@ -237,6 +239,8 @@ class Lambing(models.Model):
     )
     is_active = models.BooleanField(default=True, verbose_name="Активный окот")
     created_at = models.DateTimeField(default=timezone.now, verbose_name="Дата создания")
+    
+
 
     def __str__(self):
         mother = self.sheep or self.ewe
@@ -280,6 +284,15 @@ class Lambing(models.Model):
 
     def complete_lambing(self):
         """Завершить окот"""
+        # Если мать - ярка, преобразуем её в овцу
+        mother = self.get_mother()
+        if mother and self.get_mother_type() == "Ярка":
+            # Преобразуем ярку в овцу
+            sheep = mother.to_sheep()
+            # Обновляем связь окота с новой овцой
+            self.sheep = sheep
+            self.ewe = None
+        
         self.is_active = False
         self.save()
 
@@ -316,10 +329,28 @@ class Lambing(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Переопределение метода save, чтобы рассчитать планируемую дату окота.
+        Переопределение метода save для автоматического изменения статуса матери
         """
+        is_new = self.pk is None
+        
+        if is_new and self.is_active:
+            # При создании нового активного окота меняем статус матери на "Окот"
+            mother = self.get_mother()
+            if mother:
+                try:
+                    # Ищем статус "Окот"
+                    okot_status = Status.objects.filter(status_type__iexact="Окот").first()
+                    if okot_status:
+                        # Устанавливаем статус "Окот"
+                        mother.animal_status = okot_status
+                        mother.save()
+                except Exception as e:
+                    print(f"Ошибка при изменении статуса на 'Окот': {e}")
+        
+        # Рассчитываем планируемую дату окота если нужно
         if self.start_date and not self.planned_lambing_date:
             self.calculate_planned_lambing_date()
+            
         super(Lambing, self).save(*args, **kwargs)
 
 
@@ -478,3 +509,103 @@ class Sheep(AnimalBase):
         return not self.lambing_history.filter(
             actual_lambing_date__isnull=True
         ).exists()  # Проверяем, есть ли незаконченный окот
+
+
+class CalendarNote(models.Model):
+    """
+    Модель для заметок в календаре
+    """
+    date = models.DateField(verbose_name="Дата заметки")
+    text = models.TextField(verbose_name="Текст заметки")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Заметка календаря"
+        verbose_name_plural = "Заметки календаря"
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"Заметка на {self.date}: {self.text[:50]}..."
+
+    def get_formatted_text(self):
+        """
+        Преобразует текст заметки, заменяя бирки на HTML-ссылки и статусы на цветные элементы
+        """
+        import re
+        
+        formatted_text = self.text
+        
+        # 1. Обрабатываем бирки
+        # Паттерн для бирок: буквы и цифры в любом сочетании (К657, A123, БР456, 123А и т.д.)
+        tag_pattern = r'\b([А-Яа-яA-Za-z]*\d+[А-Яа-яA-Za-z]*|\d*[А-Яа-яA-Za-z]+\d+)\b'
+        
+        def replace_tag_link(match):
+            tag_text = match.group(1)
+            
+            # Пропускаем слишком короткие совпадения (менее 2 символов)
+            if len(tag_text) < 2:
+                return tag_text
+            
+            try:
+                from begunici.app_types.veterinary.vet_models import Tag
+                from django.urls import reverse
+                
+                # Проверяем, существует ли такая бирка (точное совпадение)
+                tag_obj = Tag.objects.filter(tag_number__iexact=tag_text).first()
+                if tag_obj:
+                    # Определяем тип животного по animal_type
+                    url_map = {
+                        'Maker': 'animals:maker-detail',
+                        'Ram': 'animals:ram-detail', 
+                        'Ewe': 'animals:ewe-detail',
+                        'Sheep': 'animals:sheep-detail'
+                    }
+                    
+                    if tag_obj.animal_type in url_map:
+                        url = reverse(url_map[tag_obj.animal_type], kwargs={'tag_number': tag_obj.tag_number})
+                        return f'<a href="{url}" style="color: #007bff; text-decoration: underline; font-weight: bold;">{tag_text}</a>'
+                
+                # Если бирка не найдена, возвращаем обычный текст
+                return tag_text
+            except Exception as e:
+                print(f"Ошибка обработки бирки {tag_text}: {e}")
+                return tag_text
+        
+        formatted_text = re.sub(tag_pattern, replace_tag_link, formatted_text)
+        
+        # 2. Обрабатываем статусы
+        try:
+            from begunici.app_types.veterinary.vet_models import Status
+            
+            statuses = Status.objects.all()
+            for status_obj in statuses:
+                # Создаем паттерн для поиска статуса (частичное совпадение, без учета регистра)
+                # Используем word boundary для точного поиска слов
+                status_pattern = re.compile(r'\b' + re.escape(status_obj.status_type) + r'\b', re.IGNORECASE)
+                
+                def replace_status(match):
+                    status_text = match.group(0)
+                    color = status_obj.color if status_obj.color else '#000000'
+                    return f'<span style="border: 1px solid {color}; padding: 2px 4px; border-radius: 3px; font-weight: bold; display: inline-block; background-color: rgba({self._hex_to_rgb(color)}, 0.1);">{status_text}</span>'
+                
+                formatted_text = status_pattern.sub(replace_status, formatted_text)
+        except Exception as e:
+            print(f"Ошибка обработки статусов: {e}")
+        
+        return formatted_text
+
+    def _hex_to_rgb(self, hex_color):
+        """
+        Конвертирует HEX цвет в RGB для прозрачного фона
+        """
+        try:
+            hex_color = hex_color.lstrip('#')
+            if len(hex_color) == 6:
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+                return f"{r}, {g}, {b}"
+            return "0, 0, 0"
+        except:
+            return "0, 0, 0"

@@ -118,7 +118,7 @@ async function loadChildren(animalType, tagNumber, page = 1) {
                     }
                 </td>
                 <td>${child.animal_type || 'Неизвестно'}</td>
-                <td>${child.age || '-'}</td>
+                <td>${child.age ? `${child.age} мес.` : '-'}</td>
                 <td>${firstWeightText}</td>
             `;
             childrenList.appendChild(row);

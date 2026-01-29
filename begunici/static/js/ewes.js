@@ -82,7 +82,7 @@ function renderEwes(ewes) {
             <td style="background-color:${ewe.animal_status ? ewe.animal_status.color : '#FFFFFF'}">
                 ${ewe.animal_status ? ewe.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${ewe.age || 'Не указан'}</td>
+            <td>${ewe.age ? `${ewe.age} мес.` : 'Не указан'}</td>
             <td>${ewe.place ? ewe.place.sheepfold : 'Не указано'}</td>
             <td>${ewe.weight_records && ewe.weight_records.length > 0 
                 ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 

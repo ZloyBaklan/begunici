@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 let allArchiveData = []; // Храним все данные архива
 
@@ -47,8 +47,9 @@ function displayArchive(data) {
         const tagNumber = animal.tag_number;
         const animalTypeCode = animal.animal_type;
         const status = animal.status || 'Не указан';
-        const archivedDate = animal.archived_date || 'Не указана';
-        const age = animal.age || 'Не указан';
+        const statusColor = animal.status_color || '#FFFFFF';
+        const archivedDate = formatDateToOutput(animal.archived_date) || 'Не указана';
+        const age = animal.age ? `${animal.age} мес.` : 'Не указан';
         const place = animal.place || 'Не указано';
         
         // Определяем тип животного и URL
@@ -73,7 +74,7 @@ function displayArchive(data) {
             <td>${index + 1}</td>
             <td>${animalType}</td>
             <td><a href="${detailUrl}">${tagNumber}</a></td>
-            <td>${status}</td>
+            <td style="background-color:${statusColor}">${status}</td>
             <td>${archivedDate}</td>
             <td>${age}</td>
             <td>${place}</td>

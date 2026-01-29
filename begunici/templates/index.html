@@ -53,6 +53,34 @@
                     <p>Ярки: <span id="born-ewes">-</span></p>
                 </div>
             </div>
+            
+            <div class="stat-card">
+                <h4>Статистика по годам</h4>
+                <div class="year-selector">
+                    <label for="year-select">Год:</label>
+                    <select id="year-select">
+                        <!-- Годы будут добавлены через JavaScript -->
+                    </select>
+                </div>
+                <div class="yearly-stats" id="yearly-stats">
+                    <div class="yearly-stat-section">
+                        <strong>Прирост веса по месяцам:</strong>
+                        <div id="avg-weight-gain">-</div>
+                    </div>
+                    <div class="yearly-stat-section">
+                        <strong>Ветобработки:</strong>
+                        <div id="vet-treatments">-</div>
+                    </div>
+                    <div class="yearly-stat-section">
+                        <strong>Животные по статусам:</strong>
+                        <div id="animals-by-status">-</div>
+                    </div>
+                    <div class="yearly-stat-section">
+                        <strong>Рождения:</strong>
+                        <div id="births-stats">-</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -62,14 +90,23 @@
         <ul>
             <li><a href="{% url 'veterinary:veterinary-management' %}">Управление технической информацией</a></li>
             <li><a href="{% url 'animals:animals' %}">Управление животными</a></li>
-            <li><a href="{% url 'notes:notes' %}">Заметки</a></li>
         </ul>
+    </div>
+    
+    <!-- Кнопка бэкапа внизу страницы -->
+    <div class="backup-section text-end mt-4">
+        <button id="backupBtn" class="btn btn-warning backup-button" onclick="openBackupModal()">
+            Сделать бэкап
+        </button>
     </div>
 </div>
 
 <script>
 // Загрузка статистики при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
+    // Инициализация селектора годов
+    initYearSelector();
+    
     try {
         const response = await fetch('/animals/api/dashboard-statistics/');
         const data = await response.json();
@@ -129,6 +166,370 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('Ошибка загрузки статистики:', error);
     }
+    
+    // Загружаем годовую статистику для текущего года
+    loadYearlyStatistics(new Date().getFullYear());
+    
+    // Проверяем нужность автобэкапа
+    try {
+        const response = await fetch('/animals/api/backup/check-auto/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.created) {
+            console.log('Автобэкап создан:', data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка проверки автобэкапа:', error);
+    }
 });
+
+// Инициализация селектора годов
+function initYearSelector() {
+    const yearSelect = document.getElementById('year-select');
+    const currentYear = new Date().getFullYear();
+    
+    // Добавляем годы от 2020 до текущего года
+    for (let year = 2020; year <= currentYear; year++) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        if (year === currentYear) {
+            option.selected = true;
+        }
+        yearSelect.appendChild(option);
+    }
+    
+    // Обработчик изменения года
+    yearSelect.addEventListener('change', (e) => {
+        loadYearlyStatistics(parseInt(e.target.value));
+    });
+}
+
+// Загрузка годовой статистики
+async function loadYearlyStatistics(year) {
+    try {
+        const response = await fetch(`/animals/api/yearly-statistics/?year=${year}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Ошибка загрузки годовой статистики:', data.error);
+            return;
+        }
+        
+        // Средний прирост веса
+        displayWeightGain(data.monthly_weight_gain);
+        
+        // Ветобработки
+        displayVetTreatments(data.veterinary_treatments);
+        
+        // Животные по статусам
+        displayAnimalsByStatus(data.animals_by_status);
+        
+        // Рождения
+        displayBirths(data.births);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки годовой статистики:', error);
+    }
+}
+
+// Отображение среднего прироста веса
+function displayWeightGain(monthlyData) {
+    const container = document.getElementById('avg-weight-gain');
+    
+    if (!monthlyData || Object.keys(monthlyData).length === 0) {
+        container.innerHTML = 'Нет данных';
+        return;
+    }
+    
+    const monthNames = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ];
+    
+    let html = '';
+    let hasData = false;
+    
+    for (let i = 1; i <= 12; i++) {
+        const monthKey = `month_${i}`;
+        const monthName = monthNames[i - 1];
+        
+        if (monthlyData[monthKey] && monthlyData[monthKey].animals_count > 0) {
+            const gain = monthlyData[monthKey].avg_gain;
+            html += `<div>${monthName}: ${gain} кг</div>`;
+            hasData = true;
+        } else {
+            html += `<div>${monthName}: - кг</div>`;
+        }
+    }
+    
+    if (!hasData) {
+        container.innerHTML = 'Нет данных';
+    } else {
+        container.innerHTML = html;
+    }
+}
+
+// Отображение ветобработок
+function displayVetTreatments(treatments) {
+    const container = document.getElementById('vet-treatments');
+    
+    if (!treatments || Object.keys(treatments).length === 0) {
+        container.innerHTML = 'Нет данных';
+        return;
+    }
+    
+    const total = Object.values(treatments).reduce((sum, count) => sum + count, 0);
+    let html = `<div><strong>Всего: ${total}</strong></div>`;
+    
+    // Показываем топ-3 обработки
+    const sortedTreatments = Object.entries(treatments)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3);
+    
+    sortedTreatments.forEach(([treatment, count]) => {
+        html += `<div>${treatment}: ${count}</div>`;
+    });
+    
+    if (Object.keys(treatments).length > 3) {
+        html += `<div><small>и ещё ${Object.keys(treatments).length - 3}...</small></div>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+// Отображение животных по статусам
+function displayAnimalsByStatus(statusData) {
+    const container = document.getElementById('animals-by-status');
+    
+    if (!statusData || Object.keys(statusData).length === 0) {
+        container.innerHTML = 'Нет данных';
+        return;
+    }
+    
+    const total = Object.values(statusData).reduce((sum, count) => sum + count, 0);
+    let html = `<div><strong>Всего: ${total}</strong></div>`;
+    
+    // Показываем топ-3 статуса
+    const sortedStatuses = Object.entries(statusData)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3);
+    
+    sortedStatuses.forEach(([status, count]) => {
+        html += `<div>${status}: ${count}</div>`;
+    });
+    
+    if (Object.keys(statusData).length > 3) {
+        html += `<div><small>и ещё ${Object.keys(statusData).length - 3}...</small></div>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+// Отображение рождений
+function displayBirths(birthsData) {
+    const container = document.getElementById('births-stats');
+    
+    if (!birthsData || birthsData.total === 0) {
+        container.innerHTML = 'Нет данных';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div><strong>Всего: ${birthsData.total}</strong></div>
+        <div>Мальчики: ${birthsData.boys}</div>
+        <div>Девочки: ${birthsData.girls}</div>
+    `;
+}
 </script>
+
+<!-- Модальное окно для бэкапа -->
+<div class="modal fade" id="backupModal" tabindex="-1" aria-labelledby="backupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="backupModalLabel">Создание бэкапа базы данных</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="backup-info">
+                    <p><strong>Последний бэкап:</strong> <span id="last-backup-info">Загрузка...</span></p>
+                    <p>Вы уверены, что хотите создать новый бэкап базы данных?</p>
+                </div>
+                <div id="backup-status" style="display: none;">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2" id="backup-status-text">Подождите, бэкап создаётся...</p>
+                    </div>
+                </div>
+                <div id="backup-result" style="display: none;">
+                    <div class="alert" id="backup-result-alert">
+                        <span id="backup-result-text"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancel-btn">Отмена</button>
+                <button type="button" class="btn btn-warning" onclick="createBackup()" id="confirm-btn">Создать бэкап</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.backup-button {
+    padding: 12px 16px;
+    font-weight: bold;
+    border-radius: 4px;
+    min-width: 120px;
+}
+
+.backup-section {
+    margin-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Исправление для навигационных ссылок */
+.navigation-section a {
+    color: white !important;
+    text-decoration: none;
+}
+
+.navigation-section a:hover {
+    color: white !important;
+    text-decoration: none;
+}
+</style>
+
+<script>
+// Функции для работы с бэкапами
+let backupModal;
+
+// Открытие модального окна бэкапа
+async function openBackupModal() {
+    // Загружаем информацию о последнем бэкапе
+    await loadBackupInfo();
+    
+    // Сбрасываем состояние модального окна
+    document.getElementById('backup-info').style.display = 'block';
+    document.getElementById('backup-status').style.display = 'none';
+    document.getElementById('backup-result').style.display = 'none';
+    document.getElementById('confirm-btn').disabled = false;
+    document.getElementById('cancel-btn').textContent = 'Отмена';
+    
+    // Показываем модальное окно
+    backupModal = new bootstrap.Modal(document.getElementById('backupModal'));
+    backupModal.show();
+}
+
+// Загрузка информации о последнем бэкапе
+async function loadBackupInfo() {
+    try {
+        const response = await fetch('/animals/api/backup/info/');
+        const data = await response.json();
+        
+        const lastBackupElement = document.getElementById('last-backup-info');
+        
+        if (data.last_backup) {
+            lastBackupElement.innerHTML = `
+                ${data.last_backup.type} - ${data.last_backup.date} 
+                <small>(${data.last_backup.size})</small>
+            `;
+        } else {
+            lastBackupElement.textContent = 'Бэкапы не найдены';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки информации о бэкапе:', error);
+        document.getElementById('last-backup-info').textContent = 'Ошибка загрузки';
+    }
+}
+
+// Создание бэкапа
+async function createBackup() {
+    // Скрываем информацию и показываем статус
+    document.getElementById('backup-info').style.display = 'none';
+    document.getElementById('backup-status').style.display = 'block';
+    document.getElementById('backup-result').style.display = 'none';
+    
+    // Отключаем кнопку подтверждения
+    document.getElementById('confirm-btn').disabled = true;
+    document.getElementById('cancel-btn').textContent = 'Отмена';
+    
+    try {
+        const response = await fetch('/animals/api/backup/create/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        const data = await response.json();
+        
+        // Скрываем статус и показываем результат
+        document.getElementById('backup-status').style.display = 'none';
+        document.getElementById('backup-result').style.display = 'block';
+        
+        const alertElement = document.getElementById('backup-result-alert');
+        const resultText = document.getElementById('backup-result-text');
+        
+        if (data.success) {
+            alertElement.className = 'alert alert-success';
+            resultText.textContent = 'Успех! Бэкап успешно создан.';
+            
+            // Закрываем модальное окно через 5 секунд
+            setTimeout(() => {
+                if (backupModal) {
+                    backupModal.hide();
+                }
+            }, 5000);
+        } else {
+            alertElement.className = 'alert alert-danger';
+            resultText.textContent = `Ошибка: ${data.error}`;
+        }
+        
+        document.getElementById('cancel-btn').textContent = 'Закрыть';
+        
+    } catch (error) {
+        console.error('Ошибка создания бэкапа:', error);
+        
+        document.getElementById('backup-status').style.display = 'none';
+        document.getElementById('backup-result').style.display = 'block';
+        
+        const alertElement = document.getElementById('backup-result-alert');
+        const resultText = document.getElementById('backup-result-text');
+        
+        alertElement.className = 'alert alert-danger';
+        resultText.textContent = `Ошибка сети: ${error.message}`;
+        
+        document.getElementById('cancel-btn').textContent = 'Закрыть';
+    }
+}
+
+// Функция для получения CSRF токена
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+
 {% endblock %}

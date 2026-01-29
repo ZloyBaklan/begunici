@@ -6,7 +6,7 @@ from django.shortcuts import render
 from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse
 
-from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
+from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
 from .serializers import (
     MakerSerializer,
     MakerChildSerializer,
@@ -19,7 +19,9 @@ from .serializers import (
     LambingSerializer,
     ArchiveAnimalSerializer,
     UniversalChildSerializer,
+    CalendarNoteSerializer,
 )
+from .backup_utils import backup_manager
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -876,6 +878,7 @@ class LambingViewSet(viewsets.ModelViewSet):
             number_of_lambs = request.data.get('number_of_lambs', 0)
             note = request.data.get('note', '')
             lambs_data = request.data.get('lambs', [])
+            new_mother_status_id = request.data.get('new_mother_status_id')  # Новый статус для матери
             
             if not actual_date_str:
                 return Response(
@@ -898,11 +901,38 @@ class LambingViewSet(viewsets.ModelViewSet):
             if note:
                 lambing.note = note
             lambing.is_active = False
+            
+            # Устанавливаем новый статус матери, если он указан
+            mother = lambing.get_mother()
+            if mother and new_mother_status_id:
+                try:
+                    new_status = Status.objects.get(id=new_mother_status_id)
+                    mother.animal_status = new_status
+                    mother.save()
+                except Status.DoesNotExist:
+                    return Response(
+                        {"error": "Указанный статус не найден"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                except Exception as e:
+                    print(f"Ошибка при установке нового статуса матери: {e}")
+            
             lambing.save()
+            
+            # Если мать - ярка, преобразуем её в овцу после первого окота
+            mother = lambing.get_mother()
+            if mother and lambing.get_mother_type() == "Ярка":
+                # Преобразуем ярку в овцу
+                sheep = mother.to_sheep()
+                # Обновляем связь окота с новой овцой
+                lambing.sheep = sheep
+                lambing.ewe = None
+                lambing.save()
+                # Обновляем переменную mother для дальнейшего использования
+                mother = sheep
             
             # Создаем детей, если они указаны
             created_children = []
-            mother = lambing.get_mother()
             father = lambing.get_father()
             
             for lamb_data in lambs_data:
@@ -1033,6 +1063,110 @@ class LambingViewSet(viewsets.ModelViewSet):
                 {"error": "Животное не найдено"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class CalendarNoteViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet для управления заметками календаря
+    """
+    queryset = CalendarNote.objects.all().order_by('-date')
+    serializer_class = CalendarNoteSerializer
+    permission_classes = [AllowAny]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['text']
+    ordering_fields = ['date', 'created_at']
+    pagination_class = PaginationSetting
+
+    def get_queryset(self):
+        """Фильтрация заметок по дате"""
+        queryset = super().get_queryset()
+        date = self.request.query_params.get('date', None)
+        
+        if date:
+            try:
+                from datetime import datetime
+                date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+                queryset = queryset.filter(date=date_obj)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
+        
+        return queryset
+
+    @action(detail=False, methods=['get'], url_path='by-week')
+    def by_week(self, request):
+        """Получить заметки для недели"""
+        from datetime import datetime, timedelta
+        
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response(
+                {"error": "Необходимо указать дату"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            # Находим начало недели (понедельник)
+            start_of_week = date_obj - timedelta(days=date_obj.weekday())
+            end_of_week = start_of_week + timedelta(days=6)
+            
+            notes = CalendarNote.objects.filter(
+                date__gte=start_of_week,
+                date__lte=end_of_week
+            ).order_by('date')
+            
+            serializer = self.get_serializer(notes, many=True)
+            return Response({
+                'start_date': start_of_week,
+                'end_date': end_of_week,
+                'notes': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except ValueError:
+            return Response(
+                {"error": "Неверный формат даты. Используйте YYYY-MM-DD"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'], url_path='calendar-data')
+    def calendar_data(self, request):
+        """Получить данные заметок для календаря"""
+        try:
+            year = request.query_params.get('year')
+            month = request.query_params.get('month')
+            
+            queryset = CalendarNote.objects.all()
+            
+            if year:
+                queryset = queryset.filter(date__year=int(year))
+            if month:
+                queryset = queryset.filter(date__month=int(month))
+            
+            # Группируем заметки по датам
+            calendar_data = {}
+            for note in queryset:
+                date_str = note.date.strftime('%Y-%m-%d')
+                if date_str not in calendar_data:
+                    calendar_data[date_str] = []
+                
+                calendar_data[date_str].append({
+                    'id': note.id,
+                    'text': note.text[:100] + '...' if len(note.text) > 100 else note.text,
+                    'formatted_text': note.get_formatted_text()
+                })
+            
+            return Response(calendar_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response(
                 {"error": str(e)}, 
@@ -1553,3 +1687,268 @@ def dashboard_statistics(request):
             }
         }
     })
+
+
+@api_view(['GET'])
+def yearly_statistics(request):
+    """
+    Возвращает статистику за выбранный год:
+    - Средний набор веса по месяцам
+    - Количество вакцинаций по препаратам
+    - Количество животных по статусам на конец года
+    - Количество рождений мальчиков и девочек
+    """
+    from django.utils import timezone
+    from datetime import datetime, date
+    from django.db.models import Avg, Sum
+    from begunici.app_types.veterinary.vet_models import VeterinaryCare
+    
+    year = request.GET.get('year', timezone.now().year)
+    try:
+        year = int(year)
+    except (ValueError, TypeError):
+        return Response({'error': 'Неверный формат года'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Даты начала и конца года
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    
+    # 1. Средний набор веса по месяцам
+    monthly_weight_gain = {}
+    for month in range(1, 13):
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year, 12, 31)
+        else:
+            month_end = date(year, month + 1, 1) - timedelta(days=1)
+        
+        # Получаем всех живых животных (не в архиве)
+        all_animals = []
+        for model in [Maker, Ram, Ewe, Sheep]:
+            all_animals.extend(list(model.objects.filter(is_archived=False)))
+        
+        total_weight_gain = 0
+        animals_with_gain = 0
+        
+        for animal in all_animals:
+            # Получаем первое и последнее взвешивание в месяце
+            month_weights = WeightRecord.objects.filter(
+                tag=animal.tag,
+                weight_date__gte=month_start,
+                weight_date__lte=month_end
+            ).order_by('weight_date')
+            
+            if month_weights.count() >= 2:
+                first_weight = month_weights.first().weight
+                last_weight = month_weights.last().weight
+                weight_gain = float(last_weight - first_weight)
+                total_weight_gain += weight_gain
+                animals_with_gain += 1
+        
+        avg_gain = round(total_weight_gain / animals_with_gain, 2) if animals_with_gain > 0 else 0
+        monthly_weight_gain[f'month_{month}'] = {
+            'month': month,
+            'avg_gain': avg_gain,
+            'animals_count': animals_with_gain
+        }
+    
+    # 2. Количество вакцинаций по препаратам
+    vet_treatments = Veterinary.objects.filter(
+        date_of_care__gte=year_start,
+        date_of_care__lte=year_end
+    ).select_related('veterinary_care')
+    
+    treatment_stats = {}
+    for treatment in vet_treatments:
+        if treatment.veterinary_care:
+            care_name = treatment.veterinary_care.care_name
+            medication = treatment.veterinary_care.medication or 'Без препарата'
+            key = f"{care_name} ({medication})"
+            
+            if key not in treatment_stats:
+                treatment_stats[key] = 0
+            treatment_stats[key] += 1
+    
+    # 3. Количество животных по статусам на конец года
+    status_stats = {}
+    
+    # Получаем все статусы
+    all_statuses = Status.objects.all()
+    
+    for status_obj in all_statuses:
+        count = 0
+        # Считаем животных каждого типа с этим статусом на конец года
+        for model in [Maker, Ram, Ewe, Sheep]:
+            count += model.objects.filter(
+                animal_status=status_obj,
+                # Животное должно существовать на конец года
+                tag__issue_date__lte=year_end
+            ).count()
+        
+        if count > 0:
+            status_stats[status_obj.status_type] = count
+    
+    # 4. Рождения мальчиков и девочек за год
+    # Мальчики: Ram + Maker
+    boys_born = (
+        Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
+        Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+    )
+    
+    # Девочки: Ewe
+    girls_born = Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+    
+    # Sheep могут быть как мальчиками, так и девочками, но по логике это взрослые самки
+    # Поэтому добавляем их к девочкам, если они родились в этом году
+    girls_born += Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+    
+    return Response({
+        'year': year,
+        'monthly_weight_gain': monthly_weight_gain,
+        'veterinary_treatments': treatment_stats,
+        'animals_by_status': status_stats,
+        'births': {
+            'boys': boys_born,
+            'girls': girls_born,
+            'total': boys_born + girls_born
+        }
+    })
+
+
+@api_view(['GET'])
+def get_all_tags(request):
+    """
+    Возвращает список всех бирок с информацией о животных
+    """
+    try:
+        search = request.GET.get('search', '')
+        
+        # Получаем все бирки
+        tags_query = Tag.objects.all()
+        
+        if search:
+            tags_query = tags_query.filter(tag_number__icontains=search)
+        
+        tags_data = []
+        
+        # Сначала добавляем активных животных
+        for model, type_name in [(Maker, 'Производитель'), (Ram, 'Баран'), (Ewe, 'Ярка'), (Sheep, 'Овца')]:
+            animals = model.objects.filter(is_archived=False, tag__in=tags_query).select_related('tag')
+            for animal in animals:
+                tags_data.append({
+                    'tag_number': animal.tag.tag_number,
+                    'animal_type': type_name,
+                    'is_active': True,
+                    'display_name': f'{type_name} {animal.tag.tag_number}'
+                })
+        
+        # Затем добавляем архивных животных
+        for model, type_name in [(Maker, 'Производитель'), (Ram, 'Баран'), (Ewe, 'Ярка'), (Sheep, 'Овца')]:
+            animals = model.objects.filter(is_archived=True, tag__in=tags_query).select_related('tag')
+            for animal in animals:
+                tags_data.append({
+                    'tag_number': animal.tag.tag_number,
+                    'animal_type': type_name,
+                    'is_active': False,
+                    'display_name': f'{type_name} {animal.tag.tag_number} (архив)'
+                })
+        
+        # Сортируем: сначала активные, потом по номеру бирки
+        tags_data.sort(key=lambda x: (not x['is_active'], x['tag_number']))
+        
+        return Response(tags_data[:100])  # Ограничиваем до 100 результатов
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+def get_all_statuses(request):
+    """
+    Возвращает список всех статусов с их цветами
+    """
+    try:
+        statuses = Status.objects.all()
+        statuses_data = []
+        
+        for status_obj in statuses:
+            statuses_data.append({
+                'id': status_obj.id,
+                'status_type': status_obj.status_type,
+                'color': status_obj.color
+            })
+        
+        return Response(statuses_data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# API для работы с бэкапами
+@api_view(['POST'])
+def create_backup(request):
+    """
+    Создает ручной бэкап базы данных
+    """
+    try:
+        success, message = backup_manager.create_manual_backup()
+        
+        if success:
+            return Response({
+                'success': True,
+                'message': message
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': message
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def backup_info(request):
+    """
+    Возвращает информацию о последнем бэкапе
+    """
+    try:
+        last_backup = backup_manager.get_last_backup_info()
+        
+        return Response({
+            'last_backup': last_backup
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def check_auto_backup(request):
+    """
+    Проверяет и создает автобэкап если нужно
+    """
+    try:
+        if backup_manager.should_create_auto_backup():
+            success, message = backup_manager.create_auto_backup()
+            return Response({
+                'created': success,
+                'message': message
+            })
+        else:
+            return Response({
+                'created': False,
+                'message': 'Автобэкап не требуется'
+            })
+            
+    except Exception as e:
+        return Response({
+            'created': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

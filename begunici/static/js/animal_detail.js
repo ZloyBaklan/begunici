@@ -718,6 +718,24 @@ async function completeLambing(lambingId) {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('actual-lambing-date').value = today;
     
+    // Загружаем список статусов
+    try {
+        const response = await fetch('/animals/api/all-statuses/');
+        const statuses = await response.json();
+        
+        const statusSelect = document.getElementById('new-mother-status');
+        statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
+        
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.textContent = status.status_type;
+            statusSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки статусов:', error);
+    }
+    
     // Генерируем формы для ягнят
     generateLambForms(1);
     
@@ -926,9 +944,15 @@ async function completeLambingWithChildren() {
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
     const lambingNote = document.getElementById('lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox').checked;
+    const newMotherStatusId = document.getElementById('new-mother-status').value;
     
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
+        return;
+    }
+    
+    if (!newMotherStatusId) {
+        alert('Пожалуйста, выберите новый статус для матери');
         return;
     }
     
@@ -966,6 +990,7 @@ async function completeLambingWithChildren() {
             actual_lambing_date: actualDate,
             number_of_lambs: lambsCount,
             note: lambingNote,
+            new_mother_status_id: parseInt(newMotherStatusId),
             lambs: lambsData
         };
         

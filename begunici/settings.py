@@ -40,8 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "begunici.app_types.animals",
     "begunici.app_types.veterinary",  # Приложение для ветобработки и взвешивания
-    "begunici.app_types.notes",       # Приложение для заметок
-    'begunici.app_types.public_site', # Сайт визитка
+    "begunici.app_types.public_site",  # Публичный сайт
     "rest_framework",  # Если используете Django REST Framework
 ]
 
@@ -53,8 +52,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    
-    "begunici.app_types.public_site.middleware.LoginRequiredExceptPublicMiddleware",
+    "begunici.app_types.public_site.middleware.LoginRequiredExceptPublicMiddleware",  # Middleware для авторизации
 ]
 
 # Настройки аутентификации
@@ -128,7 +126,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = "Europe/Moscow"
 
 USE_I18N = True
 

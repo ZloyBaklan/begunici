@@ -13,6 +13,7 @@ from .views import (
     EweViewSet,
     SheepViewSet,
     LambingViewSet,
+    CalendarNoteViewSet,
     animals,
     create_animal,
     ArchiveViewSet,
@@ -22,7 +23,13 @@ from .views import (
     EweDetailView,
     SheepDetailView,
     dashboard_statistics,
+    yearly_statistics,
+    get_all_tags,
+    get_all_statuses,
     export_to_excel,
+    create_backup,
+    backup_info,
+    check_auto_backup,
 )
 
 # Создаем маршруты для ViewSet
@@ -32,6 +39,7 @@ router.register(r"ram", RamViewSet)  # Маршрут для баранов
 router.register(r"ewe", EweViewSet)  # Маршрут для ярок
 router.register(r"sheep", SheepViewSet)  # Маршрут для овец
 router.register(r"lambing", LambingViewSet)  # Маршрут для окотов
+router.register(r"notes", CalendarNoteViewSet)  # Маршрут для заметок календаря
 router.register(r"archive", ArchiveViewSet, basename="archive")  # Архив животных
 router.register(r"actions", AnimalActionsViewSet, basename="actions")  # Действия с животными
 
@@ -201,9 +209,12 @@ urlpatterns = [
         name="sheep-restore",
     ),
     path("api/dashboard-statistics/", dashboard_statistics, name="dashboard-statistics"),  # API статистики
+    path("api/yearly-statistics/", yearly_statistics, name="yearly-statistics"),  # API годовой статистики
+    path("api/all-tags/", get_all_tags, name="all-tags"),  # API всех бирок
+    path("api/all-statuses/", get_all_statuses, name="all-statuses"),  # API всех статусов
     path("api/export-excel/", export_to_excel, name="export-excel"),  # API экспорта в Excel
     path("main/", animals, name="animals"),  # Главная страница
-    path("calendar/", TemplateView.as_view(template_name="calendar.html"), name="calendar"),  # Календарь окотов
+    path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"
     ),  # Маршрут для создания животных
@@ -219,4 +230,9 @@ urlpatterns = [
     path(
         "sheeps/", TemplateView.as_view(template_name="sheeps.html"), name="sheeps"
     ),  # Маршрут для страницы управления овцами
+    
+    # API для бэкапов
+    path("api/backup/create/", create_backup, name="create-backup"),  # Создание ручного бэкапа
+    path("api/backup/info/", backup_info, name="backup-info"),  # Информация о последнем бэкапе
+    path("api/backup/check-auto/", check_auto_backup, name="check-auto-backup"),  # Проверка автобэкапа
 ]

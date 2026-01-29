@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.db import models
-from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase
+from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
 from begunici.app_types.veterinary.vet_models import (
     Place,
     PlaceMovement,
@@ -462,6 +462,9 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "status": instance.animal_status.status_type
             if instance.animal_status
             else "Нет данных",
+            "status_color": instance.animal_status.color
+            if instance.animal_status
+            else "#FFFFFF",
             "archived_date": instance.animal_status.date_of_status
             if instance.animal_status
             else "Нет данных",
@@ -469,3 +472,21 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "birth_date": instance.birth_date,
             "age": instance.age,
         }
+
+
+class CalendarNoteSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для заметок календаря
+    """
+    formatted_text = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CalendarNote
+        fields = ['id', 'date', 'text', 'formatted_text', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+    
+    def get_formatted_text(self, obj):
+        """
+        Возвращает текст с преобразованными ссылками на животных
+        """
+        return obj.get_formatted_text()

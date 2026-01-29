@@ -82,7 +82,7 @@ function renderRams(rams) {
             <td style="background-color:${ram.animal_status ? ram.animal_status.color : '#FFFFFF'}">
                 ${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${ram.age || 'Не указан'}</td>
+            <td>${ram.age ? `${ram.age} мес.` : 'Не указан'}</td>
             <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
             <td>${ram.weight_records && ram.weight_records.length > 0 
                 ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 

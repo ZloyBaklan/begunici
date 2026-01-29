@@ -1,0 +1,316 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Заметки календаря{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>Заметки календаря</h2>
+    
+    <!-- Переключатель режима отображения -->
+    <div class="view-toggle mb-3">
+        <button id="weekViewBtn" class="toggle-btn active">Неделя</button>
+        <button id="monthViewBtn" class="toggle-btn">Месяц</button>
+    </div>
+    
+    <!-- Навигация по неделям/месяцам -->
+    <div class="navigation mb-3">
+        <button id="prevPeriod" class="btn btn-outline-primary">&lt; <span id="prevLabel">Предыдущая неделя</span></button>
+        <span id="currentPeriod" class="mx-3 h4"></span>
+        <button id="nextPeriod" class="btn btn-outline-primary"><span id="nextLabel">Следующая неделя</span> &gt;</button>
+    </div>
+    
+    <!-- Календарь (недельный и месячный) -->
+    <div class="calendar-container">
+        <!-- Недельный календарь -->
+        <div id="weekCalendar" class="week-calendar-container">
+            <table class="table table-bordered week-calendar-table">
+                <thead>
+                    <tr id="weekDaysHeader">
+                        <!-- Дни недели будут добавлены через JavaScript -->
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="weekDaysBody">
+                        <!-- Ячейки дней будут добавлены через JavaScript -->
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Месячный календарь -->
+        <div id="monthCalendar" class="month-calendar-container" style="display: none;">
+            <table class="table table-bordered month-calendar-table">
+                <thead>
+                    <tr>
+                        <th>Пн</th>
+                        <th>Вт</th>
+                        <th>Ср</th>
+                        <th>Чт</th>
+                        <th>Пт</th>
+                        <th>Сб</th>
+                        <th>Вс</th>
+                    </tr>
+                </thead>
+                <tbody id="monthCalendarBody">
+                    <!-- Дни календаря будут добавлены через JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Кнопки навигации -->
+    <div class="mt-3 d-flex gap-2">
+        <a href="{% url 'animals:animals' %}" class="btn btn-primary">Вернуться на главную</a>
+    </div>
+</div>
+
+<!-- Модальное окно для редактирования заметок -->
+<div class="modal fade" id="noteModal" tabindex="-1" aria-labelledby="noteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="noteModalLabel">Редактирование заметки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="noteDate" class="form-label">Дата:</label>
+                    <input type="date" class="form-control" id="noteDate" readonly>
+                </div>
+                <div class="mb-3">
+                    <label for="noteText" class="form-label">Текст заметки:</label>
+                    <textarea class="form-control" id="noteText" rows="6" placeholder="Введите текст заметки..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-info" id="insertTagBtn">Вставить бирку</button>
+                    <small class="form-text text-muted">Нажмите для выбора и вставки ссылки на животное</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отменить</button>
+                <button type="button" class="btn btn-primary" id="saveNoteBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для выбора бирки -->
+<div class="modal fade" id="tagModal" tabindex="-1" aria-labelledby="tagModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tagModalLabel">Выбор бирки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="tagSearch" placeholder="Поиск по номеру бирки...">
+                </div>
+                <div id="tagsList" class="tags-list">
+                    <!-- Список бирок будет добавлен через JavaScript -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отменить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.week-calendar-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.week-calendar-table th,
+.week-calendar-table td {
+    width: 14.28%;
+    height: 120px;
+    vertical-align: top;
+    position: relative;
+    cursor: pointer;
+    padding: 8px;
+    border: 2px solid #dee2e6;
+}
+
+.month-calendar-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.month-calendar-table th,
+.month-calendar-table td {
+    width: 14.28%;
+    height: 100px;
+    vertical-align: top;
+    position: relative;
+    cursor: pointer;
+    padding: 5px;
+    border: 1px solid #dee2e6;
+}
+
+.week-calendar-table th,
+.month-calendar-table th {
+    height: auto;
+    text-align: center;
+    background-color: #f8f9fa;
+    font-weight: bold;
+}
+
+.week-calendar-table td:hover,
+.month-calendar-table td:hover {
+    background-color: #e9ecef;
+}
+
+.week-calendar-table td.has-note,
+.month-calendar-table td.has-note {
+    background-color: #d4edda;
+    border-color: #28a745;
+}
+
+.week-calendar-table td.has-note:hover,
+.month-calendar-table td.has-note:hover {
+    background-color: #c3e6cb;
+}
+
+.month-calendar-table td.other-month {
+    color: #ccc;
+    background-color: #f8f9fa;
+}
+
+.navigation {
+    text-align: center;
+}
+
+.view-toggle {
+    text-align: center;
+}
+
+.toggle-btn {
+    padding: 8px 16px;
+    margin: 0 5px;
+    border: 1px solid #dee2e6;
+    background: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #495057;
+}
+
+.toggle-btn:hover {
+    background: #e9ecef;
+}
+
+.toggle-btn.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.day-number {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 5px;
+}
+
+.day-name {
+    font-size: 0.9em;
+    color: #6c757d;
+    margin-bottom: 3px;
+}
+
+.note-preview {
+    font-size: 0.8em;
+    color: #495057;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    line-height: 1.2;
+}
+
+/* Специальные стили для статусов в календаре */
+.note-preview span[style*="border"] {
+    display: inline-block;
+    padding: 1px 2px !important;
+    margin: 1px;
+    border-width: 1px !important;
+    border-radius: 2px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tags-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.tag-item {
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+    margin-bottom: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.tag-item:hover {
+    background-color: #e9ecef;
+}
+
+.tag-item.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.tag-item.inactive {
+    opacity: 0.6;
+}
+
+.tag-item .tag-type {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.tag-item .tag-number {
+    color: #495057;
+}
+
+.tag-item.active .tag-number {
+    color: white;
+}
+
+/* Простое центрирование модальных окон только для страницы заметок */
+#noteModal .modal-dialog,
+#tagModal .modal-dialog {
+    margin: 1.75rem auto;
+}
+
+/* Адаптивные размеры */
+@media (min-width: 576px) {
+    #noteModal .modal-dialog,
+    #tagModal .modal-dialog {
+        max-width: 500px;
+    }
+}
+
+@media (min-width: 992px) {
+    #noteModal .modal-dialog {
+        max-width: 800px;
+    }
+    
+    #tagModal .modal-dialog {
+        max-width: 600px;
+    }
+}
+</style>
+
+<script src="{% static 'js/calendar_notes.js' %}"></script>
+{% endblock %}

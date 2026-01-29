@@ -22,10 +22,13 @@ from .views import index  # Импортируем view для главной с
 
 urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора
-    
-    path("site/", include("begunici.app_types.public_site.urls")), # Публичный сайт — отдельно, чтобы ничего не ломать, но потом перенос всего под слеш app/
     path("", index, name="index"),  # Главная страница
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),  # Выход
+    path("accounts/login/", auth_views.LoginView.as_view(template_name='admin/login.html'), name="login"),  # Логин
+    path(
+        "site/",
+        include(("begunici.app_types.public_site.urls", "public_site"), namespace="public_site"),
+    ),  # Публичный сайт
     path(
         "veterinary/",
         include(
@@ -37,6 +40,4 @@ urlpatterns = [
         "animals/",
         include(("begunici.app_types.animals.urls", "animals"), namespace="animals"),
     ),  # Подключаем urls для animals с namespace
-    path("notes/", include("begunici.app_types.notes.urls", namespace="notes")),
-
 ]
