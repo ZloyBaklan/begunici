@@ -537,14 +537,30 @@ class CalendarNote(models.Model):
         formatted_text = self.text
         
         # 1. Обрабатываем бирки
-        # Паттерн для бирок: буквы и цифры в любом сочетании (К657, A123, БР456, 123А и т.д.)
-        tag_pattern = r'\b([А-Яа-яA-Za-z]*\d+[А-Яа-яA-Za-z]*|\d*[А-Яа-яA-Za-z]+\d+)\b'
+        # Паттерн для бирок: строки из букв и цифр, содержащие и то, и другое
+        tag_pattern = r'\b([А-Яа-яA-Za-z0-9]{2,})\b'
         
         def replace_tag_link(match):
             tag_text = match.group(1)
             
             # Пропускаем слишком короткие совпадения (менее 2 символов)
             if len(tag_text) < 2:
+                return tag_text
+            
+            # Пропускаем слишком длинные строки (вероятно, обычные слова)
+            if len(tag_text) > 10:
+                return tag_text
+            
+            # Проверяем, что строка похожа на бирку:
+            # - содержит цифры ИЛИ
+            # - короткая (до 5 символов) ИЛИ  
+            # - содержит заглавные буквы
+            import re
+            has_digit = bool(re.search(r'[0-9]', tag_text))
+            has_uppercase = bool(re.search(r'[А-ЯA-Z]', tag_text))
+            is_short = len(tag_text) <= 5
+            
+            if not (has_digit or has_uppercase or is_short):
                 return tag_text
             
             try:

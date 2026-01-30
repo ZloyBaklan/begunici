@@ -91,6 +91,11 @@ document.addEventListener('DOMContentLoaded', function() {
         saveBtn.addEventListener('click', saveNote);
     }
     
+    const deleteBtn = document.getElementById('deleteNoteBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteNote);
+    }
+    
     if (insertBtn) {
         insertBtn.addEventListener('click', showTagModal);
     }
@@ -329,11 +334,14 @@ function openNoteModal(date, existingNote = null) {
     
     document.getElementById('noteDate').value = date;
     
-    // Показываем обычный текст, но с работающими ссылками и статусами
+    // Показываем/скрываем кнопку удаления
+    const deleteBtn = document.getElementById('deleteNoteBtn');
     if (existingNote) {
+        deleteBtn.style.display = 'inline-block';
         // Для редактирования показываем исходный текст
         document.getElementById('noteText').value = existingNote.text;
     } else {
+        deleteBtn.style.display = 'none';
         document.getElementById('noteText').value = '';
     }
     
@@ -509,4 +517,39 @@ function getCsrfToken() {
     }
     
     return '';
+}
+
+// Удаляет заметку
+async function deleteNote() {
+    if (!currentNoteId) {
+        alert('Нет заметки для удаления');
+        return;
+    }
+    
+    if (!confirm('Вы уверены, что хотите удалить эту заметку?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/animals/notes/${currentNoteId}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        });
+        
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('noteModal'));
+            if (modal) {
+                modal.hide();
+            }
+            updateCalendar(); // Перезагружаем календарь
+        } else {
+            const errorData = await response.json();
+            alert('Ошибка удаления: ' + (errorData.error || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка удаления заметки:', error);
+        alert('Ошибка удаления заметки');
+    }
 }

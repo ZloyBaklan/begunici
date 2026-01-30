@@ -90,7 +90,7 @@ async function saveMaker() {
 
 
 let currentPage = 1; // Текущая страница
-const pageSize = 3; // Количество записей на странице
+const pageSize = 10; // Количество записей на странице
 
 // Загрузка списка производителей
 async function fetchMakers(page = 1, query = '') {

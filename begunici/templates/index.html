@@ -291,15 +291,31 @@ function displayVetTreatments(treatments) {
     
     // Показываем топ-3 обработки
     const sortedTreatments = Object.entries(treatments)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3);
+        .sort(([,a], [,b]) => b - a);
     
-    sortedTreatments.forEach(([treatment, count]) => {
+    const topTreatments = sortedTreatments.slice(0, 3);
+    const remainingTreatments = sortedTreatments.slice(3);
+    
+    topTreatments.forEach(([treatment, count]) => {
         html += `<div>${treatment}: ${count}</div>`;
     });
     
-    if (Object.keys(treatments).length > 3) {
-        html += `<div><small>и ещё ${Object.keys(treatments).length - 3}...</small></div>`;
+    if (remainingTreatments.length > 0) {
+        html += `<div class="expand-section">`;
+        html += `<div class="expand-trigger" onclick="toggleExpand('vet-treatments', this)">`;
+        html += `<small style="cursor: pointer; color: #007bff;">и ещё ${remainingTreatments.length}...</small>`;
+        html += `</div>`;
+        html += `<div class="expanded-content" style="display: none;">`;
+        
+        remainingTreatments.forEach(([treatment, count]) => {
+            html += `<div>${treatment}: ${count}</div>`;
+        });
+        
+        html += `<div class="collapse-trigger" onclick="toggleExpand('vet-treatments', this)" style="cursor: pointer; color: #007bff;">`;
+        html += `<small>свернуть</small>`;
+        html += `</div>`;
+        html += `</div>`;
+        html += `</div>`;
     }
     
     container.innerHTML = html;
@@ -319,15 +335,31 @@ function displayAnimalsByStatus(statusData) {
     
     // Показываем топ-3 статуса
     const sortedStatuses = Object.entries(statusData)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3);
+        .sort(([,a], [,b]) => b - a);
     
-    sortedStatuses.forEach(([status, count]) => {
+    const topStatuses = sortedStatuses.slice(0, 3);
+    const remainingStatuses = sortedStatuses.slice(3);
+    
+    topStatuses.forEach(([status, count]) => {
         html += `<div>${status}: ${count}</div>`;
     });
     
-    if (Object.keys(statusData).length > 3) {
-        html += `<div><small>и ещё ${Object.keys(statusData).length - 3}...</small></div>`;
+    if (remainingStatuses.length > 0) {
+        html += `<div class="expand-section">`;
+        html += `<div class="expand-trigger" onclick="toggleExpand('animals-by-status', this)">`;
+        html += `<small style="cursor: pointer; color: #007bff;">и ещё ${remainingStatuses.length}...</small>`;
+        html += `</div>`;
+        html += `<div class="expanded-content" style="display: none;">`;
+        
+        remainingStatuses.forEach(([status, count]) => {
+            html += `<div>${status}: ${count}</div>`;
+        });
+        
+        html += `<div class="collapse-trigger" onclick="toggleExpand('animals-by-status', this)" style="cursor: pointer; color: #007bff;">`;
+        html += `<small>свернуть</small>`;
+        html += `</div>`;
+        html += `</div>`;
+        html += `</div>`;
     }
     
     container.innerHTML = html;
@@ -347,6 +379,24 @@ function displayBirths(birthsData) {
         <div>Мальчики: ${birthsData.boys}</div>
         <div>Девочки: ${birthsData.girls}</div>
     `;
+}
+
+// Функция для разворачивания/сворачивания секций
+function toggleExpand(containerId, trigger) {
+    const container = document.getElementById(containerId);
+    const expandSection = trigger.closest('.expand-section');
+    const expandTrigger = expandSection.querySelector('.expand-trigger');
+    const expandedContent = expandSection.querySelector('.expanded-content');
+    
+    if (expandedContent.style.display === 'none') {
+        // Разворачиваем
+        expandTrigger.style.display = 'none';
+        expandedContent.style.display = 'block';
+    } else {
+        // Сворачиваем
+        expandTrigger.style.display = 'block';
+        expandedContent.style.display = 'none';
+    }
 }
 </script>
 
@@ -407,6 +457,27 @@ function displayBirths(birthsData) {
 .navigation-section a:hover {
     color: white !important;
     text-decoration: none;
+}
+
+/* Стили для разворачиваемых секций */
+.expand-section {
+    margin-top: 4px;
+}
+
+.expand-trigger, .collapse-trigger {
+    user-select: none;
+    transition: color 0.2s ease;
+}
+
+.expand-trigger:hover, .collapse-trigger:hover {
+    color: #0056b3 !important;
+    text-decoration: underline;
+}
+
+.expanded-content {
+    margin-top: 4px;
+    padding-left: 8px;
+    border-left: 2px solid #e9ecef;
 }
 </style>
 
