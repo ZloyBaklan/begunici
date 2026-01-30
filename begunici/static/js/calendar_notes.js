@@ -6,6 +6,25 @@ let currentNoteDate = null;
 let allTags = [];
 let allStatuses = [];
 
+// ИСПРАВЛЕННАЯ функция для навигации
+function navigateWeek(direction) {
+    if (direction === 'next') {
+        currentDate.setDate(currentDate.getDate() + 7);
+    } else {
+        currentDate.setDate(currentDate.getDate() - 7);
+    }
+    updateCalendar();
+}
+
+function navigateMonth(direction) {
+    if (direction === 'next') {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+    } else {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+    }
+    updateCalendar();
+}
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Инициализация календаря заметок...');
@@ -41,11 +60,10 @@ document.addEventListener('DOMContentLoaded', function() {
         prevBtn.addEventListener('click', () => {
             console.log('Клик по предыдущему периоду');
             if (currentViewMode === 'week') {
-                currentDate.setDate(currentDate.getDate() - 7);
+                navigateWeek('prev');
             } else {
-                currentDate.setMonth(currentDate.getMonth() - 1);
+                navigateMonth('prev');
             }
-            updateCalendar();
         });
     }
     
@@ -53,11 +71,10 @@ document.addEventListener('DOMContentLoaded', function() {
         nextBtn.addEventListener('click', () => {
             console.log('Клик по следующему периоду');
             if (currentViewMode === 'week') {
-                currentDate.setDate(currentDate.getDate() + 7);
+                navigateWeek('next');
             } else {
-                currentDate.setMonth(currentDate.getMonth() + 1);
+                navigateMonth('next');
             }
-            updateCalendar();
         });
     }
     
@@ -137,24 +154,30 @@ async function updateCalendar() {
 }
 
 // Загружает данные для недели БЕЗ обрезки по месяцам
+// Загружает данные для недели
 async function loadWeekData() {
     try {
-        // Находим начало недели (понедельник)
-        const weekStart = new Date(currentDate);
-        const dayOfWeek = weekStart.getDay();
-        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        weekStart.setDate(weekStart.getDate() + diff);
+        // Находим понедельник для currentDate
+        const today = new Date(currentDate.getTime());
+        const dayOfWeek = today.getDay();
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
         
-        // Создаем массив всех 7 дней недели
+        const monday = new Date(today.getTime());
+        monday.setDate(today.getDate() - daysFromMonday);
+        
+        // Создаем массив всех 7 дней недели, начиная с понедельника
         const weekDays = [];
+        const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+        
         for (let i = 0; i < 7; i++) {
-            const day = new Date(weekStart);
-            day.setDate(day.getDate() + i);
+            const day = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
             weekDays.push(day);
         }
         
+        const url = `/animals/notes/by-week/?date=${formatDate(monday)}`;
+        
         // Загружаем заметки для всей недели
-        const response = await fetch(`/animals/notes/by-week/?date=${formatDate(weekStart)}`);
+        const response = await fetch(url);
         const data = await response.json();
         
         if (data.error) {
@@ -162,7 +185,8 @@ async function loadWeekData() {
             return;
         }
         
-        renderWeekCalendar(weekDays, data.notes);
+        // Передаем массив заметок из поля notes
+        renderWeekCalendar(weekDays, data.notes || []);
         updateWeekHeader(weekDays);
     } catch (error) {
         console.error('Ошибка загрузки данных недели:', error);
@@ -201,33 +225,45 @@ function renderWeekCalendar(weekDays, notes) {
     const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
     
     // Создаем заголовки и ячейки для каждого дня
-    weekDays.forEach((date, index) => {
-        const dayOfWeek = date.getDay();
-        const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Преобразуем в понедельник = 0
+    for (let index = 0; index < weekDays.length; index++) {
+        const date = weekDays[index];
+        const dayName = dayNames[index];
+        const dateStr = formatDate(date);
         
         // Заголовок
         const th = document.createElement('th');
         th.innerHTML = `
-            <div class="day-name">${dayNames[dayIndex]}</div>
+            <div class="day-name">${dayName}</div>
             <div class="day-number">${date.getDate()}</div>
         `;
         header.appendChild(th);
         
         // Ячейка дня
         const td = document.createElement('td');
-        td.dataset.date = formatDate(date);
+        td.dataset.date = dateStr;
         
         // Ищем заметку для этого дня
-        const dayNote = notes.find(note => note.date === formatDate(date));
+        const dayNote = notes.find(note => {
+            const noteDate = note.date;
+            if (typeof noteDate === 'string') {
+                return noteDate === dateStr || noteDate.split('T')[0] === dateStr;
+            }
+            return formatDate(new Date(noteDate)) === dateStr;
+        });
         
         if (dayNote) {
             td.classList.add('has-note');
+            // ИСПРАВЛЕНИЕ: Используем innerHTML для правильного отображения HTML-ссылок
             td.innerHTML = `<div class="note-preview">${dayNote.formatted_text}</div>`;
         }
         
-        td.addEventListener('click', () => openNoteModal(formatDate(date), dayNote));
+        // Добавляем обработчик события
+        td.onclick = function() {
+            openNoteModal(dateStr, dayNote);
+        };
+        
         body.appendChild(td);
-    });
+    }
 }
 
 // Отображает месячный календарь
@@ -329,6 +365,9 @@ function updateMonthHeader() {
 
 // Открывает модальное окно для редактирования заметки
 function openNoteModal(date, existingNote = null) {
+    console.log('Открытие модального окна для даты:', date);
+    console.log('Существующая заметка:', existingNote);
+    
     currentNoteDate = date;
     currentNoteId = existingNote ? existingNote.id : null;
     
@@ -358,9 +397,21 @@ async function saveNote() {
         return;
     }
     
+    console.log('Сохранение заметки:');
+    console.log('  Дата:', currentNoteDate);
+    console.log('  Текст:', text);
+    console.log('  ID заметки:', currentNoteId);
+    
     try {
         const url = currentNoteId ? `/animals/notes/${currentNoteId}/` : '/animals/notes/';
         const method = currentNoteId ? 'PUT' : 'POST';
+        
+        const requestData = {
+            date: currentNoteDate,
+            text: text
+        };
+        
+        console.log('Отправляем запрос:', { url, method, data: requestData });
         
         const response = await fetch(url, {
             method: method,
@@ -368,13 +419,15 @@ async function saveNote() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: JSON.stringify({
-                date: currentNoteDate,
-                text: text
-            })
+            body: JSON.stringify(requestData)
         });
         
+        console.log('Ответ сервера:', response.status);
+        
         if (response.ok) {
+            const responseData = await response.json();
+            console.log('Данные ответа:', responseData);
+            
             const modal = bootstrap.Modal.getInstance(document.getElementById('noteModal'));
             if (modal) {
                 modal.hide();
@@ -382,6 +435,7 @@ async function saveNote() {
             updateCalendar(); // Перезагружаем календарь
         } else {
             const errorData = await response.json();
+            console.error('Ошибка ответа:', errorData);
             alert('Ошибка сохранения: ' + (errorData.error || 'Неизвестная ошибка'));
         }
     } catch (error) {
@@ -482,7 +536,11 @@ function insertTag(tag) {
 
 // Вспомогательные функции
 function formatDate(date) {
-    return date.toISOString().split('T')[0];
+    // ИСПРАВЛЕНИЕ: Используем локальные значения вместо UTC
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function formatDateRussian(date) {

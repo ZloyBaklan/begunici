@@ -1112,8 +1112,11 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         try:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
             
-            # Находим начало недели (понедельник)
-            start_of_week = date_obj - timedelta(days=date_obj.weekday())
+            # Переданная дата уже должна быть понедельником
+            start_of_week = date_obj
+            if date_obj.weekday() != 0:  # Если не понедельник
+                start_of_week = date_obj - timedelta(days=date_obj.weekday())
+            
             end_of_week = start_of_week + timedelta(days=6)
             
             notes = CalendarNote.objects.filter(
@@ -1121,7 +1124,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 date__lte=end_of_week
             ).order_by('date')
             
-            serializer = self.get_serializer(notes, many=True)
+            serializer = CalendarNoteSerializer(notes, many=True)
             return Response({
                 'start_date': start_of_week,
                 'end_date': end_of_week,
