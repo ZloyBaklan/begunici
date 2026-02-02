@@ -1,6 +1,8 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
 let allArchiveData = []; // Храним все данные архива
+let currentPage = 1; // Текущая страница
+const pageSize = 10; // Количество записей на странице
 
 document.addEventListener('DOMContentLoaded', function () {
     // Устанавливаем начальный фильтр по типу животного, если он передан
@@ -16,20 +18,23 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // Функция загрузки архива
-async function fetchArchive() {
+async function fetchArchive(page = 1) {
     try {
+        currentPage = page;
+        
         // Получаем начальный тип животного из URL или глобальной переменной
         const initialType = window.initialAnimalType || '';
-        let url = '/animals/archive/';
+        let url = `/animals/archive/?page=${page}&page_size=${pageSize}`;
         
         // Добавляем параметр type если он есть
         if (initialType) {
-            url += `?type=${encodeURIComponent(initialType)}`;
+            url += `&type=${encodeURIComponent(initialType)}`;
         }
         
-        const archive = await apiRequest(url);
-        allArchiveData = archive.results || archive;
+        const response = await apiRequest(url);
+        allArchiveData = response.results || response;
         displayArchive(allArchiveData);
+        updatePagination(response);
     } catch (error) {
         console.error('Ошибка при загрузке архива:', error);
     }
@@ -71,7 +76,7 @@ function displayArchive(data) {
         }
         
         row.innerHTML = `
-            <td>${index + 1}</td>
+            <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td>${animalType}</td>
             <td><a href="${detailUrl}">${tagNumber}</a></td>
             <td style="background-color:${statusColor}">${status}</td>
@@ -89,24 +94,21 @@ function displayArchive(data) {
 // Функция фильтрации архива
 async function filterArchiveData(animalType, status, search) {
     try {
+        currentPage = 1; // Сбрасываем на первую страницу при фильтрации
+        
         // Строим URL с параметрами фильтрации
-        let url = '/animals/archive/';
-        const params = new URLSearchParams();
+        let url = `/animals/archive/?page=${currentPage}&page_size=${pageSize}`;
         
         if (animalType) {
-            params.append('type', animalType);
+            url += `&type=${encodeURIComponent(animalType)}`;
         }
         if (search) {
-            params.append('search', search);
-        }
-        
-        if (params.toString()) {
-            url += '?' + params.toString();
+            url += `&search=${encodeURIComponent(search)}`;
         }
         
         // Делаем новый запрос с фильтрами
-        const archive = await apiRequest(url);
-        allArchiveData = archive.results || archive;
+        const response = await apiRequest(url);
+        allArchiveData = response.results || response;
         
         // Дополнительная фильтрация по статусу (если API не поддерживает)
         let filteredData = allArchiveData;
@@ -117,6 +119,7 @@ async function filterArchiveData(animalType, status, search) {
         }
         
         displayArchive(filteredData);
+        updatePagination(response);
     } catch (error) {
         console.error('Ошибка при фильтрации архива:', error);
         // Fallback к локальной фильтрации
@@ -168,13 +171,43 @@ async function restoreAnimal(animalType, tagNumber) {
         
         await apiRequest(restoreUrl, 'POST');
         alert('Животное успешно восстановлено из архива');
-        fetchArchive(); // Обновляем список архива
+        fetchArchive(currentPage); // Обновляем текущую страницу архива
     } catch (error) {
         console.error('Ошибка при восстановлении животного:', error);
         alert('Ошибка при восстановлении животного');
     }
 }
 
-// Экспортируем функцию фильтрации для использования в HTML
+// Функция обновления пагинации
+function updatePagination(response) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = ''; // Очищаем старую навигацию
+
+    if (response.previous) {
+        const prevButton = document.createElement('button');
+        prevButton.innerText = 'Предыдущая';
+        prevButton.onclick = () => {
+            currentPage--;
+            fetchArchive(currentPage);
+        };
+        pagination.appendChild(prevButton);
+    }
+
+    if (response.next) {
+        const nextButton = document.createElement('button');
+        nextButton.innerText = 'Следующая';
+        nextButton.onclick = () => {
+            currentPage++;
+            fetchArchive(currentPage);
+        };
+        pagination.appendChild(nextButton);
+    }
+
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = ` Страница ${currentPage}`;
+    pagination.appendChild(pageInfo);
+}
+
+// Экспортируем функции для использования в HTML
 window.filterArchiveData = filterArchiveData;
 window.restoreAnimal = restoreAnimal;

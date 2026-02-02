@@ -12,6 +12,7 @@ from .vet_views import (
     VeterinaryStatusesView,
     VeterinaryPlacesView,
     VeterinaryCaresView,
+    get_animals_by_place,
 )
 
 # Создаем роутер
@@ -28,6 +29,7 @@ router.register(r"place_movement", PlaceMovementViewSet)
 
 urlpatterns = [
     path("api/", include(router.urls)),  # Возвращаем префикс /api/
+    path("api/place/<int:place_id>/animals/", get_animals_by_place, name="animals_by_place"),  # API для животных по месту
     path(
         "management/", VeterinaryManagementView.as_view(), name="veterinary-management"
     ),  # Страница управления технической информацией

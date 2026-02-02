@@ -143,6 +143,15 @@ venv.bak/
 # Ignore staticfiles, которые генерируются collectstatic
 staticfiles/
 
+# VS Code settings
+.vscode/
+
+# Backup files
+backups/
+
+# Import data and Excel files
+importer/
+
 # mypy
 .mypy_cache/
 .dmypy.json

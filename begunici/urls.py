@@ -19,10 +19,12 @@ from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from .views import index  # Импортируем view для главной страницы
+from begunici.app_types.veterinary.vet_views import places_map  # Импортируем view для карты овчарен
 
 urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора
     path("", index, name="index"),  # Главная страница
+    path("places/map/", places_map, name="places_map"),  # Карта овчарен
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),  # Выход
     path("accounts/login/", auth_views.LoginView.as_view(template_name='admin/login.html'), name="login"),  # Логин
     path(

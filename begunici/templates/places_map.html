@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block content %}
+    <h1>Карта овчарен</h1>
+    
+    <div id="barns-container">
+        <!-- Здесь будут отображаться овчарни -->
+    </div>
+
+    <!-- Модальное окно для списка животных -->
+    <div id="animals-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeAnimalsModal()">&times;</span>
+            <h2 id="modal-title">Животные в отсеке</h2>
+            <div id="animals-list">
+                <!-- Список животных будет загружен сюда -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="{% static 'js/places_map.js' %}"></script>
+{% endblock %}

@@ -22,13 +22,17 @@ function handleCreateOrUpdatePlace() {
 
 // Функция создания овчарни через API
 async function createPlace() {
-    const placeSheepfold = document.getElementById('place-sheepfold').value;
+    const barnNumber = document.getElementById('place-sheepfold-barn').value;
+    const sectionNumber = document.getElementById('place-sheepfold-section').value;
     const dateOfTransfer = document.getElementById('place-date').value;
 
-    if (!placeSheepfold.trim()) {
-        alert('Пожалуйста, введите название овчарни');
+    if (!barnNumber || !sectionNumber) {
+        alert('Пожалуйста, введите номер овчарни и отсека');
         return;
     }
+
+    // Формируем название в формате "Овчарня X Отсек Y"
+    const placeSheepfold = `Овчарня ${barnNumber} Отсек ${sectionNumber}`;
 
     const data = {
         sheepfold: placeSheepfold,
@@ -37,10 +41,15 @@ async function createPlace() {
 
     console.log('Creating place with data:', data);
 
-        try {
+    try {
         await apiRequest('/veterinary/api/place/', 'POST', data);
         alert('Овчарня успешно создана');
-        document.getElementById('create-place-form').reset();  // Очистка формы
+        
+        // Очищаем поля формы
+        document.getElementById('place-sheepfold-barn').value = '';
+        document.getElementById('place-sheepfold-section').value = '';
+        document.getElementById('place-date').value = '';
+        
         fetchPlaces();  // Обновляем список овчарен
         resetButton();  // Сбрасываем состояние кнопки на "Создать"
     } catch (error) {
@@ -103,11 +112,21 @@ async function deletePlace(placeId) {
 
 // Функция для редактирования овчарни
 async function editPlace(placeId) {
-        try {
+    try {
         const place = await apiRequest(`/veterinary/api/place/${placeId}/`);
 
-        // Заполняем форму редактирования данными овчарни
-        document.getElementById('place-sheepfold').value = place.sheepfold;
+        // Парсим название овчарни для извлечения номеров
+        const match = place.sheepfold.match(/Овчарня (\d+) Отсек (\d+)/);
+        if (match) {
+            document.getElementById('place-sheepfold-barn').value = match[1];
+            document.getElementById('place-sheepfold-section').value = match[2];
+        } else {
+            // Если формат не соответствует, показываем как есть
+            document.getElementById('place-sheepfold-barn').value = '';
+            document.getElementById('place-sheepfold-section').value = '';
+            alert('Неизвестный формат названия овчарни. Введите номера заново.');
+        }
+        
         document.getElementById('place-date').value = place.date_of_transfer || '';
 
         const createPlaceButton = document.getElementById('add-place-button');
@@ -120,15 +139,24 @@ async function editPlace(placeId) {
 
 // Функция для обновления овчарни
 async function updatePlace(placeId) {
-    const placeSheepfold = document.getElementById('place-sheepfold').value;
+    const barnNumber = document.getElementById('place-sheepfold-barn').value;
+    const sectionNumber = document.getElementById('place-sheepfold-section').value;
     const dateOfTransfer = document.getElementById('place-date').value;
+
+    if (!barnNumber || !sectionNumber) {
+        alert('Пожалуйста, введите номер овчарни и отсека');
+        return;
+    }
+
+    // Формируем название в формате "Овчарня X Отсек Y"
+    const placeSheepfold = `Овчарня ${barnNumber} Отсек ${sectionNumber}`;
 
     const data = {
         sheepfold: placeSheepfold,
         date_of_transfer: dateOfTransfer ? dateOfTransfer : null
     };
 
-        try {
+    try {
         await apiRequest(`/veterinary/api/place/${placeId}/`, 'PUT', data);
         alert('Овчарня успешно обновлена');
         resetButton();  // Сбрасываем состояние кнопки на "Создать"
@@ -151,5 +179,10 @@ function resetButton() {
     const createPlaceButton = document.getElementById('add-place-button');
     createPlaceButton.innerText = 'Создать овчарню';
     createPlaceButton.removeAttribute('data-id');
-    createPlaceButton.onclick =  handleCreateOrUpdatePlace;  // Назначаем обработчик для создания/обновления
+    createPlaceButton.onclick = handleCreateOrUpdatePlace;  // Назначаем обработчик для создания/обновления
+    
+    // Очищаем поля формы
+    document.getElementById('place-sheepfold-barn').value = '';
+    document.getElementById('place-sheepfold-section').value = '';
+    document.getElementById('place-date').value = '';
 }

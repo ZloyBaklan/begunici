@@ -153,7 +153,6 @@ async function updateCalendar() {
     }
 }
 
-// Загружает данные для недели БЕЗ обрезки по месяцам
 // Загружает данные для недели
 async function loadWeekData() {
     try {
@@ -167,7 +166,6 @@ async function loadWeekData() {
         
         // Создаем массив всех 7 дней недели, начиная с понедельника
         const weekDays = [];
-        const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
         
         for (let i = 0; i < 7; i++) {
             const day = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);

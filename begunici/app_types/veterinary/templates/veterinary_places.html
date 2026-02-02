@@ -12,7 +12,12 @@
     <form id="create-place-form">
         
         <label for="place-sheepfold">Овчарня-Отсек:</label>
-        <input type="text" id="place-sheepfold" name="place-sheepfold" placeholder="Введите название овчарни">
+        <div style="display: flex; align-items: center; gap: 5px;">
+            <span>Овчарня</span>
+            <input type="number" id="place-sheepfold-barn" name="place-sheepfold-barn" placeholder="№" style="width: 60px;" min="1">
+            <span>Отсек</span>
+            <input type="number" id="place-sheepfold-section" name="place-sheepfold-section" placeholder="№" style="width: 60px;" min="1">
+        </div>
         
         <label for="place-date">Дата перевода:</label>
         <input type="date" id="place-date" name="place-date">

@@ -1702,9 +1702,9 @@ def yearly_statistics(request):
     - Количество рождений мальчиков и девочек
     """
     from django.utils import timezone
-    from datetime import datetime, date
-    from django.db.models import Avg, Sum
-    from begunici.app_types.veterinary.vet_models import VeterinaryCare
+    from datetime import date
+    from django.db.models import Avg, Count, F, Q
+    from begunici.app_types.veterinary.vet_models import VeterinaryCare, Place
     
     year = request.GET.get('year', timezone.now().year)
     try:
@@ -1712,41 +1712,114 @@ def yearly_statistics(request):
     except (ValueError, TypeError):
         return Response({'error': 'Неверный формат года'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # Даты начала и конца года
-    year_start = date(year, 1, 1)
-    year_end = date(year, 12, 31)
-    
-    # 1. Средний набор веса по месяцам
-    monthly_weight_gain = {}
-    for month in range(1, 13):
-        month_start = date(year, month, 1)
-        if month == 12:
-            month_end = date(year, 12, 31)
-        else:
-            month_end = date(year, month + 1, 1) - timedelta(days=1)
+    try:
+        # Даты начала и конца года
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
         
-        # Получаем всех живых животных (не в архиве)
-        all_animals = []
-        for model in [Maker, Ram, Ewe, Sheep]:
-            all_animals.extend(list(model.objects.filter(is_archived=False)))
+        # 1. ОПТИМИЗИРОВАННЫЙ расчет среднего набора веса по месяцам
+        monthly_weight_gain = {}
         
-        total_weight_gain = 0
-        animals_with_gain = 0
+        # Получаем все взвешивания за год одним запросом
+        all_weights = WeightRecord.objects.filter(
+            weight_date__gte=year_start,
+            weight_date__lte=year_end
+        ).select_related('tag').order_by('tag', 'weight_date')
         
-        for animal in all_animals:
-            # Получаем первое и последнее взвешивание в месяце
-            month_weights = WeightRecord.objects.filter(
-                tag=animal.tag,
-                weight_date__gte=month_start,
-                weight_date__lte=month_end
-            ).order_by('weight_date')
+        # Группируем по месяцам и тегам
+        from collections import defaultdict
+        weights_by_month_tag = defaultdict(list)
+        
+        for weight in all_weights:
+            month = weight.weight_date.month
+            tag_id = weight.tag.id
+            weights_by_month_tag[(month, tag_id)].append(weight)
+        
+        # Рассчитываем прирост по месяцам
+        for month in range(1, 13):
+            total_weight_gain = 0
+            animals_with_gain = 0
             
-            if month_weights.count() >= 2:
-                first_weight = month_weights.first().weight
-                last_weight = month_weights.last().weight
-                weight_gain = float(last_weight - first_weight)
-                total_weight_gain += weight_gain
-                animals_with_gain += 1
+            for (m, tag_id), weights in weights_by_month_tag.items():
+                if m == month and len(weights) >= 2:
+                    first_weight = weights[0].weight
+                    last_weight = weights[-1].weight
+                    weight_gain = float(last_weight - first_weight)
+                    total_weight_gain += weight_gain
+                    animals_with_gain += 1
+            
+            avg_gain = round(total_weight_gain / animals_with_gain, 2) if animals_with_gain > 0 else 0
+            monthly_weight_gain[f'month_{month}'] = {
+                'month': month,
+                'avg_gain': avg_gain,
+                'animals_count': animals_with_gain
+            }
+        
+        # 2. ОПТИМИЗИРОВАННЫЙ подсчет вакцинаций
+        treatment_stats = {}
+        vet_treatments = Veterinary.objects.filter(
+            date_of_care__gte=year_start,
+            date_of_care__lte=year_end
+        ).select_related('veterinary_care').values(
+            'veterinary_care__care_name',
+            'veterinary_care__medication'
+        ).annotate(count=Count('id'))
+        
+        for treatment in vet_treatments:
+            care_name = treatment['veterinary_care__care_name'] or 'Без названия'
+            medication = treatment['veterinary_care__medication'] or 'Без препарата'
+            key = f"{care_name} ({medication})"
+            treatment_stats[key] = treatment['count']
+        
+        # 3. ОПТИМИЗИРОВАННЫЙ подсчет животных по статусам
+        status_stats = {}
+        
+        # Используем агрегацию для подсчета животных по статусам
+        for model in [Maker, Ram, Ewe, Sheep]:
+            model_stats = model.objects.filter(
+                tag__issue_date__lte=year_end
+            ).values(
+                'animal_status__status_type'
+            ).annotate(count=Count('id'))
+            
+            for stat in model_stats:
+                status_type = stat['animal_status__status_type']
+                if status_type:
+                    if status_type not in status_stats:
+                        status_stats[status_type] = 0
+                    status_stats[status_type] += stat['count']
+        
+        # 4. ОПТИМИЗИРОВАННЫЙ подсчет рождений
+        # Используем агрегацию вместо count()
+        boys_born = (
+            Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
+            Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+        )
+        
+        girls_born = (
+            Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
+            Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+        )
+        
+        return Response({
+            'year': year,
+            'monthly_weight_gain': monthly_weight_gain,
+            'veterinary_treatments': treatment_stats,
+            'animals_by_status': status_stats,
+            'births': {
+                'boys': boys_born,
+                'girls': girls_born,
+                'total': boys_born + girls_born
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Ошибка в yearly_statistics: {str(e)}")
+        print(traceback.format_exc())
+        return Response({
+            'error': f'Ошибка при получении статистики: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         avg_gain = round(total_weight_gain / animals_with_gain, 2) if animals_with_gain > 0 else 0
         monthly_weight_gain[f'month_{month}'] = {

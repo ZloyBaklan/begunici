@@ -26,6 +26,72 @@ from .vet_serializers import (
     PlaceMovementSerializer,
 )
 from rest_framework.pagination import PageNumberPagination
+from django.shortcuts import render
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+
+def places_map(request):
+    """
+    Представление для карты овчарен
+    """
+    return render(request, "places_map.html")
+
+
+@api_view(['GET'])
+def get_animals_by_place(request, place_id):
+    """
+    Возвращает список животных в указанном месте
+    """
+    try:
+        from begunici.app_types.animals.models import Maker, Ram, Ewe, Sheep
+        
+        animals = []
+        
+        # Получаем животных всех типов в данном месте
+        makers = Maker.objects.filter(place_id=place_id, is_archived=False).select_related('tag', 'animal_status')
+        rams = Ram.objects.filter(place_id=place_id, is_archived=False).select_related('tag', 'animal_status')
+        ewes = Ewe.objects.filter(place_id=place_id, is_archived=False).select_related('tag', 'animal_status')
+        sheep = Sheep.objects.filter(place_id=place_id, is_archived=False).select_related('tag', 'animal_status')
+        
+        # Формируем список животных
+        for maker in makers:
+            animals.append({
+                'type': 'Производитель',
+                'tag_number': maker.tag.tag_number if maker.tag else 'Нет бирки',
+                'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
+                'age': maker.age
+            })
+            
+        for ram in rams:
+            animals.append({
+                'type': 'Баран',
+                'tag_number': ram.tag.tag_number if ram.tag else 'Нет бирки',
+                'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
+                'age': ram.age
+            })
+            
+        for ewe in ewes:
+            animals.append({
+                'type': 'Ярка',
+                'tag_number': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
+                'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
+                'age': ewe.age
+            })
+            
+        for s in sheep:
+            animals.append({
+                'type': 'Овца',
+                'tag_number': s.tag.tag_number if s.tag else 'Нет бирки',
+                'status': s.animal_status.status_type if s.animal_status else 'Нет статуса',
+                'age': s.age
+            })
+        
+        return Response(animals)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class StandardResultsSetPagination(PageNumberPagination):
