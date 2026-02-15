@@ -1,14 +1,43 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>Управление технической информацией</h1>
+<div class="container">
+    <h1>Управление технической информацией</h1>
+    
+    <div class="navigation-section">
+        <h3>Выберите раздел:</h3>
+        <div class="row g-2">
+            <div class="col-md-4">
+                <a href="{% url 'veterinary:veterinary_statuses' %}" class="btn btn-outline-primary w-100 py-3">
+                    Управление статусами
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="{% url 'veterinary:veterinary_places' %}" class="btn btn-outline-primary w-100 py-3">
+                    Управление овчарнями
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="{% url 'veterinary:veterinary_cares' %}" class="btn btn-outline-primary w-100 py-3">
+                    Управление ветеринарным уходом
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
 
-<ul>
-    <li><a href="{% url 'veterinary:veterinary_statuses' %}">Управление статусами</a></li>
-    <li><a href="{% url 'veterinary:veterinary_places' %}">Управление овчарнями</a></li>
-    <li><a href="{% url 'veterinary:veterinary_cares' %}">Управление ветеринарным уходом</a></li>
-</ul>
+<style>
+/* Исправление для навигационных ссылок */
+.navigation-section a {
+    color: white !important;
+    text-decoration: none;
+}
 
-<!-- Сюда можно вставить JS код для управления данными или контентом на странице -->
+.navigation-section a:hover {
+    color: white !important;
+    text-decoration: none;
+}
+</style>
+
 {% endblock %}
 

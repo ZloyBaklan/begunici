@@ -156,12 +156,14 @@ th {
 
 .modal-content {
     background-color: #fefefe;
-    margin: 15% auto;
+    margin: 5% auto;
     padding: 20px;
     border: 1px solid #888;
-    width: 80%;
-    max-width: 600px;
-    border-radius: 5px;
+    width: 90%;
+    max-width: 700px;
+    border-radius: 8px;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .close {
@@ -306,6 +308,113 @@ th {
     color: #0056b3;
     text-decoration: underline;
 }
+
+/* Стили для чекбоксов в модальном окне */
+.select-all-container {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+.select-all-container label {
+    margin: 0;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.animal-item {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    font-family: monospace;
+}
+
+.animal-item:last-child {
+    border-bottom: none;
+}
+
+.animal-item label {
+    cursor: pointer;
+    margin: 0;
+}
+
+.animal-checkbox {
+    margin-right: 8px;
+}
+
+#move-animals-container {
+    text-align: center;
+    padding-top: 15px;
+    border-top: 1px solid #dee2e6;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: #218838;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #545b62;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* Дополнительные стили для модального окна карты мест */
+.modal {
+    position: fixed;
     top: 0;
     left: 0;
     width: 100%;
@@ -577,4 +686,173 @@ th {
 .yearly-stat-section small {
     color: #868e96;
     font-size: 11px;
+}
+
+/* Стили для календаря с ветеринарными событиями */
+.has-note {
+    background-color: #e3f2fd !important;
+    position: relative;
+}
+
+.has-vet-treatment {
+    background-color: #fff3e0 !important;
+    position: relative;
+}
+
+.has-vet-expiring {
+    background-color: #fff8e1 !important;
+    position: relative;
+}
+
+.has-multiple-events {
+    position: relative;
+}
+
+.color-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    display: flex;
+}
+
+.color-segment {
+    flex: 1;
+    height: 100%;
+}
+
+.color-segment.notes {
+    background-color: #2196f3;
+}
+
+.color-segment.vet_treatments {
+    background-color: #ff9800;
+}
+
+.color-segment.vet_expiring {
+    background-color: #ffc107;
+}
+
+.event-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.event-marker.note {
+    background-color: #2196f3;
+}
+
+.event-marker.vet-treatment {
+    background-color: #ff9800;
+}
+
+.event-marker.vet-expiring {
+    background-color: #ffc107;
+}
+
+.event-item {
+    border-left: 4px solid #dee2e6;
+}
+
+.vet-treatment-event {
+    border-left-color: #ff9800 !important;
+}
+
+.vet-expiring-event {
+    border-left-color: #ffc107 !important;
+}
+
+.note-event {
+    border-left-color: #2196f3 !important;
+}
+
+.animal-list {
+    font-size: 14px;
+}
+
+.animal-item {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.animal-item:last-child {
+    border-bottom: none;
+}
+
+.calendar-legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #495057;
+}
+
+.legend-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.legend-marker.notes {
+    background-color: #2196f3;
+}
+
+.legend-marker.vet-treatments {
+    background-color: #ff9800;
+}
+
+.legend-marker.vet-expiring {
+    background-color: #ffc107;
+}
+
+/* Стили для кнопок навигации */
+.navigation-buttons {
+    border-top: 1px solid #e9ecef;
+    padding-top: 1rem;
+}
+
+.navigation-buttons .btn {
+    min-width: 80px;
+    transition: all 0.2s ease;
+}
+
+.navigation-buttons .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.navigation-buttons .btn:active {
+    transform: translateY(0);
+}
+
+.navigation-buttons .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.navigation-buttons .btn:disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+/* Исправление цвета текста кнопки "Панель Администратора" при наведении */
+.btn-outline-primary:hover {
+    color: white !important;
+}
+
+/* Дополнительно для всех outline кнопок */
+.btn-outline-secondary:hover {
+    color: white !important;
 }

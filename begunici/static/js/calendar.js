@@ -3,6 +3,7 @@ class LambingCalendar {
         this.currentDate = new Date();
         this.lambingData = {};
         this.notesData = {};
+        this.vetData = {};
         this.monthNames = [
             'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
             'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
@@ -16,7 +17,8 @@ class LambingCalendar {
         // Загружаем данные параллельно
         Promise.all([
             this.loadLambingData(),
-            this.loadNotesData()
+            this.loadNotesData(),
+            this.loadVetData()
         ]).then(() => {
             // После загрузки всех данных рендерим календарь
             this.renderCalendar();
@@ -35,7 +37,10 @@ class LambingCalendar {
         if (prevBtn) {
             prevBtn.addEventListener('click', async () => {
                 this.currentDate.setMonth(this.currentDate.getMonth() - 1);
-                await this.loadNotesData(); // Загружаем заметки для нового месяца
+                await Promise.all([
+                    this.loadNotesData(),
+                    this.loadVetData()
+                ]);
                 this.renderCalendar();
             });
         }
@@ -43,7 +48,10 @@ class LambingCalendar {
         if (nextBtn) {
             nextBtn.addEventListener('click', async () => {
                 this.currentDate.setMonth(this.currentDate.getMonth() + 1);
-                await this.loadNotesData(); // Загружаем заметки для нового месяца
+                await Promise.all([
+                    this.loadNotesData(),
+                    this.loadVetData()
+                ]);
                 this.renderCalendar();
             });
         }
@@ -54,7 +62,8 @@ class LambingCalendar {
                 // Перезагружаем все данные
                 await Promise.all([
                     this.loadLambingData(),
-                    this.loadNotesData()
+                    this.loadNotesData(),
+                    this.loadVetData()
                 ]);
                 this.renderCalendar();
             });
@@ -86,6 +95,21 @@ class LambingCalendar {
             }
         } catch (error) {
             console.error('Ошибка загрузки заметок календаря:', error);
+        }
+    }
+    
+    async loadVetData() {
+        try {
+            const year = this.currentDate.getFullYear();
+            const month = this.currentDate.getMonth() + 1;
+            const response = await fetch(`/animals/notes/vet-calendar-data/?year=${year}&month=${month}`);
+            if (response.ok) {
+                this.vetData = await response.json();
+            } else {
+                console.error('Ошибка загрузки ветеринарных данных календаря:', response.statusText);
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки ветеринарных данных календаря:', error);
         }
     }
     
@@ -147,27 +171,82 @@ class LambingCalendar {
                     
                     const hasLambing = this.lambingData[currentDateStr];
                     const hasNotes = this.notesData[currentDateStr];
+                    const hasVet = this.vetData[currentDateStr];
                     
-                    // Определяем класс ячейки в зависимости от наличия родов и заметок
-                    if (hasLambing && hasNotes) {
-                        cell.classList.add('has-both');
-                        const lambingCount = hasLambing.length;
-                        const notesCount = hasNotes.length;
-                        cell.innerHTML += `<div class="lambing-count">${lambingCount}/${notesCount}</div>`;
-                    } else if (hasLambing) {
-                        cell.classList.add('has-lambing');
-                        const count = hasLambing.length;
-                        cell.innerHTML += `<div class="lambing-count">${count}</div>`;
-                    } else if (hasNotes) {
-                        cell.classList.add('has-notes');
-                        const count = hasNotes.length;
-                        cell.innerHTML += `<div class="lambing-count">${count}</div>`;
+                    // Определяем типы событий
+                    const eventTypes = [];
+                    if (hasLambing) eventTypes.push('lambing');
+                    if (hasNotes) eventTypes.push('notes');
+                    if (hasVet && hasVet.vet_treatments && hasVet.vet_treatments.length > 0) eventTypes.push('vet_treatments');
+                    if (hasVet && hasVet.vet_expiring && hasVet.vet_expiring.length > 0) eventTypes.push('vet_expiring');
+                    
+                    let totalCount = 0;
+                    if (hasLambing) totalCount += hasLambing.length;
+                    if (hasNotes) totalCount += hasNotes.length;
+                    if (hasVet && hasVet.vet_treatments) totalCount += hasVet.vet_treatments.length;
+                    if (hasVet && hasVet.vet_expiring) totalCount += hasVet.vet_expiring.length;
+                    
+                    if (eventTypes.length > 1) {
+                        // Многоцветная ячейка - делим на части
+                        cell.classList.add('has-multiple-events');
+                        
+                        // Создаем градиент в зависимости от количества типов событий
+                        let gradientColors = [];
+                        let gradientPercentages = [];
+                        
+                        const partSize = 100 / eventTypes.length;
+                        
+                        eventTypes.forEach((type, index) => {
+                            let color = '';
+                            switch(type) {
+                                case 'lambing':
+                                    color = '#dc3545';
+                                    break;
+                                case 'vet_treatments':
+                                    color = '#ff9800';
+                                    break;
+                                case 'vet_expiring':
+                                    color = '#ffeb3b';
+                                    break;
+                                case 'notes':
+                                    color = '#28a745';
+                                    break;
+                            }
+                            
+                            const startPercent = index * partSize;
+                            const endPercent = (index + 1) * partSize;
+                            
+                            gradientColors.push(`${color} ${startPercent}%`);
+                            gradientColors.push(`${color} ${endPercent}%`);
+                        });
+                        
+                        // Применяем градиент как фон
+                        cell.style.background = `linear-gradient(to right, ${gradientColors.join(', ')})`;
+                        cell.style.color = 'white';
+                        cell.style.fontWeight = 'bold';
+                        
+                        cell.innerHTML += `<div class="lambing-count">${totalCount}</div>`;
+                    } else if (eventTypes.length === 1) {
+                        // Одноцветная ячейка
+                        const eventType = eventTypes[0];
+                        
+                        if (eventType === 'lambing') {
+                            cell.classList.add('has-lambing');
+                        } else if (eventType === 'notes') {
+                            cell.classList.add('has-notes');
+                        } else if (eventType === 'vet_treatments') {
+                            cell.classList.add('has-vet-treatment');
+                        } else if (eventType === 'vet_expiring') {
+                            cell.classList.add('has-vet-expiring');
+                        }
+                        
+                        cell.innerHTML += `<div class="lambing-count">${totalCount}</div>`;
                     }
                     
                     // Добавляем обработчик клика
-                    if (hasLambing || hasNotes) {
+                    if (eventTypes.length > 0) {
                         cell.addEventListener('click', () => {
-                            this.showDayDetails(currentDateStr, hasLambing, hasNotes);
+                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet);
                         });
                     }
                     
@@ -186,7 +265,7 @@ class LambingCalendar {
         }
     }
     
-    showDayDetails(dateStr, lambings, notes) {
+    showDayDetails(dateStr, lambings, notes, vetData) {
         const modalElement = document.getElementById('lambingModal');
         if (!modalElement) {
             console.warn('Модальное окно календаря не найдено на странице');
@@ -217,7 +296,7 @@ class LambingCalendar {
         // Показываем роды
         if (lambings && lambings.length > 0) {
             content += '<h6 class="text-danger">Ожидаемые роды:</h6>';
-            content += '<div class="list-group mb-3">';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
             
             lambings.forEach(lambing => {
                 content += `
@@ -233,6 +312,59 @@ class LambingCalendar {
                         </p>
                         <small>
                             <strong>Дата случки:</strong> ${new Date(lambing.start_date).toLocaleDateString('ru-RU')}
+                        </small>
+                    </div>
+                `;
+            });
+            
+            content += '</div>';
+        }
+        
+        // Показываем ветобработки
+        if (vetData && vetData.vet_treatments && vetData.vet_treatments.length > 0) {
+            content += '<h6 style="color: #ff9800;">Ветобработки:</h6>';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+            
+            vetData.vet_treatments.forEach(vet => {
+                content += `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <a href="/animals/${this.getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
+                                    ${vet.tag_number}
+                                </a>
+                                <span class="text-muted ms-2">${vet.care_type} - ${vet.care_name}</span>
+                            </h6>
+                        </div>
+                        <small>
+                            Срок действия: ${vet.duration_days === 0 ? 'Бессрочно' : vet.duration_days + ' дней'}
+                            ${vet.expiry_date ? ` (до ${new Date(vet.expiry_date).toLocaleDateString('ru-RU')})` : ''}
+                        </small>
+                    </div>
+                `;
+            });
+            
+            content += '</div>';
+        }
+        
+        // Показываем истекающие ветобработки
+        if (vetData && vetData.vet_expiring && vetData.vet_expiring.length > 0) {
+            content += '<h6 style="color: #ffeb3b;">Окончание срока действия ветобработки:</h6>';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+            
+            vetData.vet_expiring.forEach(vet => {
+                content += `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <a href="/animals/${this.getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
+                                    ${vet.tag_number}
+                                </a>
+                                <span class="text-muted ms-2">${vet.care_type} - ${vet.care_name}</span>
+                            </h6>
+                        </div>
+                        <small>
+                            Дата обработки: ${new Date(vet.date_of_care).toLocaleDateString('ru-RU')}
                         </small>
                     </div>
                 `;
@@ -263,6 +395,17 @@ class LambingCalendar {
         
         modalBody.innerHTML = content;
         modal.show();
+    }
+    
+    getAnimalTypeRoute(animalType) {
+        const typeMap = {
+            'Maker': 'maker',
+            'Ram': 'ram', 
+            'Ewe': 'ewe',
+            'Sheep': 'sheep'
+        };
+        
+        return typeMap[animalType] || 'maker';
     }
     
     showLambingDetails(dateStr, lambings) {

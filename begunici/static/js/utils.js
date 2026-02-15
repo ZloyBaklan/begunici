@@ -38,12 +38,56 @@ export async function apiRequest(url, method, body) {
 
 export function formatDateToOutput(dateString) {
     if (!dateString) return '-';
+    
+    // Если дата в формате YYYY-MM-DD, просто переформатируем
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split('-');
+        return `${day}.${month}.${year}`;
+    }
+    
+    // Если дата содержит время (например, "2026-01-12T21:00:00Z"), обрабатываем с учетом московского времени
+    if (dateString.includes('T')) {
+        const date = new Date(dateString);
+        
+        // Преобразуем в московское время
+        const moscowOffset = 3 * 60; // Москва UTC+3 в минутах
+        const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
+        const moscowTime = new Date(utcTime + (moscowOffset * 60000));
+        
+        const day = String(moscowTime.getDate()).padStart(2, '0');
+        const month = String(moscowTime.getMonth() + 1).padStart(2, '0');
+        const year = moscowTime.getFullYear();
+        
+        return `${day}.${month}.${year}`;
+    }
+    
+    // Для других форматов используем стандартную обработку
     const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU'); // Формат: дд.мм.гггг
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    
+    return `${day}.${month}.${year}`;
 }
 
 export function formatDateToInput(dateString) {
     if (!dateString) return '';
+    
+    // Если дата в формате YYYY-MM-DD, возвращаем как есть
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return dateString;
+    }
+    
+    // Если дата содержит время (например, "2026-01-12T21:00:00Z"), извлекаем только дату
+    if (dateString.includes('T')) {
+        return dateString.split('T')[0]; // Берем только часть до 'T'
+    }
+    
+    // Для других форматов используем стандартную обработку
     const date = new Date(dateString);
-    return date.toISOString().split('T')[0]; // Формат: гггг-мм-дд
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
 }

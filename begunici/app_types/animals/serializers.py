@@ -76,6 +76,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         required=False,
     )  # Для указания идентификатора отца
     children = serializers.SerializerMethodField()
+    
+    # Поле для даты присвоения статуса
+    status_date = serializers.DateField(write_only=True, required=False)
 
     class Meta:
         model = AnimalBase
@@ -103,27 +106,233 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         tag.save()
 
         validated_data['tag'] = tag
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        
+        # Создаем подробный лог создания
+        from .models_user_log import UserActionLog
+        from django.contrib.auth.models import AnonymousUser
+        import pytz
+        
+        # Получаем текущий запрос из контекста (если доступен)
+        request = self.context.get('request')
+        if request and not isinstance(request.user, AnonymousUser):
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            
+            # Переводим тип животного на русский
+            animal_type_translations = {
+                'Maker': 'Производитель',
+                'Ram': 'Баран',
+                'Ewe': 'Ярка',
+                'Sheep': 'Овца'
+            }
+            
+            english_type = instance.get_animal_type()
+            russian_type = animal_type_translations.get(english_type, english_type)
+            
+            # Формируем детали создания
+            details = []
+            details.append(f"Создан {tag_number}")
+            if instance.birth_date:
+                details.append(f"Дата рождения: {instance.birth_date.strftime('%d.%m.%Y')}")
+            if instance.place:
+                details.append(f"Место: {instance.place.sheepfold}")
+            if instance.animal_status:
+                # Ограничиваем длину статуса
+                status_name = instance.animal_status.status_type
+                if len(status_name) > 15:
+                    status_name = status_name[:15] + "..."
+                details.append(f"Статус: {status_name}")
+            
+            details_text = "; ".join(details)
+            
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type="Создание животного",
+                object_type=russian_type,
+                object_id=tag_number,
+                description=details_text
+            )
+        
+        return instance
 
     def update(self, instance, validated_data):
         # Сохраняем старые значения для истории
         old_status = instance.animal_status
         old_place = instance.place
         
+        # Извлекаем дату статуса если она передана
+        status_date = validated_data.pop("status_date", None)
+        
+        # Создаем список изменений для лога
+        changes = []
+        
+        # Проверяем изменения полей
+        if 'animal_status' in validated_data and validated_data['animal_status'] != old_status:
+            old_status_name = old_status.status_type if old_status else 'Нет статуса'
+            new_status_name = validated_data['animal_status'].status_type
+            
+            # Проверяем, является ли новый статус архивным
+            archive_statuses = ['Продажа', 'Убыл', 'Убой']
+            if new_status_name in archive_statuses:
+                # Это архивирование
+                changes.append(f"{old_status_name} → {new_status_name}")
+                # Добавляем дату архивирования если есть
+                if status_date:
+                    archive_date_str = status_date.strftime('%d.%m.%Y')
+                    changes.append(f"Дата архивирования: {archive_date_str}")
+            elif old_status and old_status.status_type in archive_statuses:
+                # Это восстановление из архива
+                changes.append(f"Восстановление из архива: {old_status_name} → {new_status_name}")
+            else:
+                # Обычное изменение статуса
+                changes.append(f"Статус: {old_status_name} → {new_status_name}")
+        
+        if 'place' in validated_data and validated_data['place'] != old_place:
+            old_place_name = old_place.sheepfold if old_place else 'Нет места'
+            new_place_name = validated_data['place'].sheepfold
+            changes.append(f"Место: {old_place_name} → {new_place_name}")
+        
+        # Проверяем изменение бирки
+        new_tag = validated_data.get("tag", None)
+        if new_tag and isinstance(new_tag, str) and instance.tag.tag_number != new_tag:
+            changes.append(f"Бирка: {instance.tag.tag_number} → {new_tag}")
+        
+        # Проверяем другие важные поля
+        field_names = {
+            'birth_date': 'Дата рождения',
+            'note': 'Примечание',
+            'plemstatus': 'Племенной статус',
+            'working_condition': 'Рабочее состояние'
+        }
+        
+        for field, display_name in field_names.items():
+            if field in validated_data:
+                old_value = getattr(instance, field, None)
+                new_value = validated_data[field]
+                if old_value != new_value:
+                    old_str = str(old_value) if old_value else 'Не указано'
+                    new_str = str(new_value) if new_value else 'Не указано'
+                    if len(old_str) > 30:
+                        old_str = old_str[:30] + '...'
+                    if len(new_str) > 30:
+                        new_str = new_str[:30] + '...'
+                    changes.append(f"{display_name}: {old_str} → {new_str}")
+        
+        # Проверяем изменения родителей
+        if 'mother' in validated_data:
+            old_mother = instance.mother
+            new_mother = validated_data['mother']
+            if old_mother != new_mother:
+                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                new_mother_str = new_mother.tag_number if new_mother else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
+        
+        if 'father' in validated_data:
+            old_father = instance.father
+            new_father = validated_data['father']
+            if old_father != new_father:
+                old_father_str = old_father.tag_number if old_father else 'Не указан'
+                new_father_str = new_father.tag_number if new_father else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → {new_father_str}")
+        
         # Обновление бирки (поле tag приходит из source='tag' для tag_number)
-        new_tag = validated_data.pop("tag", None)
+        new_tag = validated_data.pop("tag", None)  # Убираем из validated_data
         if new_tag:
             # Если передана строка (номер бирки), обновляем
             if isinstance(new_tag, str) and instance.tag.tag_number != new_tag:
                 instance.tag.update_tag(new_tag)
         
-        # Обновляем поля через super()
-        updated_instance = super().update(instance, validated_data)
+        # Проверяем, изменится ли статус
+        new_status = validated_data.get('animal_status')
+        status_will_change = new_status and old_status != new_status
         
-        # StatusHistory и PlaceMovement создаются автоматически в методе save модели AnimalBase
-        # Убираем дублирование - не создаем здесь
+        # Проверяем, изменится ли место
+        new_place = validated_data.get('place')
+        place_will_change = new_place and old_place != new_place
         
-        return updated_instance
+        # Если статус изменится и передана дата, пропускаем автоматическое создание StatusHistory
+        skip_status_history = status_will_change and status_date is not None
+        
+        # Обновляем поля через super(), передавая параметр skip_status_history
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save(skip_status_history=skip_status_history)
+        
+        # Если изменился статус и передана дата статуса
+        if status_will_change and status_date:
+            from datetime import datetime
+            from django.utils import timezone
+            import pytz
+            
+            # НЕ обновляем date_of_status в Status - это поле используется всеми животными!
+            # Используем только StatusHistory для хранения даты присвоения статуса конкретному животному
+            
+            # Создаем запись в истории с пользовательской датой в московском времени
+            from begunici.app_types.veterinary.vet_models import StatusHistory
+            
+            # Создаем datetime в московском часовом поясе
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            status_datetime_moscow = moscow_tz.localize(datetime.combine(status_date, datetime.min.time()))
+            
+            StatusHistory.objects.create(
+                tag=instance.tag,
+                old_status=old_status,
+                new_status=instance.animal_status,
+                change_date=status_datetime_moscow
+            )
+        
+        # Если изменилось место, создаем запись в PlaceMovement
+        if place_will_change:
+            from begunici.app_types.veterinary.vet_models import PlaceMovement
+            
+            # Создаем запись о перемещении (дата устанавливается автоматически в методе save)
+            movement = PlaceMovement.objects.create(
+                tag=instance.tag,
+                old_place=old_place,
+                new_place=new_place
+            )
+        
+        # Создаем подробный лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            # Получаем текущий запрос из контекста (если доступен)
+            request = self.context.get('request')
+            if request and not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                # Переводим тип животного на русский
+                animal_type_translations = {
+                    'Maker': 'Производитель',
+                    'Ram': 'Баран',
+                    'Ewe': 'Ярка',
+                    'Sheep': 'Овца'
+                }
+                
+                english_type = instance.get_animal_type()
+                russian_type = animal_type_translations.get(english_type, english_type)
+                
+                # Определяем тип действия
+                action_type = "Редактирование животного"
+                new_status = validated_data.get('animal_status')
+                if new_status and new_status.status_type in ['Продажа', 'Убыл', 'Убой']:
+                    action_type = "Архивирование животного"
+                elif old_status and old_status.status_type in ['Продажа', 'Убыл', 'Убой'] and new_status:
+                    action_type = "Восстановление из архива"
+                
+                changes_text = "; ".join(changes)
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type=action_type,
+                    object_type=russian_type,
+                    object_id=instance.tag.tag_number,
+                    description=f"Изменения: {changes_text}"
+                )
+        
+        return instance
 
     def get_weight_records(self, obj):
         # Получаем записи веса через тег
@@ -143,10 +352,18 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
     def get_archived_date(self, obj):
         """
-        Возвращаем дату архивирования на основе даты статуса.
+        Возвращаем дату архивирования на основе последней записи в StatusHistory.
         """
         if obj.is_archived and obj.animal_status:
-            return obj.animal_status.date_of_status
+            # Ищем самую последнюю запись в истории статусов для этого животного (по ID, который автоинкрементный)
+            from begunici.app_types.veterinary.vet_models import StatusHistory
+            last_status_change = StatusHistory.objects.filter(
+                tag=obj.tag,
+                new_status=obj.animal_status
+            ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
+            
+            if last_status_change:
+                return last_status_change.change_date
         return None
 
 
@@ -444,18 +661,50 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     def to_representation(self, instance):
         # Если instance — это словарь (после использования .values())
         if isinstance(instance, dict):
+            # Для словаря нужно получить дату из StatusHistory
+            from begunici.app_types.veterinary.vet_models import StatusHistory
+            from begunici.app_types.animals.models import Tag
+            
+            archived_date = None
+            if instance.get("animal_status__status_type"):
+                try:
+                    tag = Tag.objects.get(tag_number=instance["tag__tag_number"])
+                    last_status_change = StatusHistory.objects.filter(
+                        tag=tag,
+                        new_status__status_type=instance["animal_status__status_type"]
+                    ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
+                    
+                    if last_status_change:
+                        archived_date = last_status_change.change_date
+                except Tag.DoesNotExist:
+                    pass
+            
             return {
                 "tag_number": instance["tag__tag_number"],
                 "animal_type": instance["tag__animal_type"],
                 "status": instance.get("animal_status__status_type", "Нет данных"),
-                "archived_date": instance["animal_status__date_of_status"],
+                "archived_date": archived_date,
                 "place": instance.get("place__sheepfold", "Нет данных"),
                 "birth_date": instance["birth_date"],
                 "age": instance["age"],
             }
+        
         # Если instance — это объект модели
         tag_number = instance.tag.tag_number if instance.tag else "Нет данных"
         animal_type = instance.tag.animal_type if instance.tag else "Unknown"
+        
+        # Получаем дату архивирования из StatusHistory
+        archived_date = None
+        if instance.animal_status:
+            from begunici.app_types.veterinary.vet_models import StatusHistory
+            last_status_change = StatusHistory.objects.filter(
+                tag=instance.tag,
+                new_status=instance.animal_status
+            ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
+            
+            if last_status_change:
+                archived_date = last_status_change.change_date
+        
         return {
             "tag_number": tag_number,
             "animal_type": animal_type,
@@ -465,9 +714,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "status_color": instance.animal_status.color
             if instance.animal_status
             else "#FFFFFF",
-            "archived_date": instance.animal_status.date_of_status
-            if instance.animal_status
-            else "Нет данных",
+            "archived_date": archived_date,
             "place": instance.place.sheepfold if instance.place else "Нет данных",
             "birth_date": instance.birth_date,
             "age": instance.age,
@@ -490,3 +737,78 @@ class CalendarNoteSerializer(serializers.ModelSerializer):
         Возвращает текст с преобразованными ссылками на животных
         """
         return obj.get_formatted_text()
+
+    def create(self, validated_data):
+        # Создаем заметку
+        note = CalendarNote.objects.create(**validated_data)
+        
+        # Создаем подробный лог создания
+        from .models_user_log import UserActionLog
+        from django.contrib.auth.models import AnonymousUser
+        import pytz
+        
+        # Получаем текущий запрос из контекста (если доступен)
+        request = self.context.get('request')
+        if request and not isinstance(request.user, AnonymousUser):
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            
+            # Преобразуем дату в московское время
+            date_moscow = note.date
+            date_str = date_moscow.strftime('%d.%m.%Y')
+            
+            # Не включаем текст заметки в лог (может быть длинным)
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type="Создание заметки календаря",
+                object_type="Заметка календаря",
+                object_id=date_str,  # Используем дату как ID
+                description=f"Создана заметка на {date_str}"
+            )
+        
+        return note
+
+    def update(self, instance, validated_data):
+        # Создаем список изменений для лога
+        changes = []
+        
+        # Проверяем изменения полей
+        old_date = instance.date
+        new_date = validated_data.get("date", instance.date)
+        if old_date != new_date:
+            old_date_str = old_date.strftime('%d.%m.%Y')
+            new_date_str = new_date.strftime('%d.%m.%Y')
+            changes.append(f"Дата: {old_date_str} → {new_date_str}")
+        
+        old_text = instance.text
+        new_text = validated_data.get("text", instance.text)
+        if old_text != new_text:
+            changes.append("Текст заметки изменен")  # Не показываем сам текст
+        
+        # Обновляем поля
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Создаем подробный лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            # Получаем текущий запрос из контекста (если доступен)
+            request = self.context.get('request')
+            if request and not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                changes_text = "; ".join(changes)
+                date_str = instance.date.strftime('%d.%m.%Y')
+                
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Редактирование заметки календаря",
+                    object_type="Заметка календаря",
+                    object_id=date_str,  # Используем дату как ID
+                    description=f"Изменения заметки на {date_str}: {changes_text}"
+                )
+        
+        return instance

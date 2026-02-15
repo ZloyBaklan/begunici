@@ -1,0 +1,144 @@
+{% extends "base_public.html" %}
+{% load static %}
+
+{% block title %}Вход в систему — Ферма Бегуницы{% endblock %}
+
+{% block extra_head %}
+<style>
+    .login-container {
+        min-height: 80vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .login-card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        padding: 3rem;
+        max-width: 450px;
+        width: 100%;
+    }
+    
+    .login-logo {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 2rem auto;
+        display: block;
+    }
+    
+    .login-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: #495057;
+    }
+    
+    .form-control {
+        border: 2px solid #e1e5e9;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .form-control:focus {
+        border-color: #495057;
+        box-shadow: 0 0 0 3px rgba(73, 80, 87, 0.1);
+    }
+    
+    .btn-login {
+        background-color: #495057;
+        border: none;
+        border-radius: 10px;
+        padding: 0.75rem 2rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: white;
+        transition: all 0.3s ease;
+        width: 100%;
+    }
+    
+    .btn-login:hover {
+        background-color: #343a40;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(73, 80, 87, 0.2);
+        color: white;
+    }
+    
+    .alert {
+        border-radius: 10px;
+        border: none;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 0.5rem;
+    }
+    
+    .back-link {
+        color: #6c757d;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+    
+    .back-link:hover {
+        color: #495057;
+        text-decoration: none;
+    }
+    
+    @media (max-width: 768px) {
+        .login-card {
+            padding: 2rem;
+            margin: 1rem;
+        }
+        
+        .login-title {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card">
+        <img src="{% static 'img/logo.png' %}" alt="Ферма Бегуницы" class="login-logo">
+        <h2 class="login-title">Вход в систему</h2>
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-danger mb-3">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="username" class="form-label">Имя пользователя</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+            </div>
+            
+            <div class="mb-4">
+                <label for="password" class="form-label">Пароль</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="btn btn-login">
+                <i class="fas fa-sign-in-alt me-2"></i>Войти
+            </button>
+        </form>
+        
+        <div class="text-center mt-4">
+            <a href="{% url 'public_site:home' %}" class="back-link">
+                <i class="fas fa-arrow-left me-1"></i>Вернуться на главную
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

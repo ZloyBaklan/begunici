@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% load static %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+{% endblock %}
+
 {% block content %}
 <style>
 /* Стили для секции окотов */
@@ -66,194 +70,310 @@
 }
 </style>
 <div id="animal-detail" data-tag-number="{{ animal.tag.tag_number }}" data-animal-type="{{ animal_type }}">
-    <h1>Детальная страница: {{ animal.tag.tag_number }}</h1>
-
-    <!-- Навигация -->
-    <nav>
-        <button id="analytics-button" type="button">Аналитика</button>
-        {% if animal_type == 'ewe' %}
-        <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()">Преобразовать в овцу</button>
-        {% endif %}
-    </nav>
-
-    <!-- Основная информация -->
-    <h2>Основная информация</h2>
-    <table>
-        <tr><th>Бирка</th><td>{{ animal.tag.tag_number }}</td></tr>
-        <tr><th>Статус</th><td>{{ animal.animal_status }}</td></tr>
-        <tr><th>Возраст</th><td>{{ animal.age }} мес.</td></tr>
-        {% if animal_type == 'maker' %}
-        <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
-        {% endif %}
-        <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
-        <tr>
-            <th>Мать</th>
-            <td>Бирка:
-                <span id="mother-display"></span>
-                Ссылка: <a id="mother-link" href="#">перейти</a>
-            </td>
-        </tr>
-        <tr>
-            <th>Отец</th>
-            <td>Бирка:
-                <span id="father-display"></span>
-                Ссылка: <a id="father-link" href="#">перейти</a>
-            </td>
-        </tr>
-        
-        
-        <tr><th>Примечание</th><td>{{ animal.note }}</td></tr>
-        
-    </table>
-    <!-- Последний вес -->
-    <h3>Последний вес</h3>
-    <div id="last-weight">
-        <p>Дата последнего взвешивания: <span id="last-weight-date">-</span></p>
-        <p>Вес: <span id="last-weight-value">-</span></p>
-    </div>
-    <!-- Форма добавления веса -->
-    <h3>Добавить взвешивание</h3>
-    <div id="add-weight-form">
-        <label for="edit-weight-date">Дата:</label>
-        <input type="date" id="edit-weight-date">
-        <label for="edit-weight-value">Вес:</label>
-        <input type="number" id="edit-weight-value" step="0.1">
-        <button type="button" onclick="addWeightRecord()">Добавить</button>
-    </div>
-
-    <!-- Последняя ветобработка -->
-    <h3>Последняя ветобработка</h3>
-    <div>
-        <p>Дата: <span id="last-vet-date">-</span></p>
-        <p>Название обработки: <span id="last-vet-name">-</span></p>
-        <p>Тип обработки: <span id="last-vet-type">-</span></p>
-        <p>Препарат/материал: <span id="last-vet-medication">-</span></p>
-        <p>Цель обработки: <span id="last-vet-purpose">-</span></p>
-        <p>Комментарий: <span id="last-vet-comment">-</span></p>
-    </div>
-
-
-
-    <!-- Форма добавления ветобработки -->
-    <h3>Добавить ветобработку</h3>
-    <div id="add-vet-care-form">
-        <select id="vet-treatment-select">
-            <option value="">Выберите обработку</option>
-        </select>
-
-        <p id="treatment-type">Тип: -</p>
-        <p id="treatment-description">Цель: -</p>
-        <p id="treatment-medicine">Препарат: -</p>
-
-        <label for="vet-treatment-date">Дата:</label>
-        <input type="date" id="vet-treatment-date">
-
-        <label for="vet-treatment-comments">Комментарии:</label>
-        <textarea id="vet-treatment-comments" rows="3" placeholder="Добавьте комментарий (необязательно)"></textarea>
-
-        <button type="button" onclick="addVetRecord()">Добавить</button>
-    </div>
-
-
-
-
-
-
-
-
-    <!-- Секция окотов (только для овец и ярок) -->
-    {% if animal_type == 'sheep' or animal_type == 'ewe' %}
-    <h2>Окоты</h2>
-    
-    <!-- Активные окоты -->
-    <div id="active-lambings">
-        <h3>Активные окоты</h3>
-        <div id="active-lambings-list">
-            <!-- Активные окоты будут загружены через JavaScript -->
-        </div>
-        
-        <!-- Кнопка создания нового окота -->
-        <button type="button" class="btn btn-primary" onclick="showCreateLambingForm()">Создать окот</button>
-    </div>
-    
-    <!-- Форма создания окота -->
-    <div id="create-lambing-form" style="display: none;">
-        <h4>Создать новый окот</h4>
-        <form>
-            <label for="lambing-start-date">Дата начала (случки):</label>
-            <input type="date" id="lambing-start-date" required>
-            
-            <label for="lambing-father-tag">Бирка отца (производитель/баран):</label>
-            <input type="text" id="lambing-father-tag" placeholder="Введите бирку отца" required>
-            
-            <label for="lambing-note">Примечание (необязательно):</label>
-            <textarea id="lambing-note" rows="2" placeholder="Дополнительная информация"></textarea>
-            
-            <div class="form-buttons">
-                <button type="button" onclick="createLambing()">Создать окот</button>
-                <button type="button" onclick="hideCreateLambingForm()">Отмена</button>
+    <div class="container-fluid">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="mb-3">Детальная страница: {{ animal.tag.tag_number }}</h1>
+                
+                <!-- Навигация -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="d-flex gap-2">
+                            <button id="analytics-button" type="button" class="btn btn-info">Аналитика</button>
+                            {% if animal_type == 'ewe' %}
+                            <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцу</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
             </div>
-        </form>
-    </div>
-    
-    <!-- История окотов -->
-    <div id="lambing-history">
-        <h3>История окотов</h3>
-        <div id="lambing-history-list">
-            <!-- История окотов будет загружена через JavaScript -->
         </div>
+
+        <div class="row">
+            <!-- Левая колонка -->
+            <div class="col-lg-6">
+                <!-- Основная информация -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Основная информация</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-borderless">
+                                <tr><th width="40%">Бирка</th><td>{{ animal.tag.tag_number }}</td></tr>
+                                <tr><th>Статус</th><td>{{ animal.animal_status }}</td></tr>
+                                <tr><th>Возраст</th><td>{{ animal.age }} мес.</td></tr>
+                                {% if animal_type == 'maker' %}
+                                <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
+                                {% endif %}
+                                <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
+                                <tr>
+                                    <th>Мать</th>
+                                    <td>
+                                        <span id="mother-display">-</span>
+                                        <a id="mother-link" href="#" class="ms-2 text-decoration-none">перейти</a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Отец</th>
+                                    <td>
+                                        <span id="father-display">-</span>
+                                        <a id="father-link" href="#" class="ms-2 text-decoration-none">перейти</a>
+                                    </td>
+                                </tr>
+                                <tr><th>Примечание</th><td>{{ animal.note }}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Последний вес -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Последний вес</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <p class="mb-1"><strong>Дата:</strong></p>
+                                <p class="text-muted" id="last-weight-date">-</p>
+                            </div>
+                            <div class="col-6">
+                                <p class="mb-1"><strong>Вес:</strong></p>
+                                <p class="text-muted" id="last-weight-value">-</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Добавить взвешивание -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Добавить взвешивание</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="edit-weight-date" class="form-label">Дата:</label>
+                                <input type="date" id="edit-weight-date" class="form-control">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="edit-weight-value" class="form-label">Вес (кг):</label>
+                                <input type="number" id="edit-weight-value" step="0.1" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="addWeightRecord()" class="btn btn-success">Добавить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Правая колонка -->
+            <div class="col-lg-6">
+                <!-- Текущие ветобработки -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Текущие ветобработки</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="current-vet-treatments-table">
+                                <thead>
+                                    <tr>
+                                        <th>Тип обработки</th>
+                                        <th>Название</th>
+                                        <th>Дата обработки</th>
+                                        <th>Дата окончания</th>
+                                        <th>Дней осталось</th>
+                                        <th>Комментарий</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="current-vet-treatments-body">
+                                    <!-- Данные будут загружены через JavaScript -->
+                                </tbody>
+                            </table>
+                            <div id="no-current-treatments" class="text-muted text-center py-3" style="display: none;">
+                                Нет активных ветобработок для отслеживания
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Добавить ветобработку -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Добавить ветобработку</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="vet-treatment-select" class="form-label">Обработка:</label>
+                                <select id="vet-treatment-select" class="form-select">
+                                    <option value="">Выберите обработку</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <div class="bg-light p-2 rounded">
+                                    <p class="mb-1" id="treatment-type"><strong>Тип:</strong> -</p>
+                                    <p class="mb-1" id="treatment-description"><strong>Цель:</strong> -</p>
+                                    <p class="mb-1" id="treatment-medicine"><strong>Препарат:</strong> -</p>
+                                    <p class="mb-0" id="treatment-duration"><strong>Срок действия:</strong> -</p>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="vet-treatment-date" class="form-label">Дата:</label>
+                                <input type="date" id="vet-treatment-date" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <label for="vet-treatment-comments" class="form-label">Комментарии:</label>
+                                <textarea id="vet-treatment-comments" rows="3" placeholder="Добавьте комментарий (необязательно)" class="form-control"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="addVetRecord()" class="btn btn-success">Добавить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Редактирование данных -->
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Редактировать данные</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="edit-animal-form">
+                            {% csrf_token %}
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label for="tag" class="form-label">Бирка:</label>
+                                    <input type="text" id="tag" value="{{ animal.tag.tag_number }}" class="form-control">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="animal_status" class="form-label">Статус животного:</label>
+                                    <select id="animal_status" class="form-select"></select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="birth_date" class="form-label">Дата рождения:</label>
+                                    <input type="date" id="birth_date" value="{{ animal.birth_date }}" class="form-control">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="place" class="form-label">Овчарня:</label>
+                                    <select id="place" class="form-select"></select>
+                                </div>
+                                {% if animal_type == 'maker' %}
+                                <div class="col-md-6">
+                                    <label for="plemstatus" class="form-label">Племенной статус:</label>
+                                    <input type="text" id="plemstatus" value="{{ animal.plemstatus }}" class="form-control">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="working_condition" class="form-label">Рабочее состояние:</label>
+                                    <input type="text" id="working_condition" value="{{ animal.working_condition }}" class="form-control">
+                                </div>
+                                {% endif %}
+                                <div class="col-12">
+                                    <label for="note" class="form-label">Примечание:</label>
+                                    <input type="text" id="note" value="{{ animal.note }}" class="form-control">
+                                </div>
+                                <div class="col-12">
+                                    <button type="button" onclick="saveMakerDetails()" class="btn btn-primary">Сохранить</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Редактировать родителей</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3"><small>Поля заполнены текущими родителями. Измените значения или очистите поля для удаления родителей.</small></p>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="mother-input" class="form-label">Мать (бирка):</label>
+                                <input type="text" id="mother-input" placeholder="Введите бирку матери или оставьте пустым для удаления" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <label for="father-input" class="form-label">Отец (бирка):</label>
+                                <input type="text" id="father-input" placeholder="Введите бирку отца или оставьте пустым для удаления" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="updateParents()" class="btn btn-primary">Обновить родителей</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Секция окотов (только для овец и ярок) -->
+        {% if animal_type == 'sheep' or animal_type == 'ewe' %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Окоты</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Активные окоты -->
+                        <div id="active-lambings" class="mb-4">
+                            <h6 class="mb-3">Активные окоты</h6>
+                            <div id="active-lambings-list" class="mb-3">
+                                <!-- Активные окоты будут загружены через JavaScript -->
+                            </div>
+                            
+                            <!-- Кнопка создания нового окота -->
+                            <button type="button" class="btn btn-primary" onclick="showCreateLambingForm()">Завести окот</button>
+                        </div>
+                        
+                        <!-- Форма создания окота -->
+                        <div id="create-lambing-form" style="display: none;" class="border rounded p-3 mb-4 bg-light">
+                            <h6 class="mb-3">Создать новый окот</h6>
+                            <form>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label for="lambing-start-date" class="form-label">Дата начала (случки):</label>
+                                        <input type="date" id="lambing-start-date" required class="form-control">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="lambing-father-tag" class="form-label">Бирка отца (производитель/баран):</label>
+                                        <input type="text" id="lambing-father-tag" placeholder="Введите бирку отца" required class="form-control">
+                                    </div>
+                                    <div class="col-12">
+                                        <label for="lambing-note" class="form-label">Примечание (необязательно):</label>
+                                        <textarea id="lambing-note" rows="2" placeholder="Дополнительная информация" class="form-control"></textarea>
+                                    </div>
+                                    <div class="col-12">
+                                        <button type="button" onclick="createLambing()" class="btn btn-success me-2">Завести окот</button>
+                                        <button type="button" onclick="hideCreateLambingForm()" class="btn btn-secondary">Отмена</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <!-- История окотов -->
+                        <div id="lambing-history">
+                            <h6 class="mb-3">История окотов</h6>
+                            <div id="lambing-history-list">
+                                <!-- История окотов будет загружена через JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
     </div>
-    {% endif %}
-
-    <!-- Форма для редактирования -->
-    <h2>Редактировать данные</h2>
-    <form id="edit-animal-form">
-
-        {% csrf_token %}
-
-        <label>Бирка:</label>
-        <input type="text" id="tag" value="{{ animal.tag.tag_number }}">
-
-        <label>Статус животного:</label>
-        <select id="animal_status"></select>
-
-        <label>Дата рождения:</label>
-        <input type="date" id="birth_date" value="{{ animal.birth_date }}">
-
-        {% if animal_type == 'maker' %}
-        <label>Племенной статус:</label>
-        <input type="text" id="plemstatus" value="{{ animal.plemstatus }}">
-        {% endif %}
-        
-        <label>Овчарня:</label>
-        <select id="place"></select>
-
-        {% if animal_type == 'maker' %}
-        <label>Рабочее состояние:</label>
-        <input type="text" id="working_condition" value="{{ animal.working_condition }}">
-        {% endif %}
-
-        <label>Примечание:</label>
-        <input type="text" id="note" value="{{ animal.note }}">
-
-
-        <button type="button" onclick="saveMakerDetails()">Сохранить</button>
-
-
-        <h4>Редактировать родителей</h4>
-        <p><small>Поля заполнены текущими родителями. Измените значения или очистите поля для удаления родителей.</small></p>
-        
-        <label>Мать (бирка):</label>
-        <input type="text" id="mother-input" placeholder="Введите бирку матери или оставьте пустым для удаления">
-
-        <label>Отец (бирка):</label>
-        <input type="text" id="father-input" placeholder="Введите бирку отца или оставьте пустым для удаления">
-
-        <button type="button" onclick="updateParents()">Обновить родителей</button>
-
-    </form>
-
-</body>
+</div>
 <!-- Модальное окно для завершения окота -->
 <div class="modal fade" id="completeLambingModal" tabindex="-1" aria-labelledby="completeLambingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">

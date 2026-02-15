@@ -53,12 +53,13 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "begunici.app_types.public_site.middleware.LoginRequiredExceptPublicMiddleware",  # Middleware для авторизации
+    "begunici.app_types.animals.middleware.UserActionLogMiddleware",  # Middleware для логирования действий
 ]
 
 # Настройки аутентификации
-LOGIN_URL = '/admin/login/'  # Перенаправление на страницу входа админки
+LOGIN_URL = '/site/login/'  # Перенаправление на нашу кастомную страницу входа
 LOGIN_REDIRECT_URL = '/'     # Куда перенаправлять после входа
-LOGOUT_REDIRECT_URL = '/admin/login/'  # Куда перенаправлять после выхода
+LOGOUT_REDIRECT_URL = '/site/login/'  # Куда перенаправлять после выхода
 
 ROOT_URLCONF = "begunici.urls"
 
@@ -73,6 +74,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "begunici.app_types.animals.context_processors.user_permissions",
             ],
         },
     },

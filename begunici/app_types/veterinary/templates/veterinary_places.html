@@ -1,47 +1,146 @@
 {% extends 'base.html' %}
-
 {% load static %}
 
 {% block content %}
-    <h1>Управление овчарнями</h1>
-    
-    <!-- Поле для поиска -->
-    <input type="text" id="place-search" placeholder="Поиск по овчарням...">
-    <button onclick="searchPlaces()">Найти</button>
-    {%csrf_token%}
-    <form id="create-place-form">
-        
-        <label for="place-sheepfold">Овчарня-Отсек:</label>
-        <div style="display: flex; align-items: center; gap: 5px;">
-            <span>Овчарня</span>
-            <input type="number" id="place-sheepfold-barn" name="place-sheepfold-barn" placeholder="№" style="width: 60px;" min="1">
-            <span>Отсек</span>
-            <input type="number" id="place-sheepfold-section" name="place-sheepfold-section" placeholder="№" style="width: 60px;" min="1">
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Управление овчарнями</h1>
         </div>
-        
-        <label for="place-date">Дата перевода:</label>
-        <input type="date" id="place-date" name="place-date">
-        
-        
-    </form>
-    <button type="button" id="add-place-button" onclick="createPlace()">Создать овчарню</button>
-    <!-- Список овчарен -->
-    <table>
-        <thead>
-            <tr>
-                <th>№</th>
-                <th>Овчарня-Отсек</th>
-                <th>Дата перевода</th>
-                <th>Действия</th>
-            </tr>
-        </thead>
-        <tbody id="place-list"></tbody>
-    </table>
+    </div>
 
-    <!-- Сообщение об ошибке или успехе -->
-    <div id="place-message" style="display: none;"></div>
- 
-    <script type="module" src="{% static 'js/vet_places.js' %}"></script>
+    <div class="row">
+        <!-- Форма создания/редактирования -->
+        <div class="col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0" id="form-title">Создать овчарню</h5>
+                </div>
+                <div class="card-body">
+                    {% csrf_token %}
+                    <form id="create-place-form">
+                        <div class="mb-3">
+                            <label class="form-label">Овчарня-Отсек:</label>
+                            <div class="row g-2 align-items-center">
+                                <div class="col-auto">
+                                    <span class="form-text">Овчарня</span>
+                                </div>
+                                <div class="col-3">
+                                    <input type="number" id="place-sheepfold-barn" name="place-sheepfold-barn" 
+                                           class="form-control" placeholder="№" min="1">
+                                </div>
+                                <div class="col-auto">
+                                    <span class="form-text">Отсек</span>
+                                </div>
+                                <div class="col-3">
+                                    <input type="number" id="place-sheepfold-section" name="place-sheepfold-section" 
+                                           class="form-control" placeholder="№" min="1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="place-date" class="form-label">Дата перевода:</label>
+                            <input type="date" id="place-date" name="place-date" class="form-control">
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="button" id="add-place-button" class="btn btn-primary" onclick="handleCreateOrUpdatePlace()">
+                                Создать овчарню
+                            </button>
+                            <button type="button" id="cancel-edit-button" class="btn btn-secondary" onclick="cancelEdit()" style="display: none;">
+                                Отменить редактирование
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Список овчарен -->
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h5 class="card-title mb-0">Список овчарен</h5>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" id="place-search" class="form-control" placeholder="Поиск по овчарням...">
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="10%">№</th>
+                                    <th width="30%">Овчарня-Отсек</th>
+                                    <th width="30%">Дата перевода</th>
+                                    <th width="30%">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="place-list">
+                                <!-- Данные будут загружены через JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Пагинация -->
+                    <div id="pagination" class="mt-3"></div>
+                    
+                    <!-- Сообщения -->
+                    <div id="place-message" class="alert" style="display: none;" role="alert"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="{% static 'js/vet_places.js' %}"></script>
+
+<style>
+/* Дополнительные стили для страницы */
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.form-text {
+    font-size: 0.875em;
+    color: #6c757d;
+}
+
+/* Стили для сообщений */
+.alert {
+    margin-top: 1rem;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+    .col-lg-4, .col-lg-8 {
+        margin-bottom: 1rem;
+    }
     
+    .table-responsive {
+        font-size: 0.875rem;
+    }
     
+    .btn-group-sm .btn {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+}
+</style>
+
 {% endblock %}

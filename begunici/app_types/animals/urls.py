@@ -30,6 +30,9 @@ from .views import (
     create_backup,
     backup_info,
     check_auto_backup,
+    get_inactive_mothers,
+    get_all_fathers,
+    bulk_create_lambings,
 )
 
 # Создаем маршруты для ViewSet
@@ -230,9 +233,17 @@ urlpatterns = [
     path(
         "sheeps/", TemplateView.as_view(template_name="sheeps.html"), name="sheeps"
     ),  # Маршрут для страницы управления овцами
+    path(
+        "lambings/", TemplateView.as_view(template_name="lambings_management.html"), name="lambings"
+    ),  # Маршрут для страницы управления окотами
     
     # API для бэкапов
     path("api/backup/create/", create_backup, name="create-backup"),  # Создание ручного бэкапа
     path("api/backup/info/", backup_info, name="backup-info"),  # Информация о последнем бэкапе
     path("api/backup/check-auto/", check_auto_backup, name="check-auto-backup"),  # Проверка автобэкапа
+    
+    # API для управления окотами
+    path("api/inactive-mothers/", get_inactive_mothers, name="inactive-mothers"),  # Неактивные матери
+    path("api/all-fathers/", get_all_fathers, name="all-fathers"),  # Все отцы
+    path("api/bulk-create-lambings/", bulk_create_lambings, name="bulk-create-lambings"),  # Массовое создание окотов
 ]

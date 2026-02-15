@@ -1,152 +1,370 @@
 {% extends 'base.html' %}
-
 {% load static %}
 
 {% block content %}
-    <h1>Управление овцами</h1>
-    <div class="action-buttons">
-        <a href="/animals/main_archive/?type=Sheep" class="btn btn-secondary" id="archive-sheep-button">Архив Овец</a>
-        <button class="btn btn-success" onclick="openExportModal('sheep')">📊 Экспорт в Excel</button>
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Управление овцами</h1>
+        </div>
     </div>
 
-    <!-- Кнопка для раскрытия формы создания овцы -->
-    <button id="toggle-create-sheep-form" onclick="toggleForm()">▼ Создать овцу</button>
-    <!-- Форма создания овцы, изначально скрытая -->
-    <input type="text" id="sheep-search" placeholder="Поиск овец...">
-
-    <form id="create-sheep-form" style="display:none;">
-        {% csrf_token %}
-
-        <label for="tag">Бирка:</label>
-        <input type="text" id="tag" name="tag" placeholder="Введите бирку">
-
-        <label for="animal_status">Статус животного:</label>
-        <select id="animal_status" name="animal_status"></select>
-
-        <label for="birth_date">Дата рождения:</label>
-        <input type="date" id="birth_date" name="birth_date">
-
-        <label for="place">Овчарня:</label>
-        <select id="place" name="place"></select>
-
-        <label for="note">Примечание:</label>
-        <input type="text" id="note" name="note" placeholder="Введите примечание">
-
-        <button type="button" id="create-sheep-button">Создать овцу</button>
-
-    </form>
-
-    <!-- Таблица овец -->
-    <table>
-        <thead>
-            <tr>
-                <th>
-                    <label for="select-all">Выбрать все записи страницы</label>
-                    <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)">
-                </th>
-                <th>№</th>
-                <th>Бирка</th>
-                <th>Статус</th>
-                <th>Возраст</th>
-                <th>Овчарня</th>
-                <th>Последнее Взвешивание</th>
-                <th>Последняя Ветобработка</th>
-                <th>Примечание</th>
-            </tr>
-        </thead>
-        <tbody id="sheep-list"></tbody>
-    </table>
-    
-    <!-- Кнопка для удаления выбранных -->
-    <button id="delete-selected-button" style="display:none;" onclick="deleteSelectedSheeps()">Удалить выбранные</button>
-    <button id="archive-selected-button" style="display:none;" onclick="openArchiveModal()">Перенести в архив</button>
-
-    
-    <div id="pagination"></div>
-
-    <div id="delete-modal" style="display:none;">
-        <h2>Подтверждение удаления</h2>
-        <p id="delete-modal-message"></p>
-        <button id="delete-confirm-button">Да</button>
-        <button onclick="closeDeleteModal()">Нет</button>
-    </div>
-    
-
-    <div id="archive-modal" style="display:none;">
-        <h2>Перенос в архив</h2>
-        <p>Выберите статус, который будет установлен для выбранных животных:</p>
-        <select id="archive-status-select"></select>
-        <button onclick="applyArchiveStatus()">Применить</button>
-        <button onclick="closeArchiveModal()">Отмена</button>
-    </div>
-
-    <!-- Модальное окно экспорта в Excel -->
-    <div id="export-modal" class="modal" style="display:none;">
-        <div class="modal-content export-modal-content">
-            <h2>Экспорт в Excel</h2>
-            
-            <div class="export-filters">
-                <div class="filter-group">
-                    <label>
-                        <input type="checkbox" id="filter-limit-enabled"> 
-                        Экспортировать первые N животных
-                    </label>
-                    <input type="number" id="filter-limit" placeholder="Количество" min="1" disabled>
+    <div class="row">
+        <!-- Форма создания/редактирования -->
+        <div class="col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0" id="form-title">Создать овцу</h5>
                 </div>
-                
-                <div class="filter-group">
-                    <label>
-                        <input type="checkbox" id="filter-weight-enabled"> 
-                        Фильтр по весу (кг)
-                    </label>
-                    <div class="range-inputs">
-                        <input type="number" id="filter-weight-min" placeholder="От" step="0.1" disabled>
-                        <input type="number" id="filter-weight-max" placeholder="До" step="0.1" disabled>
-                    </div>
-                </div>
-                
-                <div class="filter-group">
-                    <label>
-                        <input type="checkbox" id="filter-age-enabled"> 
-                        Фильтр по возрасту (месяцы)
-                    </label>
-                    <div class="range-inputs">
-                        <input type="number" id="filter-age-min" placeholder="От" step="0.1" disabled>
-                        <input type="number" id="filter-age-max" placeholder="До" step="0.1" disabled>
-                    </div>
-                </div>
-                
-                <div class="filter-group">
-                    <label>
-                        <input type="checkbox" id="include-details"> 
-                        Включить родителей, детей и историю (вес, ветобработки)
-                    </label>
+                <div class="card-body">
+                    <form id="create-sheep-form">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="tag" class="form-label">Бирка:</label>
+                            <input type="text" id="tag" name="tag" class="form-control" placeholder="Введите бирку">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="animal_status" class="form-label">Статус животного:</label>
+                            <select id="animal_status" name="animal_status" class="form-select"></select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="birth_date" class="form-label">Дата рождения:</label>
+                            <input type="date" id="birth_date" name="birth_date" class="form-control">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="place" class="form-label">Овчарня:</label>
+                            <select id="place" name="place" class="form-select"></select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="note" class="form-label">Примечание:</label>
+                            <input type="text" id="note" name="note" class="form-control" placeholder="Введите примечание">
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="button" id="create-sheep-button" class="btn btn-primary" onclick="saveSheep()">Создать овцу</button>
+                            <button type="button" id="cancel-edit-button" class="btn btn-secondary" onclick="cancelEdit()" style="display: none;">
+                                Отменить редактирование
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
-            
-            <div class="modal-buttons">
+        </div>
+
+        <!-- Список овец -->
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <h5 class="card-title mb-0">Список овец</h5>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" id="sheep-search" class="form-control" placeholder="Поиск овец...">
+                        </div>
+                        <div class="col-md-2">
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <a href="/animals/main_archive/?type=Sheep" class="btn btn-outline-secondary">Архив</a>
+                                <button class="btn btn-outline-success" onclick="openExportModal('sheep')">Экспорт</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="3%">
+                                        <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)">
+                                    </th>
+                                    <th width="5%">№</th>
+                                    <th width="12%">Бирка</th>
+                                    <th width="12%">Статус</th>
+                                    <th width="10%">Возраст</th>
+                                    <th width="15%">Овчарня</th>
+                                    <th width="18%">Последнее Взвешивание</th>
+                                    <th width="15%">Последняя Ветобработка</th>
+                                    <th width="10%">Примечание</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sheep-list">
+                                <!-- Данные будут загружены через JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Кнопки для выбранных элементов -->
+                    <div id="selected-actions" class="mt-3" style="display: none;">
+                        <div class="d-flex gap-2">
+                            {% if user_permissions.can_delete_animals %}
+                            <button id="delete-selected-button" class="btn btn-outline-danger btn-sm" onclick="deleteSelectedSheeps()">
+                                Удалить выбранные
+                            </button>
+                            {% endif %}
+                            <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">
+                                Перенести в архив
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Пагинация -->
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальные окна -->
+<div id="delete-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Подтверждение удаления</h5>
+            </div>
+            <div class="modal-body">
+                <p id="delete-modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="delete-confirm-button" class="btn btn-danger">Да</button>
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">Нет</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="archive-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Перенос в архив</h5>
+            </div>
+            <div class="modal-body">
+                <p>Выберите статус, который будет установлен для выбранных животных:</p>
+                <select id="archive-status-select" class="form-select mb-3"></select>
+                
+                <label for="archive-status-date" class="form-label">Дата присвоения статуса:</label>
+                <input type="date" id="archive-status-date" class="form-control" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="applyArchiveStatus()">Применить</button>
+                <button class="btn btn-secondary" onclick="closeArchiveModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно экспорта в Excel -->
+<div id="export-modal" class="modal" style="display:none;">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Экспорт в Excel</h5>
+            </div>
+            <div class="modal-body">
+                <div class="export-filters">
+                    <!-- Фильтр по количеству -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-limit-enabled" class="form-check-input">
+                            <label class="form-check-label" for="filter-limit-enabled">
+                                Экспортировать первые N животных
+                            </label>
+                        </div>
+                        <input type="number" id="filter-limit" class="form-control mt-2" placeholder="Количество" min="1" disabled>
+                    </div>
+                    
+                    <!-- Фильтр по весу -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input">
+                            <label class="form-check-label" for="filter-weight-enabled">
+                                Фильтр по весу (кг)
+                            </label>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <input type="number" id="filter-weight-min" class="form-control" placeholder="От" step="0.1" disabled>
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="filter-weight-max" class="form-control" placeholder="До" step="0.1" disabled>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Фильтр по возрасту -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-age-enabled" class="form-check-input">
+                            <label class="form-check-label" for="filter-age-enabled">
+                                Фильтр по возрасту (месяцы)
+                            </label>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <input type="number" id="filter-age-min" class="form-control" placeholder="От" step="0.1" disabled>
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="filter-age-max" class="form-control" placeholder="До" step="0.1" disabled>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Включить детали -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="include-details" class="form-check-input">
+                            <label class="form-check-label" for="include-details">
+                                Включить родителей, детей и историю (вес, ветобработки)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
                 <button class="btn btn-primary" onclick="performExport('sheep')">Экспортировать</button>
                 <button class="btn btn-secondary" onclick="closeExportModal()">Отмена</button>
             </div>
         </div>
     </div>
-    
+</div>
 
-    <!-- Подключение скриптов -->
-    <script type="module" src="{% static 'js/sheeps.js' %}"></script>
-    <script src="{% static 'js/export-common.js' %}"></script>
-    <script>
-        function toggleForm() {
-            const form = document.getElementById('create-sheep-form');
-            const button = document.getElementById('toggle-create-sheep-form');
-            
-            if (form.style.display === 'none' || form.style.display === '') {
-                form.style.display = 'block';
-                button.textContent = '▲ Скрыть форму создания овцы';
-            } else {
-                form.style.display = 'none';
-                button.textContent = '▼ Создать овцу';
-            }
+<style>
+/* Дополнительные стили для страницы */
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.form-check-input {
+    margin-top: 0.125rem;
+}
+
+/* Простые стили для чекбоксов */
+input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    cursor: pointer;
+    border: none;
+    outline: none;
+}
+
+input[type="checkbox"]:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* Стили для модальных окон */
+.modal {
+    background-color: rgba(0,0,0,0.5);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dialog {
+    max-width: 500px;
+    width: 90%;
+}
+
+.modal-lg {
+    max-width: 800px;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+    .col-lg-4, .col-lg-8 {
+        margin-bottom: 1rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+}
+</style>
+
+<!-- Подключение скриптов -->
+<script type="module" src="{% static 'js/sheeps.js' %}"></script>
+<script src="{% static 'js/export-common.js' %}"></script>
+<script>
+    function searchSheeps() {
+        const query = document.getElementById('sheep-search').value;
+        fetchSheeps(query); // Поиск овец
+    }
+
+    function toggleSelectAll(checkbox) {
+        // Используем функцию из sheeps.js
+        window.toggleSelectAll(checkbox);
+    }
+    
+    function cancelEdit() {
+        document.getElementById('create-sheep-form').reset();
+        document.getElementById('form-title').textContent = 'Создать овцу';
+        document.getElementById('create-sheep-button').textContent = 'Создать овцу';
+        document.getElementById('cancel-edit-button').style.display = 'none';
+    }
+    
+    // Делаем функции глобальными
+    window.saveSheep = function() {
+        // Эта функция будет переопределена в sheeps.js
+        console.log('saveSheep called from HTML');
+    };
+    
+    window.openArchiveModal = function() {
+        console.log('openArchiveModal called from HTML');
+    };
+    
+    window.closeArchiveModal = function() {
+        console.log('closeArchiveModal called from HTML');
+    };
+    
+    window.deleteSelectedSheeps = function() {
+        console.log('deleteSelectedSheeps called from HTML');
+    };
+    
+    window.applyArchiveStatus = function() {
+        console.log('applyArchiveStatus called from HTML');
+    };
+    
+    // Автоматический поиск при вводе
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('sheep-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                const query = this.value;
+                if (window.fetchSheeps) {
+                    window.fetchSheeps(1, query); // Поиск с первой страницы
+                }
+            });
         }
-    </script>
+    });
+</script>
+
 {% endblock %}

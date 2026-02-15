@@ -14,8 +14,47 @@
         <div class="modal-content">
             <span class="close" onclick="closeAnimalsModal()">&times;</span>
             <h2 id="modal-title">Животные в отсеке</h2>
+            
+            <!-- Чекбокс "Выбрать всех" -->
+            <div class="select-all-container">
+                <label>
+                    <input type="checkbox" id="select-all-animals"> Выбрать всех
+                </label>
+            </div>
+            
             <div id="animals-list">
                 <!-- Список животных будет загружен сюда -->
+            </div>
+            
+            <!-- Кнопка перемещения (скрыта по умолчанию) -->
+            <div id="move-animals-container" style="display: none; margin-top: 15px;">
+                <button type="button" class="btn btn-primary" onclick="showMoveAnimalsDialog()">
+                    Переместить выбранных животных
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для выбора места перемещения -->
+    <div id="move-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeMoveModal()">&times;</span>
+            <h2>Выберите место для перемещения</h2>
+            
+            <div class="form-group">
+                <label for="destination-place">Место назначения:</label>
+                <select id="destination-place" class="form-control">
+                    <option value="">Выберите место...</option>
+                </select>
+            </div>
+            
+            <div class="modal-actions" style="margin-top: 20px;">
+                <button type="button" class="btn btn-success" onclick="moveSelectedAnimals()">
+                    Переместить
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeMoveModal()">
+                    Отмена
+                </button>
             </div>
         </div>
     </div>

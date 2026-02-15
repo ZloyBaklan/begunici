@@ -1,78 +1,203 @@
 {% extends 'base.html' %}
-
 {% load static %}
 
 {% block content %}
-    <h1>
-        {% if animal_type == 'Maker' %}
-            Архив производителей
-        {% elif animal_type == 'Ram' %}
-            Архив баранов
-        {% elif animal_type == 'Ewe' %}
-            Архив ярок
-        {% elif animal_type == 'Sheep' %}
-            Архив овец
-        {% else %}
-            Архив животных
-        {% endif %}
-    </h1>
-    
-    <!-- Фильтры для архива -->
-    <div class="filters">
-        <label for="animal-type-filter">Тип животного:</label>
-        <select id="animal-type-filter" onchange="filterArchive()">
-            <option value="">Все животные</option>
-            <option value="Maker">Производители</option>
-            <option value="Ram">Бараны</option>
-            <option value="Ewe">Ярки</option>
-            <option value="Sheep">Овцы</option>
-        </select>
-        
-        <label for="status-filter">Статус:</label>
-        <select id="status-filter" onchange="filterArchive()">
-            <option value="">Все статусы</option>
-            <option value="Убой">Убой</option>
-            <option value="Продажа">Продажа</option>
-            <option value="Убыл">Убыл</option>
-        </select>
-        
-        <input type="text" id="archive-search" placeholder="Поиск по бирке..." oninput="filterArchive()">
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">
+                {% if animal_type == 'Maker' %}
+                    Архив производителей
+                {% elif animal_type == 'Ram' %}
+                    Архив баранов
+                {% elif animal_type == 'Ewe' %}
+                    Архив ярок
+                {% elif animal_type == 'Sheep' %}
+                    Архив овец
+                {% else %}
+                    Архив животных
+                {% endif %}
+            </h1>
+        </div>
     </div>
 
-    <!-- Таблица архива -->
-    <table>
-        <thead>
-            <tr>
-                <th>№</th>
-                <th>Тип животного</th>
-                <th>Бирка</th>
-                <th>Статус</th>
-                <th>Дата статуса</th>
-                <th>Возраст</th>
-                <th>Овчарня</th>
-                <th>Действия</th>
-            </tr>
-        </thead>
-        <tbody id="archive-list"></tbody>
-    </table>
+    <div class="row">
+        <!-- Фильтры -->
+        <div class="col-lg-3 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Фильтры</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="animal-type-filter" class="form-label">Тип животного:</label>
+                        <select id="animal-type-filter" class="form-select" onchange="filterArchive()">
+                            <option value="">Все животные</option>
+                            <option value="Maker">Производители</option>
+                            <option value="Ram">Бараны</option>
+                            <option value="Ewe">Ярки</option>
+                            <option value="Sheep">Овцы</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="status-filter" class="form-label">Статус:</label>
+                        <select id="status-filter" class="form-select" onchange="filterArchive()">
+                            <option value="">Все статусы</option>
+                            <option value="Убой">Убой</option>
+                            <option value="Продажа">Продажа</option>
+                            <option value="Убыл">Убыл</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="archive-search" class="form-label">Поиск по бирке:</label>
+                        <input type="text" id="archive-search" class="form-control" placeholder="Введите номер бирки..." oninput="filterArchive()">
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    <div id="pagination"></div>
+        <!-- Список архива -->
+        <div class="col-lg-9 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Архивные записи</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="5%">№</th>
+                                    <th width="15%">Тип животного</th>
+                                    <th width="12%">Бирка</th>
+                                    <th width="15%">Статус</th>
+                                    <th width="15%">Дата статуса</th>
+                                    <th width="10%">Возраст</th>
+                                    <th width="18%">Овчарня</th>
+                                    <th width="10%">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="archive-list">
+                                <!-- Данные будут загружены через JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Пагинация -->
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-    <!-- Подключение скриптов -->
-    <script type="module" src="{% static 'js/archive.js' %}"></script>
-    <script>
-        // Передаем тип животного из контекста Django в JavaScript
-        window.initialAnimalType = '{{ animal_type }}';
+<!-- Модальное окно для выбора статуса при восстановлении -->
+<div id="restore-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Восстановление из архива</h5>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="restore-status-select" class="form-label">Статус животного:</label>
+                    <select id="restore-status-select" class="form-select">
+                        <option value="">Загрузка статусов...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="restore-confirm-button" class="btn btn-success">Восстановить</button>
+                <button class="btn btn-secondary" onclick="closeRestoreModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Дополнительные стили для страницы архива */
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.form-label {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+/* Стили для пагинации */
+#pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+#pagination button {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid #dee2e6;
+    background-color: #fff;
+    color: #495057;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+}
+
+#pagination button:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+}
+
+#pagination button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+#pagination span {
+    padding: 0.375rem 0.75rem;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+    .col-lg-3, .col-lg-9 {
+        margin-bottom: 1rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+}
+</style>
+
+<!-- Подключение скриптов -->
+<script type="module" src="{% static 'js/archive.js' %}"></script>
+<script>
+    // Передаем тип животного из контекста Django в JavaScript
+    window.initialAnimalType = '{{ animal_type }}';
+    
+    function filterArchive() {
+        const animalType = document.getElementById('animal-type-filter').value;
+        const status = document.getElementById('status-filter').value;
+        const search = document.getElementById('archive-search').value;
         
-        function filterArchive() {
-            const animalType = document.getElementById('animal-type-filter').value;
-            const status = document.getElementById('status-filter').value;
-            const search = document.getElementById('archive-search').value;
-            
-            // Вызываем функцию фильтрации из модуля
-            if (typeof filterArchiveData === 'function') {
-                filterArchiveData(animalType, status, search);
-            }
+        // Вызываем функцию фильтрации из модуля
+        if (typeof filterArchiveData === 'function') {
+            filterArchiveData(animalType, status, search);
         }
-    </script>
+    }
+</script>
 {% endblock %}

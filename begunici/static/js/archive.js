@@ -1,5 +1,12 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
+// Получаем права пользователя из глобальной переменной
+function getUserPermissions() {
+    return window.userPermissions || {
+        can_restore_from_archive: true
+    };
+}
+
 let allArchiveData = []; // Храним все данные архива
 let currentPage = 1; // Текущая страница
 const pageSize = 10; // Количество записей на странице
@@ -43,6 +50,7 @@ async function fetchArchive(page = 1) {
 // Функция отображения архива
 function displayArchive(data) {
     const archiveTable = document.getElementById('archive-list');
+    
     archiveTable.innerHTML = '';
 
     data.forEach((animal, index) => {
@@ -75,6 +83,20 @@ function displayArchive(data) {
             detailUrl = `/animals/sheep/${tagNumber}/info/`;
         }
         
+        // Создаем кнопку восстановления только если есть права
+        const permissions = getUserPermissions();
+        let actionsHtml = '';
+        
+        if (permissions.can_restore_from_archive) {
+            actionsHtml = `
+                <button class="btn btn-outline-success btn-sm" onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">
+                    Восстановить
+                </button>
+            `;
+        } else {
+            actionsHtml = '<span class="text-muted">Нет прав</span>';
+        }
+        
         row.innerHTML = `
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td>${animalType}</td>
@@ -83,9 +105,7 @@ function displayArchive(data) {
             <td>${archivedDate}</td>
             <td>${age}</td>
             <td>${place}</td>
-            <td>
-                <button onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">Восстановить</button>
-            </td>
+            <td>${actionsHtml}</td>
         `;
         archiveTable.appendChild(row);
     });
@@ -146,8 +166,63 @@ async function filterArchiveData(animalType, status, search) {
 
 // Функция восстановления животного из архива
 async function restoreAnimal(animalType, tagNumber) {
-    const confirmRestore = confirm(`Вы уверены, что хотите восстановить животное ${tagNumber} из архива?`);
-    if (!confirmRestore) return;
+    // Открываем модальное окно для выбора статуса
+    openRestoreModal(animalType, tagNumber);
+}
+
+// Функция открытия модального окна восстановления
+async function openRestoreModal(animalType, tagNumber) {
+    const modal = document.getElementById('restore-modal');
+    const confirmButton = document.getElementById('restore-confirm-button');
+    
+    // Загружаем статусы
+    await loadRestoreStatuses();
+    
+    // Показываем модальное окно
+    modal.style.display = 'block';
+    
+    // Настраиваем обработчик подтверждения
+    confirmButton.onclick = () => performRestore(animalType, tagNumber);
+}
+
+// Функция загрузки статусов для восстановления
+async function loadRestoreStatuses() {
+    try {
+        const statuses = await apiRequest('/veterinary/api/status/');
+        // Исключаем архивные статусы
+        const activeStatuses = statuses.filter(status => 
+            !['Убыл', 'Убой', 'Продажа'].includes(status.status_type)
+        );
+
+        const statusSelect = document.getElementById('restore-status-select');
+        statusSelect.innerHTML = '<option value="">Выберите статус</option>';
+
+        if (activeStatuses.length === 0) {
+            statusSelect.innerHTML = '<option value="">Нет доступных статусов</option>';
+            return;
+        }
+
+        activeStatuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.textContent = status.status_type;
+            statusSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке статусов:', error);
+        const statusSelect = document.getElementById('restore-status-select');
+        statusSelect.innerHTML = '<option value="">Ошибка загрузки статусов</option>';
+    }
+}
+
+// Функция выполнения восстановления с выбранным статусом
+async function performRestore(animalType, tagNumber) {
+    const statusId = document.getElementById('restore-status-select').value;
+    
+    if (!statusId) {
+        alert('Пожалуйста, выберите статус для животного');
+        return;
+    }
 
     try {
         // Определяем URL для восстановления в зависимости от типа животного
@@ -169,13 +244,21 @@ async function restoreAnimal(animalType, tagNumber) {
                 throw new Error('Неизвестный тип животного');
         }
         
-        await apiRequest(restoreUrl, 'POST');
+        // Отправляем запрос с выбранным статусом
+        await apiRequest(restoreUrl, 'POST', { status_id: statusId });
         alert('Животное успешно восстановлено из архива');
+        closeRestoreModal();
         fetchArchive(currentPage); // Обновляем текущую страницу архива
     } catch (error) {
         console.error('Ошибка при восстановлении животного:', error);
         alert('Ошибка при восстановлении животного');
     }
+}
+
+// Функция закрытия модального окна восстановления
+function closeRestoreModal() {
+    const modal = document.getElementById('restore-modal');
+    modal.style.display = 'none';
 }
 
 // Функция обновления пагинации
@@ -185,6 +268,7 @@ function updatePagination(response) {
 
     if (response.previous) {
         const prevButton = document.createElement('button');
+        prevButton.className = 'btn btn-outline-secondary';
         prevButton.innerText = 'Предыдущая';
         prevButton.onclick = () => {
             currentPage--;
@@ -193,8 +277,14 @@ function updatePagination(response) {
         pagination.appendChild(prevButton);
     }
 
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'mx-2';
+    pageInfo.innerText = `Страница ${currentPage}`;
+    pagination.appendChild(pageInfo);
+
     if (response.next) {
         const nextButton = document.createElement('button');
+        nextButton.className = 'btn btn-outline-secondary';
         nextButton.innerText = 'Следующая';
         nextButton.onclick = () => {
             currentPage++;
@@ -202,12 +292,9 @@ function updatePagination(response) {
         };
         pagination.appendChild(nextButton);
     }
-
-    const pageInfo = document.createElement('span');
-    pageInfo.innerText = ` Страница ${currentPage}`;
-    pagination.appendChild(pageInfo);
 }
 
 // Экспортируем функции для использования в HTML
 window.filterArchiveData = filterArchiveData;
 window.restoreAnimal = restoreAnimal;
+window.closeRestoreModal = closeRestoreModal;

@@ -199,16 +199,14 @@ async function loadStatusHistory(animalType, tagNumber, page = 1) {
 
         if (response.results && response.results.length > 0) {
             response.results.forEach(record => {
-                // Форматируем дату и время изменения статуса
+                // Форматируем дату изменения статуса
                 let formattedDateTime = '-';
                 if (record.change_date) {
                     const dateTime = new Date(record.change_date);
-                    formattedDateTime = dateTime.toLocaleString('ru-RU', {
+                    formattedDateTime = dateTime.toLocaleDateString('ru-RU', {
                         year: 'numeric',
                         month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
+                        day: '2-digit'
                     });
                 }
                 
@@ -252,16 +250,14 @@ async function loadPlaceHistory(animalType, tagNumber, page = 1) {
 
         if (response.results && response.results.length > 0) {
             response.results.forEach(record => {
-                // Форматируем дату и время для перемещения
+                // Форматируем дату для перемещения
                 let formattedDateTime = '-';
                 if (record.new_place?.date_of_transfer) {
                     const dateTime = new Date(record.new_place.date_of_transfer);
-                    formattedDateTime = dateTime.toLocaleString('ru-RU', {
+                    formattedDateTime = dateTime.toLocaleDateString('ru-RU', {
                         year: 'numeric',
                         month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
+                        day: '2-digit'
                     });
                 }
                 

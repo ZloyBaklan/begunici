@@ -136,7 +136,34 @@ function renderMakers(makers) {
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${maker.veterinary_history && maker.veterinary_history.length > 0 
-                ? `${formatDateToOutput(maker.veterinary_history[0].date_of_care)}: ${maker.veterinary_history[0].veterinary_care.care_name}` 
+                ? (() => {
+                    const lastVet = maker.veterinary_history[0];
+                    let displayText = `${formatDateToOutput(lastVet.date_of_care)}: ${lastVet.veterinary_care.care_name}`;
+                    
+                    // Добавляем информацию о сроке действия
+                    if (lastVet.duration_days !== undefined && lastVet.duration_days !== null) {
+                        if (lastVet.duration_days === 0) {
+                            displayText += ' (Бессрочно)';
+                        } else {
+                            // Вычисляем оставшиеся дни
+                            const careDate = new Date(lastVet.date_of_care);
+                            const expiryDate = new Date(careDate);
+                            expiryDate.setDate(careDate.getDate() + lastVet.duration_days);
+                            
+                            // Получаем текущую дату в московском времени
+                            const today = new Date();
+                            const moscowOffset = 3 * 60; // 3 часа в минутах
+                            const utc = today.getTime() + (today.getTimezoneOffset() * 60000);
+                            const moscowTime = new Date(utc + (moscowOffset * 60000));
+                            
+                            const remainingDays = Math.ceil((expiryDate - moscowTime) / (1000 * 60 * 60 * 24));
+                            
+                            // Убираем все дополнительные сообщения о статусе
+                        }
+                    }
+                    
+                    return displayText;
+                })()
                 : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
             <td>${maker.note}</td>
@@ -187,12 +214,10 @@ function toggleSelectMaker(checkbox) {
 
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
-    const deleteButton = document.getElementById('delete-selected-button');
-    const archiveButton = document.getElementById('archive-selected-button');
+    const selectedActionsDiv = document.getElementById('selected-actions');
     const hasSelection = Array.from(selectedMakers.values()).some(value => value.isSelected);
 
-    deleteButton.style.display = hasSelection ? 'block' : 'none';
-    archiveButton.style.display = hasSelection ? 'block' : 'none';
+    selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
 
 // Обновление состояния чекбоксов при загрузке страницы
@@ -245,8 +270,18 @@ async function deleteSelectedMakers() {
                 selectedMakers.delete(tag); // Удаляем из состояния
             }
             alert('Выбранные записи успешно удалены');
+            
+            // Очищаем все выбранные элементы
+            selectedMakers.clear();
+            
+            // Снимаем галочку с "выбрать все"
+            const selectAllCheckbox = document.getElementById('select-all');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = false;
+            }
+            
             fetchMakers(currentPage); // Обновляем текущую страницу
-            toggleDeleteButton(); // Скрываем кнопку
+            toggleDeleteButton(); // Скрываем кнопки
             modal.style.display = 'none'; // Закрываем модальное окно
         } catch (error) {
             console.error('Ошибка при удалении выбранных записей:', error);
@@ -311,6 +346,10 @@ function openArchiveModal() {
     const modal = document.getElementById('archive-modal');
     modal.style.display = 'block';
 
+    // Устанавливаем текущую дату
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('archive-status-date').value = today;
+
     loadArchiveStatuses();
 }
 
@@ -366,13 +405,33 @@ async function applyArchiveStatus() {
         return;
     }
 
+    const statusDate = document.getElementById('archive-status-date').value;
+    if (!statusDate) {
+        alert('Укажите дату присвоения статуса.');
+        return;
+    }
+
     try {
         for (const tag of selectedTags) {
-            await apiRequest(`/animals/maker/${tag}/`, 'PATCH', { animal_status_id: statusId });
+            await apiRequest(`/animals/maker/${tag}/`, 'PATCH', { 
+                animal_status_id: statusId,
+                status_date: statusDate
+            });
         }
         alert('Выбранные записи успешно перенесены в архив.');
+        
+        // Очищаем все выбранные элементы
+        selectedMakers.clear();
+        
+        // Снимаем галочку с "выбрать все"
+        const selectAllCheckbox = document.getElementById('select-all');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = false;
+        }
+        
         closeArchiveModal();
         fetchMakers(currentPage); // Обновляем текущую страницу
+        toggleDeleteButton(); // Скрываем кнопки
     } catch (error) {
         console.error('Ошибка при переносе в архив:', error);
         alert('Ошибка при переносе записей.');
@@ -385,10 +444,12 @@ window.deleteSelectedMakers = deleteSelectedMakers;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectMaker = toggleSelectMaker;
 window.toggleDeleteButton = toggleDeleteButton;
+window.saveMaker = saveMaker;
+window.fetchMakers = fetchMakers;
 
 function setupArchiveButton() {
-    const archiveButton = document.getElementById('archive-maker-button');
-    archiveButton.href = `/animals/main_archive/?type=Maker`; // Фиксируем тип как Maker
+    // Кнопка архива теперь находится в другом месте, не нужно настраивать href
+    console.log('Archive button setup - using direct link in HTML');
 }
 
 // Функции экспорта теперь в export-common.js

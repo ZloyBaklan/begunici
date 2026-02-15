@@ -1,6 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from django.shortcuts import render
 from django.views.generic import TemplateView
@@ -59,8 +59,42 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
     def handle_exception(self, exc):
         return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+    def destroy(self, request, *args, **kwargs):
+        """Переопределяем метод удаления для логирования"""
+        instance = self.get_object()
+        
+        # Создаем лог удаления
+        from .models_user_log import UserActionLog
+        from django.contrib.auth.models import AnonymousUser
+        import pytz
+        
+        if not isinstance(request.user, AnonymousUser):
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            
+            # Переводим тип животного на русский
+            animal_type_translations = {
+                'Maker': 'Производитель',
+                'Ram': 'Баран',
+                'Ewe': 'Ярка',
+                'Sheep': 'Овца'
+            }
+            
+            english_type = instance.get_animal_type()
+            russian_type = animal_type_translations.get(english_type, english_type)
+            
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type="Удаление животного",
+                object_type=russian_type,
+                object_id=instance.tag.tag_number,
+                description=f"Удалено животное: {instance.tag.tag_number}"
+            )
+        
+        # Выполняем стандартное удаление
+        return super().destroy(request, *args, **kwargs)
 
-class MakerViewSet(viewsets.ModelViewSet):
+
+class MakerViewSet(AnimalBaseViewSet):
     queryset = Maker.objects.filter(is_archived=False).order_by(
         "id"
     )  # Убедитесь, что порядок задан
@@ -74,9 +108,7 @@ class MakerViewSet(viewsets.ModelViewSet):
     pagination_class = PaginationSetting  # Добавляем пагинацию
 
     def get_object(self):
-        print(f"DEBUG: self.kwargs содержат: {self.kwargs}")  # Логируем входные данные
         tag_number = self.kwargs["pk"]
-        print(f"Получен tag_number из URL: {tag_number}")  # Логируем значение
         """
         Переопределяем метод, чтобы искать объект по `tag_number`, а не по `pk`.
         """
@@ -165,6 +197,62 @@ class MakerViewSet(viewsets.ModelViewSet):
         serializer = VeterinarySerializer(vet_history, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"], url_path="current_vet_treatments")
+    def current_vet_treatments(self, request, pk=None):
+        """
+        Получаем текущие ветобработки для отслеживания (не бессрочные и не скрытые).
+        """
+        maker = self.get_object()
+        current_treatments = (
+            Veterinary.objects.filter(
+                tag__tag_number=maker.tag.tag_number,
+                duration_days__gt=0,  # Не бессрочные
+                is_hidden=False  # Не скрытые
+            )
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        
+        serializer = VeterinarySerializer(current_treatments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="hide_vet_treatment")
+    def hide_vet_treatment(self, request, pk=None):
+        """
+        Скрыть ветобработку из отслеживания.
+        """
+        try:
+            treatment_id = request.data.get('treatment_id')
+            if not treatment_id:
+                return Response(
+                    {"error": "Не указан ID ветобработки"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            maker = self.get_object()
+            treatment = Veterinary.objects.get(
+                id=treatment_id,
+                tag__tag_number=maker.tag.tag_number
+            )
+            
+            treatment.is_hidden = True
+            treatment.save()
+            
+            return Response(
+                {"success": "Ветобработка скрыта из отслеживания"}, 
+                status=status.HTTP_200_OK
+            )
+        except Veterinary.DoesNotExist:
+            return Response(
+                {"error": "Ветобработка не найдена"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         """
@@ -173,7 +261,7 @@ class MakerViewSet(viewsets.ModelViewSet):
         maker = self.get_object()  # Получаем объект Maker по tag_number
         place_movements = PlaceMovement.objects.filter(
             tag__tag_number=maker.tag.tag_number
-        ).order_by("-new_place__date_of_transfer")
+        ).order_by("-created_at")
 
         # Применяем пагинацию
         page = self.paginate_queryset(place_movements)
@@ -260,14 +348,24 @@ class MakerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"], url_path="update_parents")
     def update_parents(self, request, pk=None):
         maker = self.get_object()
+        
+        # Сохраняем старые значения для лога
+        old_mother = maker.mother
+        old_father = maker.father
 
         mother_tag_number = request.data.get("mother_tag_number")
         father_tag_number = request.data.get("father_tag_number")
+        
+        # Список изменений для лога
+        changes = []
 
         # Обработка мамы
         if mother_tag_number:
             try:
                 mother_tag = Tag.objects.get(tag_number=mother_tag_number)
+                if maker.mother != mother_tag:
+                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
                 maker.mother = mother_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -275,12 +373,18 @@ class MakerViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif mother_tag_number is None:
+            if maker.mother is not None:
+                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → Не указана")
             maker.mother = None  # Если явно передан null, удаляем маму
 
         # Обработка папы
         if father_tag_number:
             try:
                 father_tag = Tag.objects.get(tag_number=father_tag_number)
+                if maker.father != father_tag:
+                    old_father_str = old_father.tag_number if old_father else 'Не указан'
+                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
                 maker.father = father_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -288,9 +392,30 @@ class MakerViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif father_tag_number is None:
+            if maker.father is not None:
+                old_father_str = old_father.tag_number if old_father else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → Не указан")
             maker.father = None  # Если явно передан null, удаляем папу
 
         maker.save()
+        
+        # Создаем лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                changes_text = "; ".join(changes)
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Обновление родителей",
+                    object_type="Производитель",
+                    object_id=maker.tag.tag_number,
+                    description=f"Изменения родителей: {changes_text}"
+                )
 
         return Response(
             {"success": "Parents updated successfully"}, status=status.HTTP_200_OK
@@ -301,24 +426,65 @@ class MakerViewSet(viewsets.ModelViewSet):
         """Восстановление производителя из архива"""
         maker = self.get_object()
         
-        # Находим активный статус (не архивный)
+        # Сохраняем старый статус для лога
+        old_status = maker.animal_status
+        
+        # Получаем ID статуса из запроса
+        status_id = request.data.get('status_id')
+        
         try:
-            active_status = Status.objects.filter(
-                status_type__in=["Активный", "Здоровый", "Рабочий"]
-            ).first()
-            if not active_status:
-                # Если нет подходящего статуса, берем любой неархивный
-                active_status = Status.objects.exclude(
-                    status_type__in=["Убыл", "Убой", "Продажа"]
+            if status_id:
+                # Используем выбранный статус
+                selected_status = Status.objects.get(id=status_id)
+                # Проверяем, что это не архивный статус
+                if selected_status.status_type in ["Убыл", "Убой", "Продажа"]:
+                    return Response(
+                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                maker.animal_status = selected_status
+            else:
+                # Находим активный статус (не архивный) - старая логика
+                active_status = Status.objects.filter(
+                    status_type__in=["Активный", "Здоровый", "Рабочий"]
                 ).first()
-            
-            if active_status:
-                maker.animal_status = active_status
+                if not active_status:
+                    # Если нет подходящего статуса, берем любой неархивный
+                    active_status = Status.objects.exclude(
+                        status_type__in=["Убыл", "Убой", "Продажа"]
+                    ).first()
+                
+                if active_status:
+                    maker.animal_status = active_status
             
             maker.is_archived = False
             maker.save()
             
+            # Создаем лог восстановления
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                old_status_name = old_status.status_type if old_status else 'Неизвестно'
+                new_status_name = maker.animal_status.status_type if maker.animal_status else 'Неизвестно'
+                
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Восстановление из архива",
+                    object_type="Производитель",
+                    object_id=maker.tag.tag_number,
+                    description=f"Восстановлен из архива: {old_status_name} → {new_status_name}"
+                )
+            
             return Response({"success": "Maker restored from archive"}, status=status.HTTP_200_OK)
+        except Status.DoesNotExist:
+            return Response(
+                {"error": "Выбранный статус не найден"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -335,9 +501,7 @@ class RamViewSet(AnimalBaseViewSet):
     pagination_class = PaginationSetting
 
     def get_object(self):
-        print(f"DEBUG: self.kwargs содержат: {self.kwargs}")
         tag_number = self.kwargs["pk"]
-        print(f"Получен tag_number из URL: {tag_number}")
         """
         Переопределяем метод, чтобы искать объект по `tag_number`, а не по `pk`.
         """
@@ -356,14 +520,24 @@ class RamViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["patch"], url_path="update_parents")
     def update_parents(self, request, pk=None):
         ram = self.get_object()
+        
+        # Сохраняем старые значения для лога
+        old_mother = ram.mother
+        old_father = ram.father
 
         mother_tag_number = request.data.get("mother_tag_number")
         father_tag_number = request.data.get("father_tag_number")
+        
+        # Список изменений для лога
+        changes = []
 
         # Обработка мамы
         if mother_tag_number:
             try:
                 mother_tag = Tag.objects.get(tag_number=mother_tag_number)
+                if ram.mother != mother_tag:
+                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
                 ram.mother = mother_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -371,12 +545,18 @@ class RamViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif mother_tag_number is None:
+            if ram.mother is not None:
+                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → Не указана")
             ram.mother = None
 
         # Обработка папы
         if father_tag_number:
             try:
                 father_tag = Tag.objects.get(tag_number=father_tag_number)
+                if ram.father != father_tag:
+                    old_father_str = old_father.tag_number if old_father else 'Не указан'
+                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
                 ram.father = father_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -384,9 +564,30 @@ class RamViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif father_tag_number is None:
+            if ram.father is not None:
+                old_father_str = old_father.tag_number if old_father else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → Не указан")
             ram.father = None
 
         ram.save()
+        
+        # Создаем лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                changes_text = "; ".join(changes)
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Обновление родителей",
+                    object_type="Баран",
+                    object_id=ram.tag.tag_number,
+                    description=f"Изменения родителей: {changes_text}"
+                )
 
         return Response(
             {"success": "Parents updated successfully"}, status=status.HTTP_200_OK
@@ -417,7 +618,7 @@ class RamViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         ram = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=ram.tag).order_by("-new_place__date_of_transfer")
+        place_movements = PlaceMovement.objects.filter(tag=ram.tag).order_by("-created_at")
         # Применяем пагинацию
         page = self.paginate_queryset(place_movements)
         if page is not None:
@@ -450,29 +651,126 @@ class RamViewSet(AnimalBaseViewSet):
         serializer = VeterinarySerializer(vet_history, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"], url_path="current_vet_treatments")
+    def current_vet_treatments(self, request, pk=None):
+        """
+        Получаем текущие ветобработки для отслеживания (не бессрочные и не скрытые).
+        """
+        ram = self.get_object()
+        current_treatments = (
+            Veterinary.objects.filter(
+                tag__tag_number=ram.tag.tag_number,
+                duration_days__gt=0,  # Не бессрочные
+                is_hidden=False  # Не скрытые
+            )
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        
+        serializer = VeterinarySerializer(current_treatments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="hide_vet_treatment")
+    def hide_vet_treatment(self, request, pk=None):
+        """
+        Скрыть ветобработку из отслеживания.
+        """
+        try:
+            treatment_id = request.data.get('treatment_id')
+            if not treatment_id:
+                return Response(
+                    {"error": "Не указан ID ветобработки"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            ram = self.get_object()
+            treatment = Veterinary.objects.get(
+                id=treatment_id,
+                tag__tag_number=ram.tag.tag_number
+            )
+            
+            treatment.is_hidden = True
+            treatment.save()
+            
+            return Response(
+                {"success": "Ветобработка скрыта из отслеживания"}, 
+                status=status.HTTP_200_OK
+            )
+        except Veterinary.DoesNotExist:
+            return Response(
+                {"error": "Ветобработка не найдена"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление барана из архива"""
         ram = self.get_object()
         
-        # Находим активный статус (не архивный)
+        # Сохраняем старый статус для лога
+        old_status = ram.animal_status
+        
+        # Получаем ID статуса из запроса
+        status_id = request.data.get('status_id')
+        
         try:
-            active_status = Status.objects.filter(
-                status_type__in=["Активный", "Здоровый", "Рабочий"]
-            ).first()
-            if not active_status:
-                # Если нет подходящего статуса, берем любой неархивный
-                active_status = Status.objects.exclude(
-                    status_type__in=["Убыл", "Убой", "Продажа"]
+            if status_id:
+                # Используем выбранный статус
+                selected_status = Status.objects.get(id=status_id)
+                # Проверяем, что это не архивный статус
+                if selected_status.status_type in ["Убыл", "Убой", "Продажа"]:
+                    return Response(
+                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                ram.animal_status = selected_status
+            else:
+                # Находим активный статус (не архивный) - старая логика
+                active_status = Status.objects.filter(
+                    status_type__in=["Активный", "Здоровый", "Рабочий"]
                 ).first()
-            
-            if active_status:
-                ram.animal_status = active_status
+                if not active_status:
+                    # Если нет подходящего статуса, берем любой неархивный
+                    active_status = Status.objects.exclude(
+                        status_type__in=["Убыл", "Убой", "Продажа"]
+                    ).first()
+                
+                if active_status:
+                    ram.animal_status = active_status
             
             ram.is_archived = False
             ram.save()
             
+            # Создаем лог восстановления
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                old_status_name = old_status.status_type if old_status else 'Неизвестно'
+                new_status_name = ram.animal_status.status_type if ram.animal_status else 'Неизвестно'
+                
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Восстановление из архива",
+                    object_type="Баран",
+                    object_id=ram.tag.tag_number,
+                    description=f"Восстановлен из архива: {old_status_name} → {new_status_name}"
+                )
+            
             return Response({"success": "Ram restored from archive"}, status=status.HTTP_200_OK)
+        except Status.DoesNotExist:
+            return Response(
+                {"error": "Выбранный статус не найден"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -495,9 +793,7 @@ class EweViewSet(AnimalBaseViewSet):
     pagination_class = PaginationSetting
 
     def get_object(self):
-        print(f"DEBUG: self.kwargs содержат: {self.kwargs}")
         tag_number = self.kwargs["pk"]
-        print(f"Получен tag_number из URL: {tag_number}")
         """
         Переопределяем метод, чтобы искать объект по `tag_number`, а не по `pk`.
         """
@@ -530,14 +826,24 @@ class EweViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["patch"], url_path="update_parents")
     def update_parents(self, request, pk=None):
         ewe = self.get_object()
+        
+        # Сохраняем старые значения для лога
+        old_mother = ewe.mother
+        old_father = ewe.father
 
         mother_tag_number = request.data.get("mother_tag_number")
         father_tag_number = request.data.get("father_tag_number")
+        
+        # Список изменений для лога
+        changes = []
 
         # Обработка мамы
         if mother_tag_number:
             try:
                 mother_tag = Tag.objects.get(tag_number=mother_tag_number)
+                if ewe.mother != mother_tag:
+                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
                 ewe.mother = mother_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -545,12 +851,18 @@ class EweViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif mother_tag_number is None:
+            if ewe.mother is not None:
+                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → Не указана")
             ewe.mother = None
 
         # Обработка папы
         if father_tag_number:
             try:
                 father_tag = Tag.objects.get(tag_number=father_tag_number)
+                if ewe.father != father_tag:
+                    old_father_str = old_father.tag_number if old_father else 'Не указан'
+                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
                 ewe.father = father_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -558,9 +870,30 @@ class EweViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif father_tag_number is None:
+            if ewe.father is not None:
+                old_father_str = old_father.tag_number if old_father else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → Не указан")
             ewe.father = None
 
         ewe.save()
+        
+        # Создаем лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                changes_text = "; ".join(changes)
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Обновление родителей",
+                    object_type="Ярка",
+                    object_id=ewe.tag.tag_number,
+                    description=f"Изменения родителей: {changes_text}"
+                )
 
         return Response(
             {"success": "Parents updated successfully"}, status=status.HTTP_200_OK
@@ -591,7 +924,7 @@ class EweViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         ewe = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=ewe.tag).order_by("-new_place__date_of_transfer")
+        place_movements = PlaceMovement.objects.filter(tag=ewe.tag).order_by("-created_at")
         # Применяем пагинацию
         page = self.paginate_queryset(place_movements)
         if page is not None:
@@ -624,29 +957,126 @@ class EweViewSet(AnimalBaseViewSet):
         serializer = VeterinarySerializer(vet_history, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"], url_path="current_vet_treatments")
+    def current_vet_treatments(self, request, pk=None):
+        """
+        Получаем текущие ветобработки для отслеживания (не бессрочные и не скрытые).
+        """
+        ewe = self.get_object()
+        current_treatments = (
+            Veterinary.objects.filter(
+                tag__tag_number=ewe.tag.tag_number,
+                duration_days__gt=0,  # Не бессрочные
+                is_hidden=False  # Не скрытые
+            )
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        
+        serializer = VeterinarySerializer(current_treatments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="hide_vet_treatment")
+    def hide_vet_treatment(self, request, pk=None):
+        """
+        Скрыть ветобработку из отслеживания.
+        """
+        try:
+            treatment_id = request.data.get('treatment_id')
+            if not treatment_id:
+                return Response(
+                    {"error": "Не указан ID ветобработки"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            ewe = self.get_object()
+            treatment = Veterinary.objects.get(
+                id=treatment_id,
+                tag__tag_number=ewe.tag.tag_number
+            )
+            
+            treatment.is_hidden = True
+            treatment.save()
+            
+            return Response(
+                {"success": "Ветобработка скрыта из отслеживания"}, 
+                status=status.HTTP_200_OK
+            )
+        except Veterinary.DoesNotExist:
+            return Response(
+                {"error": "Ветобработка не найдена"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление ярки из архива"""
         ewe = self.get_object()
         
-        # Находим активный статус (не архивный)
+        # Сохраняем старый статус для лога
+        old_status = ewe.animal_status
+        
+        # Получаем ID статуса из запроса
+        status_id = request.data.get('status_id')
+        
         try:
-            active_status = Status.objects.filter(
-                status_type__in=["Активный", "Здоровый", "Рабочий"]
-            ).first()
-            if not active_status:
-                # Если нет подходящего статуса, берем любой неархивный
-                active_status = Status.objects.exclude(
-                    status_type__in=["Убыл", "Убой", "Продажа"]
+            if status_id:
+                # Используем выбранный статус
+                selected_status = Status.objects.get(id=status_id)
+                # Проверяем, что это не архивный статус
+                if selected_status.status_type in ["Убыл", "Убой", "Продажа"]:
+                    return Response(
+                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                ewe.animal_status = selected_status
+            else:
+                # Находим активный статус (не архивный) - старая логика
+                active_status = Status.objects.filter(
+                    status_type__in=["Активный", "Здоровый", "Рабочий"]
                 ).first()
-            
-            if active_status:
-                ewe.animal_status = active_status
+                if not active_status:
+                    # Если нет подходящего статуса, берем любой неархивный
+                    active_status = Status.objects.exclude(
+                        status_type__in=["Убыл", "Убой", "Продажа"]
+                    ).first()
+                
+                if active_status:
+                    ewe.animal_status = active_status
             
             ewe.is_archived = False
             ewe.save()
             
+            # Создаем лог восстановления
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                old_status_name = old_status.status_type if old_status else 'Неизвестно'
+                new_status_name = ewe.animal_status.status_type if ewe.animal_status else 'Неизвестно'
+                
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Восстановление из архива",
+                    object_type="Ярка",
+                    object_id=ewe.tag.tag_number,
+                    description=f"Восстановлен из архива: {old_status_name} → {new_status_name}"
+                )
+            
             return Response({"success": "Ewe restored from archive"}, status=status.HTTP_200_OK)
+        except Status.DoesNotExist:
+            return Response(
+                {"error": "Выбранный статус не найден"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -669,9 +1099,7 @@ class SheepViewSet(AnimalBaseViewSet):
     pagination_class = PaginationSetting
 
     def get_object(self):
-        print(f"DEBUG: self.kwargs содержат: {self.kwargs}")
         tag_number = self.kwargs["pk"]
-        print(f"Получен tag_number из URL: {tag_number}")
         """
         Переопределяем метод, чтобы искать объект по `tag_number`, а не по `pk`.
         """
@@ -701,14 +1129,24 @@ class SheepViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["patch"], url_path="update_parents")
     def update_parents(self, request, pk=None):
         sheep = self.get_object()
+        
+        # Сохраняем старые значения для лога
+        old_mother = sheep.mother
+        old_father = sheep.father
 
         mother_tag_number = request.data.get("mother_tag_number")
         father_tag_number = request.data.get("father_tag_number")
+        
+        # Список изменений для лога
+        changes = []
 
         # Обработка мамы
         if mother_tag_number:
             try:
                 mother_tag = Tag.objects.get(tag_number=mother_tag_number)
+                if sheep.mother != mother_tag:
+                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
                 sheep.mother = mother_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -716,12 +1154,18 @@ class SheepViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif mother_tag_number is None:
+            if sheep.mother is not None:
+                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → Не указана")
             sheep.mother = None
 
         # Обработка папы
         if father_tag_number:
             try:
                 father_tag = Tag.objects.get(tag_number=father_tag_number)
+                if sheep.father != father_tag:
+                    old_father_str = old_father.tag_number if old_father else 'Не указан'
+                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
                 sheep.father = father_tag
             except Tag.DoesNotExist:
                 return Response(
@@ -729,9 +1173,30 @@ class SheepViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         elif father_tag_number is None:
+            if sheep.father is not None:
+                old_father_str = old_father.tag_number if old_father else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → Не указан")
             sheep.father = None
 
         sheep.save()
+        
+        # Создаем лог изменений
+        if changes:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                changes_text = "; ".join(changes)
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Обновление родителей",
+                    object_type="Овца",
+                    object_id=sheep.tag.tag_number,
+                    description=f"Изменения родителей: {changes_text}"
+                )
 
         return Response(
             {"success": "Parents updated successfully"}, status=status.HTTP_200_OK
@@ -762,7 +1227,7 @@ class SheepViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="place_history")
     def place_history(self, request, pk=None):
         sheep = self.get_object()
-        place_movements = PlaceMovement.objects.filter(tag=sheep.tag).order_by("-new_place__date_of_transfer")
+        place_movements = PlaceMovement.objects.filter(tag=sheep.tag).order_by("-created_at")
         # Применяем пагинацию
         page = self.paginate_queryset(place_movements)
         if page is not None:
@@ -795,29 +1260,126 @@ class SheepViewSet(AnimalBaseViewSet):
         serializer = VeterinarySerializer(vet_history, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"], url_path="current_vet_treatments")
+    def current_vet_treatments(self, request, pk=None):
+        """
+        Получаем текущие ветобработки для отслеживания (не бессрочные и не скрытые).
+        """
+        sheep = self.get_object()
+        current_treatments = (
+            Veterinary.objects.filter(
+                tag__tag_number=sheep.tag.tag_number,
+                duration_days__gt=0,  # Не бессрочные
+                is_hidden=False  # Не скрытые
+            )
+            .select_related("veterinary_care")
+            .order_by("-date_of_care")
+        )
+        
+        serializer = VeterinarySerializer(current_treatments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="hide_vet_treatment")
+    def hide_vet_treatment(self, request, pk=None):
+        """
+        Скрыть ветобработку из отслеживания.
+        """
+        try:
+            treatment_id = request.data.get('treatment_id')
+            if not treatment_id:
+                return Response(
+                    {"error": "Не указан ID ветобработки"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            sheep = self.get_object()
+            treatment = Veterinary.objects.get(
+                id=treatment_id,
+                tag__tag_number=sheep.tag.tag_number
+            )
+            
+            treatment.is_hidden = True
+            treatment.save()
+            
+            return Response(
+                {"success": "Ветобработка скрыта из отслеживания"}, 
+                status=status.HTTP_200_OK
+            )
+        except Veterinary.DoesNotExist:
+            return Response(
+                {"error": "Ветобработка не найдена"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         """Восстановление овцы из архива"""
         sheep = self.get_object()
         
-        # Находим активный статус (не архивный)
+        # Сохраняем старый статус для лога
+        old_status = sheep.animal_status
+        
+        # Получаем ID статуса из запроса
+        status_id = request.data.get('status_id')
+        
         try:
-            active_status = Status.objects.filter(
-                status_type__in=["Активный", "Здоровый", "Рабочий"]
-            ).first()
-            if not active_status:
-                # Если нет подходящего статуса, берем любой неархивный
-                active_status = Status.objects.exclude(
-                    status_type__in=["Убыл", "Убой", "Продажа"]
+            if status_id:
+                # Используем выбранный статус
+                selected_status = Status.objects.get(id=status_id)
+                # Проверяем, что это не архивный статус
+                if selected_status.status_type in ["Убыл", "Убой", "Продажа"]:
+                    return Response(
+                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                sheep.animal_status = selected_status
+            else:
+                # Находим активный статус (не архивный) - старая логика
+                active_status = Status.objects.filter(
+                    status_type__in=["Активный", "Здоровый", "Рабочий"]
                 ).first()
-            
-            if active_status:
-                sheep.animal_status = active_status
+                if not active_status:
+                    # Если нет подходящего статуса, берем любой неархивный
+                    active_status = Status.objects.exclude(
+                        status_type__in=["Убыл", "Убой", "Продажа"]
+                    ).first()
+                
+                if active_status:
+                    sheep.animal_status = active_status
             
             sheep.is_archived = False
             sheep.save()
             
+            # Создаем лог восстановления
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                old_status_name = old_status.status_type if old_status else 'Неизвестно'
+                new_status_name = sheep.animal_status.status_type if sheep.animal_status else 'Неизвестно'
+                
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Восстановление из архива",
+                    object_type="Овца",
+                    object_id=sheep.tag.tag_number,
+                    description=f"Восстановлен из архива: {old_status_name} → {new_status_name}"
+                )
+            
             return Response({"success": "Sheep restored from archive"}, status=status.HTTP_200_OK)
+        except Status.DoesNotExist:
+            return Response(
+                {"error": "Выбранный статус не найден"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -854,7 +1416,41 @@ class LambingViewSet(viewsets.ModelViewSet):
         """Завершить окот (простое завершение без детей)"""
         try:
             lambing = self.get_object()
+            
+            # Получаем информацию для лога до завершения
+            mother_tag = lambing.get_mother_tag()
+            father_tag = lambing.get_father_tag()
+            
             lambing.complete_lambing()
+            
+            # Создаем лог завершения окота
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+                import pytz
+                
+                if not isinstance(request.user, AnonymousUser):
+                    moscow_tz = pytz.timezone('Europe/Moscow')
+                    
+                    # Безопасно получаем информацию о родителях
+                    mother = lambing.get_mother()
+                    father = lambing.get_father()
+                    mother_tag = mother.tag.tag_number if mother and mother.tag else 'Неизвестно'
+                    father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
+                    
+                    start_date_str = lambing.start_date.strftime('%d.%m.%Y')
+                    
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Завершение окота",
+                        object_type="Окот",
+                        object_id=f"{mother_tag}, {father_tag}",
+                        description=f"Завершен окот: Дата начала: {start_date_str}"
+                    )
+            except Exception as log_error:
+                # Если логирование не удалось, не прерываем основную операцию
+                print(f"Ошибка логирования завершения окота: {log_error}")
+            
             return Response(
                 {"success": "Окот завершен"}, 
                 status=status.HTTP_200_OK
@@ -869,8 +1465,6 @@ class LambingViewSet(viewsets.ModelViewSet):
     def complete_lambing_with_children(self, request, pk=None):
         """Завершить окот с созданием детей"""
         try:
-            from datetime import datetime
-            
             lambing = self.get_object()
             
             # Получаем данные из запроса
@@ -986,6 +1580,44 @@ class LambingViewSet(viewsets.ModelViewSet):
                         {"error": f"Ошибка создания ягненка {lamb_data['tag_number']}: {str(child_error)}"}, 
                         status=status.HTTP_400_BAD_REQUEST
                     )
+            
+            # Создаем лог завершения окота с детьми
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+                import pytz
+                
+                if not isinstance(request.user, AnonymousUser):
+                    moscow_tz = pytz.timezone('Europe/Moscow')
+                    
+                    # Безопасно получаем информацию о родителях
+                    mother = lambing.get_mother()
+                    father = lambing.get_father()
+                    mother_tag = mother.tag.tag_number if mother and mother.tag else 'Неизвестно'
+                    father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
+                    
+                    actual_date_str_formatted = actual_date.strftime('%d.%m.%Y')
+                    
+                    # Формируем описание с детьми
+                    if created_children:
+                        children_details = []
+                        for child in created_children:
+                            child_type = "баран" if child['type'] == 'Ram' else "ярка"
+                            children_details.append(f"{child['tag_number']} ({child_type})")
+                        children_info = f"дети: {', '.join(children_details)}"
+                    else:
+                        children_info = "без детей"
+                    
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Завершение окота с детьми",
+                        object_type="Окот",
+                        object_id=f"{mother_tag}, {father_tag}",
+                        description=f"Завершен окот: Дата окота: {actual_date_str_formatted}; {children_info}"
+                    )
+            except Exception as log_error:
+                # Если логирование не удалось, не прерываем основную операцию
+                print(f"Ошибка логирования завершения окота: {log_error}")
             
             return Response({
                 "success": "Окот завершен",
@@ -1168,6 +1800,132 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     'text': note.text[:100] + '...' if len(note.text) > 100 else note.text,
                     'formatted_text': note.get_formatted_text()
                 })
+            
+            return Response(calendar_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'], url_path='vet-calendar-data')
+    def vet_calendar_data(self, request):
+        """Получить данные ветобработок для календаря"""
+        try:
+            year = request.query_params.get('year')
+            month = request.query_params.get('month')
+            
+            from datetime import date, timedelta
+            from django.utils import timezone
+            
+            # Получаем текущую дату в московском времени
+            moscow_now = timezone.localtime(timezone.now())
+            today = moscow_now.date()
+            
+            calendar_data = {}
+            
+            # 1. Загружаем ветобработки за указанный период (для оранжевых меток)
+            vet_queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all()
+            
+            if year:
+                vet_queryset = vet_queryset.filter(date_of_care__year=int(year))
+            if month:
+                vet_queryset = vet_queryset.filter(date_of_care__month=int(month))
+            
+            for vet in vet_queryset:
+                # Получаем дату в московском времени
+                if hasattr(vet.date_of_care, 'astimezone'):
+                    moscow_tz = timezone.get_current_timezone()
+                    care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
+                    care_date = care_datetime_moscow.date()
+                else:
+                    care_date = vet.date_of_care.date()
+                    
+                care_date_str = care_date.strftime('%Y-%m-%d')
+                
+                # Инициализируем структуру данных для даты
+                if care_date_str not in calendar_data:
+                    calendar_data[care_date_str] = {}
+                
+                # Добавляем оранжевую метку для даты ветобработки
+                if 'vet_treatments' not in calendar_data[care_date_str]:
+                    calendar_data[care_date_str]['vet_treatments'] = []
+                
+                calendar_data[care_date_str]['vet_treatments'].append({
+                    'id': vet.id,
+                    'tag_number': vet.tag.tag_number,
+                    'animal_type': vet.tag.animal_type,
+                    'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
+                    'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                    'date_of_care': care_date_str,
+                    'duration_days': vet.duration_days,
+                    'expiry_date': vet.get_expiry_date().strftime('%Y-%m-%d') if vet.get_expiry_date() else None
+                })
+            
+            # 2. Отдельно загружаем все ветобработки для поиска истекающих в указанном периоде (для желтых меток)
+            all_vets = Veterinary.objects.select_related('tag', 'veterinary_care').filter(duration_days__gt=0)
+            
+            for vet in all_vets:
+                expiry_date = vet.get_expiry_date()
+                if expiry_date:
+                    # Проверяем, попадает ли дата окончания в указанный период
+                    if year and month:
+                        if expiry_date.year == int(year) and expiry_date.month == int(month):
+                            expiry_date_str = expiry_date.strftime('%Y-%m-%d')
+                            
+                            # Инициализируем структуру данных для даты окончания
+                            if expiry_date_str not in calendar_data:
+                                calendar_data[expiry_date_str] = {}
+                            
+                            if 'vet_expiring' not in calendar_data[expiry_date_str]:
+                                calendar_data[expiry_date_str]['vet_expiring'] = []
+                            
+                            # Получаем дату обработки в московском времени
+                            if hasattr(vet.date_of_care, 'astimezone'):
+                                moscow_tz = timezone.get_current_timezone()
+                                care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
+                                care_date = care_datetime_moscow.date()
+                            else:
+                                care_date = vet.date_of_care.date()
+                            
+                            calendar_data[expiry_date_str]['vet_expiring'].append({
+                                'id': vet.id,
+                                'tag_number': vet.tag.tag_number,
+                                'animal_type': vet.tag.animal_type,
+                                'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
+                                'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                                'date_of_care': care_date.strftime('%Y-%m-%d'),
+                                'expiry_date': expiry_date_str
+                            })
+                    elif year:
+                        # Если указан только год
+                        if expiry_date.year == int(year):
+                            expiry_date_str = expiry_date.strftime('%Y-%m-%d')
+                            
+                            # Инициализируем структуру данных для даты окончания
+                            if expiry_date_str not in calendar_data:
+                                calendar_data[expiry_date_str] = {}
+                            
+                            if 'vet_expiring' not in calendar_data[expiry_date_str]:
+                                calendar_data[expiry_date_str]['vet_expiring'] = []
+                            
+                            # Получаем дату обработки в московском времени
+                            if hasattr(vet.date_of_care, 'astimezone'):
+                                moscow_tz = timezone.get_current_timezone()
+                                care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
+                                care_date = care_datetime_moscow.date()
+                            else:
+                                care_date = vet.date_of_care.date()
+                            
+                            calendar_data[expiry_date_str]['vet_expiring'].append({
+                                'id': vet.id,
+                                'tag_number': vet.tag.tag_number,
+                                'animal_type': vet.tag.animal_type,
+                                'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
+                                'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                                'date_of_care': care_date.strftime('%Y-%m-%d'),
+                                'expiry_date': expiry_date_str
+                            })
             
             return Response(calendar_data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -2028,3 +2786,271 @@ def check_auto_backup(request):
             'created': False,
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_inactive_mothers(request):
+    """
+    Получить список неактивных матерей (овец и ярок без активных окотов)
+    """
+    try:
+        # Получаем всех овец без активных окотов
+        sheep_without_lambings = Sheep.objects.filter(
+            is_archived=False
+        ).exclude(
+            lambings__is_active=True
+        ).select_related('tag', 'animal_status', 'place')
+        
+        # Получаем всех ярок без активных окотов
+        ewes_without_lambings = Ewe.objects.filter(
+            is_archived=False
+        ).exclude(
+            lambings__is_active=True
+        ).select_related('tag', 'animal_status', 'place')
+        
+        # Формируем единый список
+        inactive_mothers = []
+        
+        for sheep in sheep_without_lambings:
+            inactive_mothers.append({
+                'id': sheep.id,
+                'tag_number': sheep.tag.tag_number if sheep.tag else '',
+                'animal_type': 'Овца',
+                'type_code': 'sheep',
+                'age': float(sheep.age) if sheep.age else 0,
+                'status': sheep.animal_status.status_type if sheep.animal_status else 'Нет статуса',
+                'place': sheep.place.sheepfold if sheep.place else 'Нет места'
+            })
+        
+        for ewe in ewes_without_lambings:
+            inactive_mothers.append({
+                'id': ewe.id,
+                'tag_number': ewe.tag.tag_number if ewe.tag else '',
+                'animal_type': 'Ярка',
+                'type_code': 'ewe',
+                'age': float(ewe.age) if ewe.age else 0,
+                'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
+                'place': ewe.place.sheepfold if ewe.place else 'Нет места'
+            })
+        
+        # Сортируем по номеру бирки
+        inactive_mothers.sort(key=lambda x: x['tag_number'])
+        
+        return Response(inactive_mothers, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_all_fathers(request):
+    """
+    Получить список всех отцов (производителей и баранов)
+    """
+    try:
+        # Получаем всех производителей
+        makers = Maker.objects.filter(
+            is_archived=False
+        ).select_related('tag', 'animal_status', 'place')
+        
+        # Получаем всех баранов
+        rams = Ram.objects.filter(
+            is_archived=False
+        ).select_related('tag', 'animal_status', 'place')
+        
+        # Формируем единый список
+        all_fathers = []
+        
+        for maker in makers:
+            all_fathers.append({
+                'id': maker.id,
+                'tag_number': maker.tag.tag_number if maker.tag else '',
+                'animal_type': 'Производитель',
+                'type_code': 'maker',
+                'age': float(maker.age) if maker.age else 0,
+                'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
+                'place': maker.place.sheepfold if maker.place else 'Нет места'
+            })
+        
+        for ram in rams:
+            all_fathers.append({
+                'id': ram.id,
+                'tag_number': ram.tag.tag_number if ram.tag else '',
+                'animal_type': 'Баран',
+                'type_code': 'ram',
+                'age': float(ram.age) if ram.age else 0,
+                'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
+                'place': ram.place.sheepfold if ram.place else 'Нет места'
+            })
+        
+        # Сортируем по номеру бирки
+        all_fathers.sort(key=lambda x: x['tag_number'])
+        
+        return Response(all_fathers, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def bulk_create_lambings(request):
+    """
+    Массовое создание окотов
+    """
+    try:
+        start_date = request.data.get('start_date')
+        father_tag_number = request.data.get('father_tag_number')
+        mother_tag_numbers = request.data.get('mother_tag_numbers', [])
+        note = request.data.get('note', '')
+        
+        if not start_date:
+            return Response(
+                {"error": "Необходимо указать дату начала окота"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not father_tag_number:
+            return Response(
+                {"error": "Необходимо указать бирку отца"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not mother_tag_numbers:
+            return Response(
+                {"error": "Необходимо выбрать хотя бы одну мать"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверяем существование отца
+        father = None
+        try:
+            maker = Maker.objects.get(tag__tag_number=father_tag_number)
+            father = maker
+            father_type = 'maker'
+        except Maker.DoesNotExist:
+            try:
+                ram = Ram.objects.get(tag__tag_number=father_tag_number)
+                father = ram
+                father_type = 'ram'
+            except Ram.DoesNotExist:
+                return Response(
+                    {"error": f"Отец с биркой {father_tag_number} не найден"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        created_lambings = []
+        errors = []
+        
+        # Создаем окоты для каждой матери
+        for mother_tag_number in mother_tag_numbers:
+            try:
+                # Ищем мать среди овец и ярок
+                mother = None
+                mother_type = None
+                
+                try:
+                    sheep = Sheep.objects.get(tag__tag_number=mother_tag_number)
+                    mother = sheep
+                    mother_type = 'sheep'
+                except Sheep.DoesNotExist:
+                    try:
+                        ewe = Ewe.objects.get(tag__tag_number=mother_tag_number)
+                        mother = ewe
+                        mother_type = 'ewe'
+                    except Ewe.DoesNotExist:
+                        errors.append(f"Мать с биркой {mother_tag_number} не найдена")
+                        continue
+                
+                # Проверяем, что у матери нет активного окота
+                if mother_type == 'sheep':
+                    existing_active = Lambing.objects.filter(sheep=mother, is_active=True)
+                else:
+                    existing_active = Lambing.objects.filter(ewe=mother, is_active=True)
+                
+                if existing_active.exists():
+                    errors.append(f"У животного {mother_tag_number} уже есть активный окот")
+                    continue
+                
+                # Создаем окот
+                lambing_data = {
+                    'start_date': start_date,
+                    'note': note
+                }
+                
+                if mother_type == 'sheep':
+                    lambing_data['sheep'] = mother
+                else:
+                    lambing_data['ewe'] = mother
+                
+                if father_type == 'maker':
+                    lambing_data['maker'] = father
+                else:
+                    lambing_data['ram'] = father
+                
+                # Рассчитываем планируемую дату окота (6 месяцев от начала)
+                from dateutil.relativedelta import relativedelta
+                from datetime import datetime
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                lambing_data['planned_lambing_date'] = start_date_obj + relativedelta(months=6)
+                
+                lambing = Lambing.objects.create(**lambing_data)
+                
+                created_lambings.append({
+                    'id': lambing.id,
+                    'mother_tag': mother_tag_number,
+                    'father_tag': father_tag_number,
+                    'start_date': start_date,
+                    'planned_lambing_date': lambing.planned_lambing_date.strftime('%Y-%m-%d')
+                })
+                
+            except Exception as e:
+                errors.append(f"Ошибка создания окота для {mother_tag_number}: {str(e)}")
+        
+        response_data = {
+            'created_count': len(created_lambings),
+            'created_lambings': created_lambings
+        }
+        
+        if errors:
+            response_data['errors'] = errors
+        
+        # Создаем лог создания окотов - отдельная запись для каждого окота
+        if created_lambings:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+            import pytz
+            
+            if not isinstance(request.user, AnonymousUser):
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                date_str = start_date_obj.strftime('%d.%m.%Y')
+                
+                # Создаем отдельную запись для каждого окота
+                for lambing_info in created_lambings:
+                    mother_tag = lambing_info['mother_tag']
+                    
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Создание окота",
+                        object_type="Окот",
+                        object_id=f"{mother_tag}, {father_tag_number}",
+                        description=f"Создан окот: Мать {mother_tag} × Отец {father_tag_number}; Дата: {date_str}"
+                    )
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )

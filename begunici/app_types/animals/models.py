@@ -1,6 +1,7 @@
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+from django.contrib.auth.models import User
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 from begunici.app_types.veterinary.vet_models import (
@@ -112,9 +113,13 @@ class AnimalBase(models.Model):
         3. Создание записей о перемещении (`PlaceMovement`).
         4. Создание записей об изменении статуса (`StatusHistory`).
         """
+        print(f"Сохранение животного {self.tag.tag_number if self.tag else 'без бирки'}")
         is_new = self.pk is None  # Проверяем, создаётся ли новый объект
         old_place = None
         old_status = None
+        
+        # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
+        skip_status_history = kwargs.pop('skip_status_history', False)
 
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in [
@@ -146,14 +151,8 @@ class AnimalBase(models.Model):
         # 🔹 Сохранение объекта
         super().save(*args, **kwargs)
 
-        # 🔹 Создание записи о перемещении, если место изменилось
-        if not is_new and self.place and old_place != self.place:
-            PlaceMovement.objects.create(
-                tag=self.tag, old_place=old_place, new_place=self.place
-            )
-
-        # 🔹 Создание записи в `StatusHistory`, если статус изменился
-        if not is_new and self.animal_status and old_status != self.animal_status:
+        # 🔹 Создание записи в `StatusHistory`, если статус изменился (только если не пропускаем)
+        if not is_new and self.animal_status and old_status != self.animal_status and not skip_status_history:
             StatusHistory.objects.create(
                 tag=self.tag, old_status=old_status, new_status=self.animal_status
             )
@@ -625,3 +624,8 @@ class CalendarNote(models.Model):
             return "0, 0, 0"
         except:
             return "0, 0, 0"
+
+
+
+
+

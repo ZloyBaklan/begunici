@@ -113,20 +113,18 @@ class PlaceMovement(models.Model):
         related_name="place_movements_to",
         verbose_name="Новое место",
     )
+    created_at = models.DateTimeField(
+        verbose_name="Дата и время перемещения",
+        default=timezone.now
+    )
 
     class Meta:
-        unique_together = ("tag", "old_place", "new_place")
+        # Убираем unique_together, чтобы разрешить повторные перемещения
+        ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        # Проверяем, существует ли уже такая запись
-        if (
-            not self.pk
-            and PlaceMovement.objects.filter(
-                tag=self.tag, old_place=self.old_place, new_place=self.new_place
-            ).exists()
-        ):
-            return  # Если запись уже существует, не сохраняем её
-
+        # Убираем проверку на существование записи - разрешаем повторные перемещения
+        
         # Если указано новое место, обновляем его дату перевода
         if self.new_place:
             self.new_place.date_of_transfer = timezone.now()
@@ -137,9 +135,9 @@ class PlaceMovement(models.Model):
     @property
     def date_of_transfer(self):
         """
-        Дата перевода берется из связанного нового места, если оно существует.
+        Дата перевода берется из created_at или из связанного нового места.
         """
-        return self.new_place.date_of_transfer if self.new_place else None
+        return self.created_at if self.created_at else (self.new_place.date_of_transfer if self.new_place else None)
 
     def __str__(self):
         return f"{self.tag.tag_number}: {self.old_place} -> {self.new_place} ({self.date_of_transfer})"
@@ -199,6 +197,11 @@ class VeterinaryCare(models.Model):
     purpose = models.CharField(
         max_length=200, verbose_name="Цель обработки", blank=True, null=True
     )  # Причина/цель обработки
+    default_duration_days = models.PositiveIntegerField(
+        verbose_name="Срок действия (дней)", 
+        default=0,
+        help_text="0 = бессрочно"
+    )
 
     def __str__(self):
         return self.care_type
@@ -220,12 +223,64 @@ class Veterinary(models.Model):
     date_of_care = models.DateTimeField(
         verbose_name="Дата и время обработки", default=timezone.now
     )
+    duration_days = models.PositiveIntegerField(
+        verbose_name="Срок действия (дней)", 
+        default=0,
+        help_text="0 = бессрочно"
+    )
     comments = models.TextField(
         verbose_name="Примечания", blank=True, null=True
     )  # Доп. комментарии
+    is_hidden = models.BooleanField(
+        verbose_name="Скрыто из отслеживания",
+        default=False,
+        help_text="Скрыть из таблицы текущих ветобработок"
+    )
 
     def __str__(self):
         return f"Ветобработка {self.veterinary_care} для {self.tag.tag_number}"
+    
+    def get_expiry_date(self):
+        """Возвращает дату окончания действия ветобработки"""
+        if self.duration_days == 0:
+            return None  # Бессрочно
+        from datetime import timedelta
+        
+        # Получаем дату из date_of_care (может быть datetime или date)
+        if hasattr(self.date_of_care, 'date'):
+            care_date = self.date_of_care.date()
+        else:
+            care_date = self.date_of_care
+            
+        return care_date + timedelta(days=self.duration_days)
+    
+    def get_days_remaining(self):
+        """Возвращает количество оставшихся дней действия"""
+        if self.duration_days == 0:
+            return None  # Бессрочно
+        
+        expiry_date = self.get_expiry_date()
+        if expiry_date:
+            from datetime import date
+            from django.utils import timezone
+            
+            # Получаем текущую дату в московском времени
+            moscow_now = timezone.localtime(timezone.now())
+            today = moscow_now.date()
+            
+            remaining = (expiry_date - today).days
+            return remaining
+        return None
+    
+    def is_expired(self):
+        """Проверяет, истек ли срок действия"""
+        remaining = self.get_days_remaining()
+        return remaining is not None and remaining < 0
+    
+    def is_expiring_today(self):
+        """Проверяет, истекает ли срок сегодня"""
+        remaining = self.get_days_remaining()
+        return remaining is not None and remaining == 0
 
     class Meta:
         # Убираем ограничение unique_together, чтобы разрешить несколько одинаковых обработок в день

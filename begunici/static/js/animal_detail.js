@@ -110,7 +110,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
             loadSelectOptions('animal_status', '/veterinary/api/status/', animal.animal_status?.id),
             loadSelectOptions('place', '/veterinary/api/place/', animal.place?.id),
             loadLastWeight(animalType, tagNumber),
-            loadLastVetCare(animalType, tagNumber)
+            loadCurrentVetTreatments()
         ]);
         console.log('Все дополнительные данные загружены');
     } catch (error) {
@@ -138,49 +138,117 @@ async function loadLastWeight(animalType, tagNumber) {
 }
 
 
-async function loadLastVetCare(animalType, tagNumber) {
+// Загружаем текущие ветобработки
+async function loadCurrentVetTreatments() {
+    const tagNumber = document.getElementById('animal-detail').dataset.tagNumber;
+    const animalType = document.getElementById('animal-detail').dataset.animalType;
+    
     try {
-        console.log(`Загружаем историю ветобработок для ${animalType} ${tagNumber}`);
-        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/vet_history/`, 'GET');
-        console.log('Полный ответ API vet_history:', response);
-        console.log('Количество записей:', response.results ? response.results.length : 'results отсутствует');
-
-        // Проверяем, есть ли `results`, и берём первый элемент
-        if (response.results && response.results.length > 0) {
-            const lastCare = response.results[0];
-            console.log('Последняя ветобработка (детально):', JSON.stringify(lastCare, null, 2));
-
-            document.getElementById('last-vet-date').textContent = lastCare.date_of_care ? formatDateToOutput(lastCare.date_of_care) : '-';
+        console.log(`Загружаем текущие ветобработки для ${animalType} ${tagNumber}`);
+        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/current_vet_treatments/`, 'GET');
+        console.log('Текущие ветобработки:', response);
+        
+        const tableBody = document.getElementById('current-vet-treatments-body');
+        const noTreatmentsDiv = document.getElementById('no-current-treatments');
+        
+        if (response && response.length > 0) {
+            tableBody.innerHTML = '';
+            noTreatmentsDiv.style.display = 'none';
             
-            // Исправляем путь к данным ветобработки
-            if (lastCare.veterinary_care) {
-                console.log('Данные ветобработки:', lastCare.veterinary_care);
-                document.getElementById('last-vet-name').textContent = lastCare.veterinary_care.care_name || 'Не указано';
-                document.getElementById('last-vet-type').textContent = lastCare.veterinary_care.care_type || 'Не указан';
-                document.getElementById('last-vet-medication').textContent = lastCare.veterinary_care.medication || 'Не указан';
-                document.getElementById('last-vet-purpose').textContent = lastCare.veterinary_care.purpose || 'Нет цели';
-                document.getElementById('last-vet-comment').textContent = lastCare.comments || 'Нет комментария';
-                console.log('Данные ветобработки успешно отображены');
-            } else {
-                console.warn('Нет данных veterinary_care в записи');
-                // Если нет данных о ветобработке, ставим прочерки
-                document.getElementById('last-vet-name').textContent = 'Не указано';
-                document.getElementById('last-vet-type').textContent = 'Не указан';
-                document.getElementById('last-vet-medication').textContent = 'Не указан';
-                document.getElementById('last-vet-purpose').textContent = 'Нет цели';
-                document.getElementById('last-vet-comment').textContent = 'Нет комментария';
-            }
+            response.forEach(treatment => {
+                const row = createVetTreatmentRow(treatment);
+                tableBody.appendChild(row);
+            });
         } else {
-            console.log('Нет записей ветобработок или пустой results');
-            // Если нет данных, ставим прочерки
-            ['last-vet-date', 'last-vet-name', 'last-vet-type', 'last-vet-medication', 'last-vet-purpose', 'last-vet-comment']
-                .forEach(id => document.getElementById(id).textContent = '-');
+            tableBody.innerHTML = '';
+            noTreatmentsDiv.style.display = 'block';
         }
     } catch (error) {
-        console.error('Ошибка загрузки истории ветобработок:', error);
-        // В случае ошибки также ставим прочерки
-        ['last-vet-date', 'last-vet-name', 'last-vet-type', 'last-vet-medication', 'last-vet-purpose', 'last-vet-comment']
-            .forEach(id => document.getElementById(id).textContent = '-');
+        console.error('Ошибка загрузки текущих ветобработок:', error);
+        document.getElementById('no-current-treatments').style.display = 'block';
+        document.getElementById('no-current-treatments').textContent = 'Ошибка загрузки данных';
+    }
+}
+
+// Создаем строку таблицы для ветобработки
+function createVetTreatmentRow(treatment) {
+    const row = document.createElement('tr');
+    
+    // Вычисляем дату окончания и оставшиеся дни
+    const careDate = new Date(treatment.date_of_care);
+    const expiryDate = new Date(careDate.getTime() + (treatment.duration_days * 24 * 60 * 60 * 1000));
+    
+    // Получаем текущую дату в московском времени (только дата, без времени)
+    const now = new Date();
+    const moscowOffset = 3 * 60; // 3 часа в минутах
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const moscowTime = new Date(utc + (moscowOffset * 60000));
+    
+    // Приводим к началу дня для корректного сравнения
+    const today = new Date(moscowTime.getFullYear(), moscowTime.getMonth(), moscowTime.getDate());
+    const expiryDateOnly = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+    
+    // Вычисляем разность в днях
+    const remainingDays = Math.floor((expiryDateOnly - today) / (1000 * 60 * 60 * 24));
+    
+    // Определяем цвет для оставшихся дней
+    let remainingClass = '';
+    let remainingText = '';
+    
+    if (remainingDays < 0) {
+        remainingClass = 'text-danger fw-bold';
+        remainingText = 'Просрочено';
+    } else if (remainingDays === 0) {
+        remainingClass = 'text-danger fw-bold';
+        remainingText = 'Истекает сегодня';
+    } else if (remainingDays <= 3) {
+        remainingClass = 'text-warning fw-bold';
+        remainingText = `${remainingDays} дн.`;
+    } else {
+        remainingClass = 'text-success';
+        remainingText = `${remainingDays} дн.`;
+    }
+    
+    row.innerHTML = `
+        <td>${treatment.veterinary_care?.care_type || 'Не указан'}</td>
+        <td>${treatment.veterinary_care?.care_name || 'Не указано'}</td>
+        <td>${careDate.toLocaleDateString('ru-RU')}</td>
+        <td>${expiryDate.toLocaleDateString('ru-RU')}</td>
+        <td class="${remainingClass}">${remainingText}</td>
+        <td class="text-muted" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${treatment.comments || 'Нет комментария'}">${treatment.comments || 'Нет комментария'}</td>
+        <td>
+            <button class="btn btn-sm btn-outline-secondary" onclick="hideVetTreatment(${treatment.id})">
+                Скрыть
+            </button>
+        </td>
+    `;
+    
+    return row;
+}
+
+// Скрыть ветобработку из отслеживания
+async function hideVetTreatment(treatmentId) {
+    const tagNumber = document.getElementById('animal-detail').dataset.tagNumber;
+    const animalType = document.getElementById('animal-detail').dataset.animalType;
+    
+    if (!confirm('Вы уверены, что хотите скрыть эту ветобработку из отслеживания?')) {
+        return;
+    }
+    
+    try {
+        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/hide_vet_treatment/`, 'POST', {
+            treatment_id: treatmentId
+        });
+        
+        if (response.success) {
+            // Перезагружаем таблицу
+            await loadCurrentVetTreatments();
+        } else {
+            alert('Ошибка: ' + (response.error || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка скрытия ветобработки:', error);
+        alert('Ошибка скрытия ветобработки');
     }
 }
 
@@ -305,10 +373,15 @@ async function addVetRecord() {
         return;
     }
 
+    // Получаем выбранную опцию для извлечения срока действия
+    const select = document.getElementById('vet-treatment-select');
+    const selectedOption = select.options[select.selectedIndex];
+
     const data = {
         tag_write: tagNumber,
         veterinary_care_write: parseInt(treatmentId),
         date_of_care: careDate,
+        duration_days: selectedOption.dataset.defaultDuration ? parseInt(selectedOption.dataset.defaultDuration) : 0,
         comments: document.getElementById('vet-treatment-comments').value || ''
     };
 
@@ -326,8 +399,8 @@ async function addVetRecord() {
         document.getElementById('vet-treatment-comments').value = '';
         displayTreatmentDetails(); // Очищаем отображение деталей
         
-        console.log('Обновляем отображение последней ветобработки...');
-        await loadLastVetCare(animalType, tagNumber); // Обновляем отображение последней обработки
+        console.log('Обновляем отображение текущих ветобработок...');
+        await loadCurrentVetTreatments(); // Обновляем таблицу текущих ветобработок
     } catch (error) {
         console.error('Ошибка добавления ветобработки:', error);
         
@@ -366,6 +439,7 @@ async function loadVetTreatments() {
             option.dataset.type = treatment.care_type || 'Не указан';
             option.dataset.medication = treatment.medication || 'Не указан';
             option.dataset.purpose = treatment.purpose || 'Нет цели';
+            option.dataset.defaultDuration = treatment.default_duration_days || '0';
             select.appendChild(option);
         });
 
@@ -379,10 +453,28 @@ function displayTreatmentDetails() {
     const select = document.getElementById('vet-treatment-select');
     const selectedOption = select.options[select.selectedIndex];
 
-    // Отображаем данные обработки
-    document.getElementById('treatment-type').textContent = `Тип: ${selectedOption.dataset.type}`;
-    document.getElementById('treatment-description').textContent = `Цель: ${selectedOption.dataset.purpose}`;
-    document.getElementById('treatment-medicine').textContent = `Препарат: ${selectedOption.dataset.medication}`;
+    if (selectedOption.value) {
+        // Отображаем данные обработки
+        document.getElementById('treatment-type').innerHTML = `<strong>Тип:</strong> ${selectedOption.dataset.type || '-'}`;
+        document.getElementById('treatment-description').innerHTML = `<strong>Цель:</strong> ${selectedOption.dataset.purpose || '-'}`;
+        document.getElementById('treatment-medicine').innerHTML = `<strong>Препарат:</strong> ${selectedOption.dataset.medication || '-'}`;
+        
+        // Отображаем срок действия
+        const durationDays = selectedOption.dataset.defaultDuration || '0';
+        let durationText = '';
+        if (durationDays === '0') {
+            durationText = 'Бессрочно';
+        } else {
+            durationText = `${durationDays} дней`;
+        }
+        document.getElementById('treatment-duration').innerHTML = `<strong>Срок действия:</strong> ${durationText}`;
+    } else {
+        // Очищаем отображение если ничего не выбрано
+        document.getElementById('treatment-type').innerHTML = '<strong>Тип:</strong> -';
+        document.getElementById('treatment-description').innerHTML = '<strong>Цель:</strong> -';
+        document.getElementById('treatment-medicine').innerHTML = '<strong>Препарат:</strong> -';
+        document.getElementById('treatment-duration').innerHTML = '<strong>Срок действия:</strong> -';
+    }
 }
 
 

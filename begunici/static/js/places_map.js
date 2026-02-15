@@ -245,40 +245,64 @@ function showAnimalsModal(animalType, animals, sectionName) {
     title.textContent = `${animalType} в ${sectionName}`;
     
     list.innerHTML = '';
-    animals.forEach(animal => {
+    animals.forEach((animal, index) => {
         const animalDiv = document.createElement('div');
         animalDiv.className = 'animal-item';
         
         const tagNumber = animal.tag ? animal.tag.tag_number : 'Нет бирки';
         
+        // Создаем чекбокс для каждого животного
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'animal-checkbox';
+        checkbox.value = animal.id;
+        checkbox.dataset.animalType = getAnimalTypeFromCategory(animalType);
+        checkbox.dataset.tagNumber = tagNumber;
+        checkbox.addEventListener('change', updateMoveButtonVisibility);
+        
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '8px';
+        label.appendChild(checkbox);
+        
         if (animal.tag && animal.tag.tag_number) {
             // Определяем тип животного для URL
-            let animalTypeRoute = '';
-            if (animalType === 'Производители') {
-                animalTypeRoute = 'maker';
-            } else if (animalType === 'Бараны') {
-                animalTypeRoute = 'ram';
-            } else if (animalType === 'Ярки') {
-                animalTypeRoute = 'ewe';
-            } else if (animalType === 'Овцы') {
-                animalTypeRoute = 'sheep';
-            }
+            const animalTypeRoute = getAnimalTypeFromCategory(animalType);
             
             // Создаем кликабельную ссылку
             const link = document.createElement('a');
             link.href = `/animals/${animalTypeRoute}/${tagNumber}/info/`;
             link.textContent = tagNumber;
             link.className = 'animal-link';
-            animalDiv.appendChild(link);
+            label.appendChild(link);
         } else {
             // Если нет бирки, показываем просто текст
-            animalDiv.textContent = tagNumber;
+            const span = document.createElement('span');
+            span.textContent = tagNumber;
+            label.appendChild(span);
         }
         
+        animalDiv.appendChild(label);
         list.appendChild(animalDiv);
     });
     
+    // Сбрасываем состояние чекбоксов
+    document.getElementById('select-all-animals').checked = false;
+    updateMoveButtonVisibility();
+    
     modal.style.display = 'block';
+}
+
+// Вспомогательная функция для преобразования категории в тип животного
+function getAnimalTypeFromCategory(category) {
+    const typeMap = {
+        'Производители': 'maker',
+        'Бараны': 'ram',
+        'Ярки': 'ewe',
+        'Овцы': 'sheep'
+    };
+    return typeMap[category] || 'sheep';
 }
 
 // Закрытие модального окна
@@ -286,5 +310,110 @@ function closeAnimalsModal() {
     document.getElementById('animals-modal').style.display = 'none';
 }
 
+// Закрытие модального окна перемещения
+function closeMoveModal() {
+    document.getElementById('move-modal').style.display = 'none';
+}
+
+// Обновление видимости кнопки перемещения
+function updateMoveButtonVisibility() {
+    const checkboxes = document.querySelectorAll('.animal-checkbox:checked');
+    const moveContainer = document.getElementById('move-animals-container');
+    
+    if (checkboxes.length > 0) {
+        moveContainer.style.display = 'block';
+    } else {
+        moveContainer.style.display = 'none';
+    }
+}
+
+// Обработчик чекбокса "Выбрать всех"
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('select-all-animals');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const animalCheckboxes = document.querySelectorAll('.animal-checkbox');
+            animalCheckboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateMoveButtonVisibility();
+        });
+    }
+});
+
+// Показать диалог выбора места для перемещения
+async function showMoveAnimalsDialog() {
+    try {
+        // Загружаем список доступных мест
+        const places = await apiRequest('/veterinary/api/place/');
+        const select = document.getElementById('destination-place');
+        
+        // Очищаем и заполняем список мест
+        select.innerHTML = '<option value="">Выберите место...</option>';
+        places.forEach(place => {
+            const option = document.createElement('option');
+            option.value = place.id;
+            option.textContent = place.sheepfold;
+            select.appendChild(option);
+        });
+        
+        // Показываем модальное окно
+        document.getElementById('move-modal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки мест:', error);
+        alert('Ошибка загрузки списка мест');
+    }
+}
+
+// Перемещение выбранных животных
+async function moveSelectedAnimals() {
+    const selectedCheckboxes = document.querySelectorAll('.animal-checkbox:checked');
+    const destinationPlaceId = document.getElementById('destination-place').value;
+    
+    if (!destinationPlaceId) {
+        alert('Выберите место назначения');
+        return;
+    }
+    
+    if (selectedCheckboxes.length === 0) {
+        alert('Выберите животных для перемещения');
+        return;
+    }
+    
+
+    
+    try {
+        // Перемещаем каждое животное
+        const movePromises = Array.from(selectedCheckboxes).map(async (checkbox) => {
+            const animalType = checkbox.dataset.animalType;
+            const tagNumber = checkbox.dataset.tagNumber;
+            
+            return apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', {
+                place_id: parseInt(destinationPlaceId)
+            });
+        });
+        
+        // Ждем завершения всех операций
+        await Promise.all(movePromises);
+        
+        alert('Животные успешно перемещены!');
+        
+        // Закрываем модальные окна
+        closeMoveModal();
+        closeAnimalsModal();
+        
+        // Обновляем карту
+        loadPlacesMap();
+        
+    } catch (error) {
+        console.error('Ошибка при перемещении животных:', error);
+        alert('Ошибка при перемещении животных: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
 // Экспортируем функции для глобального доступа
 window.closeAnimalsModal = closeAnimalsModal;
+window.closeMoveModal = closeMoveModal;
+window.showMoveAnimalsDialog = showMoveAnimalsDialog;
+window.moveSelectedAnimals = moveSelectedAnimals;

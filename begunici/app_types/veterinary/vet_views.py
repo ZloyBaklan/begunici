@@ -110,6 +110,7 @@ class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all().order_by("-date_of_status")
     serializer_class = StatusSerializer
     permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["date_of_status"]
     search_fields = ["status_type"]
@@ -119,6 +120,7 @@ class PlaceViewSet(viewsets.ModelViewSet):
     queryset = Place.objects.all()
     serializer_class = PlaceSerializer
     permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["sheepfold"]
 
@@ -136,6 +138,7 @@ class VeterinaryCareViewSet(viewsets.ModelViewSet):
     queryset = VeterinaryCare.objects.all()
     serializer_class = VeterinaryCareSerializer
     permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ["care_type", "care_name", "medication", "purpose"]
 

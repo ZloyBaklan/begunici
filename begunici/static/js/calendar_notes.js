@@ -250,7 +250,7 @@ function renderWeekCalendar(weekDays, notes) {
         });
         
         if (dayNote) {
-            td.classList.add('has-note');
+            td.classList.add('has-notes');
             // ИСПРАВЛЕНИЕ: Используем innerHTML для правильного отображения HTML-ссылок
             td.innerHTML = `<div class="note-preview">${dayNote.formatted_text}</div>`;
         }
@@ -311,7 +311,7 @@ function renderMonthCalendar(notesData) {
                 
                 // Проверяем, есть ли заметки в этот день
                 if (notesData[currentDateStr]) {
-                    cell.classList.add('has-note');
+                    cell.classList.add('has-notes');
                     const firstNote = notesData[currentDateStr][0];
                     cell.innerHTML += `<div class="note-preview">${firstNote.formatted_text}</div>`;
                     
@@ -384,6 +384,167 @@ function openNoteModal(date, existingNote = null) {
     
     const modal = new bootstrap.Modal(document.getElementById('noteModal'));
     modal.show();
+}
+
+// Открывает модальное окно для просмотра событий дня
+function openDayEventsModal(date, events) {
+    console.log('Открытие модального окна событий для даты:', date);
+    console.log('События:', events);
+    
+    // Создаем модальное окно если его нет
+    let modal = document.getElementById('dayEventsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'dayEventsModal';
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">События дня</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="dayEventsContent"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                        <button type="button" class="btn btn-primary" onclick="openNoteModal('${date}', null)">Добавить заметку</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Обновляем дату в кнопке
+    const addNoteBtn = modal.querySelector('.btn-primary');
+    addNoteBtn.onclick = () => {
+        const dayModal = bootstrap.Modal.getInstance(modal);
+        dayModal.hide();
+        openNoteModal(date, null);
+    };
+    
+    // Заполняем содержимое
+    const content = document.getElementById('dayEventsContent');
+    content.innerHTML = '';
+    
+    const dateObj = new Date(date);
+    const formattedDate = dateObj.toLocaleDateString('ru-RU', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+    });
+    
+    content.innerHTML = `<h6>${formattedDate}</h6>`;
+    
+    events.forEach(event => {
+        const eventDiv = document.createElement('div');
+        eventDiv.className = 'event-item mb-3 p-3 border rounded';
+        
+        if (event.type === 'vet_treatments') {
+            eventDiv.classList.add('vet-treatment-event');
+            eventDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <div class="event-marker vet-treatment me-2"></div>
+                    <strong>Ветобработка</strong>
+                </div>
+                <div class="animal-list" style="max-height: 200px; overflow-y: auto;">
+                    ${event.data.map(vet => `
+                        <div class="animal-item d-flex justify-content-between align-items-center py-1">
+                            <div>
+                                <a href="/animals/${getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
+                                    ${vet.tag_number}
+                                </a>
+                                <small class="text-muted ms-2">${vet.animal_type}</small>
+                            </div>
+                            <div class="text-end">
+                                <div><strong>${vet.care_name}</strong></div>
+                                <small class="text-muted">${vet.care_type}</small>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else if (event.type === 'vet_expiring') {
+            eventDiv.classList.add('vet-expiring-event');
+            eventDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <div class="event-marker vet-expiring me-2"></div>
+                    <strong>Окончание срока действия ветобработки</strong>
+                </div>
+                <div class="animal-list" style="max-height: 200px; overflow-y: auto;">
+                    ${event.data.map(vet => `
+                        <div class="animal-item d-flex justify-content-between align-items-center py-1">
+                            <div>
+                                <a href="/animals/${getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
+                                    ${vet.tag_number}
+                                </a>
+                                <small class="text-muted ms-2">${vet.animal_type}</small>
+                            </div>
+                            <div class="text-end">
+                                <div><strong>${vet.care_name}</strong></div>
+                                <small class="text-muted">${vet.care_type}</small>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else {
+            // Обычная заметка
+            eventDiv.classList.add('note-event');
+            eventDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <div class="event-marker note me-2"></div>
+                    <strong>Заметка</strong>
+                </div>
+                <div class="note-content">${event.formatted_text}</div>
+                <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editNote('${event.id}', '${date}')">
+                        Редактировать
+                    </button>
+                </div>
+            `;
+        }
+        
+        content.appendChild(eventDiv);
+    });
+    
+    const bootstrapModal = new bootstrap.Modal(modal);
+    bootstrapModal.show();
+}
+
+// Функция для редактирования заметки
+function editNote(noteId, date) {
+    // Закрываем модальное окно событий
+    const dayModal = bootstrap.Modal.getInstance(document.getElementById('dayEventsModal'));
+    if (dayModal) {
+        dayModal.hide();
+    }
+    
+    // Находим заметку и открываем модальное окно редактирования
+    // Здесь нужно загрузить данные заметки по ID
+    fetch(`/animals/notes/${noteId}/`)
+        .then(response => response.json())
+        .then(note => {
+            openNoteModal(date, note);
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки заметки:', error);
+            openNoteModal(date, null);
+        });
+}
+
+// Вспомогательная функция для определения маршрута животного
+function getAnimalTypeRoute(animalType) {
+    const typeMap = {
+        'Maker': 'maker',
+        'Ram': 'ram', 
+        'Ewe': 'ewe',
+        'Sheep': 'sheep'
+    };
+    
+    return typeMap[animalType] || 'maker';
 }
 
 // Сохраняет заметку

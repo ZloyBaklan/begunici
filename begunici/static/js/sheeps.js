@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // Функция создания овцы
-async function createSheep() {
+async function saveSheep() {
     const formData = new FormData(document.getElementById('create-sheep-form'));
     const data = {
         tag_number: formData.get('tag'),
@@ -43,6 +43,9 @@ async function createSheep() {
         alert(`Ошибка: ${error.message}`);
     }
 }
+
+// Алиас для обратной совместимости
+const createSheep = saveSheep;
 
 let currentPage = 1;
 const pageSize = 10;
@@ -88,7 +91,34 @@ function renderSheeps(sheeps) {
                 ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${sheep.veterinary_history && sheep.veterinary_history.length > 0 
-                ? `${formatDateToOutput(sheep.veterinary_history[0].date_of_care)}: ${sheep.veterinary_history[0].veterinary_care.care_name}` 
+                ? (() => {
+                    const lastVet = sheep.veterinary_history[0];
+                    let displayText = `${formatDateToOutput(lastVet.date_of_care)}: ${lastVet.veterinary_care.care_name}`;
+                    
+                    // Добавляем информацию о сроке действия
+                    if (lastVet.duration_days !== undefined && lastVet.duration_days !== null) {
+                        if (lastVet.duration_days === 0) {
+                            displayText += ' (Бессрочно)';
+                        } else {
+                            // Вычисляем оставшиеся дни
+                            const careDate = new Date(lastVet.date_of_care);
+                            const expiryDate = new Date(careDate);
+                            expiryDate.setDate(careDate.getDate() + lastVet.duration_days);
+                            
+                            // Получаем текущую дату в московском времени
+                            const today = new Date();
+                            const moscowOffset = 3 * 60; // 3 часа в минутах
+                            const utc = today.getTime() + (today.getTimezoneOffset() * 60000);
+                            const moscowTime = new Date(utc + (moscowOffset * 60000));
+                            
+                            const remainingDays = Math.ceil((expiryDate - moscowTime) / (1000 * 60 * 60 * 24));
+                            
+                            // Убираем все дополнительные сообщения о статусе
+                        }
+                    }
+                    
+                    return displayText;
+                })()
                 : 'Нет записей'}</td>
             <td>${sheep.note || ''}</td>
         </tr>`;
@@ -181,12 +211,10 @@ function toggleSelectSheep(checkbox) {
 
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
-    const deleteButton = document.getElementById('delete-selected-button');
-    const archiveButton = document.getElementById('archive-selected-button');
+    const selectedActionsDiv = document.getElementById('selected-actions');
     const hasSelection = Array.from(selectedSheeps.values()).some(value => value.isSelected);
 
-    deleteButton.style.display = hasSelection ? 'block' : 'none';
-    archiveButton.style.display = hasSelection ? 'block' : 'none';
+    selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
 
 // Функция для удаления выбранных записей
@@ -217,6 +245,16 @@ async function deleteSelectedSheeps() {
                 selectedSheeps.delete(tag);
             }
             alert('Выбранные записи успешно удалены');
+            
+            // Очищаем все выбранные элементы
+            selectedSheeps.clear();
+            
+            // Снимаем галочку с "выбрать все"
+            const selectAllCheckbox = document.getElementById('select-all');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = false;
+            }
+            
             fetchSheeps(currentPage);
             toggleDeleteButton();
             modal.style.display = 'none';
@@ -230,6 +268,11 @@ async function deleteSelectedSheeps() {
 function openArchiveModal() {
     const modal = document.getElementById('archive-modal');
     modal.style.display = 'block';
+    
+    // Устанавливаем текущую дату
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('archive-status-date').value = today;
+    
     loadArchiveStatuses();
 }
 
@@ -279,13 +322,33 @@ async function applyArchiveStatus() {
         return;
     }
 
+    const statusDate = document.getElementById('archive-status-date').value;
+    if (!statusDate) {
+        alert('Укажите дату присвоения статуса.');
+        return;
+    }
+
     try {
         for (const tag of selectedTags) {
-            await apiRequest(`/animals/sheep/${tag}/`, 'PATCH', { animal_status_id: statusId });
+            await apiRequest(`/animals/sheep/${tag}/`, 'PATCH', { 
+                animal_status_id: statusId,
+                status_date: statusDate
+            });
         }
         alert('Выбранные записи успешно перенесены в архив.');
+        
+        // Очищаем все выбранные элементы
+        selectedSheeps.clear();
+        
+        // Снимаем галочку с "выбрать все"
+        const selectAllCheckbox = document.getElementById('select-all');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = false;
+        }
+        
         closeArchiveModal();
         fetchSheeps(currentPage);
+        toggleDeleteButton(); // Скрываем кнопки
     } catch (error) {
         console.error('Ошибка при переносе в архив:', error);
         alert('Ошибка при переносе записей.');
@@ -336,3 +399,5 @@ window.deleteSelectedSheeps = deleteSelectedSheeps;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectSheep = toggleSelectSheep;
 window.toggleDeleteButton = toggleDeleteButton;
+window.saveSheep = saveSheep;
+window.fetchSheeps = fetchSheeps;

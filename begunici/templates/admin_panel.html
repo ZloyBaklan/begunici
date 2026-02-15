@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Панель Администратора{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">Панель Администратора - Логи действий пользователей</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Фильтры -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <input type="text" id="searchInput" class="form-control" placeholder="Поиск по действию, типу объекта или деталям...">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" id="userFilter" class="form-control" placeholder="Фильтр по пользователю...">
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary" onclick="loadLogs(1)">Поиск</button>
+                        </div>
+                    </div>
+
+                    <!-- Таблица логов -->
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Пользователь</th>
+                                    <th>Действие</th>
+                                    <th>Тип объекта</th>
+                                    <th>Объект</th>
+                                    <th>Детали</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTable">
+                                <!-- Данные загружаются через JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Пагинация -->
+                    <nav aria-label="Навигация по страницам">
+                        <ul class="pagination justify-content-center" id="pagination">
+                            <!-- Пагинация загружается через JavaScript -->
+                        </ul>
+                    </nav>
+
+                    <!-- Информация о количестве записей -->
+                    <div class="text-center mt-3">
+                        <small class="text-muted" id="recordsInfo">
+                            <!-- Информация загружается через JavaScript -->
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+
+// Загрузка логов при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs(1);
+    
+    // Обработчики для поиска по Enter
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            loadLogs(1);
+        }
+    });
+    
+    document.getElementById('userFilter').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            loadLogs(1);
+        }
+    });
+});
+
+async function loadLogs(page = 1) {
+    const search = document.getElementById('searchInput').value;
+    const userFilter = document.getElementById('userFilter').value;
+    
+    try {
+        const params = new URLSearchParams({
+            page: page,
+            search: search,
+            user: userFilter
+        });
+        
+        const response = await fetch(`/admin-panel/logs/api/?${params}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            displayLogs(data.logs);
+            updatePagination(data);
+            updateRecordsInfo(data);
+            currentPage = page;
+        } else {
+            console.error('Ошибка загрузки логов:', data.error);
+            alert('Ошибка загрузки логов: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка сети:', error);
+        alert('Ошибка сети при загрузке логов');
+    }
+}
+
+function displayLogs(logs) {
+    const tbody = document.getElementById('logsTable');
+    tbody.innerHTML = '';
+    
+    logs.forEach(log => {
+        const row = document.createElement('tr');
+        
+        // Обрезаем длинные детали
+        let details = log.details || '';
+        if (details.length > 100) {
+            details = details.substring(0, 100) + '...';
+        }
+        
+        // Создаем ссылку на животное если есть бирка и это животное
+        let objectIdCell = log.object_id || '-';
+        if (log.object_id && log.animal_link_info) {
+            if (log.animal_link_info.pair_tags) {
+                // Обрабатываем пару биркий
+                let links = [];
+                log.animal_link_info.pair_tags.forEach(tagInfo => {
+                    if (tagInfo.url_type) {
+                        links.push(`<a href="/animals/${tagInfo.url_type}/${tagInfo.tag}/info/" target="_blank" class="text-decoration-none">${tagInfo.tag}</a>`);
+                    } else {
+                        links.push(tagInfo.tag);
+                    }
+                });
+                objectIdCell = links.join(', ');
+            } else {
+                // Используем информацию о животном из API для одиночной бирки
+                const animalType = log.animal_link_info.url_type;
+                objectIdCell = `<a href="/animals/${animalType}/${log.object_id}/info/" target="_blank" class="text-decoration-none">${log.object_id}</a>`;
+            }
+        } else if (log.object_id && log.object_type && ['Производитель', 'Баран', 'Ярка', 'Овца'].includes(log.object_type)) {
+            // Старая логика для обратной совместимости
+            const animalTypeMap = {
+                'Производитель': 'maker',
+                'Баран': 'ram', 
+                'Ярка': 'ewe',
+                'Овца': 'sheep'
+            };
+            const animalType = animalTypeMap[log.object_type];
+            if (animalType) {
+                objectIdCell = `<a href="/animals/${animalType}/${log.object_id}/info/" target="_blank" class="text-decoration-none">${log.object_id}</a>`;
+            }
+        }
+        
+        row.innerHTML = `
+            <td>${log.timestamp}</td>
+            <td><span class="badge bg-primary">${log.user}</span></td>
+            <td>${log.action}</td>
+            <td>${log.object_type || '-'}</td>
+            <td>${objectIdCell}</td>
+            <td><small>${details}</small></td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+
+function updatePagination(data) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+    
+    // Кнопка "Предыдущая"
+    if (data.has_previous) {
+        const prevLi = document.createElement('li');
+        prevLi.className = 'page-item';
+        prevLi.innerHTML = `<a class="page-link" href="#" onclick="loadLogs(${data.current_page - 1})">Предыдущая</a>`;
+        pagination.appendChild(prevLi);
+    }
+    
+    // Номера страниц
+    const startPage = Math.max(1, data.current_page - 2);
+    const endPage = Math.min(data.total_pages, data.current_page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const li = document.createElement('li');
+        li.className = `page-item ${i === data.current_page ? 'active' : ''}`;
+        li.innerHTML = `<a class="page-link" href="#" onclick="loadLogs(${i})">${i}</a>`;
+        pagination.appendChild(li);
+    }
+    
+    // Кнопка "Следующая"
+    if (data.has_next) {
+        const nextLi = document.createElement('li');
+        nextLi.className = 'page-item';
+        nextLi.innerHTML = `<a class="page-link" href="#" onclick="loadLogs(${data.current_page + 1})">Следующая</a>`;
+        pagination.appendChild(nextLi);
+    }
+}
+
+function updateRecordsInfo(data) {
+    const info = document.getElementById('recordsInfo');
+    info.textContent = `Показано записей: ${data.logs.length} из ${data.total_count} (страница ${data.current_page} из ${data.total_pages})`;
+}
+</script>
+{% endblock %}

@@ -7,6 +7,7 @@
 <div class="container">
     <h2>Добро пожаловать на ферму Бегуницы</h2>
     
+    {% if user_permissions.can_view_statistics %}
     <!-- Статистика -->
     <div class="statistics-container">
         <h3>Статистика</h3>
@@ -83,14 +84,23 @@
             </div>
         </div>
     </div>
+    {% endif %}
     
     <!-- Навигация -->
     <div class="navigation-section">
         <h3>Выберите раздел:</h3>
-        <ul>
-            <li><a href="{% url 'veterinary:veterinary-management' %}">Управление технической информацией</a></li>
-            <li><a href="{% url 'animals:animals' %}">Управление животными</a></li>
-        </ul>
+        <div class="row g-2">
+            <div class="col-md-6">
+                <a href="{% url 'veterinary:veterinary-management' %}" class="btn btn-outline-primary w-100 py-3">
+                    Управление технической информацией
+                </a>
+            </div>
+            <div class="col-md-6">
+                <a href="{% url 'animals:animals' %}" class="btn btn-outline-primary w-100 py-3">
+                    Управление животными
+                </a>
+            </div>
+        </div>
     </div>
     
     <!-- Кнопка бэкапа внизу страницы -->
@@ -507,8 +517,9 @@ function toggleExpand(containerId, trigger) {
 
 .expanded-content {
     margin-top: 4px;
-    padding-left: 8px;
-    border-left: 2px solid #e9ecef;
+    /* Убираем отступ слева и линию */
+    /* padding-left: 8px; */
+    /* border-left: 2px solid #e9ecef; */
 }
 </style>
 
