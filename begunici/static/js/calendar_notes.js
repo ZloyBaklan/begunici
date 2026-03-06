@@ -362,7 +362,7 @@ function updateMonthHeader() {
 }
 
 // Открывает модальное окно для редактирования заметки
-function openNoteModal(date, existingNote = null) {
+async function openNoteModal(date, existingNote = null) {
     console.log('Открытие модального окна для даты:', date);
     console.log('Существующая заметка:', existingNote);
     
@@ -375,8 +375,22 @@ function openNoteModal(date, existingNote = null) {
     const deleteBtn = document.getElementById('deleteNoteBtn');
     if (existingNote) {
         deleteBtn.style.display = 'inline-block';
-        // Для редактирования показываем исходный текст
-        document.getElementById('noteText').value = existingNote.text;
+        
+        // Загружаем полные данные заметки с сервера
+        try {
+            const response = await fetch(`/animals/notes/${existingNote.id}/`);
+            if (response.ok) {
+                const fullNote = await response.json();
+                document.getElementById('noteText').value = fullNote.text;
+            } else {
+                // Если не удалось загрузить, используем то что есть
+                document.getElementById('noteText').value = existingNote.text;
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки полного текста заметки:', error);
+            // Если не удалось загрузить, используем то что есть
+            document.getElementById('noteText').value = existingNote.text;
+        }
     } else {
         deleteBtn.style.display = 'none';
         document.getElementById('noteText').value = '';

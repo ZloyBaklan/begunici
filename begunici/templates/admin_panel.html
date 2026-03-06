@@ -14,11 +14,14 @@
                 <div class="card-body">
                     <!-- Фильтры -->
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <input type="text" id="searchInput" class="form-control" placeholder="Поиск по действию, типу объекта или деталям...">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <input type="text" id="userFilter" class="form-control" placeholder="Фильтр по пользователю...">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" id="dateFilter" class="form-control" placeholder="Фильтр по дате...">
                         </div>
                         <div class="col-md-2">
                             <button class="btn btn-primary" onclick="loadLogs(1)">Поиск</button>
@@ -82,17 +85,25 @@ document.addEventListener('DOMContentLoaded', function() {
             loadLogs(1);
         }
     });
+    
+    document.getElementById('dateFilter').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            loadLogs(1);
+        }
+    });
 });
 
 async function loadLogs(page = 1) {
     const search = document.getElementById('searchInput').value;
     const userFilter = document.getElementById('userFilter').value;
+    const dateFilter = document.getElementById('dateFilter').value;
     
     try {
         const params = new URLSearchParams({
             page: page,
             search: search,
-            user: userFilter
+            user: userFilter,
+            date: dateFilter
         });
         
         const response = await fetch(`/admin-panel/logs/api/?${params}`);

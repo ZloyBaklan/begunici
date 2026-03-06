@@ -5,20 +5,40 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // Загрузка карты овчарен
+// Функция для загрузки всех данных с пагинацией
+async function loadAllPages(url) {
+    let allResults = [];
+    let nextUrl = url;
+    
+    while (nextUrl) {
+        const response = await apiRequest(nextUrl);
+        
+        if (response.results) {
+            // Пагинированный ответ
+            allResults = allResults.concat(response.results);
+            nextUrl = response.next;
+        } else {
+            // Непагинированный ответ
+            allResults = response;
+            nextUrl = null;
+        }
+    }
+    
+    return allResults;
+}
+
 async function loadPlacesMap() {
     const container = document.getElementById('barns-container');
     container.innerHTML = '<div class="loading">Загрузка карты овчарен</div>';
     
     try {
-        // Получаем все места
-        const places = await apiRequest('/veterinary/api/place/');
-        
-        // Получаем всех животных с их местами
-        const [makers, rams, ewes, sheep] = await Promise.all([
-            apiRequest('/animals/maker/'),
-            apiRequest('/animals/ram/'),
-            apiRequest('/animals/ewe/'),
-            apiRequest('/animals/sheep/')
+        // Получаем все места и животных (с поддержкой пагинации)
+        const [places, makers, rams, ewes, sheep] = await Promise.all([
+            loadAllPages('/veterinary/api/place/?page_size=100'),
+            loadAllPages('/animals/maker/?page_size=100'),
+            loadAllPages('/animals/ram/?page_size=100'),
+            loadAllPages('/animals/ewe/?page_size=100'),
+            loadAllPages('/animals/sheep/?page_size=100')
         ]);
 
         // Группируем места по овчарням
@@ -26,10 +46,10 @@ async function loadPlacesMap() {
         
         // Группируем животных по местам
         const animalsByPlace = groupAnimalsByPlace([
-            ...makers.results || makers,
-            ...rams.results || rams, 
-            ...ewes.results || ewes,
-            ...sheep.results || sheep
+            ...makers,
+            ...rams, 
+            ...ewes,
+            ...sheep
         ]);
 
         // Отображаем карту

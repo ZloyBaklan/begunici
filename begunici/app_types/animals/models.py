@@ -31,7 +31,7 @@ class AnimalBase(models.Model):
         blank=True,
     )
     note = models.CharField(
-        max_length=100, verbose_name="Примечание", null=True, blank=True
+        max_length=300, verbose_name="Примечание", null=True, blank=True
     )
     is_archived = models.BooleanField(default=False, verbose_name="В архиве")
     # Новые поля для родителей
@@ -124,7 +124,8 @@ class AnimalBase(models.Model):
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in [
             "Убыл",
-            "Убой",
+            "Убой", 
+            "продажа",
             "Продажа",
         ]:
             self.is_archived = True
@@ -525,7 +526,7 @@ class CalendarNote(models.Model):
         ordering = ['-date']
 
     def __str__(self):
-        return f"Заметка на {self.date}: {self.text[:50]}..."
+        return f"Заметка на {self.date}: {self.text[:200]}..."
 
     def get_formatted_text(self):
         """

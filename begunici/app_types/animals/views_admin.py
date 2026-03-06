@@ -31,9 +31,10 @@ def admin_logs_api(request):
         page = int(request.GET.get('page', 1))
         search = request.GET.get('search', '')
         user_filter = request.GET.get('user', '')
+        date_filter = request.GET.get('date', '')
         
-        # Базовый queryset
-        logs = UserActionLog.objects.select_related('user').all()
+        # Базовый queryset - сортируем по убыванию времени (самые новые сверху)
+        logs = UserActionLog.objects.select_related('user').order_by('-timestamp')
         
         # Применяем фильтры
         if search:
@@ -45,6 +46,17 @@ def admin_logs_api(request):
         
         if user_filter:
             logs = logs.filter(user__username__icontains=user_filter)
+        
+        if date_filter:
+            from datetime import datetime
+            try:
+                # Парсим дату в формате YYYY-MM-DD
+                filter_date = datetime.strptime(date_filter, '%Y-%m-%d').date()
+                # Фильтруем по дате (без учета времени)
+                logs = logs.filter(timestamp__date=filter_date)
+            except ValueError:
+                # Если дата некорректная, игнорируем фильтр
+                pass
         
         # Пагинация
         paginator = Paginator(logs, 50)  # 50 записей на страницу

@@ -131,7 +131,9 @@ function renderEwes(ewes) {
 // Функция загрузки статусов
 async function loadStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/');
+        // API возвращает пагинированные данные, берем массив из results
+        const statuses = response.results || response;
         const select = document.getElementById('animal_status');
         select.innerHTML = '<option value="">Выберите статус</option>';
         
@@ -149,7 +151,9 @@ async function loadStatuses() {
 // Функция загрузки мест
 async function loadPlaces() {
     try {
-        const places = await apiRequest('/veterinary/api/place/');
+        const response = await apiRequest('/veterinary/api/place/');
+        // API возвращает пагинированные данные, берем массив из results
+        const places = response.results || response;
         const select = document.getElementById('place');
         select.innerHTML = '<option value="">Выберите место</option>';
         
@@ -283,7 +287,9 @@ function closeArchiveModal() {
 
 async function loadArchiveStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/');
+        // API возвращает пагинированные данные, берем массив из results
+        const statuses = response.results || response;
         const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
@@ -358,30 +364,57 @@ async function applyArchiveStatus() {
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
     pagination.innerHTML = '';
+    
+    // Создаем контейнер для пагинации с центрированием
+    const paginationContainer = document.createElement('div');
+    paginationContainer.style.display = 'flex';
+    paginationContainer.style.alignItems = 'center';
+    paginationContainer.style.justifyContent = 'center';
+    paginationContainer.style.gap = '15px';
 
+    // Кнопка "Предыдущая" (слева)
     if (response.previous) {
         const prevButton = document.createElement('button');
         prevButton.innerText = 'Предыдущая';
+        prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
             currentPage--;
             fetchEwes(currentPage);
         };
-        pagination.appendChild(prevButton);
+        paginationContainer.appendChild(prevButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px'; // Примерная ширина кнопки
+        paginationContainer.appendChild(emptyDiv);
     }
 
+    // Информация о странице (по центру)
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = `Страница ${currentPage}`;
+    pageInfo.style.fontWeight = '500';
+    pageInfo.style.minWidth = '100px';
+    pageInfo.style.textAlign = 'center';
+    paginationContainer.appendChild(pageInfo);
+
+    // Кнопка "Следующая" (справа)
     if (response.next) {
         const nextButton = document.createElement('button');
         nextButton.innerText = 'Следующая';
+        nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
             currentPage++;
             fetchEwes(currentPage);
         };
-        pagination.appendChild(nextButton);
+        paginationContainer.appendChild(nextButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px'; // Примерная ширина кнопки
+        paginationContainer.appendChild(emptyDiv);
     }
 
-    const pageInfo = document.createElement('span');
-    pageInfo.innerText = ` Страница ${currentPage}`;
-    pagination.appendChild(pageInfo);
+    pagination.appendChild(paginationContainer);
 }
 
 function closeDeleteModal() {

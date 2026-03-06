@@ -513,7 +513,9 @@ function createLambForm(index) {
 // Загрузка статусов для ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const statuses = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/');
+        // API возвращает пагинированные данные, берем массив из results
+        const statuses = response.results || response;
         const select = formElement.querySelector('.lamb-status');
         
         statuses.forEach(status => {
@@ -530,7 +532,9 @@ async function loadStatusesForLamb(formElement) {
 // Загрузка мест для ягненка
 async function loadPlacesForLamb(formElement) {
     try {
-        const places = await apiRequest('/veterinary/api/place/');
+        const response = await apiRequest('/veterinary/api/place/');
+        // API возвращает пагинированные данные, берем массив из results
+        const places = response.results || response;
         const select = formElement.querySelector('.lamb-place');
         
         places.forEach(place => {

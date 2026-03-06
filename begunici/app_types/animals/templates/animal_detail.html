@@ -121,7 +121,7 @@
                                         <a id="father-link" href="#" class="ms-2 text-decoration-none">перейти</a>
                                     </td>
                                 </tr>
-                                <tr><th>Примечание</th><td>{{ animal.note }}</td></tr>
+                                <tr><th>Примечание</th><td style="word-wrap: break-word; max-width: 300px;">{{ animal.note }}</td></tr>
                             </table>
                         </div>
                     </div>
@@ -278,7 +278,7 @@
                                 {% endif %}
                                 <div class="col-12">
                                     <label for="note" class="form-label">Примечание:</label>
-                                    <input type="text" id="note" value="{{ animal.note }}" class="form-control">
+                                    <textarea id="note" class="form-control" rows="3">{{ animal.note }}</textarea>
                                 </div>
                                 <div class="col-12">
                                     <button type="button" onclick="saveMakerDetails()" class="btn btn-primary">Сохранить</button>

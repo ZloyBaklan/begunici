@@ -56,15 +56,29 @@ async function apiRequest(url, method, body) {
 async function loadSelectOptions(selectId, apiEndpoint, selectedId = null) {
     const select = document.getElementById(selectId);
     select.innerHTML = '';
-    const items = await apiRequest(apiEndpoint, 'GET');
+    
+    try {
+        const response = await apiRequest(apiEndpoint, 'GET');
+        console.log(`Ответ API для ${selectId}:`, response);
+        
+        // Обрабатываем пагинированный ответ
+        const items = response.results || response;
+        
+        if (!Array.isArray(items)) {
+            console.error(`Ожидался массив для ${selectId}, получено:`, items);
+            return;
+        }
 
-    items.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.status_type || item.sheepfold;
-        if (item.id === selectedId) option.selected = true;
-        select.appendChild(option);
-    });
+        items.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.status_type || item.sheepfold;
+            if (item.id === selectedId) option.selected = true;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error(`Ошибка загрузки ${selectId}:`, error);
+    }
 }
 
 
@@ -151,11 +165,14 @@ async function loadCurrentVetTreatments() {
         const tableBody = document.getElementById('current-vet-treatments-body');
         const noTreatmentsDiv = document.getElementById('no-current-treatments');
         
-        if (response && response.length > 0) {
+        // Обрабатываем пагинированный ответ
+        const treatments = response.results || response;
+        
+        if (Array.isArray(treatments) && treatments.length > 0) {
             tableBody.innerHTML = '';
             noTreatmentsDiv.style.display = 'none';
             
-            response.forEach(treatment => {
+            treatments.forEach(treatment => {
                 const row = createVetTreatmentRow(treatment);
                 tableBody.appendChild(row);
             });
@@ -424,8 +441,16 @@ async function addVetRecord() {
     
 async function loadVetTreatments() {
     try {
-        const treatments = await apiRequest('/veterinary/api/care/', 'GET');
-        console.log('Ответ сервера для ветобработок:', treatments);
+        const response = await apiRequest('/veterinary/api/care/', 'GET');
+        console.log('Ответ сервера для ветобработок:', response);
+
+        // Обрабатываем пагинированный ответ
+        const treatments = response.results || response;
+        
+        if (!Array.isArray(treatments)) {
+            console.error('Ожидался массив ветобработок, получено:', treatments);
+            return;
+        }
 
         const select = document.getElementById('vet-treatment-select');
         select.innerHTML = '<option value="">Выберите обработку</option>'; // Очистка списка
@@ -813,7 +838,15 @@ async function completeLambing(lambingId) {
     // Загружаем список статусов
     try {
         const response = await fetch('/animals/api/all-statuses/');
-        const statuses = await response.json();
+        const data = await response.json();
+        
+        // Обрабатываем пагинированный ответ
+        const statuses = data.results || data;
+        
+        if (!Array.isArray(statuses)) {
+            console.error('Ожидался массив статусов, получено:', statuses);
+            return;
+        }
         
         const statusSelect = document.getElementById('new-mother-status');
         statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
@@ -954,7 +987,15 @@ function createLambForm(index) {
 // Загрузка статусов для формы ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const statuses = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/');
+        // API возвращает пагинированные данные, берем массив из results
+        const statuses = response.results || response;
+        
+        if (!Array.isArray(statuses)) {
+            console.error('Ожидался массив статусов для ягненка, получено:', statuses);
+            return;
+        }
+        
         const select = formElement.querySelector('.lamb-status');
         
         statuses.forEach(status => {
@@ -971,7 +1012,15 @@ async function loadStatusesForLamb(formElement) {
 // Загрузка мест для формы ягненка
 async function loadPlacesForLamb(formElement) {
     try {
-        const places = await apiRequest('/veterinary/api/place/');
+        const response = await apiRequest('/veterinary/api/place/');
+        // API возвращает пагинированные данные, берем массив из results
+        const places = response.results || response;
+        
+        if (!Array.isArray(places)) {
+            console.error('Ожидался массив мест для ягненка, получено:', places);
+            return;
+        }
+        
         const select = formElement.querySelector('.lamb-place');
         
         places.forEach(place => {
