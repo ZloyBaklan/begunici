@@ -305,7 +305,6 @@ class LambingCalendar {
                             <h6 class="mb-1">
                                 ${lambing.mother_type}: <strong>${lambing.mother_tag}</strong>
                             </h6>
-                            <small>ID: ${lambing.id}</small>
                         </div>
                         <p class="mb-1">
                             <strong>Отец:</strong> ${lambing.father_type} ${lambing.father_tag}

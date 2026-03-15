@@ -134,7 +134,7 @@ function renderRams(rams) {
 // Функция загрузки статусов
 async function loadStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         const select = document.getElementById('animal_status');
@@ -154,7 +154,7 @@ async function loadStatuses() {
 // Функция загрузки мест
 async function loadPlaces() {
     try {
-        const response = await apiRequest('/veterinary/api/place/');
+        const response = await apiRequest('/veterinary/api/place/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const places = response.results || response;
         const select = document.getElementById('place');
@@ -290,7 +290,7 @@ function closeArchiveModal() {
 
 async function loadArchiveStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type));
