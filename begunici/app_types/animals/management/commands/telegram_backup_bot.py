@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from django.core.management.base import BaseCommand
+from decouple import config
 import requests
 
 
@@ -13,8 +14,8 @@ class Command(BaseCommand):
 
     def __init__(self):
         super().__init__()
-        self.bot_token = "8605684600:AAGFG4zNLBLLSx8vCpxfu5MMJaq9QNg_rgI"
-        self.chat_id = "-1003749431453"
+        self.bot_token = config('TELEGRAM_BOT_TOKEN')
+        self.chat_id = config('TELEGRAM_CHANNEL_ID')
         self.backups_dir = Path("backups")
         self.sent_files_path = self.backups_dir / "sent_files.json"
         self.log_file_path = self.backups_dir / "telegram_bot_errors.log"
