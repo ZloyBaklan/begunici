@@ -102,7 +102,7 @@
                             <table class="table table-borderless">
                                 <tr><th width="40%">Бирка</th><td>{{ animal.tag.tag_number }}</td></tr>
                                 <tr><th>Статус</th><td>{{ animal.animal_status }}</td></tr>
-                                <tr><th>Возраст</th><td>{{ animal.age }} мес.</td></tr>
+                                <tr><th>Возраст</th><td>{{ animal.get_age_display }}</td></tr>
                                 {% if animal_type == 'maker' %}
                                 <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
                                 {% endif %}
@@ -121,6 +121,8 @@
                                         <a id="father-link" href="#" class="ms-2 text-decoration-none">перейти</a>
                                     </td>
                                 </tr>
+                                <tr><th>Бирка РСХН</th><td>{{ animal.rshn_tag|default:"-" }}</td></tr>
+                                <tr><th>Дата отбивки</th><td>{{ animal.date_otbivka|date:"d.m.Y"|default:"-" }}</td></tr>
                                 <tr><th>Примечание</th><td style="word-wrap: break-word; max-width: 300px;">{{ animal.note }}</td></tr>
                             </table>
                         </div>
@@ -277,6 +279,14 @@
                                 </div>
                                 {% endif %}
                                 <div class="col-12">
+                                    <label for="rshn_tag" class="form-label">Бирка РСХН:</label>
+                                    <input type="text" id="rshn_tag" class="form-control" value="{{ animal.rshn_tag|default:'' }}" placeholder="Введите бирку РСХН (необязательно)">
+                                </div>
+                                <div class="col-12">
+                                    <label for="date_otbivka" class="form-label">Дата отбивки:</label>
+                                    <input type="date" id="date_otbivka" class="form-control" value="{{ animal.date_otbivka|date:'Y-m-d'|default:'' }}">
+                                </div>
+                                <div class="col-12">
                                     <label for="note" class="form-label">Примечание:</label>
                                     <textarea id="note" class="form-control" rows="3">{{ animal.note }}</textarea>
                                 </div>
@@ -372,6 +382,26 @@
         </div>
         {% endif %}
 
+        <!-- Секция истории окотов (для производителей и баранов) -->
+        {% if animal_type == 'maker' or animal_type == 'ram' %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Окоты</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="father-lambing-history">
+                            <div id="father-lambing-history-list">
+                                <!-- История окотов как отец будет загружена через JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
     </div>
 </div>
 <!-- Модальное окно для завершения окота -->
@@ -402,10 +432,11 @@
                     
                     <div class="mb-3">
                         <label class="form-label">Новый статус для матери:</label>
-                        <select id="new-mother-status" class="form-control" required>
-                            <option value="">Выберите статус...</option>
+                        <select id="new-mother-status" class="form-control">
+                            <option value="">Не менять статус матери</option>
                             <!-- Статусы будут загружены через JavaScript -->
                         </select>
+                        <div class="form-text">Оставьте пустым, если не нужно менять статус матери или если матери нет в БД</div>
                     </div>
                     
                     <hr>

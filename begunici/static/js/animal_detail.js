@@ -285,6 +285,8 @@ async function saveAnimalDetails() {
         birth_date: document.getElementById('birth_date').value,
         note: document.getElementById('note').value,
         place_id: placeValue ? parseInt(placeValue) : null,
+        rshn_tag: document.getElementById('rshn_tag').value || null,
+        date_otbivka: document.getElementById('date_otbivka').value || null,
     };
 
     // Добавляем специфичные поля для Maker
@@ -506,8 +508,8 @@ function displayTreatmentDetails() {
 async function loadParents(animalType, tagNumber) {
     try {
         const animal = await apiRequest(`/animals/${animalType}/${tagNumber}/api/`, 'GET');
-        const mother = animal.mother;
-        const father = animal.father;
+        const mother = animal.mother_display;
+        const father = animal.father_display;
 
         console.log('Данные о родителях:', { mother, father }); // Отладочная информация
 
@@ -540,26 +542,36 @@ function updateParentDisplay(mother, father) {
 
     console.log('Обновление отображения родителей:', { mother, father }); // Отладка
 
-    if (mother) {
+    if (mother && mother.has_link && mother.tag_obj) {
         motherDisplay.textContent = mother.tag_number;
         // Определяем тип животного по animal_type в объекте Tag
-        const motherType = getAnimalTypeRoute(mother.animal_type);
-        console.log(`Мать: ${mother.tag_number}, тип: ${mother.animal_type}, маршрут: ${motherType}`);
+        const motherType = getAnimalTypeRoute(mother.tag_obj.animal_type);
+        console.log(`Мать: ${mother.tag_number}, тип: ${mother.tag_obj.animal_type}, маршрут: ${motherType}`);
         motherLink.href = `/animals/${motherType}/${mother.tag_number}/info/`;
         motherLink.style.display = 'inline';
+    } else if (mother && mother.tag_number) {
+        // Родитель существует, но нет ссылки (не найден в БД)
+        motherDisplay.textContent = mother.tag_number + ' (не найден)';
+        motherLink.href = '#';
+        motherLink.style.display = 'none';
     } else {
         motherDisplay.textContent = 'Нет данных';
         motherLink.href = '#';
         motherLink.style.display = 'none';
     }
 
-    if (father) {
+    if (father && father.has_link && father.tag_obj) {
         fatherDisplay.textContent = father.tag_number;
         // Определяем тип животного по animal_type в объекте Tag
-        const fatherType = getAnimalTypeRoute(father.animal_type);
-        console.log(`Отец: ${father.tag_number}, тип: ${father.animal_type}, маршрут: ${fatherType}`);
+        const fatherType = getAnimalTypeRoute(father.tag_obj.animal_type);
+        console.log(`Отец: ${father.tag_number}, тип: ${father.tag_obj.animal_type}, маршрут: ${fatherType}`);
         fatherLink.href = `/animals/${fatherType}/${father.tag_number}/info/`;
         fatherLink.style.display = 'inline';
+    } else if (father && father.tag_number) {
+        // Родитель существует, но нет ссылки (не найден в БД)
+        fatherDisplay.textContent = father.tag_number + ' (не найден)';
+        fatherLink.href = '#';
+        fatherLink.style.display = 'none';
     } else {
         fatherDisplay.textContent = 'Нет данных';
         fatherLink.href = '#';
@@ -697,6 +709,25 @@ async function loadLambings() {
     }
 }
 
+// Загрузка истории окотов для отцов (производители и бараны)
+async function loadFatherLambings() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+    
+    // Проверяем, что это производитель или баран
+    if (animalType !== 'maker' && animalType !== 'ram') {
+        return;
+    }
+    
+    try {
+        const lambings = await apiRequest(`/animals/lambing/by-father/?animal_type=${animalType}&tag_number=${tagNumber}`, 'GET');
+        displayFatherLambings(lambings);
+    } catch (error) {
+        console.error('Ошибка загрузки истории окотов как отец:', error);
+    }
+}
+
 // Отображение окотов
 function displayLambings(lambings) {
     const activeLambingsList = document.getElementById('active-lambings-list');
@@ -706,23 +737,374 @@ function displayLambings(lambings) {
         return;
     }
     
+    // Сохраняем все окоты для фильтрации
+    window.allLambings = lambings;
+    
     // Разделяем активные и завершенные окоты
     const activeLambings = lambings.filter(l => l.is_active);
     const completedLambings = lambings.filter(l => !l.is_active);
     
-    // Отображаем активные окоты
+    // Отображаем активные окоты (без пагинации, их обычно мало)
     if (activeLambings.length === 0) {
         activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов</div>';
     } else {
         activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
     }
     
-    // Отображаем историю окотов
+    // Отображаем историю окотов с пагинацией
     if (completedLambings.length === 0) {
         lambingHistoryList.innerHTML = '<div class="no-lambings">Нет завершенных окотов</div>';
     } else {
-        lambingHistoryList.innerHTML = completedLambings.map(lambing => createLambingCard(lambing, false)).join('');
+        initializeLambingHistoryPagination(completedLambings);
     }
+}
+
+// Инициализация пагинации для истории окотов
+function initializeLambingHistoryPagination(lambings) {
+    const itemsPerPage = 5;
+    let currentPage = 1;
+    let filteredLambings = lambings; // Для фильтрации
+    const totalPages = Math.ceil(filteredLambings.length / itemsPerPage);
+    
+    function displayPage(page) {
+        const startIndex = (page - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const pageItems = filteredLambings.slice(startIndex, endIndex);
+        
+        const lambingHistoryList = document.getElementById('lambing-history-list');
+        
+        // Сохраняем текущие значения из полей перед перерисовкой
+        const currentDateFrom = document.getElementById('history-date-from')?.value || window.historyDateFrom || '';
+        const currentDateTo = document.getElementById('history-date-to')?.value || window.historyDateTo || '';
+        
+        // Обновляем глобальные переменные
+        window.historyDateFrom = currentDateFrom;
+        window.historyDateTo = currentDateTo;
+        
+        // Создаем фильтр с сохраненными значениями
+        const filterHtml = `
+            <div class="date-filter-container mb-3 p-3 bg-light rounded">
+                <h6>Фильтр по дате начала окота</h6>
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="history-date-from" class="form-label">С:</label>
+                        <input type="date" class="form-control" id="history-date-from" value="${currentDateFrom}">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="history-date-to" class="form-label">По:</label>
+                        <input type="date" class="form-control" id="history-date-to" value="${currentDateTo}">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-primary btn-sm me-2" onclick="applyHistoryDateFilter()">Применить</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearHistoryDateFilter()">Сбросить</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Обновляем содержимое
+        lambingHistoryList.innerHTML = filterHtml + pageItems.map(lambing => createLambingCard(lambing, false)).join('');
+        
+        // Обновляем пагинацию
+        updateLambingHistoryPagination(page, Math.ceil(filteredLambings.length / itemsPerPage));
+    }
+    
+    function updateLambingHistoryPagination(page, total) {
+        let paginationHtml = '<div class="pagination-container mt-3">';
+        
+        if (total > 1) {
+            paginationHtml += '<nav><ul class="pagination pagination-sm justify-content-center">';
+            
+            // Кнопка "Предыдущая"
+            if (page > 1) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${page - 1})">‹</a></li>`;
+            }
+            
+            // Определяем диапазон страниц для отображения (текущая + 2 слева + 2 справа)
+            const startPage = Math.max(1, page - 2);
+            const endPage = Math.min(total, page + 2);
+            
+            // Показываем первую страницу и многоточие, если нужно
+            if (startPage > 1) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(1)">1</a></li>`;
+                if (startPage > 2) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+            
+            // Номера страниц в диапазоне
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === page ? 'active' : '';
+                paginationHtml += `<li class="page-item ${activeClass}"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${i})">${i}</a></li>`;
+            }
+            
+            // Показываем многоточие и последнюю страницу, если нужно
+            if (endPage < total) {
+                if (endPage < total - 1) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${total})">${total}</a></li>`;
+            }
+            
+            // Кнопка "Следующая"
+            if (page < total) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${page + 1})">›</a></li>`;
+            }
+            
+            paginationHtml += '</ul></nav>';
+        }
+        
+        paginationHtml += `<div class="text-center text-muted small">Показано ${Math.min(itemsPerPage, filteredLambings.length - (page - 1) * itemsPerPage)} из ${filteredLambings.length} окотов</div>`;
+        paginationHtml += '</div>';
+        
+        const lambingHistoryList = document.getElementById('lambing-history-list');
+        lambingHistoryList.innerHTML += paginationHtml;
+    }
+    
+    // Глобальные функции для фильтрации
+    window.applyHistoryDateFilter = function() {
+        const dateFrom = document.getElementById('history-date-from').value;
+        const dateTo = document.getElementById('history-date-to').value;
+        
+        // Сохраняем значения в глобальных переменных
+        window.historyDateFrom = dateFrom;
+        window.historyDateTo = dateTo;
+        
+        // Применяем фильтр ко всем окотам
+        const allLambings = window.allLambings || lambings;
+        const filteredAllLambings = allLambings.filter(lambing => {
+            const startDate = new Date(lambing.start_date);
+            const fromDate = dateFrom ? new Date(dateFrom) : null;
+            const toDate = dateTo ? new Date(dateTo) : null;
+            
+            if (fromDate && startDate < fromDate) return false;
+            if (toDate && startDate > toDate) return false;
+            return true;
+        });
+        
+        // Разделяем отфильтрованные окоты на активные и завершенные
+        const filteredActiveLambings = filteredAllLambings.filter(l => l.is_active);
+        const filteredCompletedLambings = filteredAllLambings.filter(l => !l.is_active);
+        
+        // Обновляем активные окоты
+        const activeLambingsList = document.getElementById('active-lambings-list');
+        if (filteredActiveLambings.length === 0) {
+            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов в выбранном диапазоне дат</div>';
+        } else {
+            activeLambingsList.innerHTML = filteredActiveLambings.map(lambing => createLambingCard(lambing, true)).join('');
+        }
+        
+        // Обновляем завершенные окоты
+        filteredLambings = filteredCompletedLambings;
+        currentPage = 1;
+        displayPage(1);
+    };
+    
+    window.clearHistoryDateFilter = function() {
+        // Очищаем глобальные переменные
+        window.historyDateFrom = '';
+        window.historyDateTo = '';
+        
+        document.getElementById('history-date-from').value = '';
+        document.getElementById('history-date-to').value = '';
+        
+        // Восстанавливаем все окоты
+        const allLambings = window.allLambings || lambings;
+        const activeLambings = allLambings.filter(l => l.is_active);
+        const completedLambings = allLambings.filter(l => !l.is_active);
+        
+        // Обновляем активные окоты
+        const activeLambingsList = document.getElementById('active-lambings-list');
+        if (activeLambings.length === 0) {
+            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов</div>';
+        } else {
+            activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
+        }
+        
+        // Обновляем завершенные окоты
+        filteredLambings = completedLambings;
+        currentPage = 1;
+        displayPage(1);
+    };
+    
+    // Глобальная функция для смены страницы
+    window.changeLambingHistoryPage = function(page) {
+        currentPage = page;
+        displayPage(page);
+    };
+    
+    // Показываем первую страницу
+    displayPage(1);
+}
+
+// Отображение истории окотов для отцов
+function displayFatherLambings(lambings) {
+    const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
+    
+    if (!fatherLambingHistoryList) {
+        return;
+    }
+    
+    // Сохраняем все окоты для фильтрации
+    window.allFatherLambings = lambings;
+    
+    if (lambings.length === 0) {
+        fatherLambingHistoryList.innerHTML = '<div class="no-lambings">Нет окотов, где это животное выступало как отец</div>';
+    } else {
+        // Инициализируем пагинацию для истории окотов отцов
+        initializeFatherLambingsPagination(lambings);
+    }
+}
+
+// Инициализация пагинации для истории окотов отцов
+function initializeFatherLambingsPagination(lambings) {
+    const itemsPerPage = 5;
+    let currentPage = 1;
+    let filteredLambings = lambings; // Для фильтрации
+    const totalPages = Math.ceil(filteredLambings.length / itemsPerPage);
+    
+    function displayPage(page) {
+        const startIndex = (page - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const pageItems = filteredLambings.slice(startIndex, endIndex);
+        
+        const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
+        
+        // Сохраняем текущие значения из полей перед перерисовкой
+        const currentDateFrom = document.getElementById('father-history-date-from')?.value || window.fatherHistoryDateFrom || '';
+        const currentDateTo = document.getElementById('father-history-date-to')?.value || window.fatherHistoryDateTo || '';
+        
+        // Обновляем глобальные переменные
+        window.fatherHistoryDateFrom = currentDateFrom;
+        window.fatherHistoryDateTo = currentDateTo;
+        
+        // Создаем фильтр с сохраненными значениями
+        const filterHtml = `
+            <div class="date-filter-container mb-3 p-3 bg-light rounded">
+                <h6>Фильтр по дате начала окота</h6>
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="father-history-date-from" class="form-label">С:</label>
+                        <input type="date" class="form-control" id="father-history-date-from" value="${currentDateFrom}">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="father-history-date-to" class="form-label">По:</label>
+                        <input type="date" class="form-control" id="father-history-date-to" value="${currentDateTo}">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-primary btn-sm me-2" onclick="applyFatherHistoryDateFilter()">Применить</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearFatherHistoryDateFilter()">Сбросить</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Обновляем содержимое
+        fatherLambingHistoryList.innerHTML = filterHtml + pageItems.map(lambing => createFatherLambingCard(lambing)).join('');
+        
+        // Обновляем пагинацию
+        updateFatherLambingsPagination(page, Math.ceil(filteredLambings.length / itemsPerPage));
+    }
+    
+    function updateFatherLambingsPagination(page, total) {
+        let paginationHtml = '<div class="pagination-container mt-3">';
+        
+        if (total > 1) {
+            paginationHtml += '<nav><ul class="pagination pagination-sm justify-content-center">';
+            
+            // Кнопка "Предыдущая"
+            if (page > 1) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${page - 1})">‹</a></li>`;
+            }
+            
+            // Определяем диапазон страниц для отображения (текущая + 2 слева + 2 справа)
+            const startPage = Math.max(1, page - 2);
+            const endPage = Math.min(total, page + 2);
+            
+            // Показываем первую страницу и многоточие, если нужно
+            if (startPage > 1) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(1)">1</a></li>`;
+                if (startPage > 2) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+            
+            // Номера страниц в диапазоне
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === page ? 'active' : '';
+                paginationHtml += `<li class="page-item ${activeClass}"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${i})">${i}</a></li>`;
+            }
+            
+            // Показываем многоточие и последнюю страницу, если нужно
+            if (endPage < total) {
+                if (endPage < total - 1) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${total})">${total}</a></li>`;
+            }
+            
+            // Кнопка "Следующая"
+            if (page < total) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${page + 1})">›</a></li>`;
+            }
+            
+            paginationHtml += '</ul></nav>';
+        }
+        
+        paginationHtml += `<div class="text-center text-muted small">Показано ${Math.min(itemsPerPage, filteredLambings.length - (page - 1) * itemsPerPage)} из ${filteredLambings.length} окотов</div>`;
+        paginationHtml += '</div>';
+        
+        const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
+        fatherLambingHistoryList.innerHTML += paginationHtml;
+    }
+    
+    // Глобальные функции для фильтрации
+    window.applyFatherHistoryDateFilter = function() {
+        const dateFrom = document.getElementById('father-history-date-from').value;
+        const dateTo = document.getElementById('father-history-date-to').value;
+        
+        // Сохраняем значения в глобальных переменных
+        window.fatherHistoryDateFrom = dateFrom;
+        window.fatherHistoryDateTo = dateTo;
+        
+        // Применяем фильтр ко всем окотам отца
+        const allFatherLambings = window.allFatherLambings || lambings;
+        filteredLambings = allFatherLambings.filter(lambing => {
+            const startDate = new Date(lambing.start_date);
+            const fromDate = dateFrom ? new Date(dateFrom) : null;
+            const toDate = dateTo ? new Date(dateTo) : null;
+            
+            if (fromDate && startDate < fromDate) return false;
+            if (toDate && startDate > toDate) return false;
+            return true;
+        });
+        
+        currentPage = 1;
+        displayPage(1);
+    };
+    
+    window.clearFatherHistoryDateFilter = function() {
+        // Очищаем глобальные переменные
+        window.fatherHistoryDateFrom = '';
+        window.fatherHistoryDateTo = '';
+        
+        document.getElementById('father-history-date-from').value = '';
+        document.getElementById('father-history-date-to').value = '';
+        
+        // Восстанавливаем все окоты отца
+        filteredLambings = window.allFatherLambings || lambings;
+        currentPage = 1;
+        displayPage(1);
+    };
+    
+    // Глобальная функция для смены страницы
+    window.changeFatherLambingsPage = function(page) {
+        currentPage = page;
+        displayPage(page);
+    };
+    
+    // Показываем первую страницу
+    displayPage(1);
 }
 
 // Создание карточки окота
@@ -731,6 +1113,9 @@ function createLambingCard(lambing, isActive) {
     const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
     const actualDate = lambing.actual_lambing_date ? 
         new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
+    
+    // Показываем примечание только если оно не об импорте
+    const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
     
     return `
         <div class="lambing-card ${isActive ? 'active' : 'completed'}">
@@ -746,12 +1131,65 @@ function createLambingCard(lambing, isActive) {
                     <span class="planned-date">${plannedDate}</span>
                 </div>
                 ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
-                ${lambing.number_of_lambs ? `<div><strong>Количество ягнят:</strong> ${lambing.number_of_lambs}</div>` : ''}
-                ${lambing.note ? `<div><strong>Примечание:</strong> ${lambing.note}</div>` : ''}
+                ${lambing.number_of_lambs ? `<div><strong>Количество детей:</strong> ${lambing.number_of_lambs}</div>` : ''}
+                ${shouldShowNote ? `<div><strong>Примечание:</strong> ${lambing.note}</div>` : ''}
             </div>
             ${isActive ? `
                 <div class="lambing-actions">
                     <button type="button" class="btn btn-success btn-sm" onclick="completeLambing(${lambing.id})">
+                        Завершить окот
+                    </button>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Создание карточки окота для отцов
+function createFatherLambingCard(lambing) {
+    const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
+    const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
+    const actualDate = lambing.actual_lambing_date ? 
+        new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
+    
+    // Определяем статус окота
+    const statusClass = lambing.is_active ? 'active' : 'completed';
+    const statusText = lambing.is_active ? 'Активный' : 'Завершен';
+    
+    // Формируем информацию о матери
+    let motherInfo = '';
+    if (lambing.mother_found) {
+        motherInfo = `${lambing.mother_type} ${lambing.mother_tag}`;
+    } else {
+        motherInfo = `${lambing.mother_type || 'Неизвестно'} ${lambing.mother_tag} (не найдена)`;
+    }
+    
+    // Показываем примечание только если оно не об импорте
+    const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
+    
+    return `
+        <div class="lambing-card ${statusClass}">
+            <div class="lambing-info">
+                <div>
+                    <strong>Статус:</strong> ${statusText}
+                </div>
+                <div>
+                    <strong>Мать:</strong> ${motherInfo}
+                </div>
+                <div>
+                    <strong>Дата случки:</strong> ${startDate}
+                </div>
+                <div>
+                    <strong>Планируемые роды:</strong> 
+                    <span class="planned-date">${plannedDate}</span>
+                </div>
+                ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
+                ${lambing.number_of_lambs ? `<div><strong>Количество детей:</strong> ${lambing.number_of_lambs}</div>` : ''}
+                ${shouldShowNote ? `<div><strong>Примечание:</strong> ${lambing.note}</div>` : ''}
+            </div>
+            ${lambing.is_active ? `
+                <div class="lambing-actions">
+                    <button type="button" class="btn btn-success btn-sm" onclick="completeFatherLambing(${lambing.id})">
                         Завершить окот
                     </button>
                 </div>
@@ -861,8 +1299,40 @@ async function completeLambing(lambingId) {
         console.error('Ошибка загрузки статусов:', error);
     }
     
+    // Инициализируем состояние чекбокса и контейнера форм
+    const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    const lambsFormsContainer = document.getElementById('lambs-forms-container');
+    const lambsCountInput = document.getElementById('lambs-count');
+    
+    // По умолчанию чекбокс отмечен, показываем формы
+    createLambsCheckbox.checked = true;
+    lambsFormsContainer.style.display = 'block';
+    
     // Генерируем формы для ягнят
     generateLambForms(1);
+    
+    // Добавляем обработчик для чекбокса создания ягнят
+    createLambsCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            // Создаем записи - показываем формы
+            lambsFormsContainer.style.display = 'block';
+            // Генерируем формы заново на основе текущего количества
+            const lambsCount = parseInt(lambsCountInput.value) || 1;
+            generateLambForms(lambsCount);
+        } else {
+            // Не создаем записи - скрываем формы
+            lambsFormsContainer.style.display = 'none';
+        }
+    });
+    
+    // Добавляем обработчик для изменения количества ягнят
+    lambsCountInput.addEventListener('change', function() {
+        const createLambs = createLambsCheckbox.checked;
+        if (createLambs) {
+            const count = parseInt(this.value) || 0;
+            generateLambForms(count);
+        }
+    });
     
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
@@ -897,6 +1367,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (animalType === 'sheep' || animalType === 'ewe') {
             console.log('4. Загружаем окоты...');
             await loadLambings();
+        }
+
+        // Загружаем историю окотов для производителей и баранов (как отцы)
+        if (animalType === 'maker' || animalType === 'ram') {
+            console.log('4. Загружаем историю окотов как отец...');
+            await loadFatherLambings();
         }
 
         console.log('5. Настраиваем кнопку аналитики...');
@@ -1078,22 +1554,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Завершение окота с созданием детей
+// Завершить окот (для отцов - производителей и баранов)
+async function completeFatherLambing(lambingId) {
+    // Сохраняем ID окота для использования в модальном окне
+    window.currentLambingId = lambingId;
+    
+    // Устанавливаем текущую дату как дату фактических родов
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('actual-lambing-date').value = today;
+    
+    // Загружаем список статусов (но не будем менять статус матери, если её нет в БД)
+    try {
+        const response = await fetch('/animals/api/all-statuses/');
+        const data = await response.json();
+        
+        const statuses = data.results || data;
+        
+        if (!Array.isArray(statuses)) {
+            console.error('Ожидался массив статусов, получено:', statuses);
+            return;
+        }
+        
+        const statusSelect = document.getElementById('new-mother-status');
+        statusSelect.innerHTML = '<option value="">Не менять статус матери</option>';
+        
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.textContent = status.status_type;
+            statusSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки статусов:', error);
+    }
+    
+    // Скрываем секцию создания ягнят (для отцов не создаем ягнят)
+    const lambsCreationSection = document.getElementById('lambs-creation-section');
+    if (lambsCreationSection) {
+        lambsCreationSection.style.display = 'none';
+    }
+    
+    // Показываем модальное окно
+    const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
+    modal.show();
+}
+
+// Обновляем функцию завершения окота для работы с отцами
 async function completeLambingWithChildren() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
     const lambingNote = document.getElementById('lambing-note').value;
-    const createLambs = document.getElementById('create-lambs-checkbox').checked;
+    const createLambs = document.getElementById('create-lambs-checkbox') ? document.getElementById('create-lambs-checkbox').checked : false;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
     
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
-        return;
-    }
-    
-    if (!newMotherStatusId) {
-        alert('Пожалуйста, выберите новый статус для матери');
         return;
     }
     
@@ -1103,6 +1619,12 @@ async function completeLambingWithChildren() {
         
         if (createLambs && lambsCount > 0) {
             const lambForms = document.querySelectorAll('.lamb-form');
+            
+            // Проверяем, что количество форм соответствует количеству ягнят
+            if (lambForms.length !== lambsCount) {
+                alert(`Количество форм ягнят (${lambForms.length}) не соответствует указанному количеству (${lambsCount})`);
+                return;
+            }
             
             for (let form of lambForms) {
                 const gender = form.querySelector('.lamb-gender').value;
@@ -1131,20 +1653,41 @@ async function completeLambingWithChildren() {
             actual_lambing_date: actualDate,
             number_of_lambs: lambsCount,
             note: lambingNote,
-            new_mother_status_id: parseInt(newMotherStatusId),
+            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null,
             lambs: lambsData
         };
         
         await apiRequest(`/animals/lambing/${lambingId}/complete-with-children/`, 'POST', completionData);
         
-        alert('Окот успешно завершен!' + (lambsData.length > 0 ? ` Создано ${lambsData.length} ягнят.` : ''));
+        // Формируем сообщение об успехе
+        let successMessage = 'Окот успешно завершен!';
+        if (createLambs && lambsData.length > 0) {
+            successMessage += ` Создано ${lambsData.length} ягнят.`;
+        } else if (lambsCount > 0) {
+            successMessage += ` Зафиксировано ${lambsCount} ягнят (без создания записей).`;
+        }
+        
+        alert(successMessage);
         
         // Закрываем модальное окно
         const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
         modal.hide();
         
         // Перезагружаем список окотов
-        await loadLambings();
+        const animalDetail = document.getElementById('animal-detail');
+        const animalType = animalDetail.dataset.animalType;
+        
+        if (animalType === 'sheep' || animalType === 'ewe') {
+            await loadLambings();
+        } else if (animalType === 'maker' || animalType === 'ram') {
+            await loadFatherLambings();
+        }
+        
+        // Показываем секцию создания ягнят обратно
+        const lambsCreationSection = document.getElementById('lambs-creation-section');
+        if (lambsCreationSection) {
+            lambsCreationSection.style.display = 'block';
+        }
         
     } catch (error) {
         console.error('Ошибка завершения окота:', error);

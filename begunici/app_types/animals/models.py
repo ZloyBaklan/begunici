@@ -33,23 +33,35 @@ class AnimalBase(models.Model):
     note = models.CharField(
         max_length=300, verbose_name="Примечание", null=True, blank=True
     )
-    is_archived = models.BooleanField(default=False, verbose_name="В архиве")
-    # Новые поля для родителей
-    mother = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
-        null=True,
+    rshn_tag = models.CharField(
+        max_length=50, 
+        verbose_name="Бирка РСХН", 
+        null=True, 
         blank=True,
-        related_name="%(class)s_children_mother",
-        verbose_name="Мать",
+        unique=True,
+        help_text="Уникальный номер бирки РСХН (необязательно)"
     )
-    father = models.ForeignKey(
-        Tag,
-        on_delete=models.SET_NULL,
+    date_otbivka = models.DateField(
+        verbose_name="Дата отбивки",
         null=True,
         blank=True,
-        related_name="%(class)s_children_father",
-        verbose_name="Отец",
+        help_text="Дата отбивки животного (необязательно)"
+    )
+    is_archived = models.BooleanField(default=False, verbose_name="В архиве")
+    # Поля для родителей (текстовые поля с номерами бирок)
+    mother = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name="Мать (номер бирки)",
+        help_text="Номер бирки матери (буквы и цифры без пробелов)"
+    )
+    father = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name="Отец (номер бирки)",
+        help_text="Номер бирки отца (буквы и цифры без пробелов)"
     )
 
     weight_records = models.ManyToManyField(
@@ -96,6 +108,43 @@ class AnimalBase(models.Model):
                 # Если не удается вычислить возраст, устанавливаем None
                 self.age = None
 
+    def get_age_display(self):
+        """
+        Возвращает возраст в формате 'X мес. (Y сут)'
+        """
+        if not self.birth_date:
+            return None
+            
+        try:
+            current_date = timezone.now().date()
+            
+            # Убеждаемся, что birth_date - это объект date
+            if isinstance(self.birth_date, str):
+                from datetime import datetime
+                birth_date = datetime.strptime(self.birth_date, '%Y-%m-%d').date()
+            else:
+                birth_date = self.birth_date
+            
+            delta = relativedelta(current_date, birth_date)
+            
+            # Рассчитываем полные месяцы
+            total_months = delta.years * 12 + delta.months
+            
+            # Рассчитываем дни (округляем до целых)
+            days = round(delta.days)
+            
+            if total_months == 0 and days == 0:
+                return "0 мес."
+            elif total_months == 0:
+                return f"{days} сут."
+            elif days == 0:
+                return f"{total_months} мес."
+            else:
+                return f"{total_months} мес. ({days} сут.)"
+                
+        except (ValueError, TypeError):
+            return None
+
     def get_animal_type(self):
         """
         Возвращает тип животного для каждого наследника.
@@ -104,6 +153,80 @@ class AnimalBase(models.Model):
         raise NotImplementedError(
             "Метод get_animal_type должен быть переопределён в дочерних классах."
         )
+
+    def get_mother_tag(self):
+        """Получить Tag объект матери, если он существует в БД"""
+        if not self.mother:
+            return None
+        try:
+            return Tag.objects.get(tag_number=self.mother)
+        except Tag.DoesNotExist:
+            return None
+
+    def get_father_tag(self):
+        """Получить Tag объект отца, если он существует в БД"""
+        if not self.father:
+            return None
+        try:
+            return Tag.objects.get(tag_number=self.father)
+        except Tag.DoesNotExist:
+            return None
+
+    def get_mother_display(self):
+        """Получить отображение матери (ссылка или текст)"""
+        if not self.mother:
+            return None
+        
+        mother_tag = self.get_mother_tag()
+        if mother_tag:
+            return {
+                'tag_number': self.mother,
+                'has_link': True,
+                'tag_obj': mother_tag
+            }
+        else:
+            return {
+                'tag_number': self.mother,
+                'has_link': False,
+                'tag_obj': None
+            }
+
+    def get_father_display(self):
+        """Получить отображение отца (ссылка или текст)"""
+        if not self.father:
+            return None
+        
+        father_tag = self.get_father_tag()
+        if father_tag:
+            return {
+                'tag_number': self.father,
+                'has_link': True,
+                'tag_obj': father_tag
+            }
+        else:
+            return {
+                'tag_number': self.father,
+                'has_link': False,
+                'tag_obj': None
+            }
+
+    def clean(self):
+        """Валидация полей модели"""
+        super().clean()
+        
+        # Валидация номера бирки матери
+        if self.mother:
+            self.mother = self.mother.strip()
+            if ' ' in self.mother:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({'mother': 'Номер бирки матери не должен содержать пробелы'})
+        
+        # Валидация номера бирки отца
+        if self.father:
+            self.father = self.father.strip()
+            if ' ' in self.father:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({'father': 'Номер бирки отца не должен содержать пробелы'})
 
     def save(self, *args, **kwargs):
         """
@@ -125,8 +248,8 @@ class AnimalBase(models.Model):
         if self.animal_status and self.animal_status.status_type in [
             "Убыл",
             "Убой", 
-            "продажа",
-            "Продажа",
+            "Продажа на мясо",
+            "Продажа на племя",
         ]:
             self.is_archived = True
         else:
@@ -216,6 +339,16 @@ class Lambing(models.Model):
         null=True, blank=True, related_name="lambings"
     )
     
+    # Поля для матери, которой нет в БД (для импорта исторических данных)
+    mother_tag_text = models.CharField(
+        max_length=50, verbose_name="Бирка матери (текст)", 
+        null=True, blank=True, help_text="Используется когда матери нет в БД"
+    )
+    mother_type_text = models.CharField(
+        max_length=20, verbose_name="Тип матери (текст)", 
+        null=True, blank=True, help_text="Овца/Ярка для матерей не в БД"
+    )
+    
     # Отец может быть либо производителем, либо бараном
     maker = models.ForeignKey(
         "Maker", on_delete=models.CASCADE, verbose_name="Производитель (Отец)",
@@ -265,6 +398,35 @@ class Lambing(models.Model):
             return "Овца"
         elif self.ewe:
             return "Ярка"
+        elif self.mother_type_text:
+            return self.mother_type_text
+        return None
+    
+    def get_mother_tag(self):
+        """Возвращает бирку матери"""
+        if self.sheep:
+            return self.sheep.tag.tag_number
+        elif self.ewe:
+            return self.ewe.tag.tag_number
+        elif self.mother_tag_text:
+            return self.mother_tag_text
+        return None
+    
+    def get_mother_display_info(self):
+        """Возвращает информацию о матери для отображения"""
+        if self.sheep or self.ewe:
+            mother = self.get_mother()
+            return {
+                'tag': mother.tag.tag_number,
+                'type': self.get_mother_type(),
+                'found': True
+            }
+        elif self.mother_tag_text:
+            return {
+                'tag': self.mother_tag_text,
+                'type': self.mother_type_text or 'Неизвестно',
+                'found': False
+            }
         return None
     
     def get_father_type(self):
@@ -277,10 +439,10 @@ class Lambing(models.Model):
 
     def calculate_planned_lambing_date(self):
         """
-        Рассчитываем планируемую дату окота (6 месяцев от даты начала)
+        Рассчитываем планируемую дату окота (150 дней от даты начала)
         """
         if self.start_date:
-            self.planned_lambing_date = self.start_date + relativedelta(months=6)
+            self.planned_lambing_date = self.start_date + timedelta(days=150)
 
     def complete_lambing(self):
         """Завершить окот"""
@@ -300,9 +462,16 @@ class Lambing(models.Model):
         """Валидация модели"""
         from django.core.exceptions import ValidationError
         
-        # Проверяем, что указана только одна мать
-        if not (self.sheep or self.ewe):
-            raise ValidationError("Должна быть указана мать (овца или ярка)")
+        # Проверяем, что указана мать (либо объект, либо текстовые поля)
+        has_mother_object = bool(self.sheep or self.ewe)
+        has_mother_text = bool(self.mother_tag_text)
+        
+        if not (has_mother_object or has_mother_text):
+            raise ValidationError("Должна быть указана мать (объект или текстовые данные)")
+        
+        if has_mother_object and has_mother_text:
+            raise ValidationError("Нельзя указывать и объект матери, и текстовые данные одновременно")
+            
         if self.sheep and self.ewe:
             raise ValidationError("Нельзя указывать и овцу, и ярку одновременно")
             
@@ -407,21 +576,39 @@ class Ewe(AnimalBase):
 
     # Метод для преобразования Ярки в Овцу после случки
     def to_sheep(self):
-        # Создаем новую овцу с теми же данными
+        # Создаем новую овцу с ВСЕМИ данными из AnimalBase
         sheep = Sheep.objects.create(
             tag=self.tag,
             animal_status=self.animal_status,
             birth_date=self.birth_date,
-            place=self.place,
+            age=self.age,  # ДОБАВЛЕНО: возраст
+            note=self.note,
+            rshn_tag=self.rshn_tag,  # ДОБАВЛЕНО: бирка РСХН
+            date_otbivka=self.date_otbivka,  # ДОБАВЛЕНО: дата отбивки
+            is_archived=self.is_archived,  # ДОБАВЛЕНО: статус архива
             mother=self.mother,
             father=self.father,
-            note=self.note,
+            place=self.place,
         )
         
-        # Переносим записи о весе (обновляем tag в записях)
+        # Переносим ManyToMany связи
         from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary
-        WeightRecord.objects.filter(tag=self.tag).update(tag=self.tag)
-        Veterinary.objects.filter(tag=self.tag).update(tag=self.tag)
+        
+        # Переносим записи о весе через ManyToMany связь
+        for weight_record in self.weight_records.all():
+            sheep.weight_records.add(weight_record)
+        
+        # Переносим ветеринарную историю через ManyToMany связь
+        for vet_record in self.veterinary_history.all():
+            sheep.veterinary_history.add(vet_record)
+        
+        # ВАЖНО: Переносим ВСЕ окоты ярки на новую овцу
+        from begunici.app_types.animals.models import Lambing
+        all_ewe_lambings = Lambing.objects.filter(ewe=self)
+        for lambing in all_ewe_lambings:
+            lambing.sheep = sheep
+            lambing.ewe = None
+            lambing.save()
         
         # Удаляем ярку
         self.delete()
@@ -495,11 +682,11 @@ class Sheep(AnimalBase):
     # Метод для установки планируемой даты окота
     def calculate_planned_lambing_date(self):
         """
-        Рассчитываем планируемую дату окота (155 дней от даты случки).
+        Рассчитываем планируемую дату окота (150 дней от даты случки).
         Если уже есть окот, то новая дата.
         """
         if not self.planned_lambing_date or self.is_new_lambing():
-            self.planned_lambing_date = timezone.now().date() + timedelta(days=155)
+            self.planned_lambing_date = timezone.now().date() + timedelta(days=150)
         self.save()
 
     def is_new_lambing(self):

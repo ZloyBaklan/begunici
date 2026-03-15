@@ -41,6 +41,11 @@
                         </div>
 
                         <div class="mb-3">
+                            <label for="rshn_tag" class="form-label">Бирка РСХН:</label>
+                            <input type="text" id="rshn_tag" name="rshn_tag" class="form-control" placeholder="Введите бирку РСХН">
+                        </div>
+
+                        <div class="mb-3">
                             <label for="note" class="form-label">Примечание:</label>
                             <input type="text" id="note" name="note" class="form-control" placeholder="Введите примечание">
                         </div>
@@ -90,6 +95,7 @@
                                     <th width="15%">Овчарня</th>
                                     <th width="18%">Последнее Взвешивание</th>
                                     <th width="15%">Последняя Ветобработка</th>
+                                    <th width="8%">Бирка РСХН</th>
                                     <th width="10%">Примечание</th>
                                 </tr>
                             </thead>
@@ -169,10 +175,18 @@
             </div>
             <div class="modal-body">
                 <div class="export-filters">
+                    <!-- Экспорт выбранных животных -->
+                    <div class="mb-3" id="export-selected-section" style="display: none;">
+                        <div class="alert alert-info">
+                            <strong>Выбрано животных для экспорта: <span id="selected-count">0</span></strong>
+                            <br>При экспорте выбранных животных другие фильтры недоступны.
+                        </div>
+                    </div>
+                    
                     <!-- Фильтр по количеству -->
-                    <div class="mb-3">
+                    <div class="mb-3" id="filter-limit-section">
                         <div class="form-check">
-                            <input type="checkbox" id="filter-limit-enabled" class="form-check-input">
+                            <input type="checkbox" id="filter-limit-enabled" class="form-check-input export-checkbox">
                             <label class="form-check-label" for="filter-limit-enabled">
                                 Экспортировать первые N животных
                             </label>
@@ -181,9 +195,9 @@
                     </div>
                     
                     <!-- Фильтр по весу -->
-                    <div class="mb-3">
+                    <div class="mb-3" id="filter-weight-section">
                         <div class="form-check">
-                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input">
+                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input export-checkbox">
                             <label class="form-check-label" for="filter-weight-enabled">
                                 Фильтр по весу (кг)
                             </label>
@@ -199,9 +213,9 @@
                     </div>
                     
                     <!-- Фильтр по возрасту -->
-                    <div class="mb-3">
+                    <div class="mb-3" id="filter-age-section">
                         <div class="form-check">
-                            <input type="checkbox" id="filter-age-enabled" class="form-check-input">
+                            <input type="checkbox" id="filter-age-enabled" class="form-check-input export-checkbox">
                             <label class="form-check-label" for="filter-age-enabled">
                                 Фильтр по возрасту (месяцы)
                             </label>
@@ -217,9 +231,9 @@
                     </div>
                     
                     <!-- Включить детали -->
-                    <div class="mb-3">
+                    <div class="mb-3" id="include-details-section">
                         <div class="form-check">
-                            <input type="checkbox" id="include-details" class="form-check-input">
+                            <input type="checkbox" id="include-details" class="form-check-input export-checkbox">
                             <label class="form-check-label" for="include-details">
                                 Включить родителей, детей и историю (вес, ветобработки)
                             </label>
@@ -253,6 +267,27 @@
 
 .form-check-input {
     margin-top: 0.125rem;
+}
+
+/* Специальные стили для чекбоксов в экспорт модале */
+.export-checkbox {
+    width: 18px !important;
+    height: 18px !important;
+    border: 2px solid #495057 !important;
+    background-color: #ffffff !important;
+    cursor: pointer;
+    margin-top: 0.125rem;
+}
+
+.export-checkbox:checked {
+    background-color: #0d6efd !important;
+    border-color: #0d6efd !important;
+}
+
+.export-checkbox:focus {
+    border-color: #86b7fe !important;
+    outline: 0;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
 }
 
 /* Простые стили для чекбоксов */

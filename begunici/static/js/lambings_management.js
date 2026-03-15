@@ -5,6 +5,8 @@ let selectedMothers = [];
 let selectedFather = null;
 let currentPage = 1;
 const pageSize = 10;
+let dateFrom = '';
+let dateTo = '';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM загружен, инициализируем страницу управления окотами');
@@ -12,6 +14,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Устанавливаем текущую дату как дату начала окота
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('lambing-start-date').value = today;
+    
+    // Восстанавливаем сохраненные значения фильтра дат
+    if (window.lambingsDateFrom) {
+        document.getElementById('date-from').value = window.lambingsDateFrom;
+    }
+    if (window.lambingsDateTo) {
+        document.getElementById('date-to').value = window.lambingsDateTo;
+    }
     
     // Загружаем активные окоты
     loadActiveLambings();
@@ -29,7 +39,18 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadActiveLambings() {
     try {
         console.log('Загружаем активные окоты, страница:', currentPage);
-        const response = await apiRequest(`/animals/lambing/?is_active=true&page=${currentPage}&page_size=${pageSize}&ordering=planned_lambing_date`);
+        
+        // Строим URL с параметрами фильтрации
+        let url = `/animals/lambing/?is_active=true&page=${currentPage}&page_size=${pageSize}&ordering=planned_lambing_date`;
+        
+        if (dateFrom) {
+            url += `&start_date_from=${dateFrom}`;
+        }
+        if (dateTo) {
+            url += `&start_date_to=${dateTo}`;
+        }
+        
+        const response = await apiRequest(url);
         console.log('Ответ API:', response);
         
         const lambings = response.results || response;
@@ -65,11 +86,12 @@ function createLambingRow(lambing) {
     const fatherTag = lambing.father_tag || 'Неизвестно';
     const motherType = lambing.mother_type || 'Неизвестно';
     const fatherType = lambing.father_type || 'Неизвестно';
+    const motherFound = lambing.mother_found !== undefined ? lambing.mother_found : true; // По умолчанию считаем найденной
     const note = lambing.note || '';
     
     // Создаем ссылки на животных
-    const motherLink = createAnimalLink(motherTag, motherType);
-    const fatherLink = createAnimalLink(fatherTag, fatherType);
+    const motherLink = createAnimalLink(motherTag, motherType, motherFound);
+    const fatherLink = createAnimalLink(fatherTag, fatherType, true); // Отцы всегда должны быть в БД
     
     // Форматируем даты
     const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
@@ -92,9 +114,14 @@ function createLambingRow(lambing) {
 }
 
 // Создание ссылки на животное
-function createAnimalLink(tagNumber, animalType) {
+function createAnimalLink(tagNumber, animalType, isFound = true) {
     if (tagNumber === 'Неизвестно' || animalType === 'Неизвестно') {
         return `${tagNumber} (${animalType})`;
+    }
+    
+    // Если животное не найдено в БД, показываем без ссылки
+    if (!isFound) {
+        return `${tagNumber} (${animalType}) (не найдена)`;
     }
     
     // Определяем URL в зависимости от типа животного
@@ -119,34 +146,114 @@ function createAnimalLink(tagNumber, animalType) {
 
 // Обновление пагинации
 function updatePagination(response) {
-    const pagination = document.getElementById('pagination');
-    pagination.innerHTML = '';
+    const paginationList = document.getElementById('pagination-list');
+    const paginationInfo = document.getElementById('pagination-info');
+    
+    paginationList.innerHTML = '';
+    paginationInfo.innerHTML = '';
 
+    if (!response.count) {
+        return;
+    }
+
+    const totalPages = Math.ceil(response.count / pageSize);
+    const currentPageNum = currentPage;
+
+    // Кнопка "Предыдущая"
     if (response.previous) {
-        const prevButton = document.createElement('button');
-        prevButton.innerText = 'Предыдущая';
-        prevButton.className = 'btn btn-secondary me-2';
-        prevButton.onclick = () => {
-            currentPage--;
-            loadActiveLambings();
-        };
-        pagination.appendChild(prevButton);
+        const prevItem = document.createElement('li');
+        prevItem.className = 'page-item';
+        prevItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changePage(${currentPageNum - 1})">‹</a>`;
+        paginationList.appendChild(prevItem);
     }
 
+    // Номера страниц
+    const startPage = Math.max(1, currentPageNum - 2);
+    const endPage = Math.min(totalPages, currentPageNum + 2);
+
+    // Показываем первую страницу и многоточие, если нужно
+    if (startPage > 1) {
+        const firstItem = document.createElement('li');
+        firstItem.className = 'page-item';
+        firstItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changePage(1)">1</a>`;
+        paginationList.appendChild(firstItem);
+        
+        if (startPage > 2) {
+            const dotsItem = document.createElement('li');
+            dotsItem.className = 'page-item disabled';
+            dotsItem.innerHTML = `<span class="page-link">...</span>`;
+            paginationList.appendChild(dotsItem);
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const pageItem = document.createElement('li');
+        pageItem.className = `page-item ${i === currentPageNum ? 'active' : ''}`;
+        pageItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changePage(${i})">${i}</a>`;
+        paginationList.appendChild(pageItem);
+    }
+
+    // Показываем многоточие и последнюю страницу, если нужно
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            const dotsItem = document.createElement('li');
+            dotsItem.className = 'page-item disabled';
+            dotsItem.innerHTML = `<span class="page-link">...</span>`;
+            paginationList.appendChild(dotsItem);
+        }
+        
+        const lastItem = document.createElement('li');
+        lastItem.className = 'page-item';
+        lastItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changePage(${totalPages})">${totalPages}</a>`;
+        paginationList.appendChild(lastItem);
+    }
+
+    // Кнопка "Следующая"
     if (response.next) {
-        const nextButton = document.createElement('button');
-        nextButton.innerText = 'Следующая';
-        nextButton.className = 'btn btn-secondary me-2';
-        nextButton.onclick = () => {
-            currentPage++;
-            loadActiveLambings();
-        };
-        pagination.appendChild(nextButton);
+        const nextItem = document.createElement('li');
+        nextItem.className = 'page-item';
+        nextItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changePage(${currentPageNum + 1})">›</a>`;
+        paginationList.appendChild(nextItem);
     }
 
-    const pageInfo = document.createElement('span');
-    pageInfo.innerText = ` Страница ${currentPage}`;
-    pagination.appendChild(pageInfo);
+    // Информация о странице
+    const startItem = (currentPageNum - 1) * pageSize + 1;
+    const endItem = Math.min(currentPageNum * pageSize, response.count);
+    paginationInfo.innerHTML = `Показано ${startItem}-${endItem} из ${response.count} окотов`;
+}
+
+// Смена страницы
+function changePage(page) {
+    currentPage = page;
+    loadActiveLambings();
+}
+
+// Применить фильтр по датам
+function applyDateFilter() {
+    dateFrom = document.getElementById('date-from').value;
+    dateTo = document.getElementById('date-to').value;
+    
+    // Сохраняем значения в глобальных переменных
+    window.lambingsDateFrom = dateFrom;
+    window.lambingsDateTo = dateTo;
+    
+    currentPage = 1; // Сбрасываем на первую страницу
+    loadActiveLambings();
+}
+
+// Сбросить фильтр по датам
+function clearDateFilter() {
+    document.getElementById('date-from').value = '';
+    document.getElementById('date-to').value = '';
+    
+    // Очищаем глобальные переменные
+    window.lambingsDateFrom = '';
+    window.lambingsDateTo = '';
+    
+    dateFrom = '';
+    dateTo = '';
+    currentPage = 1;
+    loadActiveLambings();
 }
 
 // Показать модальное окно выбора матерей
@@ -644,3 +751,6 @@ window.createMultipleLambings = createMultipleLambings;
 window.showCompleteLambingModal = showCompleteLambingModal;
 window.completeLambingWithChildren = completeLambingWithChildren;
 window.removeLambForm = removeLambForm;
+window.changePage = changePage;
+window.applyDateFilter = applyDateFilter;
+window.clearDateFilter = clearDateFilter;

@@ -62,7 +62,7 @@ function displayArchive(data) {
         const status = animal.status || 'Не указан';
         const statusColor = animal.status_color || '#FFFFFF';
         const archivedDate = formatDateToOutput(animal.archived_date) || 'Не указана';
-        const age = animal.age ? `${animal.age} мес.` : 'Не указан';
+        const age = animal.age || 'Не указан';
         const place = animal.place || 'Не указано';
         
         // Определяем тип животного и URL
@@ -191,7 +191,7 @@ async function loadRestoreStatuses() {
         const statuses = await apiRequest('/veterinary/api/status/');
         // Исключаем архивные статусы
         const activeStatuses = statuses.filter(status => 
-            !['Убыл', 'Убой', 'Продажа'].includes(status.status_type)
+            !['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById('restore-status-select');

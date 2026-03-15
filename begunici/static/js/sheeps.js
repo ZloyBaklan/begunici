@@ -25,6 +25,7 @@ async function saveSheep() {
         animal_status_id: formData.get('animal_status') ? parseInt(formData.get('animal_status')) : null,
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') ? parseInt(formData.get('place')) : null,
+        rshn_tag: formData.get('rshn_tag') || null,
         note: formData.get('note') || ''
     };
 
@@ -78,14 +79,15 @@ function renderSheeps(sheeps) {
             <td>
                 <input type="checkbox" 
                 class="select-sheep"  
-                data-tag="${sheep.tag.tag_number}">
+                data-tag="${sheep.tag.tag_number}"
+                data-animal-id="${sheep.id}">
             </td>
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td><a href="/animals/sheep/${sheep.tag.tag_number}/info/">${sheep.tag.tag_number}</a></td>
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${sheep.age ? `${sheep.age} мес.` : 'Не указан'}</td>
+            <td>${sheep.age || 'Не указан'}</td>
             <td>${sheep.place ? sheep.place.sheepfold : 'Не указано'}</td>
             <td>${sheep.weight_records && sheep.weight_records.length > 0 
                 ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 
@@ -120,6 +122,7 @@ function renderSheeps(sheeps) {
                     return displayText;
                 })()
                 : 'Нет записей'}</td>
+            <td>${sheep.rshn_tag || ''}</td>
             <td>${sheep.note || ''}</td>
         </tr>`;
         sheepTable.innerHTML += row;
@@ -290,7 +293,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = '';

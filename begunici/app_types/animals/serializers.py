@@ -58,24 +58,15 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archived_date = (
         serializers.SerializerMethodField()
     )  # Новое поле для даты архивирования
-    mother = TagSerializer(read_only=True)  # Для отображения полной информации о матери
-    mother_id = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(),
-        write_only=True,
-        source="mother",
-        allow_null=True,
-        required=False,
-    )  # Для указания идентификатора матери
-
-    father = TagSerializer(read_only=True)  # Для отображения полной информации об отце
-    father_id = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(),
-        write_only=True,
-        source="father",
-        allow_null=True,
-        required=False,
-    )  # Для указания идентификатора отца
+    mother = serializers.CharField(read_only=True)  # Для отображения номера бирки матери
+    mother_display = serializers.SerializerMethodField()  # Для отображения с информацией о ссылке
+    
+    father = serializers.CharField(read_only=True)  # Для отображения номера бирки отца  
+    father_display = serializers.SerializerMethodField()  # Для отображения с информацией о ссылке
     children = serializers.SerializerMethodField()
+    
+    # Поле возраста в новом формате
+    age = serializers.SerializerMethodField()
     
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
@@ -87,6 +78,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     def validate_birth_date(self, value):
         if value > timezone.now().date():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
+        return value
+
+    def validate_date_otbivka(self, value):
+        if value and value > timezone.now().date():
+            raise serializers.ValidationError("Дата отбивки не может быть в будущем.")
         return value
 
     def create(self, validated_data):
@@ -223,16 +219,16 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             old_mother = instance.mother
             new_mother = validated_data['mother']
             if old_mother != new_mother:
-                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                new_mother_str = new_mother.tag_number if new_mother else 'Не указана'
+                old_mother_str = old_mother if old_mother else 'Не указана'
+                new_mother_str = new_mother if new_mother else 'Не указана'
                 changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
         
         if 'father' in validated_data:
             old_father = instance.father
             new_father = validated_data['father']
             if old_father != new_father:
-                old_father_str = old_father.tag_number if old_father else 'Не указан'
-                new_father_str = new_father.tag_number if new_father else 'Не указан'
+                old_father_str = old_father if old_father else 'Не указан'
+                new_father_str = new_father if new_father else 'Не указан'
                 changes.append(f"Отец: {old_father_str} → {new_father_str}")
         
         # Обновление бирки (поле tag приходит из source='tag' для tag_number)
@@ -366,6 +362,26 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 return last_status_change.change_date
         return None
 
+    def get_mother_display(self, obj):
+        """Получить отображение матери с информацией о ссылке"""
+        mother_display = obj.get_mother_display()
+        if mother_display and mother_display.get('tag_obj'):
+            # Заменяем Tag объект на сериализованные данные
+            mother_display['tag_obj'] = TagSerializer(mother_display['tag_obj']).data
+        return mother_display
+
+    def get_father_display(self, obj):
+        """Получить отображение отца с информацией о ссылке"""
+        father_display = obj.get_father_display()
+        if father_display and father_display.get('tag_obj'):
+            # Заменяем Tag объект на сериализованные данные
+            father_display['tag_obj'] = TagSerializer(father_display['tag_obj']).data
+        return father_display
+
+    def get_age(self, obj):
+        """Возвращает возраст в новом формате 'X мес. (Y сут.)'"""
+        return obj.get_age_display()
+
 
 
 class MakerSerializer(AnimalBaseSerializer):
@@ -388,7 +404,7 @@ class UniversalChildSerializer(serializers.Serializer):
     """Универсальный сериализатор для детей любого типа животного"""
     tag_number = serializers.SerializerMethodField()
     animal_type = serializers.SerializerMethodField()
-    age = serializers.DecimalField(max_digits=5, decimal_places=1, read_only=True)
+    age = serializers.SerializerMethodField()
     link = serializers.SerializerMethodField()
     is_archived = serializers.BooleanField(read_only=True)
     archive_status = serializers.SerializerMethodField()
@@ -445,6 +461,10 @@ class UniversalChildSerializer(serializers.Serializer):
             "Ram": "ram",
         }
         return f"/animals/{animal_type_to_route.get(obj.tag.animal_type, 'unknown')}/{obj.tag.tag_number}/info/"
+
+    def get_age(self, obj):
+        """Возвращает возраст в новом формате 'X мес. (Y сут.)'"""
+        return obj.get_age_display()
 
 
 class MakerChildSerializer(UniversalChildSerializer):
@@ -528,9 +548,10 @@ class LambingSerializer(serializers.ModelSerializer):
     father_tag = serializers.SerializerMethodField()
     mother_type = serializers.SerializerMethodField()
     father_type = serializers.SerializerMethodField()
+    mother_found = serializers.SerializerMethodField()  # Новое поле
     
     # Поля для записи
-    mother_tag_number = serializers.CharField(write_only=True, required=True)
+    mother_tag_number = serializers.CharField(write_only=True, required=False)
     father_tag_number = serializers.CharField(write_only=True, required=True)
     
     class Meta:
@@ -538,15 +559,15 @@ class LambingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
             'number_of_lambs', 'note', 'is_active', 'created_at',
-            'mother_tag', 'father_tag', 'mother_type', 'father_type',
-            'mother_tag_number', 'father_tag_number'
+            'mother_tag', 'father_tag', 'mother_type', 'father_type', 'mother_found',
+            'mother_tag_number', 'father_tag_number',
+            'mother_tag_text', 'mother_type_text'  # Добавляем новые поля
         ]
         read_only_fields = ['id', 'planned_lambing_date', 'created_at']
     
     def get_mother_tag(self, obj):
         try:
-            mother = obj.get_mother()
-            return mother.tag.tag_number if mother and mother.tag else None
+            return obj.get_mother_tag()
         except Exception:
             return None
     
@@ -568,6 +589,10 @@ class LambingSerializer(serializers.ModelSerializer):
             return obj.get_father_type()
         except Exception:
             return None
+    
+    def get_mother_found(self, obj):
+        """Возвращает True если мать найдена в БД, False если только текстовые данные"""
+        return bool(obj.sheep or obj.ewe)
     
     def validate(self, data):
         mother_tag_number = data.get('mother_tag_number')
@@ -635,10 +660,10 @@ class LambingSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
-        # Рассчитываем планируемую дату окота (6 месяцев от начала)
+        # Рассчитываем планируемую дату окота (150 дней от начала)
         if 'start_date' in validated_data and not validated_data.get('planned_lambing_date'):
-            from dateutil.relativedelta import relativedelta
-            validated_data['planned_lambing_date'] = validated_data['start_date'] + relativedelta(months=6)
+            from datetime import timedelta
+            validated_data['planned_lambing_date'] = validated_data['start_date'] + timedelta(days=150)
         
         return super().create(validated_data)
 
@@ -656,7 +681,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     )
     place = serializers.CharField(source="place__sheepfold", allow_null=True)
     birth_date = serializers.DateField()
-    age = serializers.DecimalField(max_digits=5, decimal_places=1)
+    age = serializers.SerializerMethodField()  # Изменяем на SerializerMethodField
 
     def to_representation(self, instance):
         # Если instance — это словарь (после использования .values())
@@ -679,6 +704,41 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                 except Tag.DoesNotExist:
                     pass
             
+            # Вычисляем возраст в новом формате для словарей
+            age_display = None
+            if instance.get("birth_date"):
+                try:
+                    from django.utils import timezone
+                    from dateutil.relativedelta import relativedelta
+                    
+                    current_date = timezone.now().date()
+                    birth_date = instance["birth_date"]
+                    
+                    # Убеждаемся, что birth_date - это объект date
+                    if isinstance(birth_date, str):
+                        from datetime import datetime
+                        birth_date = datetime.strptime(birth_date, '%Y-%m-%d').date()
+                    
+                    delta = relativedelta(current_date, birth_date)
+                    
+                    # Рассчитываем полные месяцы
+                    total_months = delta.years * 12 + delta.months
+                    
+                    # Рассчитываем дни (округляем до целых)
+                    days = round(delta.days)
+                    
+                    if total_months == 0 and days == 0:
+                        age_display = "0 мес."
+                    elif total_months == 0:
+                        age_display = f"{days} сут."
+                    elif days == 0:
+                        age_display = f"{total_months} мес."
+                    else:
+                        age_display = f"{total_months} мес. ({days} сут.)"
+                        
+                except (ValueError, TypeError):
+                    age_display = None
+            
             return {
                 "tag_number": instance["tag__tag_number"],
                 "animal_type": instance["tag__animal_type"],
@@ -686,7 +746,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                 "archived_date": archived_date,
                 "place": instance.get("place__sheepfold", "Нет данных"),
                 "birth_date": instance["birth_date"],
-                "age": instance["age"],
+                "age": age_display,
             }
         
         # Если instance — это объект модели
@@ -717,8 +777,18 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "archived_date": archived_date,
             "place": instance.place.sheepfold if instance.place else "Нет данных",
             "birth_date": instance.birth_date,
-            "age": instance.age,
+            "age": instance.get_age_display(),  # Используем новый формат
         }
+
+    def get_age(self, obj):
+        """Возвращает возраст в новом формате 'X мес. (Y сут.)'"""
+        if isinstance(obj, dict):
+            # Для словарей нужно создать временный объект или вычислить возраст
+            # Пока возвращаем None, так как для словарей сложно вычислить возраст
+            return None
+        else:
+            # Для объектов модели используем метод get_age_display
+            return obj.get_age_display()
 
 
 class CalendarNoteSerializer(serializers.ModelSerializer):

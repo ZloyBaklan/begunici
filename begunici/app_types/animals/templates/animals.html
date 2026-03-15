@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h1>Размещение и окоты животных</h1>
+    <h1>Дополнительные элементы управления</h1>
 
 
     <div class="row">
@@ -81,14 +81,17 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h5>Размещение и окоты животных</h5>
+                    <h5>Дополнительные элементы управления</h5>
                 </div>
                 <div class="card-body text-center">
                     <a href="{% url 'places_map' %}" class="btn btn-primary btn-lg me-3">
                         Карта овчарен
                     </a>
-                    <a href="{% url 'animals:lambings' %}" class="btn btn-primary btn-lg">
+                    <a href="{% url 'animals:lambings' %}" class="btn btn-primary btn-lg me-3">
                         Управление окотами
+                    </a>
+                    <a href="{% url 'animals:otbivka' %}" class="btn btn-primary btn-lg">
+                        Отбивка
                     </a>
                 </div>
             </div>

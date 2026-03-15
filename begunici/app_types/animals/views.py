@@ -4,7 +4,11 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from django.shortcuts import render
 from django.views.generic import TemplateView
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
+from django.db.models import Q
+from django.core.paginator import Paginator
+from dateutil.relativedelta import relativedelta
+from datetime import datetime
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
 from .serializers import (
@@ -102,6 +106,7 @@ class MakerViewSet(AnimalBaseViewSet):
     filter_backends = [SearchFilter]
     search_fields = [
         "tag__tag_number",
+        "rshn_tag",
         "animal_status__status_type",
         "place__sheepfold",
     ]
@@ -360,42 +365,42 @@ class MakerViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number:
-            try:
-                mother_tag = Tag.objects.get(tag_number=mother_tag_number)
-                if maker.mother != mother_tag:
-                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
-                maker.mother = mother_tag
-            except Tag.DoesNotExist:
+        if mother_tag_number is not None:  # Проверяем на None, пустая строка тоже валидна
+            # Очищаем от пробелов
+            mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
+            
+            # Валидация: не должно быть пробелов внутри номера
+            if mother_tag_number and ' ' in mother_tag_number:
                 return Response(
-                    {"error": f"Mother tag {mother_tag_number} not found"},
+                    {"error": "Номер бирки матери не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif mother_tag_number is None:
-            if maker.mother is not None:
-                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                changes.append(f"Мать: {old_mother_str} → Не указана")
-            maker.mother = None  # Если явно передан null, удаляем маму
+            
+            if maker.mother != mother_tag_number:
+                old_mother_str = old_mother if old_mother else 'Не указана'
+                new_mother_str = mother_tag_number if mother_tag_number else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
+            
+            maker.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number:
-            try:
-                father_tag = Tag.objects.get(tag_number=father_tag_number)
-                if maker.father != father_tag:
-                    old_father_str = old_father.tag_number if old_father else 'Не указан'
-                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
-                maker.father = father_tag
-            except Tag.DoesNotExist:
+        if father_tag_number is not None:  # Проверяем на None, пустая строка тоже валидна
+            # Очищаем от пробелов
+            father_tag_number = father_tag_number.strip() if father_tag_number else ""
+            
+            # Валидация: не должно быть пробелов внутри номера
+            if father_tag_number and ' ' in father_tag_number:
                 return Response(
-                    {"error": f"Father tag {father_tag_number} not found"},
+                    {"error": "Номер бирки отца не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif father_tag_number is None:
-            if maker.father is not None:
-                old_father_str = old_father.tag_number if old_father else 'Не указан'
-                changes.append(f"Отец: {old_father_str} → Не указан")
-            maker.father = None  # Если явно передан null, удаляем папу
+            
+            if maker.father != father_tag_number:
+                old_father_str = old_father if old_father else 'Не указан'
+                new_father_str = father_tag_number if father_tag_number else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → {new_father_str}")
+            
+            maker.father = father_tag_number if father_tag_number else None
 
         maker.save()
         
@@ -495,6 +500,7 @@ class RamViewSet(AnimalBaseViewSet):
     filter_backends = [SearchFilter]
     search_fields = [
         "tag__tag_number",
+        "rshn_tag",
         "animal_status__status_type",
         "place__sheepfold",
     ]
@@ -532,42 +538,38 @@ class RamViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number:
-            try:
-                mother_tag = Tag.objects.get(tag_number=mother_tag_number)
-                if ram.mother != mother_tag:
-                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
-                ram.mother = mother_tag
-            except Tag.DoesNotExist:
+        if mother_tag_number is not None:
+            mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
+            
+            if mother_tag_number and ' ' in mother_tag_number:
                 return Response(
-                    {"error": f"Mother tag {mother_tag_number} not found"},
+                    {"error": "Номер бирки матери не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif mother_tag_number is None:
-            if ram.mother is not None:
-                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                changes.append(f"Мать: {old_mother_str} → Не указана")
-            ram.mother = None
+            
+            if ram.mother != mother_tag_number:
+                old_mother_str = old_mother if old_mother else 'Не указана'
+                new_mother_str = mother_tag_number if mother_tag_number else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
+            
+            ram.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number:
-            try:
-                father_tag = Tag.objects.get(tag_number=father_tag_number)
-                if ram.father != father_tag:
-                    old_father_str = old_father.tag_number if old_father else 'Не указан'
-                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
-                ram.father = father_tag
-            except Tag.DoesNotExist:
+        if father_tag_number is not None:
+            father_tag_number = father_tag_number.strip() if father_tag_number else ""
+            
+            if father_tag_number and ' ' in father_tag_number:
                 return Response(
-                    {"error": f"Father tag {father_tag_number} not found"},
+                    {"error": "Номер бирки отца не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif father_tag_number is None:
-            if ram.father is not None:
-                old_father_str = old_father.tag_number if old_father else 'Не указан'
-                changes.append(f"Отец: {old_father_str} → Не указан")
-            ram.father = None
+            
+            if ram.father != father_tag_number:
+                old_father_str = old_father if old_father else 'Не указан'
+                new_father_str = father_tag_number if father_tag_number else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → {new_father_str}")
+            
+            ram.father = father_tag_number if father_tag_number else None
 
         ram.save()
         
@@ -787,6 +789,7 @@ class EweViewSet(AnimalBaseViewSet):
     filter_backends = [SearchFilter]
     search_fields = [
         "tag__tag_number",
+        "rshn_tag",
         "animal_status__status_type",
         "place__sheepfold",
     ]
@@ -838,42 +841,38 @@ class EweViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number:
-            try:
-                mother_tag = Tag.objects.get(tag_number=mother_tag_number)
-                if ewe.mother != mother_tag:
-                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
-                ewe.mother = mother_tag
-            except Tag.DoesNotExist:
+        if mother_tag_number is not None:
+            mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
+            
+            if mother_tag_number and ' ' in mother_tag_number:
                 return Response(
-                    {"error": f"Mother tag {mother_tag_number} not found"},
+                    {"error": "Номер бирки матери не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif mother_tag_number is None:
-            if ewe.mother is not None:
-                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                changes.append(f"Мать: {old_mother_str} → Не указана")
-            ewe.mother = None
+            
+            if ewe.mother != mother_tag_number:
+                old_mother_str = old_mother if old_mother else 'Не указана'
+                new_mother_str = mother_tag_number if mother_tag_number else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
+            
+            ewe.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number:
-            try:
-                father_tag = Tag.objects.get(tag_number=father_tag_number)
-                if ewe.father != father_tag:
-                    old_father_str = old_father.tag_number if old_father else 'Не указан'
-                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
-                ewe.father = father_tag
-            except Tag.DoesNotExist:
+        if father_tag_number is not None:
+            father_tag_number = father_tag_number.strip() if father_tag_number else ""
+            
+            if father_tag_number and ' ' in father_tag_number:
                 return Response(
-                    {"error": f"Father tag {father_tag_number} not found"},
+                    {"error": "Номер бирки отца не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif father_tag_number is None:
-            if ewe.father is not None:
-                old_father_str = old_father.tag_number if old_father else 'Не указан'
-                changes.append(f"Отец: {old_father_str} → Не указан")
-            ewe.father = None
+            
+            if ewe.father != father_tag_number:
+                old_father_str = old_father if old_father else 'Не указан'
+                new_father_str = father_tag_number if father_tag_number else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → {new_father_str}")
+            
+            ewe.father = father_tag_number if father_tag_number else None
 
         ewe.save()
         
@@ -1093,6 +1092,7 @@ class SheepViewSet(AnimalBaseViewSet):
     filter_backends = [SearchFilter]
     search_fields = [
         "tag__tag_number",
+        "rshn_tag",
         "animal_status__status_type",
         "place__sheepfold",
     ]
@@ -1141,42 +1141,38 @@ class SheepViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number:
-            try:
-                mother_tag = Tag.objects.get(tag_number=mother_tag_number)
-                if sheep.mother != mother_tag:
-                    old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                    changes.append(f"Мать: {old_mother_str} → {mother_tag.tag_number}")
-                sheep.mother = mother_tag
-            except Tag.DoesNotExist:
+        if mother_tag_number is not None:
+            mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
+            
+            if mother_tag_number and ' ' in mother_tag_number:
                 return Response(
-                    {"error": f"Mother tag {mother_tag_number} not found"},
+                    {"error": "Номер бирки матери не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif mother_tag_number is None:
-            if sheep.mother is not None:
-                old_mother_str = old_mother.tag_number if old_mother else 'Не указана'
-                changes.append(f"Мать: {old_mother_str} → Не указана")
-            sheep.mother = None
+            
+            if sheep.mother != mother_tag_number:
+                old_mother_str = old_mother if old_mother else 'Не указана'
+                new_mother_str = mother_tag_number if mother_tag_number else 'Не указана'
+                changes.append(f"Мать: {old_mother_str} → {new_mother_str}")
+            
+            sheep.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number:
-            try:
-                father_tag = Tag.objects.get(tag_number=father_tag_number)
-                if sheep.father != father_tag:
-                    old_father_str = old_father.tag_number if old_father else 'Не указан'
-                    changes.append(f"Отец: {old_father_str} → {father_tag.tag_number}")
-                sheep.father = father_tag
-            except Tag.DoesNotExist:
+        if father_tag_number is not None:
+            father_tag_number = father_tag_number.strip() if father_tag_number else ""
+            
+            if father_tag_number and ' ' in father_tag_number:
                 return Response(
-                    {"error": f"Father tag {father_tag_number} not found"},
+                    {"error": "Номер бирки отца не должен содержать пробелы"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif father_tag_number is None:
-            if sheep.father is not None:
-                old_father_str = old_father.tag_number if old_father else 'Не указан'
-                changes.append(f"Отец: {old_father_str} → Не указан")
-            sheep.father = None
+            
+            if sheep.father != father_tag_number:
+                old_father_str = old_father if old_father else 'Не указан'
+                new_father_str = father_tag_number if father_tag_number else 'Не указан'
+                changes.append(f"Отец: {old_father_str} → {new_father_str}")
+            
+            sheep.father = father_tag_number if father_tag_number else None
 
         sheep.save()
         
@@ -1399,15 +1395,32 @@ class LambingViewSet(viewsets.ModelViewSet):
     pagination_class = PaginationSetting
 
     def get_queryset(self):
-        """Фильтрация по активности окота"""
+        """Фильтрация по активности окота и датам"""
         queryset = super().get_queryset()
         is_active = self.request.query_params.get('is_active', None)
+        start_date_from = self.request.query_params.get('start_date_from', None)
+        start_date_to = self.request.query_params.get('start_date_to', None)
         
         if is_active is not None:
             if is_active.lower() == 'true':
                 queryset = queryset.filter(is_active=True)
             elif is_active.lower() == 'false':
                 queryset = queryset.filter(is_active=False)
+        
+        # Фильтрация по диапазону дат начала окота
+        if start_date_from:
+            try:
+                from_date = datetime.strptime(start_date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(start_date__gte=from_date)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
+        
+        if start_date_to:
+            try:
+                to_date = datetime.strptime(start_date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(start_date__lte=to_date)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
         
         return queryset
 
@@ -1510,18 +1523,18 @@ class LambingViewSet(viewsets.ModelViewSet):
                     )
                 except Exception as e:
                     print(f"Ошибка при установке нового статуса матери: {e}")
+            elif not mother and new_mother_status_id:
+                # Мать не найдена в БД (только текстовые данные), но статус указан
+                print(f"Попытка изменить статус матери, которой нет в БД: {lambing.mother_tag_text}")
             
             lambing.save()
             
             # Если мать - ярка, преобразуем её в овцу после первого окота
             mother = lambing.get_mother()
             if mother and lambing.get_mother_type() == "Ярка":
-                # Преобразуем ярку в овцу
+                # Преобразуем ярку в овцу (окоты переносятся автоматически в методе to_sheep)
                 sheep = mother.to_sheep()
-                # Обновляем связь окота с новой овцой
-                lambing.sheep = sheep
-                lambing.ewe = None
-                lambing.save()
+                
                 # Обновляем переменную mother для дальнейшего использования
                 mother = sheep
             
@@ -1691,6 +1704,45 @@ class LambingViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
             
         except (Sheep.DoesNotExist, Ewe.DoesNotExist):
+            return Response(
+                {"error": "Животное не найдено"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'], url_path='by-father')
+    def by_father(self, request):
+        """Получить окоты, где животное выступает как отец"""
+        animal_type = request.query_params.get('animal_type')
+        tag_number = request.query_params.get('tag_number')
+        
+        if not animal_type or not tag_number:
+            return Response(
+                {"error": "Необходимо указать animal_type и tag_number"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            if animal_type == 'maker':
+                animal = Maker.objects.get(tag__tag_number=tag_number)
+                lambings = Lambing.objects.filter(maker=animal).order_by('-start_date')
+            elif animal_type == 'ram':
+                animal = Ram.objects.get(tag__tag_number=tag_number)
+                lambings = Lambing.objects.filter(ram=animal).order_by('-start_date')
+            else:
+                return Response(
+                    {"error": "Неподдерживаемый тип животного для роли отца"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = self.get_serializer(lambings, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except (Maker.DoesNotExist, Ram.DoesNotExist):
             return Response(
                 {"error": "Животное не найдено"}, 
                 status=status.HTTP_404_NOT_FOUND
@@ -2462,7 +2514,7 @@ def yearly_statistics(request):
     from django.utils import timezone
     from datetime import date
     from django.db.models import Avg, Count, F, Q
-    from begunici.app_types.veterinary.vet_models import VeterinaryCare, Place
+    from begunici.app_types.veterinary.vet_models import VeterinaryCare, Place, StatusHistory
     
     year = request.GET.get('year', timezone.now().year)
     try:
@@ -2529,23 +2581,23 @@ def yearly_statistics(request):
             key = f"{care_name} ({medication})"
             treatment_stats[key] = treatment['count']
         
-        # 3. ОПТИМИЗИРОВАННЫЙ подсчет животных по статусам
+        # 3. ИСПРАВЛЕННЫЙ подсчет животных по статусам (по дате присвоения статуса)
         status_stats = {}
         
-        # Используем агрегацию для подсчета животных по статусам
-        for model in [Maker, Ram, Ewe, Sheep]:
-            model_stats = model.objects.filter(
-                tag__issue_date__lte=year_end
-            ).values(
-                'animal_status__status_type'
-            ).annotate(count=Count('id'))
-            
-            for stat in model_stats:
-                status_type = stat['animal_status__status_type']
-                if status_type:
-                    if status_type not in status_stats:
-                        status_stats[status_type] = 0
-                    status_stats[status_type] += stat['count']
+        # Получаем все изменения статусов за год из StatusHistory
+        from begunici.app_types.veterinary.vet_models import StatusHistory
+        
+        status_changes = StatusHistory.objects.filter(
+            change_date__gte=year_start,
+            change_date__lte=year_end
+        ).select_related('new_status')
+        
+        for change in status_changes:
+            if change.new_status:
+                status_type = change.new_status.status_type
+                if status_type not in status_stats:
+                    status_stats[status_type] = 0
+                status_stats[status_type] += 1
         
         # 4. ОПТИМИЗИРОВАННЫЙ подсчет рождений
         # Используем агрегацию вместо count()
@@ -2998,9 +3050,9 @@ def bulk_create_lambings(request):
                 
                 # Рассчитываем планируемую дату окота (6 месяцев от начала)
                 from dateutil.relativedelta import relativedelta
-                from datetime import datetime
+                from datetime import datetime, timedelta
                 start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-                lambing_data['planned_lambing_date'] = start_date_obj + relativedelta(months=6)
+                lambing_data['planned_lambing_date'] = start_date_obj + timedelta(days=150)
                 
                 lambing = Lambing.objects.create(**lambing_data)
                 
@@ -3054,3 +3106,129 @@ def bulk_create_lambings(request):
             {"error": str(e)}, 
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+def otbivka_list(request):
+    """
+    Страница со списком отбивки животных.
+    """
+    return render(request, 'otbivka_list.html')
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def otbivka_api(request):
+    """
+    API для получения списка отбивки животных.
+    Показывает только животных с заполненной датой отбивки.
+    """
+    # Получаем параметры
+    search_query = request.GET.get('search', '').strip()
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 10))
+    
+    # Собираем всех животных с датой отбивки из всех типов
+    animals = []
+    
+    # Makers
+    makers = Maker.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    for maker in makers:
+        animals.append({
+            'date_otbivka': maker.date_otbivka,
+            'tag_number': maker.tag.tag_number,
+            'animal_type': 'maker',
+            'birth_date': maker.birth_date,
+            'age_at_otbivka': calculate_age_at_date(maker.birth_date, maker.date_otbivka) if maker.birth_date else None
+        })
+    
+    # Rams
+    rams = Ram.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    for ram in rams:
+        animals.append({
+            'date_otbivka': ram.date_otbivka,
+            'tag_number': ram.tag.tag_number,
+            'animal_type': 'ram',
+            'birth_date': ram.birth_date,
+            'age_at_otbivka': calculate_age_at_date(ram.birth_date, ram.date_otbivka) if ram.birth_date else None
+        })
+    
+    # Ewes
+    ewes = Ewe.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    for ewe in ewes:
+        animals.append({
+            'date_otbivka': ewe.date_otbivka,
+            'tag_number': ewe.tag.tag_number,
+            'animal_type': 'ewe',
+            'birth_date': ewe.birth_date,
+            'age_at_otbivka': calculate_age_at_date(ewe.birth_date, ewe.date_otbivka) if ewe.birth_date else None
+        })
+    
+    # Sheeps
+    sheeps = Sheep.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    for sheep in sheeps:
+        animals.append({
+            'date_otbivka': sheep.date_otbivka,
+            'tag_number': sheep.tag.tag_number,
+            'animal_type': 'sheep',
+            'birth_date': sheep.birth_date,
+            'age_at_otbivka': calculate_age_at_date(sheep.birth_date, sheep.date_otbivka) if sheep.birth_date else None
+        })
+    
+    # Фильтрация по поиску (по номеру бирки)
+    if search_query:
+        animals = [animal for animal in animals if search_query.lower() in animal['tag_number'].lower()]
+    
+    # Сортировка по дате отбивки (сначала новые)
+    animals.sort(key=lambda x: x['date_otbivka'], reverse=True)
+    
+    # Пагинация
+    paginator = Paginator(animals, page_size)
+    page_obj = paginator.get_page(page)
+    
+    # Форматируем данные для JSON
+    results = []
+    for animal in page_obj:
+        results.append({
+            'date_otbivka': animal['date_otbivka'].strftime('%d.%m.%Y'),
+            'tag_number': animal['tag_number'],
+            'animal_type': animal['animal_type'],
+            'age_at_otbivka': animal['age_at_otbivka']
+        })
+    
+    return JsonResponse({
+        'results': results,
+        'count': paginator.count,
+        'next': page_obj.has_next(),
+        'previous': page_obj.has_previous(),
+        'current_page': page,
+        'total_pages': paginator.num_pages
+    })
+
+
+def calculate_age_at_date(birth_date, target_date):
+    """
+    Вычисляет возраст животного на определенную дату в формате 'X мес. (Y сут.)'.
+    """
+    if not birth_date or not target_date:
+        return None
+    
+    try:
+        delta = relativedelta(target_date, birth_date)
+        
+        # Рассчитываем полные месяцы
+        total_months = delta.years * 12 + delta.months
+        
+        # Рассчитываем дни (округляем до целых)
+        days = round(delta.days)
+        
+        if total_months == 0 and days == 0:
+            return "0 мес."
+        elif total_months == 0:
+            return f"{days} сут."
+        elif days == 0:
+            return f"{total_months} мес."
+        else:
+            return f"{total_months} мес. ({days} сут.)"
+            
+    except (ValueError, TypeError):
+        return None

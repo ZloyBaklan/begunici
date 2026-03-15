@@ -33,6 +33,8 @@ from .views import (
     get_inactive_mothers,
     get_all_fathers,
     bulk_create_lambings,
+    otbivka_list,
+    otbivka_api,
 )
 
 # Создаем маршруты для ViewSet
@@ -217,6 +219,8 @@ urlpatterns = [
     path("api/all-statuses/", get_all_statuses, name="all-statuses"),  # API всех статусов
     path("api/export-excel/", export_to_excel, name="export-excel"),  # API экспорта в Excel
     path("main/", animals, name="animals"),  # Главная страница
+    path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
+    path("api/otbivka/", otbivka_api, name="otbivka-api"),  # API для списка отбивки
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"

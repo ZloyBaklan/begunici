@@ -70,6 +70,7 @@ async function saveMaker() {
         birth_date: document.getElementById('birth_date').value,
         plemstatus: document.getElementById('plemstatus').value,
         working_condition: document.getElementById('working_condition').value,
+        rshn_tag: document.getElementById('rshn_tag').value,
         note: document.getElementById('note').value,
         place_id: parseInt(document.getElementById('place').value), // Передаём ID места,
     };
@@ -127,14 +128,15 @@ function renderMakers(makers) {
             <td>
                 <input type="checkbox" 
                 class="select-maker"  
-                data-tag="${maker.tag.tag_number}">
+                data-tag="${maker.tag.tag_number}"
+                data-animal-id="${maker.id}">
             </td>
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td><a href="/animals/maker/${maker.tag.tag_number}/info/">${maker.tag.tag_number}</a></td>
             <td style="background-color:${maker.animal_status ? maker.animal_status.color : '#FFFFFF'}">
                 ${maker.animal_status ? maker.animal_status.status_type : 'Нет статуса'}
             </td>
-            <td>${maker.age ? `${maker.age} мес.` : 'Нет данных'}</td>
+            <td>${maker.age || 'Нет данных'}</td>
             <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
@@ -170,6 +172,7 @@ function renderMakers(makers) {
                 })()
                 : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
+            <td>${maker.rshn_tag || '-'}</td>
             <td>${maker.note}</td>
         </tr>`;
         makerList.innerHTML += row;
@@ -400,7 +403,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = ''; // Очистка существующих опций

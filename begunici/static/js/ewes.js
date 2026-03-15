@@ -25,6 +25,7 @@ async function saveEwe() {
         animal_status_id: formData.get('animal_status') ? parseInt(formData.get('animal_status')) : null,
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') ? parseInt(formData.get('place')) : null,
+        rshn_tag: formData.get('rshn_tag') || null,
         note: formData.get('note') || ''
     };
 
@@ -78,14 +79,15 @@ function renderEwes(ewes) {
             <td>
                 <input type="checkbox" 
                 class="select-ewe"  
-                data-tag="${ewe.tag.tag_number}">
+                data-tag="${ewe.tag.tag_number}"
+                data-animal-id="${ewe.id}">
             </td>
             <td>${(currentPage - 1) * pageSize + index + 1}</td>
             <td><a href="/animals/ewe/${ewe.tag.tag_number}/info/">${ewe.tag.tag_number}</a></td>
             <td style="background-color:${ewe.animal_status ? ewe.animal_status.color : '#FFFFFF'}">
                 ${ewe.animal_status ? ewe.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${ewe.age ? `${ewe.age} мес.` : 'Не указан'}</td>
+            <td>${ewe.age || 'Не указан'}</td>
             <td>${ewe.place ? ewe.place.sheepfold : 'Не указано'}</td>
             <td>${ewe.weight_records && ewe.weight_records.length > 0 
                 ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 
@@ -120,6 +122,7 @@ function renderEwes(ewes) {
                     return displayText;
                 })()
                 : 'Нет записей'}</td>
+            <td>${ewe.rshn_tag || ''}</td>
             <td>${ewe.note || ''}</td>
         </tr>`;
         eweTable.innerHTML += row;
@@ -290,7 +293,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = '';
