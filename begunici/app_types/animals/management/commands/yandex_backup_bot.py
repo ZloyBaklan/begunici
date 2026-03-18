@@ -6,19 +6,24 @@ from datetime import datetime
 from pathlib import Path
 from django.core.management.base import BaseCommand
 from decouple import config
-import requests
+import yadisk
 
 
 class Command(BaseCommand):
-    help = 'Telegram bot для отправки новых бэкапов в приватный канал'
+    help = 'Диск bot для загрузки новых бэкапов на облачное хранилище'
 
     def __init__(self):
         super().__init__()
-        self.bot_token = config('TELEGRAM_BOT_TOKEN')
-        self.chat_id = config('TELEGRAM_CHANNEL_ID')
+        self.client_id = config('YANDEX_CLIENT_ID')
+        self.client_secret = config('YANDEX_CLIENT_SECRET')
+        self.access_token = config('YANDEX_ACCESS_TOKEN')
+        self.folder_path = config('YANDEX_FOLDER_PATH', default='/backups')
+        
         self.backups_dir = Path("backups")
-        self.sent_files_path = self.backups_dir / "sent_files.json"
-        self.log_file_path = self.backups_dir / "telegram_bot_errors.log"
+        self.uploaded_files_path = self.backups_dir / "uploaded_files.json"
+        self.log_file_path = self.backups_dir / "yandex_bot_errors.log"
+        
+        self.yadisk = yadisk.YaDisk(token=self.access_token)
         
         # Настройка логирования
         logging.basicConfig(
@@ -50,17 +55,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if options['daemon']:
-            # Создаем файл для отслеживания отправленных файлов, если его нет
-            if not self.sent_files_path.exists():
-                self.save_sent_files({})
+            # Создаем файл для отслеживания загруженных файлов, если его нет
+            if not self.uploaded_files_path.exists():
+                self.save_uploaded_files({})
             self.run_daemon_mode()
         elif options['status']:
             self.show_status_and_manage()
         elif options['check_once']:
-            self.logger.info("Запуск Telegram бота для мониторинга бэкапов")
-            # Создаем файл для отслеживания отправленных файлов, если его нет
-            if not self.sent_files_path.exists():
-                self.save_sent_files({})
+            self.logger.info("Запуск бота для мониторинга бэкапов")
+            # Создаем файл для отслеживания загруженных файлов, если его нет
+            if not self.uploaded_files_path.exists():
+                self.save_uploaded_files({})
             self.check_for_new_backups()
         else:
             self.show_status_and_manage()
@@ -87,66 +92,59 @@ class Command(BaseCommand):
                 self.logger.warning(f"Папка {self.backups_dir} не существует")
                 return
 
-            sent_files = self.load_sent_files()
+            uploaded_files = self.load_uploaded_files()
             sql_files = list(self.backups_dir.glob("*.sql"))
             
             for file_path in sql_files:
                 file_key = f"{file_path.name}_{file_path.stat().st_mtime}"
                 
-                if file_key not in sent_files:
+                if file_key not in uploaded_files:
                     self.logger.info(f"Найден новый бэкап: {file_path.name}")
-                    if self.send_backup_to_telegram(file_path):
-                        sent_files[file_key] = {
+                    if self.upload_backup_to_yandex(file_path):
+                        uploaded_files[file_key] = {
                             'filename': file_path.name,
-                            'sent_at': datetime.now().isoformat(),
+                            'uploaded_at': datetime.now().isoformat(),
                             'file_size': file_path.stat().st_size
                         }
-                        self.save_sent_files(sent_files)
-                        self.logger.info(f"Бэкап {file_path.name} успешно отправлен")
+                        self.save_uploaded_files(uploaded_files)
+                        self.logger.info(f"Бэкап {file_path.name} успешно загружен на Диск")
                     else:
-                        self.logger.error(f"Не удалось отправить бэкап {file_path.name}")
+                        self.logger.error(f"Не удалось загрузить бэкап {file_path.name}")
 
         except Exception as e:
             self.logger.error(f"Ошибка при проверке новых бэкапов: {e}")
 
-    def send_backup_to_telegram(self, file_path):
-        """Отправка бэкапа в Telegram канал"""
+    def upload_backup_to_yandex(self, file_path):
         try:
-            # Определяем тип бэкапа
-            backup_type = self.determine_backup_type(file_path.name)
+            # Создаем папку backups, если её нет
+            if not self.yadisk.exists(self.folder_path):
+                self.yadisk.mkdir(self.folder_path)
+                self.logger.info(f"Создана папка {self.folder_path} на Диск")
+            
+            # Определяем путь к файлу на диске
+            remote_path = f"{self.folder_path}/{file_path.name}"
             
             # Получаем информацию о файле
             file_stat = file_path.stat()
             file_size = self.format_file_size(file_stat.st_size)
             file_date = datetime.fromtimestamp(file_stat.st_mtime).strftime("%d.%m.%Y %H:%M")
+            backup_type = self.determine_backup_type(file_path.name)
             
-            # Формируем сообщение
-            caption = f"""Новый бэкап базы данных
-
-Тип: {backup_type}
-Дата: {file_date}
-Размер: {file_size}"""
-
-            # Отправляем файл
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
+            self.logger.info(f"Загрузка файла {file_path.name} ({file_size}) на Диск...")
             
-            with open(file_path, 'rb') as file:
-                files = {'document': file}
-                data = {
-                    'chat_id': self.chat_id,
-                    'caption': caption
-                }
-                
-                response = requests.post(url, files=files, data=data, timeout=300)
-                
-                if response.status_code == 200:
-                    return True
-                else:
-                    self.logger.error(f"Ошибка Telegram API: {response.status_code} - {response.text}")
-                    return False
+            # Загружаем файл (с перезаписью, если существует)
+            self.yadisk.upload(str(file_path), remote_path, overwrite=True)
+            
+            self.logger.info(f"Файл успешно загружен: {remote_path}")
+            self.logger.info(f"Тип: {backup_type}, Дата: {file_date}, Размер: {file_size}")
+            
+            return True
                     
+        except yadisk.exceptions.YaDiskError as e:
+            self.logger.error(f"Ошибка Я.ДИСК API при загрузке {file_path.name}: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Ошибка при отправке файла {file_path.name}: {e}")
+            self.logger.error(f"Ошибка при загрузке файла {file_path.name}: {e}")
             return False
 
     def determine_backup_type(self, filename):
@@ -157,6 +155,10 @@ class Command(BaseCommand):
             return "Автоматический бэкап"
         elif 'backup_' in filename_lower and '_' in filename_lower:
             return "Ручной бэкап"
+        elif 'safety' in filename_lower:
+            return "Безопасный бэкап"
+        elif 'full' in filename_lower:
+            return "Полный бэкап"
         else:
             return "Бэкап"
 
@@ -171,32 +173,32 @@ class Command(BaseCommand):
         else:
             return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
-    def load_sent_files(self):
-        """Загрузка списка отправленных файлов"""
+    def load_uploaded_files(self):
+        """Загрузка списка загруженных файлов"""
         try:
-            if self.sent_files_path.exists():
-                with open(self.sent_files_path, 'r', encoding='utf-8') as f:
+            if self.uploaded_files_path.exists():
+                with open(self.uploaded_files_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
             return {}
         except Exception as e:
-            self.logger.error(f"Ошибка при загрузке списка отправленных файлов: {e}")
+            self.logger.error(f"Ошибка при загрузке списка загруженных файлов: {e}")
             return {}
 
-    def save_sent_files(self, sent_files):
-        """Сохранение списка отправленных файлов"""
+    def save_uploaded_files(self, uploaded_files):
+        """Сохранение списка загруженных файлов"""
         try:
-            with open(self.sent_files_path, 'w', encoding='utf-8') as f:
-                json.dump(sent_files, f, ensure_ascii=False, indent=2)
+            with open(self.uploaded_files_path, 'w', encoding='utf-8') as f:
+                json.dump(uploaded_files, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении списка отправленных файлов: {e}")
+            self.logger.error(f"Ошибка при сохранении списка загруженных файлов: {e}")
 
     def show_status_and_manage(self):
         """Показать статус бота и интерактивное управление"""
         self.print_header()
         
-        # Создаем файл для отслеживания отправленных файлов, если его нет
-        if not self.sent_files_path.exists():
-            self.save_sent_files({})
+        # Создаем файл для отслеживания загруженных файлов, если его нет
+        if not self.uploaded_files_path.exists():
+            self.save_uploaded_files({})
         
         while True:
             self.print_status()
@@ -215,7 +217,13 @@ class Command(BaseCommand):
                 self.show_error_logs()
                 input("\nНажмите Enter для продолжения...")
             elif choice == '5':
-                self.clear_sent_files()
+                self.clear_uploaded_files()
+                input("\nНажмите Enter для продолжения...")
+            elif choice == '6':
+                self.show_disk_info()
+                input("\nНажмите Enter для продолжения...")
+            elif choice == '7':
+                self.list_remote_files()
                 input("\nНажмите Enter для продолжения...")
             elif choice == '0':
                 break
@@ -226,7 +234,7 @@ class Command(BaseCommand):
     def print_header(self):
         """Печать заголовка"""
         print("=" * 60)
-        print("TELEGRAM BOT - УПРАВЛЕНИЕ БЭКАПАМИ")
+        print("Я.Диск BOT - УПРАВЛЕНИЕ БЭКАПАМИ")
         print("=" * 60)
 
     def print_status(self):
@@ -241,23 +249,22 @@ class Command(BaseCommand):
         else:
             print("Папка бэкапов: Не найдена")
         
-        # Проверяем отправленные файлы
-        sent_files = self.load_sent_files()
-        print(f"Отправлено файлов: {len(sent_files)}")
+        # Проверяем загруженные файлы
+        uploaded_files = self.load_uploaded_files()
+        print(f"Загружено файлов: {len(uploaded_files)}")
         
         # Проверяем последнюю активность
-        if sent_files:
-            last_sent = max(sent_files.values(), key=lambda x: x['sent_at'])
-            print(f"Последняя отправка: {last_sent['filename']} ({last_sent['sent_at'][:19]})")
+        if uploaded_files:
+            last_uploaded = max(uploaded_files.values(), key=lambda x: x['uploaded_at'])
+            print(f"Последняя загрузка: {last_uploaded['filename']} ({last_uploaded['uploaded_at'][:19]})")
         else:
-            print("Последняя отправка: Нет данных")
+            print("Последняя загрузка: Нет данных")
         
-        # Проверяем подключение к Telegram
-        telegram_status = self.test_telegram_connection()
-        if telegram_status:
-            print("Telegram: Подключение работает")
+        yandex_status = self.test_yandex_connection()
+        if yandex_status:
+            print("Я.Диск: Подключение работает")
         else:
-            print("Telegram: Проблемы с подключением")
+            print("Я.Диск: Проблемы с подключением")
         
         # Проверяем статус фонового процесса
         bg_status = self.check_background_status()
@@ -272,21 +279,85 @@ class Command(BaseCommand):
         print("2. Остановить фоновый мониторинг")
         print("3. Проверить новые бэкапы (один раз)")
         print("4. Показать логи ошибок")
-        print("5. Очистить список отправленных файлов")
+        print("5. Очистить список загруженных файлов")
+        print("6. Информация о Диске")
+        print("7. Список файлов на диске")
         print("0. Выход")
         print("-" * 40)
         
-        return input("Выберите действие (0-5): ").strip()
+        return input("Выберите действие (0-7): ").strip()
 
-    def test_telegram_connection(self):
-        """Тестирование подключения к Telegram"""
+    def test_yandex_connection(self):
+        """Тестирование подключения к я диску"""
         try:
-            import requests
-            url = f"https://api.telegram.org/bot{self.bot_token}/getMe"
-            response = requests.get(url, timeout=5)
-            return response.status_code == 200 and response.json().get('ok', False)
+            return self.yadisk.check_token()
         except:
             return False
+
+    def show_disk_info(self):
+        """Показать информацию о диске"""
+        print("\nИНФОРМАЦИЯ О Я.Диск:")
+        print("-" * 40)
+        
+        try:
+            if self.yadisk.check_token():
+                disk_info = self.yadisk.get_disk_info()
+                
+                total_space = self.format_file_size(disk_info.total_space)
+                used_space = self.format_file_size(disk_info.used_space)
+                free_space = self.format_file_size(disk_info.total_space - disk_info.used_space)
+                
+                print(f"Общий объем: {total_space}")
+                print(f"Использовано: {used_space}")
+                print(f"Свободно: {free_space}")
+                print(f"Папка бэкапов: {self.folder_path}")
+                
+                # Проверяем существование папки бэкапов
+                if self.yadisk.exists(self.folder_path):
+                    print("Папка бэкапов: Существует")
+                else:
+                    print("Папка бэкапов: Не создана")
+            else:
+                print("Ошибка: Неверный токен доступа")
+        except Exception as e:
+            print(f"Ошибка получения информации: {e}")
+
+    def list_remote_files(self):
+        """Показать список файлов в папке бэкапов на диске"""
+        print(f"\nФАЙЛЫ В ПАПКЕ {self.folder_path}:")
+        print("-" * 40)
+        
+        try:
+            if not self.yadisk.exists(self.folder_path):
+                print("Папка бэкапов не существует на диске")
+                return
+            
+            files = list(self.yadisk.listdir(self.folder_path))
+            
+            if not files:
+                print("Папка пуста")
+                return
+            
+            # Сортируем по дате изменения (новые сверху)
+            files.sort(key=lambda x: x.modified, reverse=True)
+            
+            print(f"Найдено файлов: {len(files)}")
+            print()
+            
+            for file_info in files[:20]:  # Показываем последние 20 файлов
+                if file_info.type == 'file' and file_info.name.endswith('.sql'):
+                    size = self.format_file_size(file_info.size)
+                    date = file_info.modified.strftime("%d.%m.%Y %H:%M")
+                    backup_type = self.determine_backup_type(file_info.name)
+                    print(f"{file_info.name}")
+                    print(f"  Размер: {size} | Дата: {date} | Тип: {backup_type}")
+                    print()
+            
+            if len(files) > 20:
+                print(f"... и еще {len(files) - 20} файлов")
+                
+        except Exception as e:
+            print(f"Ошибка получения списка файлов: {e}")
 
     def show_error_logs(self):
         """Показать логи ошибок"""
@@ -316,31 +387,31 @@ class Command(BaseCommand):
         except Exception as e:
             print(f"Ошибка чтения логов: {e}")
 
-    def clear_sent_files(self):
-        """Очистить список отправленных файлов"""
-        print("\nОЧИСТКА СПИСКА ОТПРАВЛЕННЫХ ФАЙЛОВ")
+    def clear_uploaded_files(self):
+        """Очистить список загруженных файлов"""
+        print("\nОЧИСТКА СПИСКА ЗАГРУЖЕННЫХ ФАЙЛОВ")
         print("-" * 40)
         
-        sent_files = self.load_sent_files()
-        if not sent_files:
+        uploaded_files = self.load_uploaded_files()
+        if not uploaded_files:
             print("Список уже пуст")
             return
         
-        print(f"Будет удалена информация о {len(sent_files)} отправленных файлах")
-        print("ВНИМАНИЕ: После очистки все файлы будут отправлены заново!")
+        print(f"Будет удалена информация о {len(uploaded_files)} загруженных файлах")
+        print("ВНИМАНИЕ: После очистки все файлы будут загружены заново!")
         
         confirm = input("\nВы уверены? (да/нет): ").strip().lower()
         
         if confirm in ['да', 'yes', 'y', 'д']:
-            self.save_sent_files({})
-            print("Список отправленных файлов очищен")
-            self.logger.info("Список отправленных файлов очищен пользователем")
+            self.save_uploaded_files({})
+            print("Список загруженных файлов очищен")
+            self.logger.info("Список загруженных файлов очищен пользователем")
         else:
             print("Операция отменена")
 
     def check_background_status(self):
         """Проверить статус фонового процесса"""
-        pid_file = self.backups_dir / "telegram_bot.pid"
+        pid_file = self.backups_dir / "yandex_bot.pid"
         
         if not pid_file.exists():
             return "Не запущен"
@@ -378,7 +449,7 @@ class Command(BaseCommand):
             
             # Команда для запуска в фоне внутри контейнера
             cmd = [
-                "nohup", "python", "manage.py", "telegram_backup_bot", "--daemon"
+                "nohup", "python", "manage.py", "yandex_backup_bot", "--daemon"
             ]
             
             # Запускаем процесс в фоне
@@ -398,7 +469,7 @@ class Command(BaseCommand):
             if "Запущен" in status:
                 print("Фоновый мониторинг запущен успешно")
                 print("Бот будет работать в фоне и проверять папку каждую минуту")
-                print("Логи записываются в backups/telegram_bot_errors.log")
+                print("Логи записываются в backups/yandex_bot_errors.log")
                 print(f"Статус: {status}")
             else:
                 print("Не удалось запустить фоновый процесс")
@@ -407,14 +478,14 @@ class Command(BaseCommand):
             print(f"Ошибка при запуске фонового процесса: {e}")
             print("\nАльтернативный способ:")
             print("Запустите в отдельном терминале:")
-            print("docker-compose exec web python manage.py telegram_backup_bot --daemon")
+            print("docker-compose exec web python manage.py yandex_backup_bot --daemon")
 
     def stop_background_monitoring(self):
         """Остановка фонового мониторинга"""
         print("\nОСТАНОВКА ФОНОВОГО МОНИТОРИНГА")
         print("-" * 40)
         
-        pid_file = self.backups_dir / "telegram_bot.pid"
+        pid_file = self.backups_dir / "yandex_bot.pid"
         
         if not pid_file.exists():
             print("Фоновый мониторинг не запущен")
@@ -446,7 +517,7 @@ class Command(BaseCommand):
         import os
         
         # Записываем PID в файл
-        pid_file = self.backups_dir / "telegram_bot.pid"
+        pid_file = self.backups_dir / "yandex_bot.pid"
         with open(pid_file, 'w') as f:
             f.write(str(os.getpid()))
         

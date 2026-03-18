@@ -58,7 +58,9 @@ async function loadSelectOptions(selectId, apiEndpoint, selectedId = null) {
     select.innerHTML = '';
     
     try {
-        const response = await apiRequest(apiEndpoint, 'GET');
+        // Добавляем page_size=100 для получения всех данных
+        const url = apiEndpoint.includes('?') ? `${apiEndpoint}&page_size=100` : `${apiEndpoint}?page_size=100`;
+        const response = await apiRequest(url, 'GET');
         console.log(`Ответ API для ${selectId}:`, response);
         
         // Обрабатываем пагинированный ответ
@@ -443,7 +445,8 @@ async function addVetRecord() {
     
 async function loadVetTreatments() {
     try {
-        const response = await apiRequest('/veterinary/api/care/', 'GET');
+        // Добавляем page_size=100 для получения всех ветобработок
+        const response = await apiRequest('/veterinary/api/care/?page_size=100', 'GET');
         console.log('Ответ сервера для ветобработок:', response);
 
         // Обрабатываем пагинированный ответ

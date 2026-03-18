@@ -98,8 +98,18 @@ class UserActionLogMiddleware(MiddlewareMixin):
         path = request.path
         method = request.method
         
+        # Бэкапы
+        if '/backup/' in path:
+            if method == 'POST':
+                if '/create/' in path:
+                    return 'Создание резервной копии'
+                elif '/restore/' in path:
+                    return 'Восстановление из резервной копии'
+            elif method == 'DELETE':
+                return 'Удаление резервной копии'
+        
         # Заметки календаря
-        if '/animals/notes/' in path:
+        elif '/animals/notes/' in path:
             if method == 'POST':
                 return 'Создание заметки календаря'
             elif method in ['PUT', 'PATCH']:
@@ -166,7 +176,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
     def get_object_type(self, request):
         """Определяет тип объекта"""
         path = request.path
-        if '/animals/notes/' in path:
+        if '/backup/' in path:
+            return 'Резервная копия'
+        elif '/animals/notes/' in path:
             return 'Заметка календаря'
         elif '/maker/' in path:
             return 'Производитель'
@@ -216,8 +228,18 @@ class UserActionLogMiddleware(MiddlewareMixin):
         """Получает детали запроса"""
         details = {}
         
+        # Для бэкапов делаем более понятные детали
+        if '/backup/' in request.path:
+            if '/create/' in request.path:
+                details['action'] = 'Создана резервная копия базы данных'
+                details['type'] = 'Ручное создание администратором'
+            elif '/restore/' in request.path:
+                details['action'] = 'Восстановление базы данных из резервной копии'
+            else:
+                details['action'] = 'Операция с резервной копией'
+        
         # Для ветеринарных данных делаем более понятные детали
-        if '/veterinary/' in request.path:
+        elif '/veterinary/' in request.path:
             if '/api/status/' in request.path:
                 if request.method in ['PUT', 'PATCH']:
                     details['action'] = 'Изменение параметров статуса'

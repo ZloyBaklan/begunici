@@ -94,6 +94,79 @@ def get_animals_by_place(request, place_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+def get_barn_statistics(request, barn_number):
+    """
+    Возвращает статистику по конкретной овчарне
+    """
+    try:
+        from begunici.app_types.animals.models import Maker, Ram, Ewe, Sheep
+        from django.db.models import Count, Q
+        
+        # Получаем места для этой овчарни
+        places = Place.objects.filter(sheepfold__icontains=f'Овчарня {barn_number} Отсек')
+        place_ids = list(places.values_list('id', flat=True))
+        
+        if not place_ids:
+            return Response({
+                'barn_number': barn_number,
+                'sections': [],
+                'total_animals': 0,
+                'animals_by_section': {}
+            })
+        
+        # Получаем статистику по отсекам
+        sections_data = []
+        animals_by_section = {}
+        total_animals = 0
+        
+        for place in places:
+            # Извлекаем номер отсека
+            import re
+            match = re.search(r'Отсек (\d+)', place.sheepfold)
+            if not match:
+                continue
+                
+            section_number = int(match.group(1))
+            
+            # Считаем животных в этом отсеке
+            makers_count = Maker.objects.filter(place=place, is_archived=False).count()
+            rams_count = Ram.objects.filter(place=place, is_archived=False).count()
+            ewes_count = Ewe.objects.filter(place=place, is_archived=False).count()
+            sheep_count = Sheep.objects.filter(place=place, is_archived=False).count()
+            
+            section_total = makers_count + rams_count + ewes_count + sheep_count
+            total_animals += section_total
+            
+            sections_data.append({
+                'id': place.id,
+                'name': place.sheepfold,
+                'section_number': section_number,
+                'animals_count': section_total
+            })
+            
+            animals_by_section[place.id] = {
+                'makers': makers_count,
+                'rams': rams_count,
+                'ewes': ewes_count,
+                'sheep': sheep_count,
+                'total': section_total
+            }
+        
+        # Сортируем отсеки по номерам
+        sections_data.sort(key=lambda x: x['section_number'])
+        
+        return Response({
+            'barn_number': barn_number,
+            'sections': sections_data,
+            'total_animals': total_animals,
+            'animals_by_section': animals_by_section
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = "page_size"
@@ -192,3 +265,34 @@ class VeterinaryPlacesView(TemplateView):
 
 class VeterinaryCaresView(TemplateView):
     template_name = "veterinary_cares.html"
+
+
+# Специальные endpoints без пагинации для select элементов
+@api_view(['GET'])
+def get_all_statuses(request):
+    """
+    Возвращает все статусы без пагинации для select элементов
+    """
+    statuses = Status.objects.all().order_by('status_type')
+    serializer = StatusSerializer(statuses, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+def get_all_places(request):
+    """
+    Возвращает все места без пагинации для select элементов
+    """
+    places = Place.objects.all().order_by('sheepfold')
+    serializer = PlaceSerializer(places, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+def get_all_veterinary_cares(request):
+    """
+    Возвращает все ветобработки без пагинации для select элементов
+    """
+    cares = VeterinaryCare.objects.all().order_by('care_type', 'care_name')
+    serializer = VeterinaryCareSerializer(cares, many=True)
+    return Response(serializer.data)

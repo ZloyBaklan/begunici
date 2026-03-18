@@ -13,6 +13,10 @@ from .vet_views import (
     VeterinaryPlacesView,
     VeterinaryCaresView,
     get_animals_by_place,
+    get_barn_statistics,
+    get_all_statuses,
+    get_all_places,
+    get_all_veterinary_cares,
 )
 
 # Создаем роутер
@@ -30,6 +34,11 @@ router.register(r"place_movement", PlaceMovementViewSet)
 urlpatterns = [
     path("api/", include(router.urls)),  # Возвращаем префикс /api/
     path("api/place/<int:place_id>/animals/", get_animals_by_place, name="animals_by_place"),  # API для животных по месту
+    path("api/barn/<int:barn_number>/statistics/", get_barn_statistics, name="barn_statistics"),  # API для статистики овчарни
+    # Специальные endpoints без пагинации для select элементов
+    path("api/all-statuses/", get_all_statuses, name="all_statuses"),
+    path("api/all-places/", get_all_places, name="all_places"),
+    path("api/all-cares/", get_all_veterinary_cares, name="all_cares"),
     path(
         "management/", VeterinaryManagementView.as_view(), name="veterinary-management"
     ),  # Страница управления технической информацией

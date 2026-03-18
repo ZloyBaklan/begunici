@@ -129,13 +129,36 @@ def admin_logs_api(request):
                         except:
                             continue
             
+            # Парсим детали для более понятного отображения
+            details_text = log.description or ''
+            if details_text:
+                try:
+                    import json
+                    details_json = json.loads(details_text)
+                    
+                    # Если есть поле action, используем его как основное описание
+                    if 'action' in details_json:
+                        details_text = details_json['action']
+                        # Добавляем тип если есть
+                        if 'type' in details_json:
+                            details_text += f" ({details_json['type']})"
+                    else:
+                        # Для других случаев формируем описание из доступных полей
+                        if 'method' in details_json and 'path' in details_json:
+                            details_text = f"{details_json['method']} запрос к {details_json['path']}"
+                        elif 'changed_fields' in details_json:
+                            details_text = f"Изменены поля: {', '.join(details_json['changed_fields'])}"
+                except (json.JSONDecodeError, TypeError):
+                    # Если не удалось распарсить JSON, оставляем как есть
+                    pass
+            
             logs_data.append({
                 'id': log.id,
                 'user': log.user.username,
                 'action': log.action_type,
                 'object_type': log.object_type or '',
                 'object_id': log.object_id or '',
-                'details': log.description or '',
+                'details': details_text,
                 'timestamp': moscow_time.strftime('%d.%m.%Y %H:%M:%S'),
                 'animal_link_info': animal_link_info
             })

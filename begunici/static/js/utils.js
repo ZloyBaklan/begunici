@@ -7,7 +7,7 @@ export function getCSRFToken() {
     return decodeURIComponent(tokenCookie.split("=")[1]);
 }
 
-export async function apiRequest(url, method, body) {
+export async function apiRequest(url, method = 'GET', body) {
     const headers = {
         'Content-Type': 'application/json',
         'X-CSRFToken': getCSRFToken(),

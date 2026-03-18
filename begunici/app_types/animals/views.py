@@ -2581,7 +2581,7 @@ def yearly_statistics(request):
             key = f"{care_name} ({medication})"
             treatment_stats[key] = treatment['count']
         
-        # 3. ИСПРАВЛЕННЫЙ подсчет животных по статусам (по дате присвоения статуса)
+        # 3. ИСПРАВЛЕННЫЙ подсчет животных по статусам (включая начальные статусы)
         status_stats = {}
         
         # Получаем все изменения статусов за год из StatusHistory
@@ -2595,6 +2595,36 @@ def yearly_statistics(request):
         for change in status_changes:
             if change.new_status:
                 status_type = change.new_status.status_type
+                if status_type not in status_stats:
+                    status_stats[status_type] = 0
+                status_stats[status_type] += 1
+        
+        # ДОБАВЛЯЕМ: Подсчет животных, созданных в этом году с начальными статусами
+        # (которые не попали в StatusHistory)
+        
+        # Получаем всех животных, созданных в этом году
+        animals_created_this_year = []
+        
+        # Собираем всех животных разных типов
+        for model in [Ram, Ewe, Sheep, Maker]:
+            animals = model.objects.filter(
+                birth_date__gte=year_start,
+                birth_date__lte=year_end
+            ).select_related('animal_status', 'tag')
+            animals_created_this_year.extend(animals)
+        
+        # Получаем теги животных, у которых есть записи в StatusHistory за этот год
+        tags_with_history = set(
+            StatusHistory.objects.filter(
+                change_date__gte=year_start,
+                change_date__lte=year_end
+            ).values_list('tag_id', flat=True)
+        )
+        
+        # Добавляем статусы животных, которые НЕ имеют записей в StatusHistory
+        for animal in animals_created_this_year:
+            if animal.tag.id not in tags_with_history and animal.animal_status:
+                status_type = animal.animal_status.status_type
                 if status_type not in status_stats:
                     status_stats[status_type] = 0
                 status_stats[status_type] += 1

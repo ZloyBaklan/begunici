@@ -1,68 +1,48 @@
 import { apiRequest } from "./utils.js";
 
 document.addEventListener('DOMContentLoaded', function () {
-    loadPlacesMap();
+    loadBarnsSelector();
+    
+    // Обработчик кнопки "Назад к списку"
+    document.getElementById('back-to-list').addEventListener('click', function() {
+        showBarnsSelector();
+    });
 });
 
-// Загрузка карты овчарен
-// Функция для загрузки всех данных с пагинацией
-async function loadAllPages(url) {
-    let allResults = [];
-    let nextUrl = url;
-    
-    while (nextUrl) {
-        const response = await apiRequest(nextUrl);
-        
-        if (response.results) {
-            // Пагинированный ответ
-            allResults = allResults.concat(response.results);
-            nextUrl = response.next;
-        } else {
-            // Непагинированный ответ
-            allResults = response;
-            nextUrl = null;
-        }
-    }
-    
-    return allResults;
+// Показать селектор овчарен
+function showBarnsSelector() {
+    document.getElementById('barns-selector').style.display = 'block';
+    document.getElementById('selected-barn-container').style.display = 'none';
 }
 
-async function loadPlacesMap() {
-    const container = document.getElementById('barns-container');
-    container.innerHTML = '<div class="loading">Загрузка карты овчарен</div>';
+// Показать выбранную овчарню
+function showSelectedBarn() {
+    document.getElementById('barns-selector').style.display = 'none';
+    document.getElementById('selected-barn-container').style.display = 'block';
+}
+
+// Загрузка селектора овчарен
+async function loadBarnsSelector() {
+    const container = document.getElementById('barns-list');
+    container.innerHTML = '<div class="loading">Загрузка списка овчарен...</div>';
     
     try {
-        // Получаем все места и животных (с поддержкой пагинации)
-        const [places, makers, rams, ewes, sheep] = await Promise.all([
-            loadAllPages('/veterinary/api/place/?page_size=100'),
-            loadAllPages('/animals/maker/?page_size=100'),
-            loadAllPages('/animals/ram/?page_size=100'),
-            loadAllPages('/animals/ewe/?page_size=100'),
-            loadAllPages('/animals/sheep/?page_size=100')
-        ]);
-
-        // Группируем места по овчарням
+        // Получаем все места
+        const places = await loadAllPages('/veterinary/api/place/?page_size=100');
+        
+        // Группируем места по овчарням БЕЗ подсчета животных
         const barnGroups = groupPlacesByBarn(places);
         
-        // Группируем животных по местам
-        const animalsByPlace = groupAnimalsByPlace([
-            ...makers,
-            ...rams, 
-            ...ewes,
-            ...sheep
-        ]);
-
-        // Отображаем карту
-        displayBarnsMap(barnGroups, animalsByPlace);
+        // Отображаем список овчарен
+        displayBarnsSelector(barnGroups);
         
     } catch (error) {
-        console.error('Ошибка при загрузке карты овчарен:', error);
-        document.getElementById('barns-container').innerHTML = 
-            '<div style="color: red;">Ошибка загрузки данных</div>';
+        console.error('Ошибка при загрузке списка овчарен:', error);
+        container.innerHTML = '<div style="color: red;">Ошибка загрузки данных</div>';
     }
 }
 
-// Группировка мест по овчарням
+// Простая группировка мест по овчарням (без статистики)
 function groupPlacesByBarn(places) {
     const barnGroups = {};
     
@@ -70,22 +50,275 @@ function groupPlacesByBarn(places) {
         const match = place.sheepfold.match(/Овчарня (\d+) Отсек (\d+)/);
         if (match) {
             const barnNumber = parseInt(match[1]);
-            const sectionNumber = parseInt(match[2]);
             
             if (!barnGroups[barnNumber]) {
-                barnGroups[barnNumber] = {};
+                barnGroups[barnNumber] = {
+                    barnNumber,
+                    sections: {},
+                    totalSections: 0
+                };
             }
             
-            barnGroups[barnNumber][sectionNumber] = {
+            const sectionNumber = parseInt(match[2]);
+            barnGroups[barnNumber].sections[sectionNumber] = {
                 id: place.id,
                 name: place.sheepfold,
                 barnNumber,
                 sectionNumber
             };
+            barnGroups[barnNumber].totalSections++;
         }
     });
     
     return barnGroups;
+}
+
+// Отображение селектора овчарен
+function displayBarnsSelector(barnGroups) {
+    const container = document.getElementById('barns-list');
+    container.innerHTML = '';
+    
+    // Сортируем овчарни по номерам
+    const sortedBarns = Object.keys(barnGroups).sort((a, b) => parseInt(a) - parseInt(b));
+    
+    if (sortedBarns.length === 0) {
+        container.innerHTML = '<div class="no-barns">Овчарни не найдены</div>';
+        return;
+    }
+    
+    sortedBarns.forEach(barnNumber => {
+        const barn = barnGroups[barnNumber];
+        const card = createBarnSelectorCard(barn);
+        container.appendChild(card);
+    });
+}
+
+// Создание карточки овчарни для селектора
+function createBarnSelectorCard(barn) {
+    const card = document.createElement('div');
+    card.className = 'barn-selector-card';
+    card.onclick = () => loadSpecificBarn(barn.barnNumber);
+    
+    card.innerHTML = `
+        <h3>Овчарня ${barn.barnNumber}</h3>
+        <div class="barn-stats">
+            <div>Отсеков: ${barn.totalSections}</div>
+        </div>
+    `;
+    
+    return card;
+}
+
+// Загрузка конкретной овчарни
+async function loadSpecificBarn(barnNumber) {
+    const container = document.getElementById('barn-content');
+    const title = document.getElementById('selected-barn-title');
+    
+    title.textContent = `Овчарня ${barnNumber}`;
+    container.innerHTML = '<div class="loading">Загрузка овчарни...</div>';
+    
+    // Показываем контейнер выбранной овчарни
+    showSelectedBarn();
+    
+    try {
+        console.log(`Загружаем статистику для овчарни ${barnNumber}`);
+        
+        // Используем новый быстрый API для получения статистики
+        const barnStats = await apiRequest(`/veterinary/api/barn/${barnNumber}/statistics/`);
+        
+        console.log(`Получена статистика:`, barnStats);
+        
+        if (barnStats.sections.length === 0) {
+            container.innerHTML = '<div class="empty-barn">В этой овчарне нет отсеков</div>';
+            return;
+        }
+        
+        // Отображаем овчарню используя полученную статистику
+        displayBarnFromStatistics(barnStats);
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке овчарни:', error);
+        container.innerHTML = `<div style="color: red;">Ошибка загрузки данных: ${error.message}</div>`;
+    }
+}
+
+// Отображение овчарни на основе статистики
+function displayBarnFromStatistics(barnStats) {
+    const container = document.getElementById('barn-content');
+    container.innerHTML = '';
+    
+    const barnDiv = document.createElement('div');
+    barnDiv.className = 'barn-container';
+    
+    // Создаем таблицу с отсеками
+    const table = document.createElement('table');
+    table.className = 'barn-table';
+    
+    const sections = barnStats.sections;
+    const rows = Math.ceil(sections.length / 2);
+    
+    for (let row = 0; row < rows; row++) {
+        const tr = document.createElement('tr');
+        
+        // Левый отсек
+        const leftIndex = row * 2;
+        if (leftIndex < sections.length) {
+            const leftSection = sections[leftIndex];
+            const leftCell = createSectionCellFromStats(leftSection, barnStats.animals_by_section[leftSection.id]);
+            tr.appendChild(leftCell);
+        }
+        
+        // Правый отсек (если есть)
+        const rightIndex = row * 2 + 1;
+        if (rightIndex < sections.length) {
+            const rightSection = sections[rightIndex];
+            const rightCell = createSectionCellFromStats(rightSection, barnStats.animals_by_section[rightSection.id]);
+            tr.appendChild(rightCell);
+        } else {
+            // Если правого отсека нет, добавляем пустую ячейку для выравнивания
+            const emptyCell = document.createElement('td');
+            emptyCell.className = 'section-cell empty-placeholder';
+            emptyCell.style.visibility = 'hidden';
+            tr.appendChild(emptyCell);
+        }
+        
+        table.appendChild(tr);
+    }
+    
+    barnDiv.appendChild(table);
+    container.appendChild(barnDiv);
+}
+
+// Создание ячейки отсека на основе статистики
+function createSectionCellFromStats(section, animalStats) {
+    const cell = document.createElement('td');
+    cell.className = 'section-cell';
+    
+    cell.innerHTML = `<div class="section-number">Отсек ${section.section_number}</div>`;
+    
+    if (animalStats && animalStats.total > 0) {
+        const animalsDiv = document.createElement('div');
+        animalsDiv.className = 'animals-info';
+        
+        // Отображаем количество каждого типа животных
+        if (animalStats.makers > 0) {
+            const makersSpan = document.createElement('span');
+            makersSpan.className = 'animal-count makers';
+            makersSpan.textContent = `Производители: ${animalStats.makers}`;
+            makersSpan.onclick = () => loadAndShowAnimalsModal('Производители', section.id, section.name);
+            animalsDiv.appendChild(makersSpan);
+        }
+        
+        if (animalStats.rams > 0) {
+            const ramsSpan = document.createElement('span');
+            ramsSpan.className = 'animal-count rams';
+            ramsSpan.textContent = `Бараны: ${animalStats.rams}`;
+            ramsSpan.onclick = () => loadAndShowAnimalsModal('Бараны', section.id, section.name);
+            animalsDiv.appendChild(ramsSpan);
+        }
+        
+        if (animalStats.ewes > 0) {
+            const ewesSpan = document.createElement('span');
+            ewesSpan.className = 'animal-count ewes';
+            ewesSpan.textContent = `Ярки: ${animalStats.ewes}`;
+            ewesSpan.onclick = () => loadAndShowAnimalsModal('Ярки', section.id, section.name);
+            animalsDiv.appendChild(ewesSpan);
+        }
+        
+        if (animalStats.sheep > 0) {
+            const sheepSpan = document.createElement('span');
+            sheepSpan.className = 'animal-count sheep';
+            sheepSpan.textContent = `Овцы: ${animalStats.sheep}`;
+            sheepSpan.onclick = () => loadAndShowAnimalsModal('Овцы', section.id, section.name);
+            animalsDiv.appendChild(sheepSpan);
+        }
+        
+        cell.appendChild(animalsDiv);
+    } else {
+        // Отсек пустой
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'empty-section';
+        emptyDiv.textContent = 'Пусто';
+        cell.appendChild(emptyDiv);
+    }
+    
+    return cell;
+}
+
+// Загрузка и показ модального окна с животными
+async function loadAndShowAnimalsModal(animalType, placeId, sectionName) {
+    try {
+        console.log(`Загружаем животных для отсека ${placeId}`);
+        
+        // Загружаем животных для конкретного отсека
+        const animals = await apiRequest(`/veterinary/api/place/${placeId}/animals/`);
+        
+        // Фильтруем по типу
+        const filteredAnimals = animals.filter(animal => {
+            const typeMap = {
+                'Производители': 'Производитель',
+                'Бараны': 'Баран',
+                'Ярки': 'Ярка',
+                'Овцы': 'Овца'
+            };
+            return animal.type === typeMap[animalType];
+        });
+        
+        // Преобразуем в формат, ожидаемый старой функцией
+        const formattedAnimals = filteredAnimals.map(animal => ({
+            id: animal.tag_number, // Используем номер бирки как ID
+            tag: { tag_number: animal.tag_number }
+        }));
+        
+        // Показываем модальное окно
+        showAnimalsModal(animalType, formattedAnimals, sectionName);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки животных:', error);
+        alert('Ошибка загрузки списка животных');
+    }
+}
+
+// Отображение одной овчарни (старая функция, больше не используется)
+// function displaySingleBarn(barnNumber, sections, animalsByPlace) {
+//     const container = document.getElementById('barn-content');
+//     container.innerHTML = '';
+//     
+//     const barnDiv = createBarnTable(barnNumber, sections, animalsByPlace);
+//     container.appendChild(barnDiv);
+// }
+
+// Функция для загрузки всех данных с пагинацией
+async function loadAllPages(url) {
+    let allResults = [];
+    let nextUrl = url;
+    
+    console.log(`Загружаем данные с URL: ${url}`);
+    
+    while (nextUrl) {
+        try {
+            console.log(`Запрос к: ${nextUrl}`);
+            const response = await apiRequest(nextUrl);
+            
+            if (response.results) {
+                // Пагинированный ответ
+                allResults = allResults.concat(response.results);
+                nextUrl = response.next;
+                console.log(`Получено ${response.results.length} записей, всего: ${allResults.length}`);
+            } else {
+                // Непагинированный ответ
+                allResults = response;
+                nextUrl = null;
+                console.log(`Получено ${response.length} записей (непагинированный ответ)`);
+            }
+        } catch (error) {
+            console.error(`Ошибка при загрузке ${nextUrl}:`, error);
+            throw error;
+        }
+    }
+    
+    console.log(`Итого загружено: ${allResults.length} записей`);
+    return allResults;
 }
 
 // Группировка животных по местам
@@ -121,31 +354,10 @@ function groupAnimalsByPlace(animals) {
     return animalsByPlace;
 }
 
-// Отображение карты овчарен
-function displayBarnsMap(barnGroups, animalsByPlace) {
-    const container = document.getElementById('barns-container');
-    container.innerHTML = '';
-    
-    // Сортируем овчарни по номерам
-    const sortedBarns = Object.keys(barnGroups).sort((a, b) => parseInt(a) - parseInt(b));
-    
-    sortedBarns.forEach(barnNumber => {
-        const sections = barnGroups[barnNumber];
-        const barnDiv = createBarnTable(barnNumber, sections, animalsByPlace);
-        container.appendChild(barnDiv);
-    });
-}
-
 // Создание таблицы для овчарни
 function createBarnTable(barnNumber, sections, animalsByPlace) {
     const barnDiv = document.createElement('div');
     barnDiv.className = 'barn-container';
-    
-    // Заголовок овчарни
-    const title = document.createElement('h2');
-    title.textContent = `Овчарня ${barnNumber}`;
-    title.className = 'barn-title';
-    barnDiv.appendChild(title);
     
     // Получаем только существующие номера отсеков и сортируем их
     const sectionNumbers = Object.keys(sections).map(n => parseInt(n)).sort((a, b) => a - b);

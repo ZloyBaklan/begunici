@@ -5,8 +5,23 @@
 {% block content %}
     <h1>Карта овчарен</h1>
     
-    <div id="barns-container">
-        <!-- Здесь будут отображаться овчарни -->
+    <!-- Список овчарен для выбора -->
+    <div id="barns-selector" class="barns-selector">
+        <h2>Выберите овчарню:</h2>
+        <div id="barns-list" class="barns-list">
+            <!-- Здесь будут кнопки овчарен -->
+        </div>
+    </div>
+    
+    <!-- Контейнер для отображения выбранной овчарни -->
+    <div id="selected-barn-container" class="selected-barn-container" style="display: none;">
+        <div class="barn-header">
+            <button id="back-to-list" class="btn btn-secondary">← Назад к списку овчарен</button>
+            <h2 id="selected-barn-title"></h2>
+        </div>
+        <div id="barn-content">
+            <!-- Здесь будет отображаться выбранная овчарня -->
+        </div>
     </div>
 
     <!-- Модальное окно для списка животных -->
