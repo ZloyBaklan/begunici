@@ -576,9 +576,18 @@ document.addEventListener('DOMContentLoaded', function() {
 // Показать диалог выбора места для перемещения
 async function showMoveAnimalsDialog() {
     try {
-        // Загружаем список доступных мест
-        const places = await apiRequest('/veterinary/api/place/');
+        // Загружаем список доступных мест с page_size=100 для получения всех мест
+        const response = await apiRequest('/veterinary/api/place/?page_size=100');
         const select = document.getElementById('destination-place');
+        
+        // Обрабатываем пагинированный ответ
+        const places = response.results || response;
+        
+        if (!Array.isArray(places)) {
+            console.error('Ожидался массив мест, получено:', places);
+            alert('Ошибка: неверный формат данных мест');
+            return;
+        }
         
         // Очищаем и заполняем список мест
         select.innerHTML = '<option value="">Выберите место...</option>';
@@ -635,8 +644,22 @@ async function moveSelectedAnimals() {
         closeMoveModal();
         closeAnimalsModal();
         
-        // Обновляем карту
-        loadPlacesMap();
+        // Обновляем карту - получаем номер текущей овчарни из заголовка
+        const titleElement = document.getElementById('selected-barn-title');
+        if (titleElement && titleElement.textContent) {
+            const match = titleElement.textContent.match(/Овчарня (\d+)/);
+            if (match) {
+                const barnNumber = parseInt(match[1]);
+                console.log(`Обновляем овчарню ${barnNumber} после перемещения животных`);
+                loadSpecificBarn(barnNumber);
+            } else {
+                console.log('Не удалось определить номер овчарни, перезагружаем селектор');
+                loadBarnsSelector();
+            }
+        } else {
+            console.log('Заголовок овчарни не найден, перезагружаем селектор');
+            loadBarnsSelector();
+        }
         
     } catch (error) {
         console.error('Ошибка при перемещении животных:', error);
