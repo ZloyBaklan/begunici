@@ -9,6 +9,9 @@ def home(request):
 def products(request):
     return render(request, "products.html")
 
+def tribe(request):
+    return render(request, "tribe.html")
+
 def contacts(request):
     return render(request, "contacts.html")
 

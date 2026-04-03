@@ -258,3 +258,12 @@
 .public-page iframe {
   border-radius: 14px;
 }
+
+.feature-icon.medical {
+  background: rgba(200, 16, 46, 0.14);
+  color: #e2052a;
+}
+
+.tribe-photo-card img {
+  box-shadow: 0 12px 28px rgba(0,0,0,0.08);
+}
