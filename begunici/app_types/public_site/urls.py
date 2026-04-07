@@ -6,6 +6,7 @@ app_name = "public_site"
 urlpatterns = [
     path("", views.home, name="home"),
     path("products/", views.products, name="products"),
+    path("tribe/", views.tribe, name="tribe"),
     path("contacts/", views.contacts, name="contacts"),
     path("login/", views.custom_login, name="login"),
 ]

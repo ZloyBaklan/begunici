@@ -1,0 +1,112 @@
+{% extends "base_public.html" %}
+{% load static %}
+
+{% block title %}Племя — Ферма Бегуницы{% endblock %}
+
+{% block content %}
+
+<section class="mb-5">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div>
+      <h1 class="fw-bold mb-1">Племенное направление</h1>
+      <div class="text-muted">
+        Племенные дорперы для фермерских хозяйств и частных фермеров
+      </div>
+    </div>
+
+    <img
+      src="{% static 'img/logo.png' %}"
+      alt="Ферма Бегуницы"
+      style="height:110px; width:auto; opacity:0.95;"
+    >
+  </div>
+
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-5">
+      <div class="feature-card text-center">
+        <img
+          src="{% static 'img/lamb.png' %}"
+          alt="Племенной дорпер"
+          style="max-width:100%; height:auto; border-radius:14px;"
+        >
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="feature-card text-center tribe-photo-card">
+        <h2 class="section-title mb-3">Описание</h2>
+        <div class="section-rule mb-4"></div>
+
+        <p class="feature-text mb-3">
+          Мы занимаемся разведением и продажей племенных дорперов для хозяйств,
+          которым важны надёжная генетика, крепкая конституция животных и
+          практическая ценность породы в реальной работе.
+        </p>
+
+        <p class="feature-text mb-3">
+          Дорпер ценится за неприхотливость, адаптивность к разным условиям
+          содержания, хорошие мясные формы и быстрый рост молодняка.
+          Порода относится к easy-care типу: дорперов часто выбирают за
+          удобство в содержании и снижение трудоёмкости обслуживания.
+        </p>
+
+        <p class="feature-text mb-3">
+          Для фермерских хозяйств и частных фермеров это означает понятную
+          экономику: порода интересна как для формирования собственного
+          маточного стада, так и для развития мясного направления и
+          племенной работы.
+        </p>
+
+        <p class="feature-text mb-4">
+          Мы работаем с теми, кто ищет не просто животных, а основу для
+          стабильного и перспективного хозяйства: консультируем по подбору,
+          рассказываем о линии, помогаем подобрать формат сотрудничества
+          под задачи хозяйства.
+        </p>
+
+        <a href="{% url 'public_site:contacts' %}" class="btn btn-brand btn-lg">
+          Заказать
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-5">
+  <h2 class="section-title">Почему дорпер</h2>
+  <div class="section-rule"></div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-md-4">
+      <div class="feature-card text-center tribe-photo-card">
+        <div class="feature-icon"><i class="fa-solid fa-seedling"></i></div>
+        <div class="feature-title">Неприхотливость</div>
+        <p class="feature-text">
+          Породу ценят за easy-care формат содержания и хорошую адаптацию к разным условиям.
+        </p>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card text-center tribe-photo-card">
+        <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
+        <div class="feature-title">Быстрый рост</div>
+        <p class="feature-text">
+          Молодняк отличается хорошими темпами роста, а порода известна качественными мясными формами.
+        </p>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="feature-card text-center tribe-photo-card">
+        <div class="feature-icon"><i class="fa-solid fa-medal"></i></div>
+        <div class="feature-title">Племенная ценность</div>
+        <p class="feature-text">
+          Подходит для хозяйств, которые строят сильное стадо и думают о долгосрочном результате.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
