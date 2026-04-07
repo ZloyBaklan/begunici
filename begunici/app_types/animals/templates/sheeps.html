@@ -46,6 +46,13 @@
                         </div>
 
                         <div class="mb-3">
+                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" 
+                                   placeholder="Введите процент дорперности" min="0" max="100" step="0.01">
+                            <div class="form-text">Необязательно. Если не указано, будет рассчитано автоматически на основе родителей.</div>
+                        </div>
+
+                        <div class="mb-3">
                             <label for="note" class="form-label">Примечание:</label>
                             <input type="text" id="note" name="note" class="form-control" placeholder="Введите примечание">
                         </div>
@@ -70,7 +77,10 @@
                             <h5 class="card-title mb-0">Список овец</h5>
                         </div>
                         <div class="col-md-6">
-                            <input type="text" id="sheep-search" class="form-control" placeholder="Поиск овец...">
+                            <div class="input-group">
+                                <input type="text" id="sheep-search" class="form-control" placeholder="Поиск овец...">
+                                <button class="btn btn-outline-primary" type="button" onclick="performSheepSearch()">Поиск</button>
+                            </div>
                         </div>
                         <div class="col-md-2">
                             <div class="btn-group btn-group-sm w-100" role="group">
@@ -96,6 +106,7 @@
                                     <th width="18%">Последнее Взвешивание</th>
                                     <th width="15%">Последняя Ветобработка</th>
                                     <th width="8%">Бирка РСХН</th>
+                                    <th width="8%">Дорперность</th>
                                     <th width="10%">Примечание</th>
                                 </tr>
                             </thead>
@@ -349,53 +360,24 @@ input[type="checkbox"]:focus {
 <script type="module" src="{% static 'js/sheeps.js' %}"></script>
 <script src="{% static 'js/export-common.js' %}"></script>
 <script>
-    function searchSheeps() {
+    function performSheepSearch() {
         const query = document.getElementById('sheep-search').value;
-        fetchSheeps(query); // Поиск овец
+        if (window.fetchSheeps) {
+            window.fetchSheeps(1, query);
+        }
     }
 
-    function toggleSelectAll(checkbox) {
-        // Используем функцию из sheeps.js
-        window.toggleSelectAll(checkbox);
+    function searchSheeps() {
+        performSheepSearch();
     }
-    
-    function cancelEdit() {
-        document.getElementById('create-sheep-form').reset();
-        document.getElementById('form-title').textContent = 'Создать овцу';
-        document.getElementById('create-sheep-button').textContent = 'Создать овцу';
-        document.getElementById('cancel-edit-button').style.display = 'none';
-    }
-    
-    // Делаем функции глобальными
-    window.saveSheep = function() {
-        // Эта функция будет переопределена в sheeps.js
-        console.log('saveSheep called from HTML');
-    };
-    
-    window.openArchiveModal = function() {
-        console.log('openArchiveModal called from HTML');
-    };
-    
-    window.closeArchiveModal = function() {
-        console.log('closeArchiveModal called from HTML');
-    };
-    
-    window.deleteSelectedSheeps = function() {
-        console.log('deleteSelectedSheeps called from HTML');
-    };
-    
-    window.applyArchiveStatus = function() {
-        console.log('applyArchiveStatus called from HTML');
-    };
-    
-    // Автоматический поиск при вводе
+
+    // Поиск по Enter
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('sheep-search');
         if (searchInput) {
-            searchInput.addEventListener('input', function() {
-                const query = this.value;
-                if (window.fetchSheeps) {
-                    window.fetchSheeps(1, query); // Поиск с первой страницы
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performSheepSearch();
                 }
             });
         }

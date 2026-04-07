@@ -3,7 +3,6 @@ let currentDate = new Date();
 let currentViewMode = 'week'; // 'week' или 'month'
 let currentNoteId = null;
 let currentNoteDate = null;
-let allTags = [];
 let allStatuses = [];
 
 // ИСПРАВЛЕННАЯ функция для навигации
@@ -30,7 +29,6 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Инициализация календаря заметок...');
     
     // Загружаем данные
-    loadAllTags();
     loadAllStatuses();
     
     // Инициализируем календарь
@@ -117,8 +115,19 @@ document.addEventListener('DOMContentLoaded', function() {
         insertBtn.addEventListener('click', showTagModal);
     }
     
+    // Обработчик для кнопки поиска бирок
+    const searchTagBtn = document.getElementById('searchTagBtn');
+    if (searchTagBtn) {
+        searchTagBtn.addEventListener('click', filterTags);
+    }
+    
+    // Обработчик для поиска по Enter
     if (searchInput) {
-        searchInput.addEventListener('input', filterTags);
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                filterTags();
+            }
+        });
     }
 });
 
@@ -617,24 +626,6 @@ async function saveNote() {
     }
 }
 
-// Загружает все бирки
-async function loadAllTags() {
-    try {
-        const response = await fetch('/animals/api/all-tags/');
-        const data = await response.json();
-        
-        if (data.error) {
-            console.error('Ошибка загрузки бирок:', data.error);
-            return;
-        }
-        
-        allTags = data;
-        renderTags(allTags);
-    } catch (error) {
-        console.error('Ошибка загрузки бирок:', error);
-    }
-}
-
 // Загружает все статусы
 async function loadAllStatuses() {
     try {
@@ -654,7 +645,14 @@ async function loadAllStatuses() {
 
 // Показывает модальное окно выбора бирки
 function showTagModal() {
-    renderTags(allTags);
+    // Очищаем поле поиска и результаты
+    document.getElementById('tagSearch').value = '';
+    document.getElementById('tagsList').innerHTML = `
+        <div class="text-muted text-center py-3">
+            Введите номер бирки и нажмите "Поиск" для отображения результатов
+        </div>
+    `;
+    
     const modal = new bootstrap.Modal(document.getElementById('tagModal'));
     modal.show();
 }
@@ -678,12 +676,72 @@ function renderTags(tags) {
 }
 
 // Фильтрует бирки по поисковому запросу
-function filterTags() {
-    const search = document.getElementById('tagSearch').value.toLowerCase();
-    const filteredTags = allTags.filter(tag => 
-        tag.tag_number.toLowerCase().includes(search)
-    );
-    renderTags(filteredTags);
+async function filterTags() {
+    const search = document.getElementById('tagSearch').value.trim();
+    
+    if (!search) {
+        document.getElementById('tagsList').innerHTML = `
+            <div class="text-muted text-center py-3">
+                Введите номер бирки для поиска
+            </div>
+        `;
+        return;
+    }
+    
+    // Показываем индикатор загрузки
+    document.getElementById('tagsList').innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Поиск...</span>
+            </div>
+            <div class="mt-2">Поиск бирок...</div>
+        </div>
+    `;
+    
+    try {
+        // Загружаем теги с поиском
+        const response = await fetch(`/animals/api/all-tags/?search=${encodeURIComponent(search)}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Ошибка поиска бирок:', data.error);
+            document.getElementById('tagsList').innerHTML = `
+                <div class="text-danger text-center py-3">
+                    Ошибка поиска: ${data.error}
+                </div>
+            `;
+            return;
+        }
+        
+        // Ограничиваем до 50 результатов
+        const limitedTags = data.slice(0, 50);
+        
+        if (limitedTags.length === 0) {
+            document.getElementById('tagsList').innerHTML = `
+                <div class="text-muted text-center py-3">
+                    Бирки не найдены
+                </div>
+            `;
+        } else {
+            renderTags(limitedTags);
+            
+            // Показываем информацию о количестве результатов
+            if (data.length > 50) {
+                const container = document.getElementById('tagsList');
+                const info = document.createElement('div');
+                info.className = 'text-muted text-center mt-2 small';
+                info.textContent = `Показано первых 50 из ${data.length} результатов`;
+                container.appendChild(info);
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка поиска бирок:', error);
+        document.getElementById('tagsList').innerHTML = `
+            <div class="text-danger text-center py-3">
+                Ошибка соединения
+            </div>
+        `;
+    }
 }
 
 // Вставляет бирку в текст заметки

@@ -53,7 +53,7 @@ function renderOtbivka(animals) {
             <td>
                 <a href="/animals/${animal.animal_type}/${animal.tag_number}/info/" 
                    class="text-decoration-none">
-                    ${animal.tag_number}
+                    ${animal.display_name || animal.tag_number}
                 </a>
             </td>
             <td>

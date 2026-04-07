@@ -119,6 +119,18 @@ async function loadAnimalDetails(animalType, tagNumber) {
             workingConditionField.value = animal.working_condition || '';
         }
         
+        // Поле дорперности
+        const dorperField = document.getElementById('dorper_percentage');
+        if (dorperField) {
+            dorperField.value = animal.dorper_percentage || '';
+        }
+        
+        // Отображение дорперности в основной информации
+        const dorperDisplay = document.getElementById('dorper-display');
+        if (dorperDisplay) {
+            dorperDisplay.textContent = animal.dorper_display || '-';
+        }
+        
         document.getElementById('note').value = animal.note || '';
 
         console.log('Загружаем дополнительные данные (статусы, места, вес, ветобработки)...');
@@ -280,6 +292,7 @@ async function saveAnimalDetails() {
 
     const animalStatusValue = document.getElementById('animal_status').value;
     const placeValue = document.getElementById('place').value;
+    const dorperValue = document.getElementById('dorper_percentage').value;
     
     const data = {
         tag_number: document.getElementById('tag').value,
@@ -289,10 +302,13 @@ async function saveAnimalDetails() {
         place_id: placeValue ? parseInt(placeValue) : null,
         rshn_tag: document.getElementById('rshn_tag').value || null,
         date_otbivka: document.getElementById('date_otbivka').value || null,
+        dorper_percentage: dorperValue ? parseFloat(dorperValue) : null,
+        is_manual_dorper: dorperValue ? true : false,
     };
 
     // Добавляем специфичные поля для Maker
     if (animalType === 'maker') {
+        data.name = document.getElementById('name').value || null;
         data.plemstatus = document.getElementById('plemstatus').value;
         data.working_condition = document.getElementById('working_condition').value;
     }
@@ -564,7 +580,7 @@ function updateParentDisplay(mother, father) {
     }
 
     if (father && father.has_link && father.tag_obj) {
-        fatherDisplay.textContent = father.tag_number;
+        fatherDisplay.textContent = father.display_name || father.tag_number;
         // Определяем тип животного по animal_type в объекте Tag
         const fatherType = getAnimalTypeRoute(father.tag_obj.animal_type);
         console.log(`Отец: ${father.tag_number}, тип: ${father.tag_obj.animal_type}, маршрут: ${fatherType}`);
@@ -572,7 +588,7 @@ function updateParentDisplay(mother, father) {
         fatherLink.style.display = 'inline';
     } else if (father && father.tag_number) {
         // Родитель существует, но нет ссылки (не найден в БД)
-        fatherDisplay.textContent = father.tag_number + ' (не найден)';
+        fatherDisplay.textContent = (father.display_name || father.tag_number) + ' (не найден)';
         fatherLink.href = '#';
         fatherLink.style.display = 'none';
     } else {

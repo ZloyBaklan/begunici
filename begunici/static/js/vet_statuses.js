@@ -51,10 +51,9 @@ function cancelEdit() {
 }
 window.cancelEdit = cancelEdit; // Делаем функцию глобальной
 
-/// Функция создания нового статуса
+// Функция создания нового статуса
 async function createStatus() {
     const statusType = document.getElementById('status-type').value;
-    const statusDate = document.getElementById('status-date').value;
     const statusColor = document.getElementById('status-color').value;
 
     if (!statusType.trim()) {
@@ -64,7 +63,6 @@ async function createStatus() {
 
     const data = {
         status_type: statusType,
-        date_of_status: statusDate || null, // Отправляем как есть из input[type="date"]
         color: statusColor
     };
 
@@ -87,22 +85,34 @@ async function createStatus() {
 async function fetchStatuses(page = 1, searchQuery = '') {
     try {
         console.log('Fetching statuses...');
-        let url = `/veterinary/api/status/?page=${page}&page_size=${pageSize}`;
-        if (searchQuery) {
-            url += `&search=${encodeURIComponent(searchQuery)}`;
-        }
+        let url = `/veterinary/api/status/?page=${page}&page_size=100`; // Увеличиваем размер страницы для локальной фильтрации
+        
         const response = await apiRequest(url);
         console.log('Statuses response:', response);
         
         // Обрабатываем пагинированный ответ
-        const statuses = Array.isArray(response) ? response : response.results;
+        let statuses = Array.isArray(response) ? response : response.results;
+        
+        // Применяем локальную фильтрацию по поисковому запросу
+        if (searchQuery && searchQuery.trim()) {
+            const searchLower = searchQuery.toLowerCase();
+            statuses = statuses.filter(status => 
+                status.status_type && status.status_type.toLowerCase().includes(searchLower)
+            );
+        }
+        
+        // Применяем пагинацию к отфильтрованным данным
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedStatuses = statuses.slice(startIndex, endIndex);
+        
         currentPage = page;
         
         const statusTable = document.getElementById('status-list');
         statusTable.innerHTML = '';
 
-        if (statuses && statuses.length > 0) {
-            statuses.forEach((status, index) => {
+        if (paginatedStatuses && paginatedStatuses.length > 0) {
+            paginatedStatuses.forEach((status, index) => {
                 const row = document.createElement('tr');
                 
                 // Создаем кнопки действий с проверкой прав
@@ -123,12 +133,11 @@ async function fetchStatuses(page = 1, searchQuery = '') {
                 actionsHtml += `</div>`;
                 
                 // Вычисляем номер записи с учетом пагинации
-                const recordNumber = (page - 1) * pageSize + index + 1;
+                const recordNumber = startIndex + index + 1;
                 
                 row.innerHTML = `
                     <td>${recordNumber}</td>
                     <td>${status.status_type}</td>
-                    <td>${formatDateToOutput(status.date_of_status) || 'Нет даты'}</td>
                     <td>
                         <div style="width: 30px; height: 20px; background-color: ${status.color}; border: 1px solid #ccc; border-radius: 3px;"></div>
                     </td>
@@ -146,17 +155,15 @@ async function fetchStatuses(page = 1, searchQuery = '') {
                 statusTable.appendChild(row);
             });
         } else {
-            statusTable.innerHTML = '<tr><td colspan="5" class="text-center">Статусы не найдены</td></tr>';
+            statusTable.innerHTML = '<tr><td colspan="4" class="text-center">Статусы не найдены</td></tr>';
         }
         
-        // Обновляем пагинацию
-        if (!Array.isArray(response)) {
-            updatePagination(response);
-        }
+        // Обновляем пагинацию для отфильтрованных данных
+        updateLocalPagination(statuses.length, page, searchQuery);
     } catch (error) {
         console.error('Ошибка при загрузке статусов:', error);
         const statusTable = document.getElementById('status-list');
-        statusTable.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
+        statusTable.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
     }
 }
 
@@ -167,7 +174,6 @@ async function editStatus(statusId) {
 
         // Заполняем поля формы данными статуса для редактирования
         document.getElementById('status-type').value = status.status_type;
-        document.getElementById('status-date').value = formatDateToInput(status.date_of_status);
         document.getElementById('status-color').value = status.color || '#FFFFFF';
 
         // Меняем текст кнопки на "Сохранить изменения" и привязываем действие
@@ -203,11 +209,8 @@ async function deleteStatus(statusId) {
 
 // Функция для обновления статуса
 async function updateStatus(statusId) {
-    const statusDate = document.getElementById('status-date').value;
-    
     const data = {
         status_type: document.getElementById('status-type').value,
-        date_of_status: statusDate || null, // Отправляем как есть из input[type="date"]
         color: document.getElementById('status-color').value
     };
     
@@ -235,6 +238,56 @@ function searchStatuses(query = null) {
     fetchStatuses(1, query);
 }
 window.searchStatuses = searchStatuses; // Делаем функцию глобальной
+
+// Функция обновления пагинации для локальной фильтрации
+function updateLocalPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    if (!pagination) {
+        // Создаем элемент пагинации если его нет
+        const paginationDiv = document.createElement('div');
+        paginationDiv.id = 'pagination';
+        paginationDiv.className = 'mt-3 d-flex justify-content-between align-items-center';
+        document.querySelector('.card-body').appendChild(paginationDiv);
+    }
+    
+    const paginationElement = document.getElementById('pagination');
+    paginationElement.innerHTML = '';
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Левая часть - кнопка "Предыдущая"
+    const leftContainer = document.createElement('div');
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.innerText = 'Предыдущая';
+        prevButton.onclick = () => {
+            fetchStatuses(currentPage - 1, searchQuery);
+        };
+        leftContainer.appendChild(prevButton);
+    }
+
+    // Центральная часть - номер страницы
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'text-muted';
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+
+    // Правая часть - кнопка "Следующая"
+    const rightContainer = document.createElement('div');
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.innerText = 'Следующая';
+        nextButton.onclick = () => {
+            fetchStatuses(currentPage + 1, searchQuery);
+        };
+        rightContainer.appendChild(nextButton);
+    }
+    
+    paginationElement.appendChild(leftContainer);
+    paginationElement.appendChild(pageInfo);
+    paginationElement.appendChild(rightContainer);
+}
 
 // Функция обновления пагинации
 function updatePagination(response) {

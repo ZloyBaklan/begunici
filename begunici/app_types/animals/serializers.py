@@ -70,14 +70,42 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
+    
+    # Поле для отображения дорперности с форматированием
+    dorper_display = serializers.SerializerMethodField()
 
     class Meta:
         model = AnimalBase
         fields = "__all__"
+    
+    def get_dorper_display(self, obj):
+        """Возвращает отформатированную дорперность с процентом и звездочкой для ручных значений"""
+        if obj.dorper_percentage is None:
+            return None
+        
+        # Форматируем процент (убираем лишние нули)
+        percentage = float(obj.dorper_percentage)
+        if percentage == int(percentage):
+            formatted = f"{int(percentage)}%"
+        else:
+            formatted = f"{percentage:g}%"
+        
+        # Добавляем звездочку для ручных значений
+        if obj.is_manual_dorper:
+            formatted += "*"
+            
+        return formatted
 
     def validate_birth_date(self, value):
         if value > timezone.now().date():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
+        return value
+    
+    def validate_dorper_percentage(self, value):
+        """Валидация дорперности (0-100%)"""
+        if value is not None:
+            if value < 0 or value > 100:
+                raise serializers.ValidationError("Дорперность должна быть в диапазоне от 0 до 100%.")
         return value
 
     def validate_date_otbivka(self, value):
@@ -385,11 +413,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
 
 class MakerSerializer(AnimalBaseSerializer):
+    name = serializers.CharField(max_length=50, required=False, allow_null=True, allow_blank=True)
     plemstatus = serializers.CharField(max_length=200)
     working_condition = serializers.CharField(max_length=200)
     working_condition_date = serializers.DateField(
         required=False, allow_null=True
     )  # Добавляем поле даты
+    display_name = serializers.SerializerMethodField()
 
     class Meta(AnimalBaseSerializer.Meta):
         model = Maker
@@ -398,6 +428,15 @@ class MakerSerializer(AnimalBaseSerializer):
     def get_children(self, obj):
         children = obj.get_children()
         return UniversalChildSerializer(children, many=True).data
+    
+    def get_display_name(self, obj):
+        """Возвращает отображаемое имя для фронтенда"""
+        return obj.get_display_name()
+
+    def get_display_name(self, obj):
+        """Возвращает отображаемое имя для фронтенда"""
+        return obj.get_display_name()
+
 
 
 class UniversalChildSerializer(serializers.Serializer):
@@ -412,7 +451,14 @@ class UniversalChildSerializer(serializers.Serializer):
     first_weight = serializers.SerializerMethodField()
 
     def get_tag_number(self, obj):
-        return obj.tag.tag_number if obj.tag else "Нет бирки"
+        if not obj.tag:
+            return "Нет бирки"
+        
+        # Для производителей проверяем наличие имени
+        if hasattr(obj, 'name') and obj.name:
+            return f"{obj.name}({obj.tag.tag_number})"
+        
+        return obj.tag.tag_number
     
     def get_animal_type(self, obj):
         if not obj.tag:
@@ -433,7 +479,24 @@ class UniversalChildSerializer(serializers.Serializer):
         return obj.animal_status.status_type if obj.animal_status else None
 
     def get_archive_date(self, obj):
-        return obj.animal_status.date_of_status if obj.animal_status else None
+        """Получаем дату архивирования из StatusHistory"""
+        if not obj.animal_status:
+            return None
+        
+        # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
+        from begunici.app_types.veterinary.vet_models import StatusHistory
+        
+        archive_statuses = ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя']
+        if obj.animal_status.status_type in archive_statuses:
+            status_history = StatusHistory.objects.filter(
+                tag=obj.tag,
+                new_status=obj.animal_status
+            ).order_by('-change_date').first()
+            
+            if status_history:
+                return status_history.change_date
+        
+        return None
 
     def get_first_weight(self, obj):
         """Возвращает первый (самый ранний) вес животного"""
@@ -574,7 +637,12 @@ class LambingSerializer(serializers.ModelSerializer):
     def get_father_tag(self, obj):
         try:
             father = obj.get_father()
-            return father.tag.tag_number if father and father.tag else None
+            if father and father.tag:
+                # Если отец - производитель с именем, возвращаем Имя(Бирка)
+                if hasattr(father, 'name') and father.name:
+                    return f"{father.name}({father.tag.tag_number})"
+                return father.tag.tag_number
+            return None
         except Exception:
             return None
     
@@ -676,9 +744,6 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     tag_number = serializers.CharField()
     animal_type = serializers.CharField()
     status = serializers.CharField(source="animal_status__status_type", allow_null=True)
-    date_of_status = serializers.DateTimeField(
-        source="animal_status__date_of_status", allow_null=True
-    )
     place = serializers.CharField(source="place__sheepfold", allow_null=True)
     birth_date = serializers.DateField()
     age = serializers.SerializerMethodField()  # Изменяем на SerializerMethodField

@@ -35,6 +35,7 @@ from .views import (
     bulk_create_lambings,
     otbivka_list,
     otbivka_api,
+    check_kinship,
 )
 
 # Создаем маршруты для ViewSet
@@ -250,4 +251,5 @@ urlpatterns = [
     path("api/inactive-mothers/", get_inactive_mothers, name="inactive-mothers"),  # Неактивные матери
     path("api/all-fathers/", get_all_fathers, name="all-fathers"),  # Все отцы
     path("api/bulk-create-lambings/", bulk_create_lambings, name="bulk-create-lambings"),  # Массовое создание окотов
+    path("api/check-kinship/", check_kinship, name="check-kinship"),  # Проверка родства
 ]

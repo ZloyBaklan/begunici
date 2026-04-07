@@ -56,6 +56,18 @@
                         </div>
 
                         <div class="mb-3">
+                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" 
+                                   placeholder="Введите процент дорперности" min="0" max="100" step="0.01">
+                            <div class="form-text">Необязательно. Если не указано, будет рассчитано автоматически на основе родителей.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Имя (необязательно):</label>
+                            <input type="text" id="name" name="name" class="form-control" placeholder="Введите имя производителя" maxlength="50">
+                        </div>
+
+                        <div class="mb-3">
                             <label for="note" class="form-label">Примечание:</label>
                             <input type="text" id="note" name="note" class="form-control" placeholder="Введите примечание">
                         </div>
@@ -80,7 +92,10 @@
                             <h5 class="card-title mb-0">Список производителей</h5>
                         </div>
                         <div class="col-md-6">
-                            <input type="text" id="maker-search" class="form-control" placeholder="Поиск производителей...">
+                            <div class="input-group">
+                                <input type="text" id="maker-search" class="form-control" placeholder="Поиск производителей...">
+                                <button class="btn btn-outline-primary" type="button" onclick="performMakerSearch()">Поиск</button>
+                            </div>
                         </div>
                         <div class="col-md-2">
                             <div class="btn-group btn-group-sm w-100" role="group">
@@ -107,6 +122,7 @@
                                     <th width="15%">Последняя Ветобработка</th>
                                     <th width="12%">Текущий статус работы</th>
                                     <th width="8%">Бирка РСХН</th>
+                                    <th width="8%">Дорперность</th>
                                     <th width="10%">Примечание</th>
                                 </tr>
                             </thead>
@@ -382,37 +398,24 @@ input[type="checkbox"]:focus {
 <script type="module" src="{% static 'js/makers.js' %}"></script>
 <script src="{% static 'js/export-common.js' %}"></script>
 <script>
-    function searchMakers() {
+    function performMakerSearch() {
         const query = document.getElementById('maker-search').value;
-        fetchMakers(query); // Поиск производителей
+        if (window.fetchMakers) {
+            window.fetchMakers(1, query);
+        }
     }
 
-    function toggleSelectAll(checkbox) {
-        // Используем функцию из makers.js
-        window.toggleSelectAll(checkbox);
+    function searchMakers() {
+        performMakerSearch();
     }
-    
-    function cancelEdit() {
-        document.getElementById('create-maker-form').reset();
-        document.getElementById('form-title').textContent = 'Создать производителя';
-        document.getElementById('create-maker-button').textContent = 'Создать производителя';
-        document.getElementById('cancel-edit-button').style.display = 'none';
-    }
-    
-    // Делаем функции глобальными
-    window.saveMaker = function() {
-        // Эта функция будет переопределена в makers.js
-        console.log('saveMaker called from HTML');
-    };
-    
-    // Автоматический поиск при вводе
+
+    // Поиск по Enter
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('maker-search');
         if (searchInput) {
-            searchInput.addEventListener('input', function() {
-                const query = this.value;
-                if (window.fetchMakers) {
-                    window.fetchMakers(1, query); // Поиск с первой страницы
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performMakerSearch();
                 }
             });
         }

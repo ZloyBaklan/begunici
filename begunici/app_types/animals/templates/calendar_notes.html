@@ -108,10 +108,15 @@
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <input type="text" class="form-control" id="tagSearch" placeholder="Поиск по номеру бирки...">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="tagSearch" placeholder="Введите номер бирки для поиска...">
+                        <button class="btn btn-primary" type="button" id="searchTagBtn">Поиск</button>
+                    </div>
                 </div>
                 <div id="tagsList" class="tags-list">
-                    <!-- Список бирок будет добавлен через JavaScript -->
+                    <div class="text-muted text-center py-3">
+                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

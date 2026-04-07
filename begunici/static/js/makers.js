@@ -1,5 +1,27 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
+// Глобальное хранение выбранных элементов с сохранением в sessionStorage
+let selectedMakers = new Set();
+
+// Функции для работы с sessionStorage
+function saveSelectedMakers() {
+    sessionStorage.setItem('selectedMakers', JSON.stringify(Array.from(selectedMakers)));
+}
+
+function loadSelectedMakers() {
+    const saved = sessionStorage.getItem('selectedMakers');
+    if (saved) {
+        selectedMakers = new Set(JSON.parse(saved));
+    }
+}
+
+// Загружаем сохраненные выбранные элементы при инициализации
+loadSelectedMakers();
+
+let currentPage = 1;
+let currentFilters = {};
+const pageSize = 10;
+
 document.addEventListener('DOMContentLoaded', function () {
     fetchMakers();  // Загрузка списка производителей при загрузке страницы
     loadAnimalStatuses();
@@ -28,6 +50,28 @@ async function loadAnimalStatuses() {
         });
     } catch (error) {
         console.error('Ошибка при загрузке статусов животных:', error);
+    }
+}
+
+// Функция загрузки статусов
+async function loadStatuses() {
+    try {
+        const response = await apiRequest('/veterinary/api/status/?page_size=100');
+        // API возвращает пагинированные данные, берем массив из results
+        const statuses = response.results || response;
+        const select = document.getElementById('animal_status');
+        if (select) {
+            select.innerHTML = '<option value="">Выберите статус</option>';
+            
+            statuses.forEach(status => {
+                const option = document.createElement('option');
+                option.value = status.id;
+                option.textContent = status.status_type;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки статусов:', error);
     }
 }
 
@@ -66,11 +110,14 @@ async function saveMaker() {
 
     const data = {
         tag_number: document.getElementById('tag').value,
+        name: document.getElementById('name').value || null,
         animal_status_id: parseInt(document.getElementById('animal_status').value),
         birth_date: document.getElementById('birth_date').value,
         plemstatus: document.getElementById('plemstatus').value,
         working_condition: document.getElementById('working_condition').value,
         rshn_tag: document.getElementById('rshn_tag').value,
+        dorper_percentage: document.getElementById('dorper_percentage').value || null,
+        is_manual_dorper: document.getElementById('dorper_percentage').value ? true : false,
         note: document.getElementById('note').value,
         place_id: parseInt(document.getElementById('place').value), // Передаём ID места,
     };
@@ -93,21 +140,57 @@ async function saveMaker() {
     }
 }
 
-
-let currentPage = 1; // Текущая страница
-const pageSize = 10; // Количество записей на странице
-
 // Загрузка списка производителей
-async function fetchMakers(page = 1, query = '') {
+async function fetchMakers(page = 1, filters = {}) {
     try {
-        const response = await apiRequest(`/animals/maker/?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(query)}`);
-
-        // Проверка структуры ответа
-        const makers = Array.isArray(response) ? response : response.results;
+        // Обновляем текущие фильтры
+        currentFilters = { ...currentFilters, ...filters };
+        
+        // Сохраняем параметры поиска в URL для сохранения при пагинации
+        const urlParams = new URLSearchParams(window.location.search);
+        if (currentFilters.search && currentFilters.search.trim()) {
+            urlParams.set('search', currentFilters.search);
+        } else {
+            urlParams.delete('search');
+        }
+        
+        // Обновляем URL без перезагрузки страницы
+        const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
+        window.history.replaceState({}, '', newUrl);
+        
+        // Строим URL с параметрами
+        const params = new URLSearchParams();
+        
+        // Добавляем параметр страницы
+        params.append('page', page);
+        
+        // Добавляем фильтры если они есть
+        if (currentFilters.search && currentFilters.search.trim()) {
+            params.append('search', currentFilters.search.trim());
+        }
+        if (currentFilters.animal_status) {
+            params.append('animal_status', currentFilters.animal_status);
+        }
+        if (currentFilters.place) {
+            params.append('place', currentFilters.place);
+        }
+        
+        currentPage = page;
+        const response = await apiRequest(`/animals/maker/?${params.toString()}`);
+        
+        // Обрабатываем ответ - может быть массив или объект с results
+        const makers = Array.isArray(response) ? response : (response.results || response);
 
         if (makers) {
             renderMakers(makers);
-            updatePagination(response);
+            // Проверяем, есть ли пагинация в ответе
+            if (response.results && (response.next || response.previous)) {
+                // Используем полную пагинацию если есть next/previous
+                updatePagination(response);
+            } else {
+                // Для неограниченного списка создаем простую пагинацию
+                updateSimpleMakersPagination(makers.length, currentFilters.search);
+            }
         } else {
             console.error('Некорректный ответ от API:', response);
             alert('Ошибка: данные производителей не найдены.');
@@ -120,10 +203,14 @@ async function fetchMakers(page = 1, query = '') {
 
 
 // Рендеринг списка производителей
-function renderMakers(makers) {
+function renderMakers(makers, startIndex = null) {
     const makerList = document.getElementById('maker-list');
-    makerList.innerHTML = '';
+    const rows = [];
+    
     makers.forEach((maker, index) => {
+        // Если startIndex не передан, используем стандартную пагинацию
+        const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
+        
         const row = `<tr>
             <td>
                 <input type="checkbox" 
@@ -131,8 +218,8 @@ function renderMakers(makers) {
                 data-tag="${maker.tag.tag_number}"
                 data-animal-id="${maker.id}">
             </td>
-            <td>${(currentPage - 1) * pageSize + index + 1}</td>
-            <td><a href="/animals/maker/${maker.tag.tag_number}/info/">${maker.tag.tag_number}</a></td>
+            <td>${recordNumber}</td>
+            <td><a href="/animals/maker/${maker.tag.tag_number}/info/">${maker.display_name || maker.tag.tag_number}</a></td>
             <td style="background-color:${maker.animal_status ? maker.animal_status.color : '#FFFFFF'}">
                 ${maker.animal_status ? maker.animal_status.status_type : 'Нет статуса'}
             </td>
@@ -142,46 +229,53 @@ function renderMakers(makers) {
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${maker.veterinary_history && maker.veterinary_history.length > 0 
-                ? (() => {
-                    const lastVet = maker.veterinary_history[0];
-                    let displayText = `${formatDateToOutput(lastVet.date_of_care)}: ${lastVet.veterinary_care.care_name}`;
-                    
-                    // Добавляем информацию о сроке действия
-                    if (lastVet.duration_days !== undefined && lastVet.duration_days !== null) {
-                        if (lastVet.duration_days === 0) {
-                            displayText += ' (Бессрочно)';
-                        } else {
-                            // Вычисляем оставшиеся дни
-                            const careDate = new Date(lastVet.date_of_care);
-                            const expiryDate = new Date(careDate);
-                            expiryDate.setDate(careDate.getDate() + lastVet.duration_days);
-                            
-                            // Получаем текущую дату в московском времени
-                            const today = new Date();
-                            const moscowOffset = 3 * 60; // 3 часа в минутах
-                            const utc = today.getTime() + (today.getTimezoneOffset() * 60000);
-                            const moscowTime = new Date(utc + (moscowOffset * 60000));
-                            
-                            const remainingDays = Math.ceil((expiryDate - moscowTime) / (1000 * 60 * 60 * 24));
-                            
-                            // Убираем все дополнительные сообщения о статусе
-                        }
-                    }
-                    
-                    return displayText;
-                })()
+                ? `${formatDateToOutput(maker.veterinary_history[0].date_of_care)}: ${maker.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
             <td>${maker.rshn_tag || '-'}</td>
+            <td>${maker.dorper_display || '-'}</td>
             <td>${maker.note}</td>
         </tr>`;
-        makerList.innerHTML += row;
+        rows.push(row);
     });
     
-    document.querySelectorAll('.select-maker').forEach(cb => cb.addEventListener('click', e => toggleSelectMaker(e.target)))
+    makerList.innerHTML = rows.join('');
+    
+    // Добавляем обработчики событий для чекбоксов
+    document.querySelectorAll('.select-maker').forEach(cb => {
+        cb.addEventListener('click', e => toggleSelectMaker(e.target));
+        
+        // Восстанавливаем состояние чекбокса
+        const tagNumber = cb.getAttribute('data-tag');
+        if (selectedMakers.has(tagNumber)) {
+            cb.checked = true;
+        }
+    });
+    
+    // Обновляем кнопки действий
+    toggleDeleteButton();
 }
 
 
+
+// Функция поиска производителей
+async function searchMakers() {
+    const searchTerm = document.getElementById('maker-search').value;
+    const statusFilter = document.getElementById('status-filter') ? document.getElementById('status-filter').value : '';
+    const placeFilter = document.getElementById('place-filter') ? document.getElementById('place-filter').value : '';
+    
+    currentPage = 1;
+    await fetchMakers(currentPage, {
+        search: searchTerm,
+        animal_status: statusFilter,
+        place: placeFilter
+    });
+}
+
+// Алиас для совместимости с шаблоном
+async function performMakerSearch() {
+    await searchMakers();
+}
 
 // Получение цвета для статуса
 function getColorForStatus(status) {
@@ -193,18 +287,25 @@ function getColorForStatus(status) {
     }
 }
 
-let selectedMakers = new Map(); // Хранение {id: true/false}
-
 // Функция для управления чекбоксами всех записей
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.select-maker');
     checkboxes.forEach(cb => {
-        const tagNumber= cb.dataset.tag;
+        const tagNumber = cb.dataset.tag;
 
         cb.checked = checkbox.checked;
-        selectedMakers.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+        
+        if (checkbox.checked) {
+            selectedMakers.add(tagNumber);
+        } else {
+            selectedMakers.delete(tagNumber);
+        }
     });
-    console.log('Текущее состояние selectedMakers после выбора всех:', selectedMakers); // Отладочный вывод
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedMakers();
+    
+    console.log('Текущее состояние selectedMakers после выбора всех:', selectedMakers);
     toggleDeleteButton();
 }
 
@@ -213,8 +314,16 @@ function toggleSelectAll(checkbox) {
 function toggleSelectMaker(checkbox) {
     const tagNumber = checkbox.dataset.tag;
 
-    selectedMakers.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
-    console.log('Текущее состояние selectedMakers: \n', selectedMakers); // Отладочный вывод
+    if (checkbox.checked) {
+        selectedMakers.add(tagNumber);
+    } else {
+        selectedMakers.delete(tagNumber);
+    }
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedMakers();
+    
+    console.log('Текущее состояние selectedMakers: \n', selectedMakers);
     toggleDeleteButton();
 }
 
@@ -222,23 +331,12 @@ function toggleSelectMaker(checkbox) {
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
     const selectedActionsDiv = document.getElementById('selected-actions');
-    const hasSelection = Array.from(selectedMakers.values()).some(value => value.isSelected);
+    const hasSelection = selectedMakers.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
 
 // Обновление состояния чекбоксов при загрузке страницы
-function updateCheckboxStates() {
-    const checkboxes = document.querySelectorAll('.select-maker');
-    checkboxes.forEach(cb => {
-        const tagNumber = cb.dataset.tag;
-        if (selectedMakers.has(tagNumber)) {
-            cb.checked = selectedMakers.get(tagNumber).isSelected; // Устанавливаем состояние из selectedMakers
-        }
-    });
-}
-
-
 function getTagFromTable(tagNumber) {
     const row = document.querySelector(`.select-maker[data-tag="${tagNumber}"]`);
     if (row) {
@@ -249,37 +347,32 @@ function getTagFromTable(tagNumber) {
 
 // Функция для удаления выбранных записей
 async function deleteSelectedMakers() {
-    const selectedTags = Array.from(selectedMakers.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedMakers);
 
-
-    console.log('Выбранные для удаления:', selectedTags); // Отладочный вывод
+    console.log('Выбранные для удаления:', selectedTags);
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для удаления');
         return;
     }
 
-    // Подготавливаем список бирок для отображения
-    const tags = selectedTags.map(item => item.tag);
     const modal = document.getElementById('delete-modal');
     const modalMessage = document.getElementById('delete-modal-message');
     const confirmButton = document.getElementById('delete-confirm-button');
 
-    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${selectedTags.join(', ')}?`;
     modal.style.display = 'block';
 
     confirmButton.onclick = async () => {
         try {
             for (const tag of selectedTags) {
                 await apiRequest(`/animals/maker/${tag}/`, 'DELETE');
-                selectedMakers.delete(tag); // Удаляем из состояния
             }
             alert('Выбранные записи успешно удалены');
             
             // Очищаем все выбранные элементы
             selectedMakers.clear();
+            saveSelectedMakers(); // Сохраняем очищенное состояние
             
             // Снимаем галочку с "выбрать все"
             const selectAllCheckbox = document.getElementById('select-all');
@@ -312,6 +405,93 @@ function resetButton() {
     createButton.onclick = () => saveMaker();
 }
 
+// Функция обновления пагинации для локальной фильтрации
+function updateSimpleMakersPagination(totalItems, searchQuery = '') {
+    const paginationContainer = document.getElementById('pagination');
+    if (!paginationContainer) return;
+
+    // Для неограниченного списка показываем только информацию о количестве
+    paginationContainer.innerHTML = `
+        <div class="pagination-info">
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'производитель', 'производителя', 'производителей')}</span>
+            ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
+        </div>
+    `;
+}
+
+function getAnimalWord(count, one, few, many) {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+        return many;
+    }
+    
+    if (lastDigit === 1) {
+        return one;
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+        return few;
+    } else {
+        return many;
+    }
+}
+
+function updateLocalMakersPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = ''; // Очищаем старую навигацию
+    
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Создаем контейнер для пагинации с центрированием
+    const paginationContainer = document.createElement('div');
+    paginationContainer.style.display = 'flex';
+    paginationContainer.style.alignItems = 'center';
+    paginationContainer.style.justifyContent = 'center';
+    paginationContainer.style.gap = '15px';
+
+    // Кнопка "Предыдущая" (слева)
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.innerText = 'Предыдущая';
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.onclick = () => {
+            fetchMakers(currentPage - 1, searchQuery);
+        };
+        paginationContainer.appendChild(prevButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    // Информация о странице (по центру)
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+    pageInfo.style.fontWeight = '500';
+    pageInfo.style.minWidth = '200px';
+    pageInfo.style.textAlign = 'center';
+    paginationContainer.appendChild(pageInfo);
+
+    // Кнопка "Следующая" (справа)
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.innerText = 'Следующая';
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.onclick = () => {
+            fetchMakers(currentPage + 1, searchQuery);
+        };
+        paginationContainer.appendChild(nextButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    pagination.appendChild(paginationContainer);
+}
+
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
     pagination.innerHTML = ''; // Очищаем старую навигацию
@@ -329,8 +509,7 @@ function updatePagination(response) {
         prevButton.innerText = 'Предыдущая';
         prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
-            currentPage--;
-            fetchMakers(currentPage);
+            fetchMakers(currentPage - 1, currentFilters);
         };
         paginationContainer.appendChild(prevButton);
     } else {
@@ -354,8 +533,7 @@ function updatePagination(response) {
         nextButton.innerText = 'Следующая';
         nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
-            currentPage++;
-            fetchMakers(currentPage);
+            fetchMakers(currentPage + 1, currentFilters);
         };
         paginationContainer.appendChild(nextButton);
     } else {
@@ -367,14 +545,6 @@ function updatePagination(response) {
 
     pagination.appendChild(paginationContainer);
 }
-
-document.getElementById('maker-search').addEventListener('input', () => {
-    const query = document.getElementById('maker-search').value.trim();
-    console.log('Поисковый запрос:', query); // Проверяем, вызывается ли событие
-    currentPage = 1; // Сбрасываем на первую страницу
-    fetchMakers(currentPage, query);
-});
-
 
 function openArchiveModal() {
     const modal = document.getElementById('archive-modal');
@@ -425,10 +595,7 @@ async function loadArchiveStatuses() {
     }
 }
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedMakers.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
-
+    const selectedTags = Array.from(selectedMakers);
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');
@@ -458,6 +625,7 @@ async function applyArchiveStatus() {
         
         // Очищаем все выбранные элементы
         selectedMakers.clear();
+        saveSelectedMakers(); // Сохраняем очищенное состояние
         
         // Снимаем галочку с "выбрать все"
         const selectAllCheckbox = document.getElementById('select-all');
@@ -482,6 +650,8 @@ window.toggleSelectMaker = toggleSelectMaker;
 window.toggleDeleteButton = toggleDeleteButton;
 window.saveMaker = saveMaker;
 window.fetchMakers = fetchMakers;
+window.searchMakers = searchMakers;
+window.performMakerSearch = performMakerSearch;
 
 function setupArchiveButton() {
     // Кнопка архива теперь находится в другом месте, не нужно настраивать href
@@ -489,3 +659,59 @@ function setupArchiveButton() {
 }
 
 // Функции экспорта теперь в export-common.js
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Восстанавливаем поисковый запрос из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchQuery = urlParams.get('search');
+    if (searchQuery) {
+        const searchInput = document.getElementById('maker-search');
+        if (searchInput) {
+            searchInput.value = searchQuery;
+        }
+    }
+    
+    fetchMakers(1, { search: searchQuery || '' });
+    loadStatuses();
+    loadPlaces();
+});
+
+// Очищаем sessionStorage при переходе на другие страницы (не пагинацию)
+window.addEventListener('beforeunload', function() {
+    // Проверяем, остаемся ли мы на той же странице (пагинация)
+    const currentPath = window.location.pathname;
+    if (!currentPath.includes('/animals/makers/')) {
+        sessionStorage.removeItem('selectedMakers');
+    }
+});
+// Функция для сброса фильтров и выбранных элементов
+function clearFilters() {
+    // Очищаем поля фильтров
+    const searchInput = document.getElementById('maker-search');
+    if (searchInput) searchInput.value = '';
+    
+    const statusFilter = document.getElementById('status-filter');
+    if (statusFilter) statusFilter.value = '';
+    
+    const placeFilter = document.getElementById('place-filter');
+    if (placeFilter) placeFilter.value = '';
+    
+    // Очищаем выбранные элементы
+    selectedMakers.clear();
+    saveSelectedMakers(); // Сохраняем очищенное состояние
+    
+    // Снимаем галочку с "выбрать все"
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+    
+    // Обновляем кнопки
+    toggleDeleteButton();
+    
+    // Перезагружаем данные
+    fetchMakers(1);
+}
+
+window.clearFilters = clearFilters;

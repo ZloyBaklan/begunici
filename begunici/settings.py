@@ -140,7 +140,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = "/static/"
-STATIC_VERSION = 1.11
+STATIC_VERSION = 1.24
 STATICFILES_DIRS = [
     BASE_DIR / "begunici" / "static",
 ]
@@ -158,9 +158,12 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
     ],
+    "SEARCH_PARAM": "search",
+    "ORDERING_PARAM": "ordering",
 }

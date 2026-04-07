@@ -31,7 +31,7 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <label for="animal-type-filter" class="form-label">Тип животного:</label>
-                        <select id="animal-type-filter" class="form-select" onchange="filterArchive()">
+                        <select id="animal-type-filter" class="form-select">
                             <option value="">Все животные</option>
                             <option value="Maker">Производители</option>
                             <option value="Ram">Бараны</option>
@@ -42,17 +42,19 @@
                     
                     <div class="mb-3">
                         <label for="status-filter" class="form-label">Статус:</label>
-                        <select id="status-filter" class="form-select" onchange="filterArchive()">
+                        <select id="status-filter" class="form-select">
                             <option value="">Все статусы</option>
-                            <option value="Убой">Убой</option>
-                            <option value="Продажа">Продажа</option>
-                            <option value="Убыл">Убыл</option>
+                            <!-- Статусы будут загружены через JavaScript -->
                         </select>
                     </div>
                     
                     <div class="mb-3">
                         <label for="archive-search" class="form-label">Поиск по бирке:</label>
-                        <input type="text" id="archive-search" class="form-control" placeholder="Введите номер бирки..." oninput="filterArchive()">
+                        <input type="text" id="archive-search" class="form-control" placeholder="Введите номер бирки...">
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button class="btn btn-primary" type="button" onclick="performArchiveSearch()">Поиск</button>
                     </div>
                 </div>
             </div>
@@ -192,7 +194,7 @@
     function filterArchive() {
         const animalType = document.getElementById('animal-type-filter').value;
         const status = document.getElementById('status-filter').value;
-        const search = document.getElementById('archive-search').value;
+        const search = ''; // Убираем автоматический поиск по тексту
         
         // Вызываем функцию фильтрации из модуля
         if (typeof filterArchiveData === 'function') {

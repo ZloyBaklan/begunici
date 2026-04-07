@@ -1,5 +1,26 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
+// Глобальное хранение выбранных элементов с сохранением в sessionStorage
+let selectedEwes = new Set();
+
+// Функции для работы с sessionStorage
+function saveSelectedEwes() {
+    sessionStorage.setItem('selectedEwes', JSON.stringify(Array.from(selectedEwes)));
+}
+
+function loadSelectedEwes() {
+    const saved = sessionStorage.getItem('selectedEwes');
+    if (saved) {
+        selectedEwes = new Set(JSON.parse(saved));
+    }
+}
+
+// Загружаем сохраненные выбранные элементы при инициализации
+loadSelectedEwes();
+
+let currentPage = 1;
+const pageSize = 10;
+
 document.addEventListener('DOMContentLoaded', function () {
     fetchEwes();  // Загружаем список ярок при загрузке страницы
     loadStatuses();
@@ -8,12 +29,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const createEweButton = document.querySelector('#create-ewe-button');
     if (createEweButton) {
         createEweButton.onclick = createEwe;
-    }
-
-    // Добавляем обработчик для поиска
-    const searchInput = document.getElementById('ewe-search');
-    if (searchInput) {
-        searchInput.addEventListener('input', searchEwes);
     }
 });
 
@@ -26,6 +41,8 @@ async function saveEwe() {
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') ? parseInt(formData.get('place')) : null,
         rshn_tag: formData.get('rshn_tag') || null,
+        dorper_percentage: formData.get('dorper_percentage') || null,
+        is_manual_dorper: formData.get('dorper_percentage') ? true : false,
         note: formData.get('note') || ''
     };
 
@@ -48,18 +65,53 @@ async function saveEwe() {
 // Алиас для обратной совместимости
 const createEwe = saveEwe;
 
-let currentPage = 1;
-const pageSize = 10;
-
+// Функция загрузки списка ярок
 // Функция загрузки списка ярок
 async function fetchEwes(page = 1, query = '') {
     try {
-        const response = await apiRequest(`/animals/ewe/?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(query)}`);
-        const ewes = Array.isArray(response) ? response : response.results;
+        // Сохраняем параметры поиска в URL для сохранения при пагинации
+        const urlParams = new URLSearchParams(window.location.search);
+        if (query && query.trim()) {
+            urlParams.set('search', query);
+        } else {
+            urlParams.delete('search');
+        }
+        
+        // Обновляем URL без перезагрузки страницы
+        const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
+        window.history.replaceState({}, '', newUrl);
+
+        // Формируем параметры запроса
+        let apiUrl = '/animals/ewe/';
+        const params = new URLSearchParams();
+        
+        // Добавляем параметр страницы
+        params.set('page', page);
+        
+        if (query && query.trim()) {
+            params.set('search', query);
+        }
+        
+        if (params.toString()) {
+            apiUrl += '?' + params.toString();
+        }
+
+        currentPage = page;
+        const response = await apiRequest(apiUrl);
+        
+        // Обрабатываем ответ - может быть массив или объект с results
+        const ewes = Array.isArray(response) ? response : (response.results || response);
 
         if (ewes) {
             renderEwes(ewes);
-            updatePagination(response);
+            // Проверяем, есть ли пагинация в ответе
+            if (response.results && (response.next || response.previous)) {
+                // Используем полную пагинацию если есть next/previous
+                updatePagination(response);
+            } else {
+                // Для неограниченного списка создаем простую пагинацию
+                updateSimplePagination(ewes.length, query);
+            }
         } else {
             console.error('Некорректный ответ от API:', response);
             alert('Ошибка: данные ярок не найдены.');
@@ -70,11 +122,15 @@ async function fetchEwes(page = 1, query = '') {
     }
 }
 
+
 // Рендеринг списка ярок
 function renderEwes(ewes) {
     const eweTable = document.getElementById('ewe-list');
-    eweTable.innerHTML = '';
+    const rows = [];
+    
     ewes.forEach((ewe, index) => {
+        const recordNumber = (currentPage - 1) * pageSize + index + 1;
+        
         const row = `<tr>
             <td>
                 <input type="checkbox" 
@@ -82,7 +138,7 @@ function renderEwes(ewes) {
                 data-tag="${ewe.tag.tag_number}"
                 data-animal-id="${ewe.id}">
             </td>
-            <td>${(currentPage - 1) * pageSize + index + 1}</td>
+            <td>${recordNumber}</td>
             <td><a href="/animals/ewe/${ewe.tag.tag_number}/info/">${ewe.tag.tag_number}</a></td>
             <td style="background-color:${ewe.animal_status ? ewe.animal_status.color : '#FFFFFF'}">
                 ${ewe.animal_status ? ewe.animal_status.status_type : 'Не указан'}
@@ -93,42 +149,30 @@ function renderEwes(ewes) {
                 ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${ewe.veterinary_history && ewe.veterinary_history.length > 0 
-                ? (() => {
-                    const lastVet = ewe.veterinary_history[0];
-                    let displayText = `${formatDateToOutput(lastVet.date_of_care)}: ${lastVet.veterinary_care.care_name}`;
-                    
-                    // Добавляем информацию о сроке действия
-                    if (lastVet.duration_days !== undefined && lastVet.duration_days !== null) {
-                        if (lastVet.duration_days === 0) {
-                            displayText += ' (Бессрочно)';
-                        } else {
-                            // Вычисляем оставшиеся дни
-                            const careDate = new Date(lastVet.date_of_care);
-                            const expiryDate = new Date(careDate);
-                            expiryDate.setDate(careDate.getDate() + lastVet.duration_days);
-                            
-                            // Получаем текущую дату в московском времени
-                            const today = new Date();
-                            const moscowOffset = 3 * 60; // 3 часа в минутах
-                            const utc = today.getTime() + (today.getTimezoneOffset() * 60000);
-                            const moscowTime = new Date(utc + (moscowOffset * 60000));
-                            
-                            const remainingDays = Math.ceil((expiryDate - moscowTime) / (1000 * 60 * 60 * 24));
-                            
-                            // Убираем все дополнительные сообщения о статусе
-                        }
-                    }
-                    
-                    return displayText;
-                })()
+                ? `${formatDateToOutput(ewe.veterinary_history[0].date_of_care)}: ${ewe.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
-            <td>${ewe.rshn_tag || ''}</td>
+            <td>${ewe.rshn_tag || '-'}</td>
+            <td>${ewe.dorper_display || '-'}</td>
             <td>${ewe.note || ''}</td>
         </tr>`;
-        eweTable.innerHTML += row;
+        rows.push(row);
     });
     
-    document.querySelectorAll('.select-ewe').forEach(cb => cb.addEventListener('click', e => toggleSelectEwe(e.target)))
+    eweTable.innerHTML = rows.join('');
+    
+    // Добавляем обработчики событий для чекбоксов
+    document.querySelectorAll('.select-ewe').forEach(cb => {
+        cb.addEventListener('click', e => toggleSelectEwe(e.target));
+        
+        // Восстанавливаем состояние чекбокса
+        const tagNumber = cb.getAttribute('data-tag');
+        if (selectedEwes.has(tagNumber)) {
+            cb.checked = true;
+        }
+    });
+    
+    // Обновляем кнопки действий
+    toggleDeleteButton();
 }
 
 // Функция загрузки статусов
@@ -174,8 +218,29 @@ async function loadPlaces() {
 // Функция поиска ярок
 async function searchEwes() {
     const searchTerm = document.getElementById('ewe-search').value;
+    
+    // Сохраняем выбранные чекбоксы
+    const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedEwes"]:checked'))
+        .map(cb => cb.value);
+    
     currentPage = 1;
-    fetchEwes(currentPage, searchTerm);
+    await fetchEwes(currentPage, searchTerm);
+    
+    // Восстанавливаем выбранные чекбоксы
+    selectedCheckboxes.forEach(tagNumber => {
+        const checkbox = document.querySelector(`input[name="selectedEwes"][value="${tagNumber}"]`);
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+    });
+    
+    // Обновляем кнопку удаления
+    toggleDeleteButton();
+}
+
+// Алиас для совместимости с шаблоном
+async function performSearch() {
+    await searchEwes();
 }
 
 // Остальные функции
@@ -192,17 +257,24 @@ function toggleForm() {
     }
 }
 
-let selectedEwes = new Map(); // Хранение {id: true/false}
-
 // Функция для управления чекбоксами всех записей
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.select-ewe');
     checkboxes.forEach(cb => {
-        const tagNumber= cb.dataset.tag;
+        const tagNumber = cb.dataset.tag;
 
         cb.checked = checkbox.checked;
-        selectedEwes.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+        
+        if (checkbox.checked) {
+            selectedEwes.add(tagNumber);
+        } else {
+            selectedEwes.delete(tagNumber);
+        }
     });
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedEwes();
+    
     console.log('Текущее состояние selectedEwes после выбора всех:', selectedEwes);
     toggleDeleteButton();
 }
@@ -211,7 +283,15 @@ function toggleSelectAll(checkbox) {
 function toggleSelectEwe(checkbox) {
     const tagNumber = checkbox.dataset.tag;
 
-    selectedEwes.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+    if (checkbox.checked) {
+        selectedEwes.add(tagNumber);
+    } else {
+        selectedEwes.delete(tagNumber);
+    }
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedEwes();
+    
     console.log('Текущее состояние selectedEwes: \n', selectedEwes);
     toggleDeleteButton();
 }
@@ -219,7 +299,7 @@ function toggleSelectEwe(checkbox) {
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
     const selectedActionsDiv = document.getElementById('selected-actions');
-    const hasSelection = Array.from(selectedEwes.values()).some(value => value.isSelected);
+    const hasSelection = selectedEwes.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
@@ -364,6 +444,93 @@ async function applyArchiveStatus() {
     }
 }
 
+// Функция обновления пагинации для локальной фильтрации
+function updateSimplePagination(totalItems, searchQuery = '') {
+    const paginationContainer = document.getElementById('pagination');
+    if (!paginationContainer) return;
+
+    // Для неограниченного списка показываем только информацию о количестве
+    paginationContainer.innerHTML = `
+        <div class="pagination-info">
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'ярка', 'ярки', 'ярок')}</span>
+            ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
+        </div>
+    `;
+}
+
+function getAnimalWord(count, one, few, many) {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+        return many;
+    }
+    
+    if (lastDigit === 1) {
+        return one;
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+        return few;
+    } else {
+        return many;
+    }
+}
+
+function updateLocalPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = ''; // Очищаем старую навигацию
+    
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Создаем контейнер для пагинации с центрированием
+    const paginationContainer = document.createElement('div');
+    paginationContainer.style.display = 'flex';
+    paginationContainer.style.alignItems = 'center';
+    paginationContainer.style.justifyContent = 'center';
+    paginationContainer.style.gap = '15px';
+
+    // Кнопка "Предыдущая" (слева)
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.innerText = 'Предыдущая';
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.onclick = () => {
+            fetchEwes(currentPage - 1, searchQuery);
+        };
+        paginationContainer.appendChild(prevButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    // Информация о странице (по центру)
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+    pageInfo.style.fontWeight = '500';
+    pageInfo.style.minWidth = '200px';
+    pageInfo.style.textAlign = 'center';
+    paginationContainer.appendChild(pageInfo);
+
+    // Кнопка "Следующая" (справа)
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.innerText = 'Следующая';
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.onclick = () => {
+            fetchEwes(currentPage + 1, searchQuery);
+        };
+        paginationContainer.appendChild(nextButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    pagination.appendChild(paginationContainer);
+}
+
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
     pagination.innerHTML = '';
@@ -381,8 +548,8 @@ function updatePagination(response) {
         prevButton.innerText = 'Предыдущая';
         prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
-            currentPage--;
-            fetchEwes(currentPage);
+            const searchQuery = document.getElementById('ewe-search').value;
+            fetchEwes(currentPage - 1, searchQuery);
         };
         paginationContainer.appendChild(prevButton);
     } else {
@@ -406,8 +573,8 @@ function updatePagination(response) {
         nextButton.innerText = 'Следующая';
         nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
-            currentPage++;
-            fetchEwes(currentPage);
+            const searchQuery = document.getElementById('ewe-search').value;
+            fetchEwes(currentPage + 1, searchQuery);
         };
         paginationContainer.appendChild(nextButton);
     } else {
@@ -437,3 +604,22 @@ window.toggleSelectEwe = toggleSelectEwe;
 window.toggleDeleteButton = toggleDeleteButton;
 window.saveEwe = saveEwe;
 window.fetchEwes = fetchEwes;
+window.searchEwes = searchEwes;
+window.performSearch = performSearch;
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Восстанавливаем поисковый запрос из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchQuery = urlParams.get('search');
+    if (searchQuery) {
+        const searchInput = document.getElementById('ewe-search');
+        if (searchInput) {
+            searchInput.value = searchQuery;
+        }
+    }
+    
+    fetchEwes(1, searchQuery || '');
+    loadStatuses();
+    loadPlaces();
+});

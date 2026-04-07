@@ -791,6 +791,12 @@ th {
     position: relative;
 }
 
+.has-weighing {
+    background-color: #007bff !important;
+    color: white !important;
+    position: relative;
+}
+
 .has-multiple-events {
     position: relative;
 }
@@ -896,6 +902,10 @@ th {
     background-color: #2196f3;
 }
 
+.legend-marker.weighing {
+    background-color: #007bff;
+}
+
 .legend-marker.vet-treatments {
     background-color: #ff9800;
 }
@@ -937,9 +947,47 @@ th {
 /* Исправление цвета текста кнопки "Панель Администратора" при наведении */
 .btn-outline-primary:hover {
     color: white !important;
+    background-color: #007bff !important;
+    border-color: #007bff !important;
 }
 
 /* Дополнительно для всех outline кнопок */
 .btn-outline-secondary:hover {
     color: white !important;
+}
+
+/* Специальные стили для кнопок пагинации */
+#pagination .btn-outline-primary {
+    color: #007bff;
+    border-color: #007bff;
+    background-color: transparent;
+}
+
+#pagination .btn-outline-primary:hover {
+    color: white !important;
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+}
+
+#pagination .btn-outline-primary:focus {
+    color: white !important;
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Дополнительные стили для всех кнопок пагинации */
+.pagination .btn-outline-primary:hover,
+div[id="pagination"] .btn-outline-primary:hover,
+.btn.btn-outline-primary.btn-sm:hover {
+    color: white !important;
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+}
+
+/* Переопределяем Bootstrap стили для outline кнопок */
+.btn-outline-primary:not(:disabled):not(.disabled):hover {
+    color: white !important;
+    background-color: #007bff !important;
+    border-color: #007bff !important;
 }

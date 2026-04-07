@@ -11,10 +11,16 @@ def get_current_date():
 
 
 class Tag(models.Model):
-    tag_number = models.CharField(max_length=100, unique=True, verbose_name="Бирка")
-    animal_type = models.CharField(max_length=100, verbose_name="Тип животного")
+    tag_number = models.CharField(max_length=100, unique=True, verbose_name="Бирка", db_index=True)
+    animal_type = models.CharField(max_length=100, verbose_name="Тип животного", db_index=True)
     issue_date = models.DateField(auto_now_add=True, verbose_name="Дата выдачи бирки")
     # previous_tags = models.JSONField(default=list, verbose_name='Предыдущие бирки')  # Поле для хранения истории бирок
+
+    class Meta:
+        indexes = [
+            # Составной индекс для оптимизации поиска по типу животного и номеру бирки
+            models.Index(fields=['animal_type', 'tag_number'], name='tag_type_number_idx'),
+        ]
 
     def update_tag(self, new_tag_number):
         """
@@ -31,11 +37,8 @@ class Tag(models.Model):
 
 class Status(models.Model):
     status_type = models.CharField(
-        max_length=200, unique=True, verbose_name="Название статуса"
+        max_length=200, unique=True, verbose_name="Название статуса", db_index=True
     )
-    date_of_status = models.DateTimeField(
-        verbose_name="Дата и время статуса", default=timezone.now
-    )  # Дата и время по умолчанию - текущие
     color = models.CharField(
         max_length=7, verbose_name="Цвет статуса", default="#FFFFFF"
     )  # Цвет статуса, по умолчанию белый
@@ -81,7 +84,7 @@ class StatusHistory(models.Model):
 
 
 class Place(models.Model):
-    sheepfold = models.CharField(max_length=200, unique=True, verbose_name="Овчарня-Отсек")
+    sheepfold = models.CharField(max_length=200, unique=True, verbose_name="Овчарня-Отсек", db_index=True)
     date_of_transfer = models.DateTimeField(
         verbose_name="Дата и время перевода", default=timezone.now
     )  # Дата и время перевода по умолчанию

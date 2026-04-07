@@ -9,6 +9,8 @@ from django.db.models import Q
 from django.core.paginator import Paginator
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
+from rest_framework import filters
+from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
 from .serializers import (
@@ -50,14 +52,14 @@ from begunici.app_types.veterinary.vet_serializers import (
 
 
 class PaginationSetting(PageNumberPagination):
-    page_size = 10  # Количество записей на странице
+    page_size = 10  # Устанавливаем 10 записей на странице
     page_size_query_param = "page_size"  # Возможность менять размер страницы
-    max_page_size = 100  # Максимальное количество записей на странице
+    max_page_size = 100  # Максимальный размер страницы
 
 
 class AnimalBaseViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
-    filter_backends = [SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     pagination_class = PaginationSetting  # Добавляем пагинацию
 
     def handle_exception(self, exc):
@@ -99,18 +101,63 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
 
 
 class MakerViewSet(AnimalBaseViewSet):
-    queryset = Maker.objects.filter(is_archived=False).order_by(
-        "id"
-    )  # Убедитесь, что порядок задан
+    queryset = Maker.objects.filter(is_archived=False).select_related(
+        'tag', 'animal_status', 'place'
+    ).order_by("-id")  # Оптимизируем запросы и новые записи первыми
     serializer_class = MakerSerializer
-    filter_backends = [SearchFilter]
-    search_fields = [
-        "tag__tag_number",
-        "rshn_tag",
-        "animal_status__status_type",
-        "place__sheepfold",
-    ]
-    pagination_class = PaginationSetting  # Добавляем пагинацию
+    filter_backends = [DjangoFilterBackend]  # Убираем SearchFilter, используем только кастомный поиск
+    filterset_fields = {
+        'animal_status': ['exact'],
+        'place': ['exact'],
+        'is_archived': ['exact'],
+    }
+    pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
+
+    def get_queryset(self):
+        """Оптимизированный queryset с поддержкой case-insensitive поиска для кириллицы"""
+        queryset = super().get_queryset()
+        
+        # Получаем параметры поиска
+        search = self.request.query_params.get('search', '').strip()
+        
+        if search:
+            # Для кириллицы используем комбинированный подход
+            from django.db.models import Q
+            
+            # Создаем варианты поиска в разных регистрах
+            search_lower = search.lower()
+            search_upper = search.upper()
+            search_title = search.title()
+            
+            search_filter = (
+                # Точные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__exact=search) |
+                Q(tag__tag_number__exact=search_lower) |
+                Q(tag__tag_number__exact=search_upper) |
+                Q(tag__tag_number__exact=search_title) |
+                # Частичные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__contains=search) |
+                Q(tag__tag_number__contains=search_lower) |
+                Q(tag__tag_number__contains=search_upper) |
+                Q(tag__tag_number__contains=search_title) |
+                # Поиск по статусу в разных регистрах
+                Q(animal_status__status_type__exact=search) |
+                Q(animal_status__status_type__exact=search_lower) |
+                Q(animal_status__status_type__exact=search_upper) |
+                Q(animal_status__status_type__exact=search_title) |
+                Q(animal_status__status_type__contains=search) |
+                Q(animal_status__status_type__contains=search_lower) |
+                Q(animal_status__status_type__contains=search_upper) |
+                Q(animal_status__status_type__contains=search_title) |
+                # Поиск по другим полям
+                Q(rshn_tag__icontains=search) |
+                Q(place__sheepfold__icontains=search) |
+                Q(name__icontains=search)
+            )
+            
+            queryset = queryset.filter(search_filter)
+        
+        return queryset
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -495,16 +542,62 @@ class MakerViewSet(AnimalBaseViewSet):
 
 
 class RamViewSet(AnimalBaseViewSet):
-    queryset = Ram.objects.filter(is_archived=False).order_by("id")
+    queryset = Ram.objects.filter(is_archived=False).select_related(
+        'tag', 'animal_status', 'place'
+    ).order_by("-id")  # Оптимизируем запросы и новые записи первыми
     serializer_class = RamSerializer
-    filter_backends = [SearchFilter]
-    search_fields = [
-        "tag__tag_number",
-        "rshn_tag",
-        "animal_status__status_type",
-        "place__sheepfold",
-    ]
-    pagination_class = PaginationSetting
+    filter_backends = [DjangoFilterBackend]  # Убираем SearchFilter, используем только кастомный поиск
+    filterset_fields = {
+        'animal_status': ['exact'],
+        'place': ['exact'],
+        'is_archived': ['exact'],
+    }
+    pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
+
+    def get_queryset(self):
+        """Оптимизированный queryset с поддержкой case-insensitive поиска для кириллицы"""
+        queryset = super().get_queryset()
+        
+        # Получаем параметры поиска
+        search = self.request.query_params.get('search', '').strip()
+        
+        if search:
+            # Для кириллицы используем комбинированный подход
+            from django.db.models import Q
+            
+            # Создаем варианты поиска в разных регистрах
+            search_lower = search.lower()
+            search_upper = search.upper()
+            search_title = search.title()
+            
+            search_filter = (
+                # Точные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__exact=search) |
+                Q(tag__tag_number__exact=search_lower) |
+                Q(tag__tag_number__exact=search_upper) |
+                Q(tag__tag_number__exact=search_title) |
+                # Частичные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__contains=search) |
+                Q(tag__tag_number__contains=search_lower) |
+                Q(tag__tag_number__contains=search_upper) |
+                Q(tag__tag_number__contains=search_title) |
+                # Поиск по статусу в разных регистрах
+                Q(animal_status__status_type__exact=search) |
+                Q(animal_status__status_type__exact=search_lower) |
+                Q(animal_status__status_type__exact=search_upper) |
+                Q(animal_status__status_type__exact=search_title) |
+                Q(animal_status__status_type__contains=search) |
+                Q(animal_status__status_type__contains=search_lower) |
+                Q(animal_status__status_type__contains=search_upper) |
+                Q(animal_status__status_type__contains=search_title) |
+                # Поиск по другим полям
+                Q(rshn_tag__icontains=search) |
+                Q(place__sheepfold__icontains=search)
+            )
+            
+            queryset = queryset.filter(search_filter)
+        
+        return queryset
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -784,16 +877,62 @@ class RamViewSet(AnimalBaseViewSet):
 
 
 class EweViewSet(AnimalBaseViewSet):
-    queryset = Ewe.objects.filter(is_archived=False).order_by("id")
+    queryset = Ewe.objects.filter(is_archived=False).select_related(
+        'tag', 'animal_status', 'place'
+    ).order_by("-id")  # Оптимизируем запросы и новые записи первыми
     serializer_class = EweSerializer
-    filter_backends = [SearchFilter]
-    search_fields = [
-        "tag__tag_number",
-        "rshn_tag",
-        "animal_status__status_type",
-        "place__sheepfold",
-    ]
-    pagination_class = PaginationSetting
+    filter_backends = [DjangoFilterBackend]  # Убираем SearchFilter, используем только кастомный поиск
+    filterset_fields = {
+        'animal_status': ['exact'],
+        'place': ['exact'],
+        'is_archived': ['exact'],
+    }
+    pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
+
+    def get_queryset(self):
+        """Оптимизированный queryset с поддержкой case-insensitive поиска для кириллицы"""
+        queryset = super().get_queryset()
+        
+        # Получаем параметры поиска
+        search = self.request.query_params.get('search', '').strip()
+        
+        if search:
+            # Для кириллицы используем комбинированный подход
+            from django.db.models import Q
+            
+            # Создаем варианты поиска в разных регистрах
+            search_lower = search.lower()
+            search_upper = search.upper()
+            search_title = search.title()
+            
+            search_filter = (
+                # Точные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__exact=search) |
+                Q(tag__tag_number__exact=search_lower) |
+                Q(tag__tag_number__exact=search_upper) |
+                Q(tag__tag_number__exact=search_title) |
+                # Частичные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__contains=search) |
+                Q(tag__tag_number__contains=search_lower) |
+                Q(tag__tag_number__contains=search_upper) |
+                Q(tag__tag_number__contains=search_title) |
+                # Поиск по статусу в разных регистрах
+                Q(animal_status__status_type__exact=search) |
+                Q(animal_status__status_type__exact=search_lower) |
+                Q(animal_status__status_type__exact=search_upper) |
+                Q(animal_status__status_type__exact=search_title) |
+                Q(animal_status__status_type__contains=search) |
+                Q(animal_status__status_type__contains=search_lower) |
+                Q(animal_status__status_type__contains=search_upper) |
+                Q(animal_status__status_type__contains=search_title) |
+                # Поиск по другим полям
+                Q(rshn_tag__icontains=search) |
+                Q(place__sheepfold__icontains=search)
+            )
+            
+            queryset = queryset.filter(search_filter)
+        
+        return queryset
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -1087,16 +1226,62 @@ class EweViewSet(AnimalBaseViewSet):
 
 
 class SheepViewSet(AnimalBaseViewSet):
-    queryset = Sheep.objects.filter(is_archived=False).order_by("id")
+    queryset = Sheep.objects.filter(is_archived=False).select_related(
+        'tag', 'animal_status', 'place'
+    ).order_by("-id")  # Оптимизируем запросы и новые записи первыми
     serializer_class = SheepSerializer
-    filter_backends = [SearchFilter]
-    search_fields = [
-        "tag__tag_number",
-        "rshn_tag",
-        "animal_status__status_type",
-        "place__sheepfold",
-    ]
-    pagination_class = PaginationSetting
+    filter_backends = [DjangoFilterBackend]  # Убираем SearchFilter, используем только кастомный поиск
+    filterset_fields = {
+        'animal_status': ['exact'],
+        'place': ['exact'],
+        'is_archived': ['exact'],
+    }
+    pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
+
+    def get_queryset(self):
+        """Оптимизированный queryset с поддержкой case-insensitive поиска для кириллицы"""
+        queryset = super().get_queryset()
+        
+        # Получаем параметры поиска
+        search = self.request.query_params.get('search', '').strip()
+        
+        if search:
+            # Для кириллицы используем комбинированный подход
+            from django.db.models import Q
+            
+            # Создаем варианты поиска в разных регистрах
+            search_lower = search.lower()
+            search_upper = search.upper()
+            search_title = search.title()
+            
+            search_filter = (
+                # Точные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__exact=search) |
+                Q(tag__tag_number__exact=search_lower) |
+                Q(tag__tag_number__exact=search_upper) |
+                Q(tag__tag_number__exact=search_title) |
+                # Частичные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__contains=search) |
+                Q(tag__tag_number__contains=search_lower) |
+                Q(tag__tag_number__contains=search_upper) |
+                Q(tag__tag_number__contains=search_title) |
+                # Поиск по статусу в разных регистрах
+                Q(animal_status__status_type__exact=search) |
+                Q(animal_status__status_type__exact=search_lower) |
+                Q(animal_status__status_type__exact=search_upper) |
+                Q(animal_status__status_type__exact=search_title) |
+                Q(animal_status__status_type__contains=search) |
+                Q(animal_status__status_type__contains=search_lower) |
+                Q(animal_status__status_type__contains=search_upper) |
+                Q(animal_status__status_type__contains=search_title) |
+                # Поиск по другим полям
+                Q(rshn_tag__icontains=search) |
+                Q(place__sheepfold__icontains=search)
+            )
+            
+            queryset = queryset.filter(search_filter)
+        
+        return queryset
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -1390,8 +1575,8 @@ class LambingViewSet(viewsets.ModelViewSet):
     queryset = Lambing.objects.all().order_by('-start_date')
     serializer_class = LambingSerializer
     permission_classes = [AllowAny]
-    filter_backends = [SearchFilter]
-    search_fields = ['sheep__tag__tag_number', 'ewe__tag__tag_number', 'maker__tag__tag_number', 'ram__tag__tag_number']
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    search_fields = ['^sheep__tag__tag_number', '^ewe__tag__tag_number', '^maker__tag__tag_number', '^ram__tag__tag_number']
     pagination_class = PaginationSetting
 
     def get_queryset(self):
@@ -1761,8 +1946,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     queryset = CalendarNote.objects.all().order_by('-date')
     serializer_class = CalendarNoteSerializer
     permission_classes = [AllowAny]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['text']
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    search_fields = ['^text']
     ordering_fields = ['date', 'created_at']
     pagination_class = PaginationSetting
 
@@ -1985,6 +2170,91 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 {"error": str(e)}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+    @action(detail=False, methods=['get'], url_path='weighing-calendar-data')
+    def weighing_calendar_data(self, request):
+        """Получить данные напоминаний о взвешивании для календаря"""
+        try:
+            from datetime import date, timedelta
+            from dateutil.relativedelta import relativedelta
+
+            year = request.query_params.get('year')
+            month = request.query_params.get('month')
+
+            calendar_data = {}
+
+            # Получаем всех активных животных с датами рождения
+            from .models import Maker, Ram, Ewe, Sheep
+
+            animals = []
+
+            # Производители
+            makers = Maker.objects.filter(is_archived=False, birth_date__isnull=False)
+            for maker in makers:
+                animals.append({
+                    'tag': maker.tag.tag_number,
+                    'birth_date': maker.birth_date,
+                    'animal_type': 'maker',
+                    'display_name': maker.get_display_name()
+                })
+
+            # Бараны
+            rams = Ram.objects.filter(is_archived=False, birth_date__isnull=False)
+            for ram in rams:
+                animals.append({
+                    'tag': ram.tag.tag_number,
+                    'birth_date': ram.birth_date,
+                    'animal_type': 'ram',
+                    'display_name': ram.tag.tag_number
+                })
+
+            # Овцы
+            ewes = Ewe.objects.filter(is_archived=False, birth_date__isnull=False)
+            for ewe in ewes:
+                animals.append({
+                    'tag': ewe.tag.tag_number,
+                    'birth_date': ewe.birth_date,
+                    'animal_type': 'ewe',
+                    'display_name': ewe.tag.tag_number
+                })
+
+            # Ярки
+            sheeps = Sheep.objects.filter(is_archived=False, birth_date__isnull=False)
+            for sheep in sheeps:
+                animals.append({
+                    'tag': sheep.tag.tag_number,
+                    'birth_date': sheep.birth_date,
+                    'animal_type': 'sheep',
+                    'display_name': sheep.tag.tag_number
+                })
+
+            # Для каждого животного вычисляем дату взвешивания (дата рождения + 5 месяцев)
+            for animal in animals:
+                weighing_date = animal['birth_date'] + relativedelta(months=5)
+
+                # Фильтруем по году и месяцу если указаны
+                if year and weighing_date.year != int(year):
+                    continue
+                if month and weighing_date.month != int(month):
+                    continue
+
+                weighing_date_str = weighing_date.strftime('%Y-%m-%d')
+
+                if weighing_date_str not in calendar_data:
+                    calendar_data[weighing_date_str] = []
+
+                calendar_data[weighing_date_str].append({
+                    'tag': animal['tag'],
+                    'animal_type': animal['animal_type'],
+                    'display_name': animal['display_name'],
+                    'birth_date': animal['birth_date'].strftime('%Y-%m-%d')
+                })
+
+            return Response(calendar_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class MakersView(TemplateView):
@@ -2141,40 +2411,158 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
     """
 
     serializer_class = ArchiveAnimalSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = [
-        "tag__tag_number",
-        "animal_status__status_type",
-        "place__sheepfold",
-    ]
+    filter_backends = [OrderingFilter]  # Убираем DjangoFilterBackend, так как работаем со списком
     ordering_fields = ["birth_date", "age", "tag__tag_number"]
-    pagination_class = PaginationSetting  # Добавляем пагинацию
+    pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
 
     def get_queryset(self):
         """
         Получаем архив всех животных, объединяя модели Maker, Sheep, Ewe и Ram.
+        Сортируем по дате архивирования (самые свежие первыми).
         """
+        from django.db.models import Q
+        from begunici.app_types.veterinary.vet_models import StatusHistory
+        
         animal_type = self.request.query_params.get("type", None)
+        search = self.request.query_params.get('search', '').strip()
+        status_filter = self.request.query_params.get('animal_status', None)
+        place_filter = self.request.query_params.get('place', None)
+
+        # Создаем варианты поиска в разных регистрах если есть поиск
+        search_filter = Q()
+        if search:
+            search_lower = search.lower()
+            search_upper = search.upper()
+            search_title = search.title()
+            
+            search_filter = (
+                # Точные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__exact=search) |
+                Q(tag__tag_number__exact=search_lower) |
+                Q(tag__tag_number__exact=search_upper) |
+                Q(tag__tag_number__exact=search_title) |
+                # Частичные совпадения в разных регистрах для бирки
+                Q(tag__tag_number__contains=search) |
+                Q(tag__tag_number__contains=search_lower) |
+                Q(tag__tag_number__contains=search_upper) |
+                Q(tag__tag_number__contains=search_title) |
+                # Поиск по статусу в разных регистрах
+                Q(animal_status__status_type__exact=search) |
+                Q(animal_status__status_type__exact=search_lower) |
+                Q(animal_status__status_type__exact=search_upper) |
+                Q(animal_status__status_type__exact=search_title) |
+                Q(animal_status__status_type__contains=search) |
+                Q(animal_status__status_type__contains=search_lower) |
+                Q(animal_status__status_type__contains=search_upper) |
+                Q(animal_status__status_type__contains=search_title) |
+                # Поиск по другим полям
+                Q(rshn_tag__icontains=search) |
+                Q(place__sheepfold__icontains=search)
+            )
+
+        def apply_filters(queryset):
+            """Применяем фильтры к queryset"""
+            if search:
+                queryset = queryset.filter(search_filter)
+            if status_filter:
+                queryset = queryset.filter(animal_status_id=status_filter)
+            if place_filter:
+                queryset = queryset.filter(place_id=place_filter)
+            return queryset
+
+        def sort_by_archive_date(animals_list):
+            """Сортируем список животных по дате архивирования"""
+            def get_archive_date(animal):
+                try:
+                    # Ищем последнюю запись в истории статусов для текущего статуса
+                    status_history = StatusHistory.objects.filter(
+                        tag=animal.tag,
+                        new_status=animal.animal_status
+                    ).order_by('-change_date', '-id').first()
+                    
+                    if status_history and status_history.change_date:
+                        # Возвращаем datetime для правильной сортировки
+                        return status_history.change_date
+                    else:
+                        # Если нет записи в истории, используем дату рождения или минимальную дату
+                        from datetime import datetime
+                        return animal.birth_date or datetime.min.replace(tzinfo=None)
+                except Exception as e:
+                    # В случае ошибки используем минимальную дату
+                    from datetime import datetime
+                    print(f"Ошибка сортировки для {animal.tag.tag_number}: {e}")
+                    return datetime.min.replace(tzinfo=None)
+            
+            # Сортируем по дате архивирования (новые первыми)
+            try:
+                animals_list.sort(key=get_archive_date, reverse=True)
+            except Exception as e:
+                print(f"Ошибка при сортировке: {e}")
+                # Fallback - сортируем по ID
+                animals_list.sort(key=lambda x: x.id, reverse=True)
+            
+            return animals_list
 
         if animal_type == "Maker":
-            return Maker.objects.filter(is_archived=True)
+            queryset = Maker.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            queryset = apply_filters(queryset)
+            # Для конкретного типа тоже применяем сортировку по дате архивирования
+            animals_list = list(queryset)
+            return sort_by_archive_date(animals_list)
         elif animal_type == "Sheep":
-            return Sheep.objects.filter(is_archived=True)
+            queryset = Sheep.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            queryset = apply_filters(queryset)
+            animals_list = list(queryset)
+            return sort_by_archive_date(animals_list)
         elif animal_type == "Ewe":
-            return Ewe.objects.filter(is_archived=True)
+            queryset = Ewe.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            queryset = apply_filters(queryset)
+            animals_list = list(queryset)
+            return sort_by_archive_date(animals_list)
         elif animal_type == "Ram":
-            return Ram.objects.filter(is_archived=True)
+            queryset = Ram.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            queryset = apply_filters(queryset)
+            animals_list = list(queryset)
+            return sort_by_archive_date(animals_list)
+        else:
+            # Для общего архива объединяем все типы животных
+            makers_qs = Maker.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            sheep_qs = Sheep.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            ewes_qs = Ewe.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            rams_qs = Ram.objects.filter(is_archived=True).select_related('tag', 'animal_status', 'place')
+            
+            # Применяем фильтры к каждому queryset
+            makers_qs = apply_filters(makers_qs)
+            sheep_qs = apply_filters(sheep_qs)
+            ewes_qs = apply_filters(ewes_qs)
+            rams_qs = apply_filters(rams_qs)
+            
+            # Объединяем все QuerySet'ы в список
+            all_animals = list(makers_qs) + list(sheep_qs) + list(ewes_qs) + list(rams_qs)
+            
+            # Сортируем по дате архивирования
+            all_animals = sort_by_archive_date(all_animals)
+            
+            return all_animals
 
-        # Объединение всех архивированных животных в один список
-        makers = Maker.objects.filter(is_archived=True)
-        sheep = Sheep.objects.filter(is_archived=True)
-        ewes = Ewe.objects.filter(is_archived=True)
-        rams = Ram.objects.filter(is_archived=True)
-
-        # Объединяем QuerySet'ы
-        queryset = list(makers) + list(sheep) + list(ewes) + list(rams)
-        return queryset
-
+    def list(self, request, *args, **kwargs):
+        """
+        Переопределяем list для работы со списком животных
+        """
+        queryset = self.get_queryset()
+        
+        # Если это список (общий архив), применяем пагинацию вручную
+        if isinstance(queryset, list):
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        else:
+            # Если это QuerySet (конкретный тип), используем стандартную логику
+            return super().list(request, *args, **kwargs)
 
 # Представления для страниц
 
@@ -2235,7 +2623,7 @@ def export_to_excel(request):
         }
         
         model = model_map.get(animal_type, Maker)
-        queryset = model.objects.filter(is_archived=False).order_by('id')
+        queryset = model.objects.filter(is_archived=False).order_by('-id')  # Новые записи первыми
         
         # Применяем фильтры
         if limit:
@@ -2425,28 +2813,52 @@ def dashboard_statistics(request):
     # 2. Перенесено в архив за последний месяц
     archive_statuses = ['Убыл', 'Убой', 'Продажа']
     
+    # Используем StatusHistory для получения даты архивирования
+    from begunici.app_types.veterinary.vet_models import StatusHistory
+    
+    # Получаем ID архивных статусов
+    archive_status_ids = Status.objects.filter(status_type__in=archive_statuses).values_list('id', flat=True)
+    
+    # Получаем животных, которые были переведены в архивные статусы за последний месяц
+    archived_makers_ids = StatusHistory.objects.filter(
+        new_status_id__in=archive_status_ids,
+        change_date__gte=one_month_ago
+    ).values_list('tag_id', flat=True)
+    
+    archived_rams_ids = StatusHistory.objects.filter(
+        new_status_id__in=archive_status_ids,
+        change_date__gte=one_month_ago
+    ).values_list('tag_id', flat=True)
+    
+    archived_ewes_ids = StatusHistory.objects.filter(
+        new_status_id__in=archive_status_ids,
+        change_date__gte=one_month_ago
+    ).values_list('tag_id', flat=True)
+    
+    archived_sheep_ids = StatusHistory.objects.filter(
+        new_status_id__in=archive_status_ids,
+        change_date__gte=one_month_ago
+    ).values_list('tag_id', flat=True)
+    
+    # Подсчитываем архивированных животных по типам
     archived_makers = Maker.objects.filter(
         is_archived=True,
-        animal_status__status_type__in=archive_statuses,
-        animal_status__date_of_status__gte=one_month_ago
+        tag_id__in=archived_makers_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_rams = Ram.objects.filter(
         is_archived=True,
-        animal_status__status_type__in=archive_statuses,
-        animal_status__date_of_status__gte=one_month_ago
+        tag_id__in=archived_rams_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_ewes = Ewe.objects.filter(
         is_archived=True,
-        animal_status__status_type__in=archive_statuses,
-        animal_status__date_of_status__gte=one_month_ago
+        tag_id__in=archived_ewes_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_sheep = Sheep.objects.filter(
         is_archived=True,
-        animal_status__status_type__in=archive_statuses,
-        animal_status__date_of_status__gte=one_month_ago
+        tag_id__in=archived_sheep_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     # Подсчёт общего количества архивированных
@@ -2877,24 +3289,31 @@ def get_inactive_mothers(request):
     Получить список неактивных матерей (овец и ярок без активных окотов)
     """
     try:
+        search = request.GET.get('search', '')
+        
         # Получаем всех овец без активных окотов
-        sheep_without_lambings = Sheep.objects.filter(
+        sheep_query = Sheep.objects.filter(
             is_archived=False
         ).exclude(
             lambings__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
         # Получаем всех ярок без активных окотов
-        ewes_without_lambings = Ewe.objects.filter(
+        ewes_query = Ewe.objects.filter(
             is_archived=False
         ).exclude(
             lambings__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
+        # Применяем поиск если указан
+        if search:
+            sheep_query = sheep_query.filter(tag__tag_number__icontains=search)
+            ewes_query = ewes_query.filter(tag__tag_number__icontains=search)
+        
         # Формируем единый список
         inactive_mothers = []
         
-        for sheep in sheep_without_lambings:
+        for sheep in sheep_query:
             inactive_mothers.append({
                 'id': sheep.id,
                 'tag_number': sheep.tag.tag_number if sheep.tag else '',
@@ -2905,7 +3324,7 @@ def get_inactive_mothers(request):
                 'place': sheep.place.sheepfold if sheep.place else 'Нет места'
             })
         
-        for ewe in ewes_without_lambings:
+        for ewe in ewes_query:
             inactive_mothers.append({
                 'id': ewe.id,
                 'tag_number': ewe.tag.tag_number if ewe.tag else '',
@@ -2935,23 +3354,31 @@ def get_all_fathers(request):
     Получить список всех отцов (производителей и баранов)
     """
     try:
+        search = request.GET.get('search', '')
+        
         # Получаем всех производителей
-        makers = Maker.objects.filter(
+        makers_query = Maker.objects.filter(
             is_archived=False
         ).select_related('tag', 'animal_status', 'place')
         
         # Получаем всех баранов
-        rams = Ram.objects.filter(
+        rams_query = Ram.objects.filter(
             is_archived=False
         ).select_related('tag', 'animal_status', 'place')
+        
+        # Применяем поиск если указан
+        if search:
+            makers_query = makers_query.filter(tag__tag_number__icontains=search)
+            rams_query = rams_query.filter(tag__tag_number__icontains=search)
         
         # Формируем единый список
         all_fathers = []
         
-        for maker in makers:
+        for maker in makers_query:
             all_fathers.append({
                 'id': maker.id,
                 'tag_number': maker.tag.tag_number if maker.tag else '',
+                'name': maker.name,  # Добавляем поле имени
                 'animal_type': 'Производитель',
                 'type_code': 'maker',
                 'age': float(maker.age) if maker.age else 0,
@@ -2959,7 +3386,7 @@ def get_all_fathers(request):
                 'place': maker.place.sheepfold if maker.place else 'Нет места'
             })
         
-        for ram in rams:
+        for ram in rams_query:
             all_fathers.append({
                 'id': ram.id,
                 'tag_number': ram.tag.tag_number if ram.tag else '',
@@ -3163,9 +3590,15 @@ def otbivka_api(request):
     # Makers
     makers = Maker.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
     for maker in makers:
+        # Формируем отображаемое имя для производителя
+        display_name = maker.tag.tag_number
+        if maker.name:
+            display_name = f"{maker.name}({maker.tag.tag_number})"
+        
         animals.append({
             'date_otbivka': maker.date_otbivka,
             'tag_number': maker.tag.tag_number,
+            'display_name': display_name,  # Добавляем поле для отображения
             'animal_type': 'maker',
             'birth_date': maker.birth_date,
             'age_at_otbivka': calculate_age_at_date(maker.birth_date, maker.date_otbivka) if maker.birth_date else None
@@ -3177,6 +3610,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': ram.date_otbivka,
             'tag_number': ram.tag.tag_number,
+            'display_name': ram.tag.tag_number,  # Для баранов просто бирка
             'animal_type': 'ram',
             'birth_date': ram.birth_date,
             'age_at_otbivka': calculate_age_at_date(ram.birth_date, ram.date_otbivka) if ram.birth_date else None
@@ -3188,6 +3622,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': ewe.date_otbivka,
             'tag_number': ewe.tag.tag_number,
+            'display_name': ewe.tag.tag_number,  # Для ярок просто бирка
             'animal_type': 'ewe',
             'birth_date': ewe.birth_date,
             'age_at_otbivka': calculate_age_at_date(ewe.birth_date, ewe.date_otbivka) if ewe.birth_date else None
@@ -3199,6 +3634,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': sheep.date_otbivka,
             'tag_number': sheep.tag.tag_number,
+            'display_name': sheep.tag.tag_number,  # Для овец просто бирка
             'animal_type': 'sheep',
             'birth_date': sheep.birth_date,
             'age_at_otbivka': calculate_age_at_date(sheep.birth_date, sheep.date_otbivka) if sheep.birth_date else None
@@ -3221,6 +3657,7 @@ def otbivka_api(request):
         results.append({
             'date_otbivka': animal['date_otbivka'].strftime('%d.%m.%Y'),
             'tag_number': animal['tag_number'],
+            'display_name': animal['display_name'],  # Добавляем display_name
             'animal_type': animal['animal_type'],
             'age_at_otbivka': animal['age_at_otbivka']
         })
@@ -3262,3 +3699,173 @@ def calculate_age_at_date(birth_date, target_date):
             
     except (ValueError, TypeError):
         return None
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def check_kinship(request):
+    """
+    API для проверки родства между двумя животными до 5-го колена.
+    Принимает номера бирок отца и матери, возвращает информацию о совпадениях в родословной.
+    """
+    father_tag = request.data.get('father_tag', '').strip()
+    mother_tag = request.data.get('mother_tag', '').strip()
+    
+    if not father_tag or not mother_tag:
+        return Response({
+            'error': 'Необходимо указать номера бирок отца и матери'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Проверяем прямое родство (отец-ребенок или мать-ребенок)
+        direct_kinship = check_direct_kinship(father_tag, mother_tag)
+        if direct_kinship:
+            return Response({
+                'has_kinship': True,
+                'message': f'Обнаружено прямое родство: {direct_kinship}',
+                'common_ancestors': [direct_kinship],
+                'warning': True
+            })
+        
+        # Строим родословные деревья для обоих животных
+        father_ancestors = build_genealogy_tree(father_tag, max_generations=5)
+        mother_ancestors = build_genealogy_tree(mother_tag, max_generations=5)
+        
+        # Ищем общих предков
+        common_ancestors = find_common_ancestors(father_ancestors, mother_ancestors)
+        
+        if common_ancestors:
+            # Есть общие предки
+            return Response({
+                'has_kinship': True,
+                'message': f'Обнаружены общие предки до 5-го колена: {", ".join(common_ancestors)}',
+                'common_ancestors': common_ancestors,
+                'warning': True
+            })
+        else:
+            # Общих предков нет
+            return Response({
+                'has_kinship': False,
+                'message': 'Общих предков до 5-го колена не обнаружено',
+                'common_ancestors': [],
+                'warning': False
+            })
+            
+    except Exception as e:
+        return Response({
+            'error': f'Ошибка при проверке родства: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def check_direct_kinship(tag1, tag2):
+    """
+    Проверяет прямое родство между двумя животными (отец-ребенок или мать-ребенок).
+    Возвращает описание родства или None, если прямого родства нет.
+    """
+    if not tag1 or not tag2:
+        return None
+    
+    # Ищем первое животное
+    animal1 = find_animal_by_tag(tag1)
+    if not animal1:
+        return None
+    
+    # Ищем второе животное
+    animal2 = find_animal_by_tag(tag2)
+    if not animal2:
+        return None
+    
+    # Проверяем, является ли animal1 родителем animal2
+    if animal2.father and animal2.father.strip() == tag1:
+        return f"{tag1} является отцом {tag2}"
+    if animal2.mother and animal2.mother.strip() == tag1:
+        return f"{tag1} является матерью {tag2}"
+    
+    # Проверяем, является ли animal2 родителем animal1
+    if animal1.father and animal1.father.strip() == tag2:
+        return f"{tag2} является отцом {tag1}"
+    if animal1.mother and animal1.mother.strip() == tag2:
+        return f"{tag2} является матерью {tag1}"
+    
+    return None
+
+
+def build_genealogy_tree(tag_number, max_generations=5):
+    """
+    Строит дерево предков для животного до указанного количества поколений.
+    Возвращает множество всех номеров бирок предков.
+    """
+    ancestors = set()
+    current_generation = {tag_number}
+    
+    for generation in range(max_generations):
+        if not current_generation:
+            break
+            
+        next_generation = set()
+        
+        for animal_tag in current_generation:
+            # Ищем животное во всех типах
+            animal = find_animal_by_tag(animal_tag)
+            
+            if animal:
+                # Добавляем родителей в следующее поколение
+                if animal.mother and animal.mother.strip():
+                    mother_tag = animal.mother.strip()
+                    ancestors.add(mother_tag)
+                    next_generation.add(mother_tag)
+                    
+                if animal.father and animal.father.strip():
+                    father_tag = animal.father.strip()
+                    ancestors.add(father_tag)
+                    next_generation.add(father_tag)
+        
+        current_generation = next_generation
+    
+    return ancestors
+
+
+def find_animal_by_tag(tag_number):
+    """
+    Ищет животное по номеру бирки во всех типах животных.
+    Возвращает первое найденное животное или None.
+    """
+    if not tag_number or not tag_number.strip():
+        return None
+        
+    tag_number = tag_number.strip()
+    
+    # Ищем в производителях
+    try:
+        return Maker.objects.get(tag__tag_number=tag_number)
+    except Maker.DoesNotExist:
+        pass
+    
+    # Ищем в баранах
+    try:
+        return Ram.objects.get(tag__tag_number=tag_number)
+    except Ram.DoesNotExist:
+        pass
+    
+    # Ищем в ярках
+    try:
+        return Ewe.objects.get(tag__tag_number=tag_number)
+    except Ewe.DoesNotExist:
+        pass
+    
+    # Ищем в овцах
+    try:
+        return Sheep.objects.get(tag__tag_number=tag_number)
+    except Sheep.DoesNotExist:
+        pass
+    
+    return None
+
+
+def find_common_ancestors(ancestors1, ancestors2):
+    """
+    Находит общих предков в двух множествах.
+    Возвращает список общих номеров бирок.
+    """
+    common = ancestors1.intersection(ancestors2)
+    return sorted(list(common))

@@ -1,5 +1,26 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
+// Глобальное хранение выбранных элементов с сохранением в sessionStorage
+let selectedRams = new Set();
+
+// Функции для работы с sessionStorage
+function saveSelectedRams() {
+    sessionStorage.setItem('selectedRams', JSON.stringify(Array.from(selectedRams)));
+}
+
+function loadSelectedRams() {
+    const saved = sessionStorage.getItem('selectedRams');
+    if (saved) {
+        selectedRams = new Set(JSON.parse(saved));
+    }
+}
+
+// Загружаем сохраненные выбранные элементы при инициализации
+loadSelectedRams();
+
+let currentPage = 1;
+const pageSize = 10;
+
 document.addEventListener('DOMContentLoaded', function () {
     fetchRams();  // Загружаем список баранов при загрузке страницы
     loadStatuses();
@@ -8,12 +29,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const createRamButton = document.querySelector('#create-ram-button');
     if (createRamButton) {
         createRamButton.onclick = createRam;
-    }
-
-    // Добавляем обработчик для поиска
-    const searchInput = document.getElementById('ram-search');
-    if (searchInput) {
-        searchInput.addEventListener('input', searchRams);
     }
 });
 
@@ -26,6 +41,8 @@ async function saveRam() {
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') ? parseInt(formData.get('place')) : null,
         rshn_tag: formData.get('rshn_tag') || null,
+        dorper_percentage: formData.get('dorper_percentage') || null,
+        is_manual_dorper: formData.get('dorper_percentage') ? true : false,
         note: formData.get('note') || ''
     };
 
@@ -48,18 +65,53 @@ async function saveRam() {
 // Алиас для обратной совместимости
 const createRam = saveRam;
 
-let currentPage = 1;
-const pageSize = 10;
-
+// Функция загрузки списка баранов
 // Функция загрузки списка баранов
 async function fetchRams(page = 1, query = '') {
     try {
-        const response = await apiRequest(`/animals/ram/?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(query)}`);
-        const rams = Array.isArray(response) ? response : response.results;
+        // Сохраняем параметры поиска в URL для сохранения при пагинации
+        const urlParams = new URLSearchParams(window.location.search);
+        if (query && query.trim()) {
+            urlParams.set('search', query);
+        } else {
+            urlParams.delete('search');
+        }
+        
+        // Обновляем URL без перезагрузки страницы
+        const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
+        window.history.replaceState({}, '', newUrl);
+
+        // Формируем параметры запроса
+        let apiUrl = '/animals/ram/';
+        const params = new URLSearchParams();
+        
+        // Добавляем параметр страницы
+        params.set('page', page);
+        
+        if (query && query.trim()) {
+            params.set('search', query);
+        }
+        
+        if (params.toString()) {
+            apiUrl += '?' + params.toString();
+        }
+
+        currentPage = page;
+        const response = await apiRequest(apiUrl);
+        
+        // Обрабатываем ответ - может быть массив или объект с results
+        const rams = Array.isArray(response) ? response : (response.results || response);
 
         if (rams) {
             renderRams(rams);
-            updatePagination(response);
+            // Проверяем, есть ли пагинация в ответе
+            if (response.results && (response.next || response.previous)) {
+                // Используем полную пагинацию если есть next/previous
+                updatePagination(response);
+            } else {
+                // Для неограниченного списка создаем простую пагинацию
+                updateSimpleRamsPagination(rams.length, query);
+            }
         } else {
             console.error('Некорректный ответ от API:', response);
             alert('Ошибка: данные баранов не найдены.');
@@ -70,11 +122,16 @@ async function fetchRams(page = 1, query = '') {
     }
 }
 
+
 // Рендеринг списка баранов
-function renderRams(rams) {
+function renderRams(rams, startIndex = null) {
     const ramTable = document.getElementById('ram-list');
-    ramTable.innerHTML = '';
+    const rows = [];
+    
     rams.forEach((ram, index) => {
+        // Если startIndex не передан, используем стандартную пагинацию
+        const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
+        
         const row = `<tr>
             <td>
                 <input type="checkbox" 
@@ -82,7 +139,7 @@ function renderRams(rams) {
                 data-tag="${ram.tag.tag_number}"
                 data-animal-id="${ram.id}">
             </td>
-            <td>${(currentPage - 1) * pageSize + index + 1}</td>
+            <td>${recordNumber}</td>
             <td><a href="/animals/ram/${ram.tag.tag_number}/info/">${ram.tag.tag_number}</a></td>
             <td style="background-color:${ram.animal_status ? ram.animal_status.color : '#FFFFFF'}">
                 ${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}
@@ -93,42 +150,30 @@ function renderRams(rams) {
                 ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
             <td>${ram.veterinary_history && ram.veterinary_history.length > 0 
-                ? (() => {
-                    const lastVet = ram.veterinary_history[0];
-                    let displayText = `${formatDateToOutput(lastVet.date_of_care)}: ${lastVet.veterinary_care.care_name}`;
-                    
-                    // Добавляем информацию о сроке действия
-                    if (lastVet.duration_days !== undefined && lastVet.duration_days !== null) {
-                        if (lastVet.duration_days === 0) {
-                            displayText += ' (Бессрочно)';
-                        } else {
-                            // Вычисляем оставшиеся дни
-                            const careDate = new Date(lastVet.date_of_care);
-                            const expiryDate = new Date(careDate);
-                            expiryDate.setDate(careDate.getDate() + lastVet.duration_days);
-                            
-                            // Получаем текущую дату в московском времени
-                            const today = new Date();
-                            const moscowOffset = 3 * 60; // 3 часа в минутах
-                            const utc = today.getTime() + (today.getTimezoneOffset() * 60000);
-                            const moscowTime = new Date(utc + (moscowOffset * 60000));
-                            
-                            const remainingDays = Math.ceil((expiryDate - moscowTime) / (1000 * 60 * 60 * 24));
-                            
-                            // Убираем все дополнительные сообщения о статусе
-                        }
-                    }
-                    
-                    return displayText;
-                })()
+                ? `${formatDateToOutput(ram.veterinary_history[0].date_of_care)}: ${ram.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
             <td>${ram.rshn_tag || '-'}</td>
+            <td>${ram.dorper_display || '-'}</td>
             <td>${ram.note || ''}</td>
         </tr>`;
-        ramTable.innerHTML += row;
+        rows.push(row);
     });
     
-    document.querySelectorAll('.select-ram').forEach(cb => cb.addEventListener('click', e => toggleSelectRam(e.target)))
+    ramTable.innerHTML = rows.join('');
+    
+    // Добавляем обработчики событий для чекбоксов
+    document.querySelectorAll('.select-ram').forEach(cb => {
+        cb.addEventListener('click', e => toggleSelectRam(e.target));
+        
+        // Восстанавливаем состояние чекбокса
+        const tagNumber = cb.getAttribute('data-tag');
+        if (selectedRams.has(tagNumber)) {
+            cb.checked = true;
+        }
+    });
+    
+    // Обновляем кнопки действий
+    toggleDeleteButton();
 }
 
 // Функция загрузки статусов
@@ -174,8 +219,29 @@ async function loadPlaces() {
 // Функция поиска баранов
 async function searchRams() {
     const searchTerm = document.getElementById('ram-search').value;
+    
+    // Сохраняем выбранные чекбоксы
+    const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedRams"]:checked'))
+        .map(cb => cb.value);
+    
     currentPage = 1;
-    fetchRams(currentPage, searchTerm);
+    await fetchRams(currentPage, searchTerm);
+    
+    // Восстанавливаем выбранные чекбоксы
+    selectedCheckboxes.forEach(tagNumber => {
+        const checkbox = document.querySelector(`input[name="selectedRams"][value="${tagNumber}"]`);
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+    });
+    
+    // Обновляем кнопку удаления
+    toggleDeleteButton();
+}
+
+// Алиас для совместимости с шаблоном
+async function performRamSearch() {
+    await searchRams();
 }
 
 // Остальные функции
@@ -192,17 +258,24 @@ function toggleForm() {
     }
 }
 
-let selectedRams = new Map(); // Хранение {id: true/false}
-
 // Функция для управления чекбоксами всех записей
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.select-ram');
     checkboxes.forEach(cb => {
-        const tagNumber= cb.dataset.tag;
+        const tagNumber = cb.dataset.tag;
 
         cb.checked = checkbox.checked;
-        selectedRams.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+        
+        if (checkbox.checked) {
+            selectedRams.add(tagNumber);
+        } else {
+            selectedRams.delete(tagNumber);
+        }
     });
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedRams();
+    
     console.log('Текущее состояние selectedRams после выбора всех:', selectedRams);
     toggleDeleteButton();
 }
@@ -211,7 +284,15 @@ function toggleSelectAll(checkbox) {
 function toggleSelectRam(checkbox) {
     const tagNumber = checkbox.dataset.tag;
 
-    selectedRams.set(tagNumber, { tag: tagNumber, isSelected: checkbox.checked });
+    if (checkbox.checked) {
+        selectedRams.add(tagNumber);
+    } else {
+        selectedRams.delete(tagNumber);
+    }
+    
+    // Сохраняем состояние в sessionStorage
+    saveSelectedRams();
+    
     console.log('Текущее состояние selectedRams: \n', selectedRams);
     toggleDeleteButton();
 }
@@ -219,7 +300,7 @@ function toggleSelectRam(checkbox) {
 // Функция для отображения кнопки удаления
 function toggleDeleteButton() {
     const selectedActionsDiv = document.getElementById('selected-actions');
-    const hasSelection = Array.from(selectedRams.values()).some(value => value.isSelected);
+    const hasSelection = selectedRams.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
@@ -364,9 +445,100 @@ async function applyArchiveStatus() {
     }
 }
 
+// Функция обновления пагинации для локальной фильтрации
+function updateSimpleRamsPagination(totalItems, searchQuery = '') {
+    const paginationContainer = document.getElementById('pagination');
+    if (!paginationContainer) return;
+
+    // Для неограниченного списка показываем только информацию о количестве
+    paginationContainer.innerHTML = `
+        <div class="pagination-info">
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'баран', 'барана', 'баранов')}</span>
+            ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
+        </div>
+    `;
+}
+
+function getAnimalWord(count, one, few, many) {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+        return many;
+    }
+    
+    if (lastDigit === 1) {
+        return one;
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+        return few;
+    } else {
+        return many;
+    }
+}
+
+function updateLocalRamsPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = ''; // Очищаем старую навигацию
+    
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Создаем контейнер для пагинации с центрированием
+    const paginationContainer = document.createElement('div');
+    paginationContainer.style.display = 'flex';
+    paginationContainer.style.alignItems = 'center';
+    paginationContainer.style.justifyContent = 'center';
+    paginationContainer.style.gap = '15px';
+
+    // Кнопка "Предыдущая" (слева)
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.innerText = 'Предыдущая';
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.onclick = () => {
+            fetchRams(currentPage - 1, searchQuery);
+        };
+        paginationContainer.appendChild(prevButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    // Информация о странице (по центру)
+    const pageInfo = document.createElement('span');
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+    pageInfo.style.fontWeight = '500';
+    pageInfo.style.minWidth = '200px';
+    pageInfo.style.textAlign = 'center';
+    paginationContainer.appendChild(pageInfo);
+
+    // Кнопка "Следующая" (справа)
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.innerText = 'Следующая';
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.onclick = () => {
+            fetchRams(currentPage + 1, searchQuery);
+        };
+        paginationContainer.appendChild(nextButton);
+    } else {
+        // Пустой элемент для сохранения симметрии
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.width = '80px';
+        paginationContainer.appendChild(emptyDiv);
+    }
+
+    pagination.appendChild(paginationContainer);
+}
+
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
     pagination.innerHTML = '';
+    
+    // Получаем текущий поисковый запрос из URL или поля ввода
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentSearch = urlParams.get('search') || document.getElementById('ram-search').value || '';
     
     // Создаем контейнер для пагинации с центрированием
     const paginationContainer = document.createElement('div');
@@ -381,8 +553,7 @@ function updatePagination(response) {
         prevButton.innerText = 'Предыдущая';
         prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
-            currentPage--;
-            fetchRams(currentPage);
+            fetchRams(currentPage - 1, currentSearch);
         };
         paginationContainer.appendChild(prevButton);
     } else {
@@ -406,8 +577,7 @@ function updatePagination(response) {
         nextButton.innerText = 'Следующая';
         nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
-            currentPage++;
-            fetchRams(currentPage);
+            fetchRams(currentPage + 1, currentSearch);
         };
         paginationContainer.appendChild(nextButton);
     } else {
@@ -437,3 +607,22 @@ window.toggleSelectRam = toggleSelectRam;
 window.toggleDeleteButton = toggleDeleteButton;
 window.saveRam = saveRam;
 window.fetchRams = fetchRams;
+window.searchRams = searchRams;
+window.performRamSearch = performRamSearch;
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Восстанавливаем поисковый запрос из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchQuery = urlParams.get('search');
+    if (searchQuery) {
+        const searchInput = document.getElementById('ram-search');
+        if (searchInput) {
+            searchInput.value = searchQuery;
+        }
+    }
+    
+    fetchRams(1, searchQuery || '');
+    loadStatuses();
+    loadPlaces();
+});

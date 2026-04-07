@@ -57,9 +57,14 @@ def get_animals_by_place(request, place_id):
         
         # Формируем список животных
         for maker in makers:
+            display_name = maker.tag.tag_number if maker.tag else 'Нет бирки'
+            if maker.name and maker.tag:
+                display_name = f"{maker.name}({maker.tag.tag_number})"
+            
             animals.append({
                 'type': 'Производитель',
                 'tag_number': maker.tag.tag_number if maker.tag else 'Нет бирки',
+                'display_name': display_name,
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
                 'age': maker.age
             })
@@ -68,6 +73,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Баран',
                 'tag_number': ram.tag.tag_number if ram.tag else 'Нет бирки',
+                'display_name': ram.tag.tag_number if ram.tag else 'Нет бирки',
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
                 'age': ram.age
             })
@@ -76,6 +82,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Ярка',
                 'tag_number': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
+                'display_name': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
                 'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
                 'age': ewe.age
             })
@@ -84,6 +91,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Овца',
                 'tag_number': s.tag.tag_number if s.tag else 'Нет бирки',
+                'display_name': s.tag.tag_number if s.tag else 'Нет бирки',
                 'status': s.animal_status.status_type if s.animal_status else 'Нет статуса',
                 'age': s.age
             })
@@ -180,17 +188,16 @@ class PlaceMovementPagination(PageNumberPagination):
 
 
 class StatusViewSet(viewsets.ModelViewSet):
-    queryset = Status.objects.all().order_by("-date_of_status")
+    queryset = Status.objects.all().order_by("-id")  # Сортировка по ID (новые вначале)
     serializer_class = StatusSerializer
     permission_classes = [AllowAny]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["date_of_status"]
     search_fields = ["status_type"]
 
 
 class PlaceViewSet(viewsets.ModelViewSet):
-    queryset = Place.objects.all()
+    queryset = Place.objects.all().order_by("-id")  # Сортировка по ID (новые вначале)
     serializer_class = PlaceSerializer
     permission_classes = [AllowAny]
     pagination_class = StandardResultsSetPagination
@@ -208,11 +215,11 @@ class PlaceMovementViewSet(viewsets.ModelViewSet):
 
 
 class VeterinaryCareViewSet(viewsets.ModelViewSet):
-    queryset = VeterinaryCare.objects.all()
+    queryset = VeterinaryCare.objects.all().order_by("-id")  # Сортировка по ID (новые вначале)
     serializer_class = VeterinaryCareSerializer
     permission_classes = [AllowAny]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["care_type", "care_name", "medication", "purpose"]
 
 

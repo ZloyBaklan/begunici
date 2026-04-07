@@ -20,13 +20,19 @@ document.addEventListener('DOMContentLoaded', function () {
         createPlaceButton.onclick = handleCreateOrUpdatePlace;
     }
 
-    // Добавляем обработчик для мгновенного поиска
-    const searchInput = document.getElementById('place-search');
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            const query = this.value;
-            currentPage = 1; // Сбрасываем на первую страницу при поиске
-            fetchPlaces(1, query);
+    // Добавляем обработчики для поиска по номерам
+    const searchBarnInput = document.getElementById('search-barn');
+    const searchSectionInput = document.getElementById('search-section');
+    
+    if (searchBarnInput) {
+        searchBarnInput.addEventListener('input', function() {
+            performPlaceSearch();
+        });
+    }
+    
+    if (searchSectionInput) {
+        searchSectionInput.addEventListener('input', function() {
+            performPlaceSearch();
         });
     }
 });
@@ -89,26 +95,68 @@ async function createPlace() {
     }
 }
 
+// Функция для поиска овчарен по номерам
+function performPlaceSearch() {
+    const barnNumber = document.getElementById('search-barn').value;
+    const sectionNumber = document.getElementById('search-section').value;
+    
+    currentPage = 1; // Сбрасываем на первую страницу при поиске
+    fetchPlaces(1, barnNumber, sectionNumber);
+}
+window.performPlaceSearch = performPlaceSearch; // Делаем функцию глобальной
+
 // Функция для загрузки списка овчарен
-async function fetchPlaces(page = 1, searchQuery = '') {
+async function fetchPlaces(page = 1, searchBarn = '', searchSection = '') {
     try {
         console.log('Fetching places...');
-        let url = `/veterinary/api/place/?page=${page}&page_size=${pageSize}`;
-        if (searchQuery) {
-            url += `&search=${encodeURIComponent(searchQuery)}`;
-        }
+        // Загружаем больше данных для локальной фильтрации
+        let url = `/veterinary/api/place/?page=1&page_size=200`;
         const response = await apiRequest(url);
         console.log('Places response:', response);
 
         // Обрабатываем пагинированный ответ
-        const places = Array.isArray(response) ? response : response.results;
+        let places = Array.isArray(response) ? response : response.results;
+        
+        // Применяем локальную фильтрацию по номерам овчарни и отсека
+        if ((searchBarn && searchBarn.trim()) || (searchSection && searchSection.trim())) {
+            places = places.filter(place => {
+                if (!place.sheepfold) return false;
+                
+                // Парсим название овчарни для извлечения номеров
+                const match = place.sheepfold.match(/Овчарня (\d+) Отсек (\d+)/);
+                if (!match) return false;
+                
+                const barnNum = match[1];
+                const sectionNum = match[2];
+                
+                // Проверяем соответствие поисковым критериям
+                let barnMatch = true;
+                let sectionMatch = true;
+                
+                if (searchBarn && searchBarn.trim()) {
+                    barnMatch = barnNum === searchBarn.trim();
+                }
+                
+                if (searchSection && searchSection.trim()) {
+                    sectionMatch = sectionNum === searchSection.trim();
+                }
+                
+                return barnMatch && sectionMatch;
+            });
+        }
+        
+        // Применяем пагинацию к отфильтрованным данным
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedPlaces = places.slice(startIndex, endIndex);
+        
         currentPage = page;
 
         const placeTable = document.getElementById('place-list');
         placeTable.innerHTML = '';  // Очищаем старый список
 
-        if (places && places.length > 0) {
-            places.forEach((place, index) => {
+        if (paginatedPlaces && paginatedPlaces.length > 0) {
+            paginatedPlaces.forEach((place, index) => {
                 const row = document.createElement('tr');
                 
                 // Создаем кнопки действий с проверкой прав
@@ -125,7 +173,7 @@ async function fetchPlaces(page = 1, searchQuery = '') {
                 actionsHtml += `</div>`;
                 
                 // Вычисляем номер записи с учетом пагинации
-                const recordNumber = (page - 1) * pageSize + index + 1;
+                const recordNumber = startIndex + index + 1;
                 
                 row.innerHTML = `
                     <td>${recordNumber}</td>
@@ -148,10 +196,9 @@ async function fetchPlaces(page = 1, searchQuery = '') {
             placeTable.innerHTML = '<tr><td colspan="4" class="text-center">Овчарни не найдены</td></tr>';
         }
         
-        // Обновляем пагинацию
-        if (!Array.isArray(response)) {
-            updatePagination(response);
-        }
+        // Обновляем пагинацию для отфильтрованных данных
+        const searchQuery = (searchBarn || '') + (searchSection || '');
+        updateLocalPlacesPagination(places.length, page, searchQuery);
     } catch (error) {
         console.error('Ошибка при загрузке овчарен:', error);
         const placeTable = document.getElementById('place-list');
@@ -236,16 +283,6 @@ async function updatePlace(placeId) {
     }
 }
 
-// Функция для поиска овчарен
-function searchPlaces(query = null) {
-    if (query === null) {
-        query = document.getElementById('place-search').value;
-    }
-    currentPage = 1; // Сбрасываем на первую страницу при поиске
-    fetchPlaces(1, query);
-}
-window.searchPlaces = searchPlaces; // Делаем функцию глобальной
-
 // Функция обновления пагинации
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
@@ -268,8 +305,9 @@ function updatePagination(response) {
         prevButton.innerText = 'Предыдущая';
         prevButton.onclick = () => {
             currentPage--;
-            const searchQuery = document.getElementById('place-search').value;
-            fetchPlaces(currentPage, searchQuery);
+            const barnNumber = document.getElementById('search-barn').value;
+            const sectionNumber = document.getElementById('search-section').value;
+            fetchPlaces(currentPage, barnNumber, sectionNumber);
         };
         leftContainer.appendChild(prevButton);
     }
@@ -287,8 +325,63 @@ function updatePagination(response) {
         nextButton.innerText = 'Следующая';
         nextButton.onclick = () => {
             currentPage++;
-            const searchQuery = document.getElementById('place-search').value;
-            fetchPlaces(currentPage, searchQuery);
+            const barnNumber = document.getElementById('search-barn').value;
+            const sectionNumber = document.getElementById('search-section').value;
+            fetchPlaces(currentPage, barnNumber, sectionNumber);
+        };
+        rightContainer.appendChild(nextButton);
+    }
+    
+    paginationElement.appendChild(leftContainer);
+    paginationElement.appendChild(pageInfo);
+    paginationElement.appendChild(rightContainer);
+}
+
+// Функция обновления пагинации для локальной фильтрации
+function updateLocalPlacesPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    if (!pagination) {
+        // Создаем элемент пагинации если его нет
+        const paginationDiv = document.createElement('div');
+        paginationDiv.id = 'pagination';
+        paginationDiv.className = 'mt-3 d-flex justify-content-between align-items-center';
+        document.querySelector('.card-body').appendChild(paginationDiv);
+    }
+    
+    const paginationElement = document.getElementById('pagination');
+    paginationElement.innerHTML = '';
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Левая часть - кнопка "Предыдущая"
+    const leftContainer = document.createElement('div');
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.innerText = 'Предыдущая';
+        prevButton.onclick = () => {
+            const barnNumber = document.getElementById('search-barn').value;
+            const sectionNumber = document.getElementById('search-section').value;
+            fetchPlaces(currentPage - 1, barnNumber, sectionNumber);
+        };
+        leftContainer.appendChild(prevButton);
+    }
+
+    // Центральная часть - номер страницы
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'text-muted';
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+
+    // Правая часть - кнопка "Следующая"
+    const rightContainer = document.createElement('div');
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.innerText = 'Следующая';
+        nextButton.onclick = () => {
+            const barnNumber = document.getElementById('search-barn').value;
+            const sectionNumber = document.getElementById('search-section').value;
+            fetchPlaces(currentPage + 1, barnNumber, sectionNumber);
         };
         rightContainer.appendChild(nextButton);
     }

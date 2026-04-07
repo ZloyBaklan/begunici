@@ -15,11 +15,10 @@ from .vet_models import (
 
 # Сериализатор для статусов
 class StatusSerializer(serializers.ModelSerializer):
-    date_of_status = serializers.DateTimeField()
     
     class Meta:
         model = Status
-        fields = "__all__"
+        fields = ["id", "status_type", "color"]
 
     def create(self, validated_data):
         # Создаем статус
@@ -35,16 +34,12 @@ class StatusSerializer(serializers.ModelSerializer):
         if request and not isinstance(request.user, AnonymousUser):
             moscow_tz = pytz.timezone('Europe/Moscow')
             
-            # Преобразуем дату в московское время
-            date_moscow = status.date_of_status.astimezone(moscow_tz)
-            date_str = date_moscow.strftime('%d.%m.%Y')
-            
             UserActionLog.objects.create(
                 user=request.user,
                 action_type="Создание статуса",
                 object_type="Статус",
                 object_id=status.status_type,  # Используем название статуса как ID
-                description=f"Создан статус '{status.status_type}', дата: {date_str}"
+                description=f"Создан статус '{status.status_type}'"
             )
         
         return status
@@ -64,24 +59,9 @@ class StatusSerializer(serializers.ModelSerializer):
         if old_color != new_color:
             changes.append(f"Цвет: {old_color} → {new_color}")
         
-        old_date = instance.date_of_status
-        new_date = validated_data.get("date_of_status", None)
-        if new_date and old_date != new_date:
-            import pytz
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            
-            # Преобразуем даты в московское время
-            old_date_moscow = old_date.astimezone(moscow_tz)
-            new_date_moscow = new_date.astimezone(moscow_tz)
-            
-            old_date_str = old_date_moscow.strftime('%d.%m.%Y')
-            new_date_str = new_date_moscow.strftime('%d.%m.%Y')
-            changes.append(f"Дата статуса: {old_date_str} → {new_date_str}")
-        
         # Обновляем поля
         instance.status_type = new_status_type
         instance.color = new_color
-        instance.date_of_status = new_date if new_date else timezone.now()
         instance.save()
         
         # Создаем подробный лог изменений
@@ -105,11 +85,6 @@ class StatusSerializer(serializers.ModelSerializer):
                 )
         
         return instance
-
-    def validate_date_of_status(self, value):
-        if value and value > timezone.now():
-            raise serializers.ValidationError("Дата и время статуса не может быть в будущем.")
-        return value
 
     def validate_status_type(self, value):
         """Проверяем, что статус с таким названием уникален."""

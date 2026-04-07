@@ -81,21 +81,36 @@ async function createCare() {
 // Получение списка ветобработок
 async function fetchCares(page = 1, searchQuery = '') {
     try {
-        let url = `/veterinary/api/care/?page=${page}&page_size=${pageSize}`;
-        if (searchQuery) {
-            url += `&search=${encodeURIComponent(searchQuery)}`;
-        }
+        // Загружаем больше данных для локальной фильтрации
+        let url = `/veterinary/api/care/?page=1&page_size=200`;
         const response = await apiRequest(url);
         
         // Обрабатываем пагинированный ответ
-        const cares = Array.isArray(response) ? response : response.results;
+        let cares = Array.isArray(response) ? response : response.results;
+        
+        // Применяем локальную фильтрацию по поисковому запросу
+        if (searchQuery && searchQuery.trim()) {
+            const searchLower = searchQuery.toLowerCase();
+            cares = cares.filter(care => 
+                (care.care_type && care.care_type.toLowerCase().includes(searchLower)) ||
+                (care.care_name && care.care_name.toLowerCase().includes(searchLower)) ||
+                (care.medication && care.medication.toLowerCase().includes(searchLower)) ||
+                (care.purpose && care.purpose.toLowerCase().includes(searchLower))
+            );
+        }
+        
+        // Применяем пагинацию к отфильтрованным данным
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedCares = cares.slice(startIndex, endIndex);
+        
         currentPage = page;
         
         const careTable = document.getElementById('care-list');
         careTable.innerHTML = '';  // Очищаем таблицу
 
-        if (cares && cares.length > 0) {
-            cares.forEach((care, index) => {
+        if (paginatedCares && paginatedCares.length > 0) {
+            paginatedCares.forEach((care, index) => {
                 const row = document.createElement('tr');
                 
                 // Создаем кнопки действий с проверкой прав
@@ -112,7 +127,7 @@ async function fetchCares(page = 1, searchQuery = '') {
                 actionsHtml += `</div>`;
                 
                 // Вычисляем номер записи с учетом пагинации
-                const recordNumber = (page - 1) * pageSize + index + 1;
+                const recordNumber = startIndex + index + 1;
                 
                 row.innerHTML = `
                     <td>${recordNumber}</td>
@@ -137,10 +152,8 @@ async function fetchCares(page = 1, searchQuery = '') {
             careTable.innerHTML = '<tr><td colspan="7" class="text-center">Ветобработки не найдены</td></tr>';
         }
         
-        // Обновляем пагинацию
-        if (!Array.isArray(response)) {
-            updatePagination(response);
-        }
+        // Обновляем пагинацию для отфильтрованных данных
+        updateLocalCaresPagination(cares.length, page, searchQuery);
     } catch (error) {
         console.error('Ошибка при загрузке ветобработок:', error);
         const careTable = document.getElementById('care-list');
@@ -223,6 +236,56 @@ function searchCares(query = null) {
     fetchCares(1, query);
 }
 window.searchCares = searchCares; // Делаем функцию глобальной
+
+// Функция обновления пагинации для локальной фильтрации
+function updateLocalCaresPagination(totalItems, currentPage, searchQuery = '') {
+    const pagination = document.getElementById('pagination');
+    if (!pagination) {
+        // Создаем элемент пагинации если его нет
+        const paginationDiv = document.createElement('div');
+        paginationDiv.id = 'pagination';
+        paginationDiv.className = 'mt-3 d-flex justify-content-between align-items-center';
+        document.querySelector('.card-body').appendChild(paginationDiv);
+    }
+    
+    const paginationElement = document.getElementById('pagination');
+    paginationElement.innerHTML = '';
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    // Левая часть - кнопка "Предыдущая"
+    const leftContainer = document.createElement('div');
+    if (currentPage > 1) {
+        const prevButton = document.createElement('button');
+        prevButton.className = 'btn btn-outline-primary btn-sm';
+        prevButton.innerText = 'Предыдущая';
+        prevButton.onclick = () => {
+            fetchCares(currentPage - 1, searchQuery);
+        };
+        leftContainer.appendChild(prevButton);
+    }
+
+    // Центральная часть - номер страницы
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'text-muted';
+    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
+
+    // Правая часть - кнопка "Следующая"
+    const rightContainer = document.createElement('div');
+    if (currentPage < totalPages) {
+        const nextButton = document.createElement('button');
+        nextButton.className = 'btn btn-outline-primary btn-sm';
+        nextButton.innerText = 'Следующая';
+        nextButton.onclick = () => {
+            fetchCares(currentPage + 1, searchQuery);
+        };
+        rightContainer.appendChild(nextButton);
+    }
+    
+    paginationElement.appendChild(leftContainer);
+    paginationElement.appendChild(pageInfo);
+    paginationElement.appendChild(rightContainer);
+}
 
 // Функция обновления пагинации
 function updatePagination(response) {

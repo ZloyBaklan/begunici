@@ -20,16 +20,34 @@ export async function apiRequest(url, method = 'GET', body) {
         const response = await fetch(url, options)
 
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error(`Ошибка API [${response.status}]:`, errorData);
-            throw new Error(errorData.detail || 'Ошибка API');
+            // Проверяем, является ли ответ JSON
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const errorData = await response.json();
+                console.error(`Ошибка API [${response.status}]:`, errorData);
+                throw new Error(errorData.detail || 'Ошибка API');
+            } else {
+                // Если не JSON, читаем как текст для отладки
+                const errorText = await response.text();
+                console.error(`Ошибка API [${response.status}] (не JSON):`, errorText);
+                throw new Error(`Ошибка сервера: ${response.status}`);
+            }
         }
 
         if (response.status === 204) {
             return null; // No content
         }
         
-        return await response.json();
+        // Проверяем, что ответ действительно JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return await response.json();
+        } else {
+            // Если не JSON, читаем как текст и выводим ошибку
+            const responseText = await response.text();
+            console.error('Ответ сервера не является JSON:', responseText);
+            throw new Error('Сервер вернул некорректный ответ');
+        }
     } catch (error) {
         console.error('Ошибка сети:', error);
         throw error;

@@ -20,9 +20,9 @@ class AnimalBase(models.Model):
         Tag, on_delete=models.CASCADE, verbose_name="Бирка"
     )
     animal_status = models.ForeignKey(
-        Status, on_delete=models.SET_NULL, null=True, verbose_name="Статус"
+        Status, on_delete=models.SET_NULL, null=True, verbose_name="Статус", db_index=True
     )
-    birth_date = models.DateField(verbose_name="Дата рождения", null=True, blank=True)
+    birth_date = models.DateField(verbose_name="Дата рождения", null=True, blank=True, db_index=True)
     age = models.DecimalField(
         verbose_name="Возраст (в месяцах)",
         max_digits=5,
@@ -39,6 +39,7 @@ class AnimalBase(models.Model):
         null=True, 
         blank=True,
         unique=True,
+        db_index=True,  # Добавляем индекс для быстрого поиска
         help_text="Уникальный номер бирки РСХН (необязательно)"
     )
     date_otbivka = models.DateField(
@@ -47,13 +48,27 @@ class AnimalBase(models.Model):
         blank=True,
         help_text="Дата отбивки животного (необязательно)"
     )
-    is_archived = models.BooleanField(default=False, verbose_name="В архиве")
+    dorper_percentage = models.DecimalField(
+        max_digits=8,
+        decimal_places=5,
+        verbose_name="Дорперность (%)",
+        null=True,
+        blank=True,
+        help_text="Процент дорперности (0-100%)"
+    )
+    is_manual_dorper = models.BooleanField(
+        default=False,
+        verbose_name="Дорперность задана вручную",
+        help_text="Указывает, была ли дорперность задана вручную или рассчитана автоматически"
+    )
+    is_archived = models.BooleanField(default=False, verbose_name="В архиве", db_index=True)
     # Поля для родителей (текстовые поля с номерами бирок)
     mother = models.CharField(
         max_length=50,
         null=True,
         blank=True,
         verbose_name="Мать (номер бирки)",
+        db_index=True,  # Добавляем индекс для быстрого поиска
         help_text="Номер бирки матери (буквы и цифры без пробелов)"
     )
     father = models.CharField(
@@ -61,6 +76,7 @@ class AnimalBase(models.Model):
         null=True,
         blank=True,
         verbose_name="Отец (номер бирки)",
+        db_index=True,  # Добавляем индекс для быстрого поиска
         help_text="Номер бирки отца (буквы и цифры без пробелов)"
     )
 
@@ -73,11 +89,17 @@ class AnimalBase(models.Model):
     )
 
     place = models.ForeignKey(
-        Place, on_delete=models.SET_NULL, null=True, verbose_name="Место"
+        Place, on_delete=models.SET_NULL, null=True, verbose_name="Место", db_index=True
     )
 
     class Meta:
         abstract = True
+        indexes = [
+            # Составные индексы для оптимизации фильтрации
+            models.Index(fields=['is_archived', 'animal_status'], name='%(class)s_archived_status_idx'),
+            models.Index(fields=['is_archived', 'place'], name='%(class)s_archived_place_idx'),
+            models.Index(fields=['is_archived', 'birth_date'], name='%(class)s_archived_birth_idx'),
+        ]
 
     # Автоматическое добавление place_movements через related_name
     @property
@@ -198,14 +220,33 @@ class AnimalBase(models.Model):
         
         father_tag = self.get_father_tag()
         if father_tag:
+            # Получаем объект животного-отца для правильного отображения имени
+            father_animal = None
+            try:
+                # Проверяем среди производителей
+                father_animal = Maker.objects.get(tag=father_tag)
+            except Maker.DoesNotExist:
+                try:
+                    # Проверяем среди баранов
+                    father_animal = Ram.objects.get(tag=father_tag)
+                except Ram.DoesNotExist:
+                    pass
+            
+            # Определяем отображаемое имя
+            display_name = self.father
+            if father_animal and hasattr(father_animal, 'name') and father_animal.name:
+                display_name = f"{father_animal.name}({self.father})"
+            
             return {
                 'tag_number': self.father,
+                'display_name': display_name,
                 'has_link': True,
                 'tag_obj': father_tag
             }
         else:
             return {
                 'tag_number': self.father,
+                'display_name': self.father,
                 'has_link': False,
                 'tag_obj': None
             }
@@ -227,6 +268,58 @@ class AnimalBase(models.Model):
             if ' ' in self.father:
                 from django.core.exceptions import ValidationError
                 raise ValidationError({'father': 'Номер бирки отца не должен содержать пробелы'})
+
+    def calculate_dorper_percentage(self):
+        """
+        Автоматический расчет дорперности на основе родителей.
+        Рассчитывается только если не задана вручную и у обоих родителей есть дорперность.
+        """
+        if self.is_manual_dorper or not hasattr(self, 'father') or not hasattr(self, 'mother'):
+            return
+            
+        try:
+            father_dorper = None
+            mother_dorper = None
+            
+            # Получаем дорперность отца
+            if self.father:
+                father_tag = Tag.objects.filter(tag_number=self.father).first()
+                if father_tag:
+                    # Ищем животное с этой биркой среди всех типов
+                    for model in [Maker, Ram, Ewe, Sheep]:
+                        try:
+                            father_animal = model.objects.get(tag=father_tag)
+                            if father_animal.dorper_percentage is not None:
+                                father_dorper = father_animal.dorper_percentage
+                            break
+                        except model.DoesNotExist:
+                            continue
+            
+            # Получаем дорперность матери
+            if self.mother:
+                mother_tag = Tag.objects.filter(tag_number=self.mother).first()
+                if mother_tag:
+                    # Ищем животное с этой биркой среди всех типов
+                    for model in [Maker, Ram, Ewe, Sheep]:
+                        try:
+                            mother_animal = model.objects.get(tag=mother_tag)
+                            if mother_animal.dorper_percentage is not None:
+                                mother_dorper = mother_animal.dorper_percentage
+                            break
+                        except model.DoesNotExist:
+                            continue
+            
+            # Рассчитываем среднее арифметическое, если у обоих родителей есть дорперность
+            if father_dorper is not None and mother_dorper is not None:
+                self.dorper_percentage = (father_dorper + mother_dorper) / 2
+            else:
+                # Если у одного из родителей нет дорперности, не рассчитываем
+                self.dorper_percentage = None
+                
+        except Exception as e:
+            # В случае ошибки не устанавливаем дорперность
+            print(f"Ошибка при расчете дорперности для {self.tag.tag_number if self.tag else 'животного'}: {e}")
+            self.dorper_percentage = None
 
     def save(self, *args, **kwargs):
         """
@@ -257,6 +350,10 @@ class AnimalBase(models.Model):
         
         # 🔹 Вычисляем возраст независимо от статуса архивирования
         self.calculate_age()
+        
+        # 🔹 Автоматический расчет дорперности (если не задана вручную)
+        if not self.is_manual_dorper:
+            self.calculate_dorper_percentage()
 
         # 🔹 Автоматическое заполнение `animal_type` у `Tag`
         if self.tag:
@@ -283,6 +380,14 @@ class AnimalBase(models.Model):
 
 
 class Maker(AnimalBase):
+    name = models.CharField(
+        max_length=50,
+        verbose_name="Имя",
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Уникальное имя производителя (необязательно)"
+    )
     plemstatus = models.CharField(max_length=200, verbose_name="Племенной статус")
     working_condition = models.CharField(
         max_length=200, verbose_name="Рабочее состояние"
@@ -297,7 +402,15 @@ class Maker(AnimalBase):
         verbose_name_plural = "Производители"
 
     def __str__(self):
+        if self.name:
+            return f"{self.name}({self.tag.tag_number})"
         return f"Производитель: {self.tag.tag_number}"
+
+    def get_display_name(self):
+        """Возвращает отображаемое имя: Имя(Бирка) или просто Бирка"""
+        if self.name:
+            return f"{self.name}({self.tag.tag_number})"
+        return self.tag.tag_number
 
     # Метод для обновления рабочего состояния с датой
     def update_working_condition(self, new_condition):
@@ -767,7 +880,18 @@ class CalendarNote(models.Model):
                     
                     if tag_obj.animal_type in url_map:
                         url = reverse(url_map[tag_obj.animal_type], kwargs={'tag_number': tag_obj.tag_number})
-                        return f'<a href="{url}" style="color: #007bff; text-decoration: underline; font-weight: bold;">{tag_text}</a>'
+                        
+                        # Для производителей проверяем наличие имени
+                        display_text = tag_text
+                        if tag_obj.animal_type == 'Maker':
+                            try:
+                                maker = Maker.objects.get(tag=tag_obj)
+                                if maker.name:
+                                    display_text = f"{maker.name}({tag_text})"
+                            except Maker.DoesNotExist:
+                                pass
+                        
+                        return f'<a href="{url}" style="color: #007bff; text-decoration: underline; font-weight: bold;">{display_text}</a>'
                 
                 # Если бирка не найдена, возвращаем обычный текст
                 return tag_text

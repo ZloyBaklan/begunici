@@ -267,7 +267,8 @@ async function loadAndShowAnimalsModal(animalType, placeId, sectionName) {
         // Преобразуем в формат, ожидаемый старой функцией
         const formattedAnimals = filteredAnimals.map(animal => ({
             id: animal.tag_number, // Используем номер бирки как ID
-            tag: { tag_number: animal.tag_number }
+            tag: { tag_number: animal.tag_number },
+            display_name: animal.display_name || animal.tag_number // Добавляем display_name
         }));
         
         // Показываем модальное окно
@@ -482,6 +483,7 @@ function showAnimalsModal(animalType, animals, sectionName) {
         animalDiv.className = 'animal-item';
         
         const tagNumber = animal.tag ? animal.tag.tag_number : 'Нет бирки';
+        const displayName = animal.display_name || tagNumber;
         
         // Создаем чекбокс для каждого животного
         const checkbox = document.createElement('input');
@@ -505,13 +507,13 @@ function showAnimalsModal(animalType, animals, sectionName) {
             // Создаем кликабельную ссылку
             const link = document.createElement('a');
             link.href = `/animals/${animalTypeRoute}/${tagNumber}/info/`;
-            link.textContent = tagNumber;
+            link.textContent = displayName; // Используем display_name вместо tagNumber
             link.className = 'animal-link';
             label.appendChild(link);
         } else {
             // Если нет бирки, показываем просто текст
             const span = document.createElement('span');
-            span.textContent = tagNumber;
+            span.textContent = displayName; // Используем display_name вместо tagNumber
             label.appendChild(span);
         }
         

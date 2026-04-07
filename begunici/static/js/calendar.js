@@ -4,6 +4,7 @@ class LambingCalendar {
         this.lambingData = {};
         this.notesData = {};
         this.vetData = {};
+        this.weighingData = {};
         this.monthNames = [
             'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
             'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
@@ -18,7 +19,8 @@ class LambingCalendar {
         Promise.all([
             this.loadLambingData(),
             this.loadNotesData(),
-            this.loadVetData()
+            this.loadVetData(),
+            this.loadWeighingData()
         ]).then(() => {
             // После загрузки всех данных рендерим календарь
             this.renderCalendar();
@@ -112,6 +114,22 @@ class LambingCalendar {
             console.error('Ошибка загрузки ветеринарных данных календаря:', error);
         }
     }
+    async loadWeighingData() {
+        try {
+            const year = this.currentDate.getFullYear();
+            const month = this.currentDate.getMonth() + 1;
+            const response = await fetch(`/animals/notes/weighing-calendar-data/?year=${year}&month=${month}`);
+            if (response.ok) {
+                this.weighingData = await response.json();
+            } else {
+                console.error('Ошибка загрузки данных взвешиваний календаря:', response.statusText);
+                this.weighingData = {};
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки данных взвешиваний календаря:', error);
+            this.weighingData = {};
+        }
+    }
     
     renderCalendar() {
         const year = this.currentDate.getFullYear();
@@ -172,6 +190,7 @@ class LambingCalendar {
                     const hasLambing = this.lambingData[currentDateStr];
                     const hasNotes = this.notesData[currentDateStr];
                     const hasVet = this.vetData[currentDateStr];
+                    const hasWeighing = this.weighingData && this.weighingData[currentDateStr];
                     
                     // Определяем типы событий
                     const eventTypes = [];
@@ -179,12 +198,14 @@ class LambingCalendar {
                     if (hasNotes) eventTypes.push('notes');
                     if (hasVet && hasVet.vet_treatments && hasVet.vet_treatments.length > 0) eventTypes.push('vet_treatments');
                     if (hasVet && hasVet.vet_expiring && hasVet.vet_expiring.length > 0) eventTypes.push('vet_expiring');
+                    if (hasWeighing) eventTypes.push('weighing');
                     
                     let totalCount = 0;
                     if (hasLambing) totalCount += hasLambing.length;
                     if (hasNotes) totalCount += hasNotes.length;
                     if (hasVet && hasVet.vet_treatments) totalCount += hasVet.vet_treatments.length;
                     if (hasVet && hasVet.vet_expiring) totalCount += hasVet.vet_expiring.length;
+                    if (hasWeighing) totalCount += hasWeighing.length;
                     
                     if (eventTypes.length > 1) {
                         // Многоцветная ячейка - делим на части
@@ -210,6 +231,9 @@ class LambingCalendar {
                                     break;
                                 case 'notes':
                                     color = '#28a745';
+                                    break;
+                                case 'weighing':
+                                    color = '#007bff';
                                     break;
                             }
                             
@@ -238,6 +262,8 @@ class LambingCalendar {
                             cell.classList.add('has-vet-treatment');
                         } else if (eventType === 'vet_expiring') {
                             cell.classList.add('has-vet-expiring');
+                        } else if (eventType === 'weighing') {
+                            cell.classList.add('has-weighing');
                         }
                         
                         cell.innerHTML += `<div class="lambing-count">${totalCount}</div>`;
@@ -246,7 +272,7 @@ class LambingCalendar {
                     // Добавляем обработчик клика
                     if (eventTypes.length > 0) {
                         cell.addEventListener('click', () => {
-                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet);
+                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet, hasWeighing);
                         });
                     }
                     
@@ -265,7 +291,7 @@ class LambingCalendar {
         }
     }
     
-    showDayDetails(dateStr, lambings, notes, vetData) {
+    showDayDetails(dateStr, lambings, notes, vetData, weighingData) {
         const modalElement = document.getElementById('lambingModal');
         if (!modalElement) {
             console.warn('Модальное окно календаря не найдено на странице');
@@ -375,12 +401,37 @@ class LambingCalendar {
         // Показываем заметки
         if (notes && notes.length > 0) {
             content += '<h6 class="text-success">Заметки:</h6>';
-            content += '<div class="list-group">';
+            content += '<div class="list-group mb-3">';
             
             notes.forEach(note => {
                 content += `
                     <div class="list-group-item">
                         <div class="mb-2">${note.formatted_text}</div>
+                    </div>
+                `;
+            });
+            
+            content += '</div>';
+        }
+        
+        // Показываем взвешивания
+        if (weighingData && weighingData.length > 0) {
+            content += '<h6 style="color: #007bff;">Взвешивание:</h6>';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+            
+            weighingData.forEach(animal => {
+                content += `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <a href="/animals/${this.getAnimalTypeRoute(animal.animal_type)}/${animal.tag}/info/" class="text-decoration-none">
+                                    ${animal.display_name}
+                                </a>
+                            </h6>
+                        </div>
+                        <small>
+                            Дата рождения: ${new Date(animal.birth_date).toLocaleDateString('ru-RU')}
+                        </small>
                     </div>
                 `;
             });
