@@ -155,6 +155,7 @@ function renderSheeps(sheeps, startIndex = null) {
             </td>
             <td>${sheep.age || 'Не указан'}</td>
             <td>${sheep.place ? sheep.place.sheepfold : 'Не указано'}</td>
+            <td>${sheep.dorper_display || '-'}</td>
             <td>${sheep.weight_records && sheep.weight_records.length > 0 
                 ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
@@ -162,7 +163,6 @@ function renderSheeps(sheeps, startIndex = null) {
                 ? `${formatDateToOutput(sheep.veterinary_history[0].date_of_care)}: ${sheep.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
             <td>${sheep.rshn_tag || '-'}</td>
-            <td>${sheep.dorper_display || '-'}</td>
             <td>${sheep.note || ''}</td>
         </tr>`;
         rows.push(row);
@@ -403,9 +403,7 @@ function toggleDeleteButton() {
 
 // Функция для удаления выбранных записей
 async function deleteSelectedSheeps() {
-    const selectedTags = Array.from(selectedSheeps.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedSheeps);
 
     console.log('Выбранные для удаления:', selectedTags);
 
@@ -414,12 +412,11 @@ async function deleteSelectedSheeps() {
         return;
     }
 
-    const tags = selectedTags.map(item => item.tag);
     const modal = document.getElementById('delete-modal');
     const modalMessage = document.getElementById('delete-modal-message');
     const confirmButton = document.getElementById('delete-confirm-button');
 
-    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${selectedTags.join(', ')}?`;
     modal.style.display = 'block';
 
     confirmButton.onclick = async () => {
@@ -493,9 +490,7 @@ async function loadArchiveStatuses() {
 }
 
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedSheeps.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedSheeps);
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');

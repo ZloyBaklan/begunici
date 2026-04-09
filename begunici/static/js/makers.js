@@ -225,6 +225,7 @@ function renderMakers(makers, startIndex = null) {
             </td>
             <td>${maker.age || 'Нет данных'}</td>
             <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
+            <td>${maker.dorper_display || '-'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
@@ -233,7 +234,6 @@ function renderMakers(makers, startIndex = null) {
                 : 'Нет записей'}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
             <td>${maker.rshn_tag || '-'}</td>
-            <td>${maker.dorper_display || '-'}</td>
             <td>${maker.note}</td>
         </tr>`;
         rows.push(row);

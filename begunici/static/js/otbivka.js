@@ -1,5 +1,9 @@
 import { apiRequest } from "./utils.js";
 
+// Глобальные переменные для ковровой отбивки
+let selectedAnimals = new Set(); // Для хранения выбранных животных
+let selectedAnimalsData = new Map(); // Для хранения полной информации о выбранных животных
+
 document.addEventListener('DOMContentLoaded', function () {
     fetchOtbivka();  // Загружаем список отбивки при загрузке страницы
 
@@ -7,6 +11,28 @@ document.addEventListener('DOMContentLoaded', function () {
     const searchInput = document.getElementById('otbivka-search');
     if (searchInput) {
         searchInput.addEventListener('input', searchOtbivka);
+    }
+    
+    // Устанавливаем текущую дату как дату отбивки
+    const today = new Date().toISOString().split('T')[0];
+    const otbivkaDateInput = document.getElementById('otbivka-date');
+    if (otbivkaDateInput) {
+        otbivkaDateInput.value = today;
+    }
+    
+    // Обработчики для ковровой отбивки
+    const searchAnimalsBtn = document.getElementById('searchAnimalsBtn');
+    if (searchAnimalsBtn) {
+        searchAnimalsBtn.addEventListener('click', searchAnimals);
+    }
+    
+    const animalsSearchInput = document.getElementById('animalsSearch');
+    if (animalsSearchInput) {
+        animalsSearchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchAnimals();
+            }
+        });
     }
 });
 
@@ -149,3 +175,224 @@ function showError(message) {
 // Экспортируем функции для глобального доступа
 window.fetchOtbivka = fetchOtbivka;
 window.searchOtbivka = searchOtbivka;
+
+// Функции для ковровой отбивки
+window.showSelectAnimalsModal = showSelectAnimalsModal;
+window.confirmAnimalsSelection = confirmAnimalsSelection;
+window.performBulkOtbivka = performBulkOtbivka;
+
+// Показать модальное окно выбора животных
+async function showSelectAnimalsModal() {
+    // Очищаем выбранных животных и поле поиска
+    selectedAnimals.clear();
+    selectedAnimalsData.clear();
+    document.getElementById('animalsSearch').value = '';
+    document.getElementById('animals-list').innerHTML = `
+        <div class="text-muted text-center py-3">
+            Введите номер бирки и нажмите "Поиск" для отображения результатов
+        </div>
+    `;
+    
+    // Показываем модальное окно
+    const modal = new bootstrap.Modal(document.getElementById('selectAnimalsModal'));
+    modal.show();
+}
+
+// Поиск животных без отбивки
+async function searchAnimals() {
+    const search = document.getElementById('animalsSearch').value.trim();
+    
+    if (!search) {
+        document.getElementById('animals-list').innerHTML = `
+            <div class="text-muted text-center py-3">
+                Введите номер бирки для поиска
+            </div>
+        `;
+        return;
+    }
+    
+    // Сохраняем текущие выбранные чекбоксы
+    saveSelectedAnimals();
+    
+    // Показываем индикатор загрузки
+    document.getElementById('animals-list').innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Поиск...</span>
+            </div>
+            <div class="mt-2">Поиск животных без отбивки...</div>
+        </div>
+    `;
+    
+    try {
+        const response = await apiRequest(`/animals/api/animals-without-otbivka/?search=${encodeURIComponent(search)}`);
+        const animals = response || [];
+        
+        const animalsList = document.getElementById('animals-list');
+        animalsList.innerHTML = '';
+        
+        if (animals.length === 0) {
+            animalsList.innerHTML = '<div class="text-center text-muted">Животные без отбивки не найдены</div>';
+        } else {
+            animals.forEach(animal => {
+                const item = createAnimalItem(animal);
+                animalsList.appendChild(item);
+            });
+            
+            // Показываем информацию о количестве результатов
+            if (animals.length >= 100) {
+                const info = document.createElement('div');
+                info.className = 'text-muted text-center mt-2 small';
+                info.textContent = `Показано первых 100 результатов`;
+                animalsList.appendChild(info);
+            }
+            
+            // Восстанавливаем выбранные чекбоксы
+            restoreSelectedAnimals();
+        }
+    } catch (error) {
+        console.error('Ошибка поиска животных:', error);
+        document.getElementById('animals-list').innerHTML = `
+            <div class="text-danger text-center py-3">
+                Ошибка поиска
+            </div>
+        `;
+    }
+}
+
+// Создание элемента для выбора животного
+function createAnimalItem(animal) {
+    const item = document.createElement('div');
+    item.className = 'form-check mb-2';
+    
+    item.innerHTML = `
+        <input class="form-check-input animal-checkbox" type="checkbox" 
+               value="${animal.tag_number}" data-type="${animal.type_code}" data-display="${animal.display_name}">
+        <label class="form-check-label">
+            ${animal.display_name} (${animal.animal_type}) - ${animal.status}
+        </label>
+    `;
+    
+    return item;
+}
+
+// Функция для сохранения выбранных животных
+function saveSelectedAnimals() {
+    const checkboxes = document.querySelectorAll('.animal-checkbox');
+    checkboxes.forEach(checkbox => {
+        const tagNumber = checkbox.value;
+        if (checkbox.checked) {
+            selectedAnimals.add(tagNumber);
+            selectedAnimalsData.set(tagNumber, {
+                tag_number: tagNumber,
+                type: checkbox.dataset.type,
+                display_name: checkbox.dataset.display
+            });
+        } else {
+            selectedAnimals.delete(tagNumber);
+            selectedAnimalsData.delete(tagNumber);
+        }
+    });
+}
+
+// Функция для восстановления выбранных животных
+function restoreSelectedAnimals() {
+    const checkboxes = document.querySelectorAll('.animal-checkbox');
+    checkboxes.forEach(checkbox => {
+        if (selectedAnimals.has(checkbox.value)) {
+            checkbox.checked = true;
+        }
+    });
+}
+
+// Подтверждение выбора животных
+function confirmAnimalsSelection() {
+    // Сохраняем текущие выбранные чекбоксы
+    saveSelectedAnimals();
+    
+    // Создаем массив из всех выбранных животных
+    const selectedAnimalsArray = Array.from(selectedAnimalsData.values());
+    
+    // Обновляем отображение
+    const display = document.getElementById('selected-animals-display');
+    const bulkOtbivkaBtn = document.getElementById('bulk-otbivka-btn');
+    
+    if (selectedAnimalsArray.length === 0) {
+        display.textContent = 'Не выбрано';
+        display.className = 'mt-2 text-muted';
+        bulkOtbivkaBtn.disabled = true;
+    } else {
+        display.textContent = `Выбрано: ${selectedAnimalsArray.length} животных`;
+        display.className = 'mt-2 text-success';
+        bulkOtbivkaBtn.disabled = false;
+    }
+    
+    // Сохраняем массив для использования в других функциях
+    window.selectedAnimalsForOtbivka = selectedAnimalsArray;
+    
+    // Закрываем модальное окно
+    const modal = bootstrap.Modal.getInstance(document.getElementById('selectAnimalsModal'));
+    modal.hide();
+}
+
+// Выполнение массовой отбивки
+async function performBulkOtbivka() {
+    const otbivkaDate = document.getElementById('otbivka-date').value;
+    
+    if (!otbivkaDate) {
+        alert('Укажите дату отбивки');
+        return;
+    }
+    
+    if (!window.selectedAnimalsForOtbivka || window.selectedAnimalsForOtbivka.length === 0) {
+        alert('Выберите животных для отбивки');
+        return;
+    }
+    
+    // Подтверждение операции
+    const confirmMessage = `Выполнить отбивку для ${window.selectedAnimalsForOtbivka.length} животных на дату ${otbivkaDate}?\n\nВсем животным будет установлен статус "Откорм".`;
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        const animalTags = window.selectedAnimalsForOtbivka.map(animal => animal.tag_number);
+        
+        const response = await apiRequest('/animals/api/bulk-otbivka/', 'POST', {
+            otbivka_date: otbivkaDate,
+            animal_tags: animalTags
+        });
+        
+        let message = `Успешно выполнена отбивка для ${response.updated_count} из ${response.total_requested} животных!`;
+        
+        if (response.errors && response.errors.length > 0) {
+            message += `\n\nОшибки:\n${response.errors.join('\n')}`;
+        }
+        
+        alert(message);
+        
+        // Очищаем форму
+        resetBulkOtbivkaForm();
+        
+        // Перезагружаем список отбивки
+        fetchOtbivka();
+        
+    } catch (error) {
+        console.error('Ошибка выполнения массовой отбивки:', error);
+        alert('Ошибка при выполнении отбивки: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+// Сброс формы массовой отбивки
+function resetBulkOtbivkaForm() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('otbivka-date').value = today;
+    
+    selectedAnimals.clear();
+    selectedAnimalsData.clear();
+    window.selectedAnimalsForOtbivka = [];
+    
+    document.getElementById('selected-animals-display').textContent = 'Не выбрано';
+    document.getElementById('selected-animals-display').className = 'mt-2 text-muted';
+    document.getElementById('bulk-otbivka-btn').disabled = true;
+}

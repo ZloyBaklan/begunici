@@ -32,12 +32,14 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Count, Q
+from django.http import JsonResponse
+from django.db.models import Count, Q, F
 from datetime import datetime, timedelta
 
 from begunici.app_types.veterinary.vet_models import (
     WeightRecord,
     Veterinary,
+    VeterinaryCare,
     PlaceMovement,
     Tag,
     StatusHistory,
@@ -1840,16 +1842,45 @@ class LambingViewSet(viewsets.ModelViewSet):
             for lambing in active_lambings:
                 date_str = lambing.planned_lambing_date.strftime('%Y-%m-%d')
                 mother = lambing.get_mother()
+                father = lambing.get_father()
                 
                 if date_str not in calendar_data:
                     calendar_data[date_str] = []
                 
+                # Создаем URL для матери
+                mother_url = None
+                mother_tag = 'Неизвестно'
+                if mother and mother.tag:
+                    mother_tag = mother.tag.tag_number
+                    mother_type = lambing.get_mother_type()
+                    if mother_type == 'Ярка':
+                        from django.urls import reverse
+                        mother_url = reverse('animals:ewe-detail', kwargs={'tag_number': mother_tag})
+                    elif mother_type == 'Овца':
+                        from django.urls import reverse
+                        mother_url = reverse('animals:sheep-detail', kwargs={'tag_number': mother_tag})
+                
+                # Создаем URL для отца
+                father_url = None
+                father_tag = 'Неизвестно'
+                if father and father.tag:
+                    father_tag = father.tag.tag_number
+                    father_type = lambing.get_father_type()
+                    if father_type == 'Производитель':
+                        from django.urls import reverse
+                        father_url = reverse('animals:maker-detail', kwargs={'tag_number': father_tag})
+                    elif father_type == 'Баран':
+                        from django.urls import reverse
+                        father_url = reverse('animals:ram-detail', kwargs={'tag_number': father_tag})
+                
                 calendar_data[date_str].append({
                     'id': lambing.id,
-                    'mother_tag': mother.tag.tag_number if mother and mother.tag else 'Неизвестно',
+                    'mother_tag': mother_tag,
                     'mother_type': lambing.get_mother_type(),
-                    'father_tag': lambing.get_father().tag.tag_number if lambing.get_father() and lambing.get_father().tag else 'Неизвестно',
+                    'mother_url': mother_url,
+                    'father_tag': father_tag,
                     'father_type': lambing.get_father_type(),
+                    'father_url': father_url,
                     'start_date': lambing.start_date.strftime('%Y-%m-%d')
                 })
             
@@ -2190,41 +2221,53 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             # Производители
             makers = Maker.objects.filter(is_archived=False, birth_date__isnull=False)
             for maker in makers:
+                from django.urls import reverse
+                url = reverse('animals:maker-detail', kwargs={'tag_number': maker.tag.tag_number})
                 animals.append({
                     'tag': maker.tag.tag_number,
                     'birth_date': maker.birth_date,
                     'animal_type': 'maker',
-                    'display_name': maker.get_display_name()
+                    'display_name': maker.get_display_name(),
+                    'url': url
                 })
 
             # Бараны
             rams = Ram.objects.filter(is_archived=False, birth_date__isnull=False)
             for ram in rams:
+                from django.urls import reverse
+                url = reverse('animals:ram-detail', kwargs={'tag_number': ram.tag.tag_number})
                 animals.append({
                     'tag': ram.tag.tag_number,
                     'birth_date': ram.birth_date,
                     'animal_type': 'ram',
-                    'display_name': ram.tag.tag_number
+                    'display_name': ram.tag.tag_number,
+                    'url': url
                 })
 
-            # Овцы
+            # Ярки
             ewes = Ewe.objects.filter(is_archived=False, birth_date__isnull=False)
             for ewe in ewes:
+                from django.urls import reverse
+                url = reverse('animals:ewe-detail', kwargs={'tag_number': ewe.tag.tag_number})
                 animals.append({
                     'tag': ewe.tag.tag_number,
                     'birth_date': ewe.birth_date,
                     'animal_type': 'ewe',
-                    'display_name': ewe.tag.tag_number
+                    'display_name': ewe.tag.tag_number,
+                    'url': url
                 })
 
-            # Ярки
+            # Овцы
             sheeps = Sheep.objects.filter(is_archived=False, birth_date__isnull=False)
             for sheep in sheeps:
+                from django.urls import reverse
+                url = reverse('animals:sheep-detail', kwargs={'tag_number': sheep.tag.tag_number})
                 animals.append({
                     'tag': sheep.tag.tag_number,
                     'birth_date': sheep.birth_date,
                     'animal_type': 'sheep',
-                    'display_name': sheep.tag.tag_number
+                    'display_name': sheep.tag.tag_number,
+                    'url': url
                 })
 
             # Для каждого животного вычисляем дату взвешивания (дата рождения + 5 месяцев)
@@ -2246,7 +2289,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     'tag': animal['tag'],
                     'animal_type': animal['animal_type'],
                     'display_name': animal['display_name'],
-                    'birth_date': animal['birth_date'].strftime('%Y-%m-%d')
+                    'birth_date': animal['birth_date'].strftime('%Y-%m-%d'),
+                    'url': animal['url']
                 })
 
             return Response(calendar_data, status=status.HTTP_200_OK)
@@ -3289,7 +3333,7 @@ def get_inactive_mothers(request):
     Получить список неактивных матерей (овец и ярок без активных окотов)
     """
     try:
-        search = request.GET.get('search', '')
+        search = request.GET.get('search', '').strip()
         
         # Получаем всех овец без активных окотов
         sheep_query = Sheep.objects.filter(
@@ -3304,11 +3348,6 @@ def get_inactive_mothers(request):
         ).exclude(
             lambings__is_active=True
         ).select_related('tag', 'animal_status', 'place')
-        
-        # Применяем поиск если указан
-        if search:
-            sheep_query = sheep_query.filter(tag__tag_number__icontains=search)
-            ewes_query = ewes_query.filter(tag__tag_number__icontains=search)
         
         # Формируем единый список
         inactive_mothers = []
@@ -3335,6 +3374,10 @@ def get_inactive_mothers(request):
                 'place': ewe.place.sheepfold if ewe.place else 'Нет места'
             })
         
+        # Применяем поиск без учета регистра если указан
+        if search:
+            inactive_mothers = [mother for mother in inactive_mothers if search.lower() in mother['tag_number'].lower()]
+        
         # Сортируем по номеру бирки
         inactive_mothers.sort(key=lambda x: x['tag_number'])
         
@@ -3354,7 +3397,7 @@ def get_all_fathers(request):
     Получить список всех отцов (производителей и баранов)
     """
     try:
-        search = request.GET.get('search', '')
+        search = request.GET.get('search', '').strip()
         
         # Получаем всех производителей
         makers_query = Maker.objects.filter(
@@ -3365,11 +3408,6 @@ def get_all_fathers(request):
         rams_query = Ram.objects.filter(
             is_archived=False
         ).select_related('tag', 'animal_status', 'place')
-        
-        # Применяем поиск если указан
-        if search:
-            makers_query = makers_query.filter(tag__tag_number__icontains=search)
-            rams_query = rams_query.filter(tag__tag_number__icontains=search)
         
         # Формируем единый список
         all_fathers = []
@@ -3396,6 +3434,10 @@ def get_all_fathers(request):
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
                 'place': ram.place.sheepfold if ram.place else 'Нет места'
             })
+        
+        # Применяем поиск без учета регистра если указан
+        if search:
+            all_fathers = [father for father in all_fathers if search.lower() in father['tag_number'].lower()]
         
         # Сортируем по номеру бирки
         all_fathers.sort(key=lambda x: x['tag_number'])
@@ -3570,6 +3612,194 @@ def otbivka_list(request):
     Страница со списком отбивки животных.
     """
     return render(request, 'otbivka_list.html')
+
+
+def vet_list(request):
+    """Страница списка ветобработок"""
+    return render(request, 'vet_list.html')
+
+
+def vet_list_api(request):
+    """API для списка ветобработок с фильтрацией и пагинацией"""
+    try:
+        # Получаем параметры фильтрации
+        tag_search = request.GET.get('tag_search', '').strip()
+        care_name = request.GET.get('care_name', '')
+        medication = request.GET.get('medication', '')
+        care_date_from = request.GET.get('care_date_from', '')
+        care_date_to = request.GET.get('care_date_to', '')
+        expiry_date_from = request.GET.get('expiry_date_from', '')
+        expiry_date_to = request.GET.get('expiry_date_to', '')
+        is_hidden = request.GET.get('is_hidden', '')
+        
+        # Параметры пагинации
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
+        # Базовый запрос
+        queryset = Veterinary.objects.select_related(
+            'tag', 'veterinary_care'
+        ).all().order_by('-date_of_care')
+        
+        # Применяем фильтры
+        if tag_search:
+            queryset = queryset.filter(tag__tag_number__icontains=tag_search)
+        
+        if care_name:
+            queryset = queryset.filter(veterinary_care__care_name=care_name)
+        
+        if medication:
+            queryset = queryset.filter(veterinary_care__medication=medication)
+        
+        if care_date_from:
+            try:
+                from_date = datetime.strptime(care_date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(date_of_care__date__gte=from_date)
+            except ValueError:
+                pass
+        
+        if care_date_to:
+            try:
+                to_date = datetime.strptime(care_date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(date_of_care__date__lte=to_date)
+            except ValueError:
+                pass
+        
+        # Фильтр по скрытым/не скрытым
+        if is_hidden == 'true':
+            queryset = queryset.filter(is_hidden=True)
+        elif is_hidden == 'false':
+            queryset = queryset.filter(is_hidden=False)
+        
+        # Фильтр по дате окончания действия (упрощенный подход)
+        if expiry_date_from or expiry_date_to:
+            # Для фильтрации по дате окончания используем Python-код
+            # Сначала получаем все записи, затем фильтруем
+            all_records = list(queryset)
+            filtered_records = []
+            
+            for vet in all_records:
+                expiry_date = vet.get_expiry_date()
+                if expiry_date is None:  # Бессрочные пропускаем при фильтрации по дате окончания
+                    continue
+                
+                include = True
+                
+                if expiry_date_from:
+                    try:
+                        from_date = datetime.strptime(expiry_date_from, '%Y-%m-%d').date()
+                        if expiry_date < from_date:
+                            include = False
+                    except ValueError:
+                        pass
+                
+                if expiry_date_to and include:
+                    try:
+                        to_date = datetime.strptime(expiry_date_to, '%Y-%m-%d').date()
+                        if expiry_date > to_date:
+                            include = False
+                    except ValueError:
+                        pass
+                
+                if include:
+                    filtered_records.append(vet)
+            
+            # Заменяем queryset на отфильтрованный список
+            queryset = filtered_records
+            total_count = len(filtered_records)
+            
+            # Применяем пагинацию к списку
+            start = (page - 1) * page_size
+            end = start + page_size
+            vet_records = filtered_records[start:end]
+        else:
+            # Подсчет общего количества
+            total_count = queryset.count()
+            
+            # Пагинация
+            start = (page - 1) * page_size
+            end = start + page_size
+            vet_records = list(queryset[start:end])
+        
+        # Формируем данные для ответа
+        results = []
+        for vet in vet_records:
+            # Определяем тип животного и создаем URL
+            animal_type_map = {
+                'Maker': 'maker',
+                'Ram': 'ram', 
+                'Ewe': 'ewe',
+                'Sheep': 'sheep'
+            }
+            
+            animal_type_code = animal_type_map.get(vet.tag.animal_type, 'maker')
+            from django.urls import reverse
+            animal_url = reverse(f'animals:{animal_type_code}-detail', kwargs={'tag_number': vet.tag.tag_number})
+            
+            # Получаем дату окончания
+            expiry_date = vet.get_expiry_date()
+            expiry_date_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
+            
+            # Получаем дату обработки
+            care_date = vet.date_of_care
+            if hasattr(care_date, 'date'):
+                care_date_str = care_date.date().strftime('%Y-%m-%d')
+            else:
+                care_date_str = care_date.strftime('%Y-%m-%d')
+            
+            results.append({
+                'id': vet.id,
+                'tag_number': vet.tag.tag_number,
+                'animal_url': animal_url,
+                'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
+                'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан',
+                'duration_days': vet.duration_days,
+                'care_date': care_date_str,
+                'expiry_date': expiry_date_str,
+                'comments': vet.comments or 'Нет комментария',
+                'is_hidden': vet.is_hidden
+            })
+        
+        # Подсчет страниц
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        return JsonResponse({
+            'results': results,
+            'count': total_count,
+            'total_pages': total_pages,
+            'current_page': page,
+            'has_next': page < total_pages,
+            'has_previous': page > 1
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': f'Ошибка получения списка ветобработок: {str(e)}'
+        }, status=500)
+
+
+def vet_filter_options(request):
+    """API для получения опций фильтров ветобработок"""
+    try:
+        # Получаем уникальные названия обработок
+        care_names = VeterinaryCare.objects.values_list('care_name', flat=True).distinct().order_by('care_name')
+        
+        # Получаем уникальные препараты (исключаем пустые и None)
+        medications = VeterinaryCare.objects.exclude(
+            medication__isnull=True
+        ).exclude(
+            medication__exact=''
+        ).values_list('medication', flat=True).distinct().order_by('medication')
+        
+        return JsonResponse({
+            'care_names': list(care_names),
+            'medications': list(medications)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': f'Ошибка получения опций фильтров: {str(e)}'
+        }, status=500)
 
 
 @api_view(['GET'])
@@ -3869,3 +4099,151 @@ def find_common_ancestors(ancestors1, ancestors2):
     """
     common = ancestors1.intersection(ancestors2)
     return sorted(list(common))
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_animals_without_otbivka(request):
+    """
+    API для получения всех активных животных без даты отбивки.
+    """
+    search_query = request.GET.get('search', '').strip()
+    
+    try:
+        animals = []
+        
+        # Получаем всех активных животных без даты отбивки
+        makers = Maker.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
+        rams = Ram.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
+        ewes = Ewe.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
+        sheep = Sheep.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
+        
+        # Добавляем производителей
+        for maker in makers:
+            display_name = maker.tag.tag_number
+            if maker.name:
+                display_name = f"{maker.name}({maker.tag.tag_number})"
+            
+            animals.append({
+                'tag_number': maker.tag.tag_number,
+                'display_name': display_name,
+                'animal_type': 'Производитель',
+                'type_code': 'maker',
+                'status': maker.animal_status.status_type if maker.animal_status else 'Неизвестно'
+            })
+        
+        # Добавляем баранов
+        for ram in rams:
+            animals.append({
+                'tag_number': ram.tag.tag_number,
+                'display_name': ram.tag.tag_number,
+                'animal_type': 'Баран',
+                'type_code': 'ram',
+                'status': ram.animal_status.status_type if ram.animal_status else 'Неизвестно'
+            })
+        
+        # Добавляем ярок
+        for ewe in ewes:
+            animals.append({
+                'tag_number': ewe.tag.tag_number,
+                'display_name': ewe.tag.tag_number,
+                'animal_type': 'Ярка',
+                'type_code': 'ewe',
+                'status': ewe.animal_status.status_type if ewe.animal_status else 'Неизвестно'
+            })
+        
+        # Добавляем овец
+        for sheep_animal in sheep:
+            animals.append({
+                'tag_number': sheep_animal.tag.tag_number,
+                'display_name': sheep_animal.tag.tag_number,
+                'animal_type': 'Овца',
+                'type_code': 'sheep',
+                'status': sheep_animal.animal_status.status_type if sheep_animal.animal_status else 'Неизвестно'
+            })
+        
+        # Фильтрация по поиску
+        if search_query:
+            animals = [animal for animal in animals if search_query.lower() in animal['tag_number'].lower()]
+        
+        # Ограничиваем до 100 результатов
+        animals = animals[:100]
+        
+        return Response(animals)
+        
+    except Exception as e:
+        return Response({
+            'error': f'Ошибка получения животных: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def bulk_otbivka(request):
+    """
+    API для массовой отбивки животных.
+    """
+    otbivka_date = request.data.get('otbivka_date')
+    animal_tags = request.data.get('animal_tags', [])
+    
+    if not otbivka_date:
+        return Response({
+            'error': 'Необходимо указать дату отбивки'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not animal_tags:
+        return Response({
+            'error': 'Необходимо выбрать животных'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Ищем статус "Откорм"
+        try:
+            otkorm_status = Status.objects.get(status_type='Откорм')
+        except Status.DoesNotExist:
+            return Response({
+                'error': 'Статус "Откорм" не найден в базе данных'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        updated_count = 0
+        errors = []
+        
+        for tag_number in animal_tags:
+            try:
+                # Ищем животное во всех типах
+                animal = find_animal_by_tag(tag_number)
+                
+                if not animal:
+                    errors.append(f'Животное с биркой {tag_number} не найдено')
+                    continue
+                
+                # Проверяем, что животное активно и без отбивки
+                if animal.is_archived:
+                    errors.append(f'Животное {tag_number} находится в архиве')
+                    continue
+                
+                if animal.date_otbivka:
+                    errors.append(f'У животного {tag_number} уже есть дата отбивки')
+                    continue
+                
+                # Устанавливаем дату отбивки и статус
+                animal.date_otbivka = otbivka_date
+                animal.animal_status = otkorm_status
+                animal.save()
+                
+                updated_count += 1
+                
+            except Exception as e:
+                errors.append(f'Ошибка обработки животного {tag_number}: {str(e)}')
+        
+        return Response({
+            'success': True,
+            'updated_count': updated_count,
+            'total_requested': len(animal_tags),
+            'errors': errors
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': f'Ошибка при выполнении массовой отбивки: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -756,12 +756,24 @@ async function loadStatusesForMother() {
         const statusSelect = document.getElementById('new-mother-status');
         statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
         
+        let lactatingStatusId = null;
+        
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             statusSelect.appendChild(option);
+            
+            // Ищем статус "Лактирующее"
+            if (status.status_type === 'Лактирующее') {
+                lactatingStatusId = status.id;
+            }
         });
+        
+        // Устанавливаем статус "Лактирующее" по умолчанию
+        if (lactatingStatusId) {
+            statusSelect.value = lactatingStatusId;
+        }
     } catch (error) {
         console.error('Ошибка загрузки статусов:', error);
     }
@@ -839,12 +851,24 @@ async function loadStatusesForLamb(formElement) {
         const statuses = response.results || response;
         const select = formElement.querySelector('.lamb-status');
         
+        let growingStatusId = null;
+        
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             select.appendChild(option);
+            
+            // Ищем статус "Подращивание"
+            if (status.status_type === 'Подращивание') {
+                growingStatusId = status.id;
+            }
         });
+        
+        // Устанавливаем статус "Подращивание" по умолчанию
+        if (growingStatusId) {
+            select.value = growingStatusId;
+        }
     } catch (error) {
         console.error('Ошибка загрузки статусов для ягненка:', error);
     }

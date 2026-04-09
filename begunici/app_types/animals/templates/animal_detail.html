@@ -107,6 +107,7 @@
                                 <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
                                 {% endif %}
                                 <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
+                                <tr><th>Дорперность</th><td id="dorper-display">-</td></tr>
                                 <tr>
                                     <th>Мать</th>
                                     <td>
@@ -122,7 +123,6 @@
                                     </td>
                                 </tr>
                                 <tr><th>Бирка РСХН</th><td>{{ animal.rshn_tag|default:"-" }}</td></tr>
-                                <tr><th>Дорперность</th><td id="dorper-display">-</td></tr>
                                 {% if animal_type == 'maker' %}
                                 <tr><th>Имя</th><td>{{ animal.name|default:"-" }}</td></tr>
                                 {% endif %}
@@ -272,6 +272,11 @@
                                     <label for="place" class="form-label">Овчарня:</label>
                                     <select id="place" class="form-select"></select>
                                 </div>
+                                <div class="col-12">
+                                    <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                                    <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Введите процент дорперности">
+                                    <div class="form-text">Оставьте пустым для автоматического расчета на основе родителей.</div>
+                                </div>
                                 {% if animal_type == 'maker' %}
                                 <div class="col-md-6">
                                     <label for="plemstatus" class="form-label">Племенной статус:</label>
@@ -285,11 +290,6 @@
                                 <div class="col-12">
                                     <label for="rshn_tag" class="form-label">Бирка РСХН:</label>
                                     <input type="text" id="rshn_tag" class="form-control" value="{{ animal.rshn_tag|default:'' }}" placeholder="Введите бирку РСХН (необязательно)">
-                                </div>
-                                <div class="col-12">
-                                    <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
-                                    <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Введите процент дорперности">
-                                    <div class="form-text">Оставьте пустым для автоматического расчета на основе родителей.</div>
                                 </div>
                                 {% if animal_type == 'maker' %}
                                 <div class="col-12">

@@ -325,15 +325,31 @@ class LambingCalendar {
             content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
             
             lambings.forEach(lambing => {
+                // Создаем ссылку для матери
+                let motherDisplay = `${lambing.mother_type}: `;
+                if (lambing.mother_url) {
+                    motherDisplay += `<a href="${lambing.mother_url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">${lambing.mother_tag}</a>`;
+                } else {
+                    motherDisplay += `<strong>${lambing.mother_tag}</strong>`;
+                }
+                
+                // Создаем ссылку для отца
+                let fatherDisplay = `<strong>Отец:</strong> ${lambing.father_type} `;
+                if (lambing.father_url) {
+                    fatherDisplay += `<a href="${lambing.father_url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">${lambing.father_tag}</a>`;
+                } else {
+                    fatherDisplay += `<strong>${lambing.father_tag}</strong>`;
+                }
+                
                 content += `
                     <div class="list-group-item">
                         <div class="d-flex w-100 justify-content-between">
                             <h6 class="mb-1">
-                                ${lambing.mother_type}: <strong>${lambing.mother_tag}</strong>
+                                ${motherDisplay}
                             </h6>
                         </div>
                         <p class="mb-1">
-                            <strong>Отец:</strong> ${lambing.father_type} ${lambing.father_tag}
+                            ${fatherDisplay}
                         </p>
                         <small>
                             <strong>Дата случки:</strong> ${new Date(lambing.start_date).toLocaleDateString('ru-RU')}
@@ -424,7 +440,7 @@ class LambingCalendar {
                     <div class="list-group-item">
                         <div class="d-flex w-100 justify-content-between">
                             <h6 class="mb-1">
-                                <a href="/animals/${this.getAnimalTypeRoute(animal.animal_type)}/${animal.tag}/info/" class="text-decoration-none">
+                                <a href="${animal.url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">
                                     ${animal.display_name}
                                 </a>
                             </h6>
@@ -449,10 +465,16 @@ class LambingCalendar {
     
     getAnimalTypeRoute(animalType) {
         const typeMap = {
+            // Английские названия
             'Maker': 'maker',
             'Ram': 'ram', 
             'Ewe': 'ewe',
-            'Sheep': 'sheep'
+            'Sheep': 'sheep',
+            // Русские названия
+            'Производитель': 'maker',
+            'Баран': 'ram',
+            'Ярка': 'ewe',
+            'Овца': 'sheep'
         };
         
         return typeMap[animalType] || 'maker';

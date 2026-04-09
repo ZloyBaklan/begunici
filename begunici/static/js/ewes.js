@@ -145,6 +145,7 @@ function renderEwes(ewes) {
             </td>
             <td>${ewe.age || 'Не указан'}</td>
             <td>${ewe.place ? ewe.place.sheepfold : 'Не указано'}</td>
+            <td>${ewe.dorper_display || '-'}</td>
             <td>${ewe.weight_records && ewe.weight_records.length > 0 
                 ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
@@ -152,7 +153,6 @@ function renderEwes(ewes) {
                 ? `${formatDateToOutput(ewe.veterinary_history[0].date_of_care)}: ${ewe.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
             <td>${ewe.rshn_tag || '-'}</td>
-            <td>${ewe.dorper_display || '-'}</td>
             <td>${ewe.note || ''}</td>
         </tr>`;
         rows.push(row);
@@ -306,9 +306,7 @@ function toggleDeleteButton() {
 
 // Функция для удаления выбранных записей
 async function deleteSelectedEwes() {
-    const selectedTags = Array.from(selectedEwes.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedEwes);
 
     console.log('Выбранные для удаления:', selectedTags);
 
@@ -317,12 +315,11 @@ async function deleteSelectedEwes() {
         return;
     }
 
-    const tags = selectedTags.map(item => item.tag);
     const modal = document.getElementById('delete-modal');
     const modalMessage = document.getElementById('delete-modal-message');
     const confirmButton = document.getElementById('delete-confirm-button');
 
-    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${selectedTags.join(', ')}?`;
     modal.style.display = 'block';
 
     confirmButton.onclick = async () => {
@@ -396,9 +393,7 @@ async function loadArchiveStatuses() {
 }
 
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedEwes.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedEwes);
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');

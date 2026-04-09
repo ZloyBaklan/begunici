@@ -146,6 +146,7 @@ function renderRams(rams, startIndex = null) {
             </td>
             <td>${ram.age || 'Не указан'}</td>
             <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
+            <td>${ram.dorper_display || '-'}</td>
             <td>${ram.weight_records && ram.weight_records.length > 0 
                 ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
@@ -153,7 +154,6 @@ function renderRams(rams, startIndex = null) {
                 ? `${formatDateToOutput(ram.veterinary_history[0].date_of_care)}: ${ram.veterinary_history[0].veterinary_care.care_name}`
                 : 'Нет записей'}</td>
             <td>${ram.rshn_tag || '-'}</td>
-            <td>${ram.dorper_display || '-'}</td>
             <td>${ram.note || ''}</td>
         </tr>`;
         rows.push(row);
@@ -307,9 +307,7 @@ function toggleDeleteButton() {
 
 // Функция для удаления выбранных записей
 async function deleteSelectedRams() {
-    const selectedTags = Array.from(selectedRams.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedRams);
 
     console.log('Выбранные для удаления:', selectedTags);
 
@@ -318,12 +316,11 @@ async function deleteSelectedRams() {
         return;
     }
 
-    const tags = selectedTags.map(item => item.tag);
     const modal = document.getElementById('delete-modal');
     const modalMessage = document.getElementById('delete-modal-message');
     const confirmButton = document.getElementById('delete-confirm-button');
 
-    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${tags.join(', ')}?`;
+    modalMessage.textContent = `Вы уверены, что хотите удалить следующие бирки: ${selectedTags.join(', ')}?`;
     modal.style.display = 'block';
 
     confirmButton.onclick = async () => {
@@ -397,9 +394,7 @@ async function loadArchiveStatuses() {
 }
 
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedRams.entries())
-        .filter(([tagNumber, { isSelected }]) => isSelected)
-        .map(([tagNumber]) => tagNumber);
+    const selectedTags = Array.from(selectedRams);
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');

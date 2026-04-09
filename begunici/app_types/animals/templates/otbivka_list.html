@@ -10,7 +10,39 @@
     </div>
 
     <div class="row">
-        <div class="col-12">
+        <!-- Левая колонка - Ковровая отбивка -->
+        <div class="col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Ковровая отбивка</h5>
+                </div>
+                <div class="card-body">
+                    <form id="bulk-otbivka-form">
+                        <div class="mb-3">
+                            <label for="otbivka-date" class="form-label">Дата отбивки</label>
+                            <input type="date" class="form-control" id="otbivka-date" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Выбор животных</label>
+                            <button type="button" class="btn btn-outline-primary w-100" onclick="showSelectAnimalsModal()">
+                                Выбрать животных
+                            </button>
+                            <div id="selected-animals-display" class="mt-2 text-muted">
+                                Не выбрано
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-success w-100" onclick="performBulkOtbivka()" id="bulk-otbivka-btn" disabled>
+                            Выполнить отбивку
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Правая колонка - Список отбивки -->
+        <div class="col-lg-8 mb-4">
             <div class="card">
                 <div class="card-header">
                     <div class="row align-items-center">
@@ -47,6 +79,35 @@
     </div>
 </div>
 
+<!-- Модальное окно выбора животных -->
+<div class="modal fade" id="selectAnimalsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Выбор животных для отбивки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="animalsSearch" placeholder="Введите номер бирки для поиска...">
+                        <button class="btn btn-primary" type="button" id="searchAnimalsBtn">Поиск</button>
+                    </div>
+                </div>
+                <div id="animals-list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">
+                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="confirmAnimalsSelection()">Выбрать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 /* Дополнительные стили для страницы */
 .table th {
@@ -60,6 +121,10 @@
 
 /* Адаптивность для мобильных */
 @media (max-width: 768px) {
+    .col-lg-4, .col-lg-8 {
+        margin-bottom: 1rem;
+    }
+    
     .table-responsive {
         font-size: 0.875rem;
     }

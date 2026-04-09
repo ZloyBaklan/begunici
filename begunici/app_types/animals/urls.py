@@ -35,7 +35,12 @@ from .views import (
     bulk_create_lambings,
     otbivka_list,
     otbivka_api,
+    vet_list,
+    vet_list_api,
+    vet_filter_options,
     check_kinship,
+    get_animals_without_otbivka,
+    bulk_otbivka,
 )
 
 # Создаем маршруты для ViewSet
@@ -221,7 +226,10 @@ urlpatterns = [
     path("api/export-excel/", export_to_excel, name="export-excel"),  # API экспорта в Excel
     path("main/", animals, name="animals"),  # Главная страница
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
+    path("vet-list/", vet_list, name="vet-list"),  # Страница списка ветобработок
     path("api/otbivka/", otbivka_api, name="otbivka-api"),  # API для списка отбивки
+    path("api/vet-list/", vet_list_api, name="vet-list-api"),  # API для списка ветобработок
+    path("api/vet-filter-options/", vet_filter_options, name="vet-filter-options"),  # API для опций фильтров ветобработок
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"
@@ -252,4 +260,8 @@ urlpatterns = [
     path("api/all-fathers/", get_all_fathers, name="all-fathers"),  # Все отцы
     path("api/bulk-create-lambings/", bulk_create_lambings, name="bulk-create-lambings"),  # Массовое создание окотов
     path("api/check-kinship/", check_kinship, name="check-kinship"),  # Проверка родства
+    
+    # API для ковровой отбивки
+    path("api/animals-without-otbivka/", get_animals_without_otbivka, name="animals-without-otbivka"),  # Животные без отбивки
+    path("api/bulk-otbivka/", bulk_otbivka, name="bulk-otbivka"),  # Массовая отбивка
 ]

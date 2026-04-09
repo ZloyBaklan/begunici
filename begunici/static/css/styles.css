@@ -898,6 +898,41 @@ th {
     border-radius: 50%;
 }
 
+/* Стили для заметок в календаре */
+.list-group-item {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+}
+
+.list-group-item div {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    max-width: 100%;
+}
+
+/* Специальные стили для модального окна календаря */
+#lambingModal .modal-body {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+#lambingModal .list-group-item {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    line-height: 1.5;
+}
+
+#lambingModal .list-group-item div {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    max-width: 100%;
+    line-height: 1.5;
+}
+
 .legend-marker.notes {
     background-color: #2196f3;
 }
