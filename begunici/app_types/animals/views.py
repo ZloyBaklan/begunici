@@ -2855,7 +2855,7 @@ def dashboard_statistics(request):
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
     # 2. Перенесено в архив за последний месяц
-    archive_statuses = ['Убыл', 'Убой', 'Продажа']
+    archive_statuses = ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя']
     
     # Используем StatusHistory для получения даты архивирования
     from begunici.app_types.veterinary.vet_models import StatusHistory
@@ -2863,23 +2863,8 @@ def dashboard_statistics(request):
     # Получаем ID архивных статусов
     archive_status_ids = Status.objects.filter(status_type__in=archive_statuses).values_list('id', flat=True)
     
-    # Получаем животных, которые были переведены в архивные статусы за последний месяц
-    archived_makers_ids = StatusHistory.objects.filter(
-        new_status_id__in=archive_status_ids,
-        change_date__gte=one_month_ago
-    ).values_list('tag_id', flat=True)
-    
-    archived_rams_ids = StatusHistory.objects.filter(
-        new_status_id__in=archive_status_ids,
-        change_date__gte=one_month_ago
-    ).values_list('tag_id', flat=True)
-    
-    archived_ewes_ids = StatusHistory.objects.filter(
-        new_status_id__in=archive_status_ids,
-        change_date__gte=one_month_ago
-    ).values_list('tag_id', flat=True)
-    
-    archived_sheep_ids = StatusHistory.objects.filter(
+    # Получаем бирки животных, которые были переведены в архивные статусы за последний месяц
+    archived_tag_ids = StatusHistory.objects.filter(
         new_status_id__in=archive_status_ids,
         change_date__gte=one_month_ago
     ).values_list('tag_id', flat=True)
@@ -2887,22 +2872,22 @@ def dashboard_statistics(request):
     # Подсчитываем архивированных животных по типам
     archived_makers = Maker.objects.filter(
         is_archived=True,
-        tag_id__in=archived_makers_ids
+        tag_id__in=archived_tag_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_rams = Ram.objects.filter(
         is_archived=True,
-        tag_id__in=archived_rams_ids
+        tag_id__in=archived_tag_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_ewes = Ewe.objects.filter(
         is_archived=True,
-        tag_id__in=archived_ewes_ids
+        tag_id__in=archived_tag_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     archived_sheep = Sheep.objects.filter(
         is_archived=True,
-        tag_id__in=archived_sheep_ids
+        tag_id__in=archived_tag_ids
     ).values('animal_status__status_type').annotate(count=Count('id'))
     
     # Подсчёт общего количества архивированных
