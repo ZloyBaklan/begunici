@@ -59,6 +59,8 @@ async function fetchArchive(page = 1) {
         const animalType = urlParams.get('type') || window.initialAnimalType || '';
         const statusFilter = urlParams.get('animal_status') || '';
         const placeFilter = urlParams.get('place') || '';
+        const archiveDateFrom = urlParams.get('archive_date_from') || '';
+        const archiveDateTo = urlParams.get('archive_date_to') || '';
         
         // Формируем параметры запроса
         let apiUrl = '/animals/archive/';
@@ -78,6 +80,12 @@ async function fetchArchive(page = 1) {
         }
         if (placeFilter) {
             params.set('place', placeFilter);
+        }
+        if (archiveDateFrom) {
+            params.set('archive_date_from', archiveDateFrom);
+        }
+        if (archiveDateTo) {
+            params.set('archive_date_to', archiveDateTo);
         }
         
         apiUrl += '?' + params.toString();
@@ -199,7 +207,10 @@ async function openRestoreModal(animalType, tagNumber) {
 // Функция загрузки статусов для восстановления
 async function loadRestoreStatuses() {
     try {
-        const statuses = await apiRequest('/veterinary/api/status/');
+        const response = await apiRequest('/veterinary/api/status/');
+        // API возвращает пагинированные данные, нужно взять results
+        const statuses = response.results || response;
+        
         // Исключаем архивные статусы
         const activeStatuses = statuses.filter(status => 
             !['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type)
@@ -278,6 +289,8 @@ function performArchiveSearch() {
     const status = document.getElementById('status-filter').value;
     const place = document.getElementById('place-filter') ? document.getElementById('place-filter').value : '';
     const search = document.getElementById('archive-search').value;
+    const archiveDateFrom = document.getElementById('archive-date-from').value;
+    const archiveDateTo = document.getElementById('archive-date-to').value;
     
     // Сохраняем параметры поиска в URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -301,6 +314,16 @@ function performArchiveSearch() {
     } else {
         urlParams.delete('place');
     }
+    if (archiveDateFrom) {
+        urlParams.set('archive_date_from', archiveDateFrom);
+    } else {
+        urlParams.delete('archive_date_from');
+    }
+    if (archiveDateTo) {
+        urlParams.set('archive_date_to', archiveDateTo);
+    } else {
+        urlParams.delete('archive_date_to');
+    }
     
     // Обновляем URL без перезагрузки страницы
     const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
@@ -322,6 +345,17 @@ async function filterArchiveDataWithSearch(animalType, status, search) {
         // Добавляем тип животного в запрос если указан
         if (animalType) {
             url += `&type=${encodeURIComponent(animalType)}`;
+        }
+        
+        // Добавляем даты архивирования если указаны
+        const archiveDateFrom = document.getElementById('archive-date-from').value;
+        const archiveDateTo = document.getElementById('archive-date-to').value;
+        
+        if (archiveDateFrom) {
+            url += `&archive_date_from=${encodeURIComponent(archiveDateFrom)}`;
+        }
+        if (archiveDateTo) {
+            url += `&archive_date_to=${encodeURIComponent(archiveDateTo)}`;
         }
         
         const response = await apiRequest(url);
@@ -521,6 +555,17 @@ async function fetchArchiveWithFilters(page, animalType, status, search) {
             url += `&type=${encodeURIComponent(animalType)}`;
         }
         
+        // Добавляем даты архивирования если указаны
+        const archiveDateFrom = document.getElementById('archive-date-from').value;
+        const archiveDateTo = document.getElementById('archive-date-to').value;
+        
+        if (archiveDateFrom) {
+            url += `&archive_date_from=${encodeURIComponent(archiveDateFrom)}`;
+        }
+        if (archiveDateTo) {
+            url += `&archive_date_to=${encodeURIComponent(archiveDateTo)}`;
+        }
+        
         const response = await apiRequest(url);
         let allData = response.results || response;
         
@@ -600,6 +645,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const searchQuery = urlParams.get('search');
     const animalType = urlParams.get('type');
+    const archiveDateFrom = urlParams.get('archive_date_from');
+    const archiveDateTo = urlParams.get('archive_date_to');
     
     if (searchQuery) {
         const searchInput = document.getElementById('archive-search');
@@ -615,6 +662,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         // Устанавливаем глобальную переменную для совместимости
         window.initialAnimalType = animalType;
+    }
+    
+    if (archiveDateFrom) {
+        const dateFromInput = document.getElementById('archive-date-from');
+        if (dateFromInput) {
+            dateFromInput.value = archiveDateFrom;
+        }
+    }
+    
+    if (archiveDateTo) {
+        const dateToInput = document.getElementById('archive-date-to');
+        if (dateToInput) {
+            dateToInput.value = archiveDateTo;
+        }
     }
     
     fetchArchive(1);

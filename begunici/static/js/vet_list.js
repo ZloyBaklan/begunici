@@ -165,8 +165,8 @@ function renderVetList(vetRecords) {
         const careDate = new Date(vet.care_date);
         const careDateText = careDate.toLocaleDateString('ru-RU');
         
-        // Текст скрытого статуса
-        const hiddenText = vet.is_hidden ? 'Да' : 'Нет';
+        // Текст завершенного статуса
+        const completedText = vet.is_hidden ? 'Да' : 'Нет';
         
         const row = `<tr>
             <td>
@@ -183,7 +183,7 @@ function renderVetList(vetRecords) {
                 title="${vet.comments}">
                 ${vet.comments}
             </td>
-            <td class="text-center">${hiddenText}</td>
+            <td class="text-center">${completedText}</td>
         </tr>`;
         
         rows.push(row);

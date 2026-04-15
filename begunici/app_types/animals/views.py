@@ -2213,85 +2213,112 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
 
             calendar_data = {}
 
-            # Получаем всех активных животных с датами рождения
+            # Получаем всех активных животных с датами отбивки
             from .models import Maker, Ram, Ewe, Sheep
 
             animals = []
 
             # Производители
-            makers = Maker.objects.filter(is_archived=False, birth_date__isnull=False)
+            makers = Maker.objects.filter(is_archived=False, date_otbivka__isnull=False)
             for maker in makers:
                 from django.urls import reverse
                 url = reverse('animals:maker-detail', kwargs={'tag_number': maker.tag.tag_number})
                 animals.append({
                     'tag': maker.tag.tag_number,
-                    'birth_date': maker.birth_date,
+                    'date_otbivka': maker.date_otbivka,
                     'animal_type': 'maker',
                     'display_name': maker.get_display_name(),
                     'url': url
                 })
 
             # Бараны
-            rams = Ram.objects.filter(is_archived=False, birth_date__isnull=False)
+            rams = Ram.objects.filter(is_archived=False, date_otbivka__isnull=False)
             for ram in rams:
                 from django.urls import reverse
                 url = reverse('animals:ram-detail', kwargs={'tag_number': ram.tag.tag_number})
                 animals.append({
                     'tag': ram.tag.tag_number,
-                    'birth_date': ram.birth_date,
+                    'date_otbivka': ram.date_otbivka,
                     'animal_type': 'ram',
                     'display_name': ram.tag.tag_number,
                     'url': url
                 })
 
             # Ярки
-            ewes = Ewe.objects.filter(is_archived=False, birth_date__isnull=False)
+            ewes = Ewe.objects.filter(is_archived=False, date_otbivka__isnull=False)
             for ewe in ewes:
                 from django.urls import reverse
                 url = reverse('animals:ewe-detail', kwargs={'tag_number': ewe.tag.tag_number})
                 animals.append({
                     'tag': ewe.tag.tag_number,
-                    'birth_date': ewe.birth_date,
+                    'date_otbivka': ewe.date_otbivka,
                     'animal_type': 'ewe',
                     'display_name': ewe.tag.tag_number,
                     'url': url
                 })
 
             # Овцы
-            sheeps = Sheep.objects.filter(is_archived=False, birth_date__isnull=False)
+            sheeps = Sheep.objects.filter(is_archived=False, date_otbivka__isnull=False)
             for sheep in sheeps:
                 from django.urls import reverse
                 url = reverse('animals:sheep-detail', kwargs={'tag_number': sheep.tag.tag_number})
                 animals.append({
                     'tag': sheep.tag.tag_number,
-                    'birth_date': sheep.birth_date,
+                    'date_otbivka': sheep.date_otbivka,
                     'animal_type': 'sheep',
                     'display_name': sheep.tag.tag_number,
                     'url': url
                 })
 
-            # Для каждого животного вычисляем дату взвешивания (дата рождения + 5 месяцев)
+            # Для каждого животного создаем два напоминания о взвешивании
             for animal in animals:
-                weighing_date = animal['birth_date'] + relativedelta(months=5)
+                # Первичное взвешивание (дата отбивки + 1 месяц)
+                primary_weighing_date = animal['date_otbivka'] + relativedelta(months=1)
+                
+                # Вторичное взвешивание (дата отбивки + 2 месяца)
+                secondary_weighing_date = animal['date_otbivka'] + relativedelta(months=2)
 
-                # Фильтруем по году и месяцу если указаны
-                if year and weighing_date.year != int(year):
-                    continue
-                if month and weighing_date.month != int(month):
-                    continue
+                # Обрабатываем первичное взвешивание
+                if year and primary_weighing_date.year != int(year):
+                    pass  # Пропускаем если не подходит по году
+                elif month and primary_weighing_date.month != int(month):
+                    pass  # Пропускаем если не подходит по месяцу
+                else:
+                    primary_date_str = primary_weighing_date.strftime('%Y-%m-%d')
+                    
+                    if primary_date_str not in calendar_data:
+                        calendar_data[primary_date_str] = []
 
-                weighing_date_str = weighing_date.strftime('%Y-%m-%d')
+                    calendar_data[primary_date_str].append({
+                        'tag': animal['tag'],
+                        'animal_type': animal['animal_type'],
+                        'display_name': animal['display_name'],
+                        'date_otbivka': animal['date_otbivka'].strftime('%Y-%m-%d'),
+                        'weighing_type': 'primary',
+                        'weighing_type_display': 'Первичное взвешивание',
+                        'url': animal['url']
+                    })
 
-                if weighing_date_str not in calendar_data:
-                    calendar_data[weighing_date_str] = []
+                # Обрабатываем вторичное взвешивание
+                if year and secondary_weighing_date.year != int(year):
+                    pass  # Пропускаем если не подходит по году
+                elif month and secondary_weighing_date.month != int(month):
+                    pass  # Пропускаем если не подходит по месяцу
+                else:
+                    secondary_date_str = secondary_weighing_date.strftime('%Y-%m-%d')
+                    
+                    if secondary_date_str not in calendar_data:
+                        calendar_data[secondary_date_str] = []
 
-                calendar_data[weighing_date_str].append({
-                    'tag': animal['tag'],
-                    'animal_type': animal['animal_type'],
-                    'display_name': animal['display_name'],
-                    'birth_date': animal['birth_date'].strftime('%Y-%m-%d'),
-                    'url': animal['url']
-                })
+                    calendar_data[secondary_date_str].append({
+                        'tag': animal['tag'],
+                        'animal_type': animal['animal_type'],
+                        'display_name': animal['display_name'],
+                        'date_otbivka': animal['date_otbivka'].strftime('%Y-%m-%d'),
+                        'weighing_type': 'secondary',
+                        'weighing_type_display': 'Вторичное взвешивание',
+                        'url': animal['url']
+                    })
 
             return Response(calendar_data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -2471,6 +2498,8 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
         search = self.request.query_params.get('search', '').strip()
         status_filter = self.request.query_params.get('animal_status', None)
         place_filter = self.request.query_params.get('place', None)
+        archive_date_from = self.request.query_params.get('archive_date_from', None)
+        archive_date_to = self.request.query_params.get('archive_date_to', None)
 
         # Создаем варианты поиска в разных регистрах если есть поиск
         search_filter = Q()
@@ -2515,7 +2544,9 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             return queryset
 
         def sort_by_archive_date(animals_list):
-            """Сортируем список животных по дате архивирования"""
+            """Сортируем список животных по дате архивирования и фильтруем по диапазону дат"""
+            from datetime import datetime, date
+            
             def get_archive_date(animal):
                 try:
                     # Ищем последнюю запись в истории статусов для текущего статуса
@@ -2529,13 +2560,48 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
                         return status_history.change_date
                     else:
                         # Если нет записи в истории, используем дату рождения или минимальную дату
-                        from datetime import datetime
                         return animal.birth_date or datetime.min.replace(tzinfo=None)
                 except Exception as e:
                     # В случае ошибки используем минимальную дату
-                    from datetime import datetime
                     print(f"Ошибка сортировки для {animal.tag.tag_number}: {e}")
                     return datetime.min.replace(tzinfo=None)
+            
+            # Фильтруем по диапазону дат архивирования
+            if archive_date_from or archive_date_to:
+                filtered_animals = []
+                
+                for animal in animals_list:
+                    archive_date = get_archive_date(animal)
+                    
+                    # Преобразуем datetime в date для сравнения
+                    if hasattr(archive_date, 'date'):
+                        archive_date = archive_date.date()
+                    elif isinstance(archive_date, datetime):
+                        archive_date = archive_date.date()
+                    
+                    # Проверяем диапазон дат
+                    date_matches = True
+                    
+                    if archive_date_from:
+                        try:
+                            from_date = datetime.strptime(archive_date_from, '%Y-%m-%d').date()
+                            if archive_date < from_date:
+                                date_matches = False
+                        except ValueError:
+                            pass  # Игнорируем неверный формат даты
+                    
+                    if archive_date_to and date_matches:
+                        try:
+                            to_date = datetime.strptime(archive_date_to, '%Y-%m-%d').date()
+                            if archive_date > to_date:
+                                date_matches = False
+                        except ValueError:
+                            pass  # Игнорируем неверный формат даты
+                    
+                    if date_matches:
+                        filtered_animals.append(animal)
+                
+                animals_list = filtered_animals
             
             # Сортируем по дате архивирования (новые первыми)
             try:
@@ -3937,8 +4003,9 @@ def check_kinship(request):
         if direct_kinship:
             return Response({
                 'has_kinship': True,
-                'message': f'Обнаружено прямое родство: {direct_kinship}',
-                'common_ancestors': [direct_kinship],
+                'message': f'Обнаружено прямое родство: {direct_kinship["message"]}',
+                'message_with_links': direct_kinship["message_with_links"],
+                'common_ancestors': [direct_kinship["message"]],
                 'warning': True
             })
         
@@ -3950,10 +4017,22 @@ def check_kinship(request):
         common_ancestors = find_common_ancestors(father_ancestors, mother_ancestors)
         
         if common_ancestors:
+            # Создаем ссылки для общих предков
+            ancestor_links = []
+            for ancestor_tag in common_ancestors:
+                animal = find_animal_by_tag(ancestor_tag)
+                if animal:
+                    animal_type = animal.get_animal_type().lower()
+                    url = f"/animals/{animal_type}/{ancestor_tag}/info/"
+                    ancestor_links.append(f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{ancestor_tag}</a>')
+                else:
+                    ancestor_links.append(ancestor_tag)
+            
             # Есть общие предки
             return Response({
                 'has_kinship': True,
                 'message': f'Обнаружены общие предки до 5-го колена: {", ".join(common_ancestors)}',
+                'message_with_links': f'Обнаружены общие предки до 5-го колена: {", ".join(ancestor_links)}',
                 'common_ancestors': common_ancestors,
                 'warning': True
             })
@@ -3962,6 +4041,7 @@ def check_kinship(request):
             return Response({
                 'has_kinship': False,
                 'message': 'Общих предков до 5-го колена не обнаружено',
+                'message_with_links': 'Общих предков до 5-го колена не обнаружено',
                 'common_ancestors': [],
                 'warning': False
             })
@@ -3975,7 +4055,7 @@ def check_kinship(request):
 def check_direct_kinship(tag1, tag2):
     """
     Проверяет прямое родство между двумя животными (отец-ребенок или мать-ребенок).
-    Возвращает описание родства или None, если прямого родства нет.
+    Возвращает словарь с описанием родства и ссылками или None, если прямого родства нет.
     """
     if not tag1 or not tag2:
         return None
@@ -3990,17 +4070,43 @@ def check_direct_kinship(tag1, tag2):
     if not animal2:
         return None
     
+    def create_animal_link(tag, animal):
+        """Создает ссылку на страницу животного"""
+        animal_type = animal.get_animal_type().lower()
+        url = f"/animals/{animal_type}/{tag}/info/"
+        return f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{tag}</a>'
+    
     # Проверяем, является ли animal1 родителем animal2
     if animal2.father and animal2.father.strip() == tag1:
-        return f"{tag1} является отцом {tag2}"
+        message = f"{tag1} является отцом {tag2}"
+        message_with_links = f"{create_animal_link(tag1, animal1)} является отцом {create_animal_link(tag2, animal2)}"
+        return {
+            "message": message,
+            "message_with_links": message_with_links
+        }
     if animal2.mother and animal2.mother.strip() == tag1:
-        return f"{tag1} является матерью {tag2}"
+        message = f"{tag1} является матерью {tag2}"
+        message_with_links = f"{create_animal_link(tag1, animal1)} является матерью {create_animal_link(tag2, animal2)}"
+        return {
+            "message": message,
+            "message_with_links": message_with_links
+        }
     
     # Проверяем, является ли animal2 родителем animal1
     if animal1.father and animal1.father.strip() == tag2:
-        return f"{tag2} является отцом {tag1}"
+        message = f"{tag2} является отцом {tag1}"
+        message_with_links = f"{create_animal_link(tag2, animal2)} является отцом {create_animal_link(tag1, animal1)}"
+        return {
+            "message": message,
+            "message_with_links": message_with_links
+        }
     if animal1.mother and animal1.mother.strip() == tag2:
-        return f"{tag2} является матерью {tag1}"
+        message = f"{tag2} является матерью {tag1}"
+        message_with_links = f"{create_animal_link(tag2, animal2)} является матерью {create_animal_link(tag1, animal1)}"
+        return {
+            "message": message,
+            "message_with_links": message_with_links
+        }
     
     return None
 

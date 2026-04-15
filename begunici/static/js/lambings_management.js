@@ -1357,13 +1357,13 @@ async function checkKinship() {
             alertDiv.className = 'alert alert-warning';
             alertDiv.innerHTML = `
                 <h6 class="alert-heading">Обнаружено родство!</h6>
-                <p class="mb-0">${response.message}</p>
+                <p class="mb-0">${response.message_with_links || response.message}</p>
             `;
         } else {
             alertDiv.className = 'alert alert-success';
             alertDiv.innerHTML = `
                 <h6 class="alert-heading">Родство не обнаружено</h6>
-                <p class="mb-0">${response.message}</p>
+                <p class="mb-0">${response.message_with_links || response.message}</p>
             `;
         }
         
@@ -1417,7 +1417,7 @@ async function checkAutoKinship() {
                     hasAnyKinship = true;
                     kinshipResults.push({
                         mother: mother.tag_number,
-                        message: response.message
+                        message: response.message_with_links || response.message
                     });
                 }
             } catch (error) {
