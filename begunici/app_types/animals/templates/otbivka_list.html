@@ -45,13 +45,26 @@
         <div class="col-lg-8 mb-4">
             <div class="card">
                 <div class="card-header">
-                    <div class="row align-items-center">
-                        <div class="col-md-6">
-                            <h5 class="card-title mb-0">Животные с отбивкой</h5>
+                    <h5 class="card-title mb-0">Животные с отбивкой</h5>
+                    <!-- Фильтр по диапазону дат -->
+                    <div class="row mt-3">
+                        <div class="col-md-3">
+                            <label for="otbivka-date-from" class="form-label">Дата отбивки с:</label>
+                            <input type="date" id="otbivka-date-from" class="form-control">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-3">
+                            <label for="otbivka-date-to" class="form-label">Дата отбивки по:</label>
+                            <input type="date" id="otbivka-date-to" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="otbivka-search" class="form-label">Поиск по бирке:</label>
                             <input type="text" id="otbivka-search" class="form-control" 
-                                   placeholder="Поиск по номеру бирки...">
+                                   placeholder="Введите номер бирки...">
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="button" class="btn btn-primary w-100" onclick="performOtbivkaSearch()">
+                                Применить
+                            </button>
                         </div>
                     </div>
                 </div>

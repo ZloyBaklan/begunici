@@ -609,6 +609,7 @@ class LambingSerializer(serializers.ModelSerializer):
     # Поля для чтения (отображения)
     mother_tag = serializers.SerializerMethodField()
     father_tag = serializers.SerializerMethodField()
+    father_display_name = serializers.SerializerMethodField()  # Новое поле
     mother_type = serializers.SerializerMethodField()
     father_type = serializers.SerializerMethodField()
     mother_found = serializers.SerializerMethodField()  # Новое поле
@@ -622,7 +623,7 @@ class LambingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
             'number_of_lambs', 'note', 'is_active', 'created_at',
-            'mother_tag', 'father_tag', 'mother_type', 'father_type', 'mother_found',
+            'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
             'mother_tag_text', 'mother_type_text'  # Добавляем новые поля
         ]
@@ -635,6 +636,16 @@ class LambingSerializer(serializers.ModelSerializer):
             return None
     
     def get_father_tag(self, obj):
+        try:
+            father = obj.get_father()
+            if father and father.tag:
+                # Возвращаем только номер бирки для URL
+                return father.tag.tag_number
+            return None
+        except Exception:
+            return None
+    
+    def get_father_display_name(self, obj):
         try:
             father = obj.get_father()
             if father and father.tag:
@@ -833,6 +844,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         return {
             "tag_number": tag_number,
             "animal_type": animal_type,
+            "display_name": instance.get_display_name() if hasattr(instance, 'get_display_name') else tag_number,
             "status": instance.animal_status.status_type
             if instance.animal_status
             else "Нет данных",

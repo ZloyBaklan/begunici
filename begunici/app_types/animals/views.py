@@ -1587,6 +1587,8 @@ class LambingViewSet(viewsets.ModelViewSet):
         is_active = self.request.query_params.get('is_active', None)
         start_date_from = self.request.query_params.get('start_date_from', None)
         start_date_to = self.request.query_params.get('start_date_to', None)
+        planned_date_from = self.request.query_params.get('planned_date_from', None)
+        planned_date_to = self.request.query_params.get('planned_date_to', None)
         
         if is_active is not None:
             if is_active.lower() == 'true':
@@ -1606,6 +1608,21 @@ class LambingViewSet(viewsets.ModelViewSet):
             try:
                 to_date = datetime.strptime(start_date_to, '%Y-%m-%d').date()
                 queryset = queryset.filter(start_date__lte=to_date)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
+        
+        # Фильтрация по диапазону дат планового окота
+        if planned_date_from:
+            try:
+                from_date = datetime.strptime(planned_date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(planned_lambing_date__gte=from_date)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
+        
+        if planned_date_to:
+            try:
+                to_date = datetime.strptime(planned_date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(planned_lambing_date__lte=to_date)
             except ValueError:
                 pass  # Игнорируем неверный формат даты
         
@@ -1863,15 +1880,18 @@ class LambingViewSet(viewsets.ModelViewSet):
                 # Создаем URL для отца
                 father_url = None
                 father_tag = 'Неизвестно'
+                father_display_name = 'Неизвестно'
                 if father and father.tag:
                     father_tag = father.tag.tag_number
                     father_type = lambing.get_father_type()
                     if father_type == 'Производитель':
                         from django.urls import reverse
                         father_url = reverse('animals:maker-detail', kwargs={'tag_number': father_tag})
+                        father_display_name = father.get_display_name()
                     elif father_type == 'Баран':
                         from django.urls import reverse
                         father_url = reverse('animals:ram-detail', kwargs={'tag_number': father_tag})
+                        father_display_name = father_tag
                 
                 calendar_data[date_str].append({
                     'id': lambing.id,
@@ -1879,6 +1899,7 @@ class LambingViewSet(viewsets.ModelViewSet):
                     'mother_type': lambing.get_mother_type(),
                     'mother_url': mother_url,
                     'father_tag': father_tag,
+                    'father_display_name': father_display_name,
                     'father_type': lambing.get_father_type(),
                     'father_url': father_url,
                     'start_date': lambing.start_date.strftime('%Y-%m-%d')
@@ -3787,6 +3808,17 @@ def vet_list_api(request):
             from django.urls import reverse
             animal_url = reverse(f'animals:{animal_type_code}-detail', kwargs={'tag_number': vet.tag.tag_number})
             
+            # Получаем display_name для животного
+            display_name = vet.tag.tag_number  # По умолчанию используем номер бирки
+            
+            # Для производителей получаем display_name
+            if vet.tag.animal_type == 'Maker':
+                try:
+                    maker = Maker.objects.get(tag=vet.tag)
+                    display_name = maker.get_display_name()
+                except Maker.DoesNotExist:
+                    pass
+            
             # Получаем дату окончания
             expiry_date = vet.get_expiry_date()
             expiry_date_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
@@ -3801,6 +3833,7 @@ def vet_list_api(request):
             results.append({
                 'id': vet.id,
                 'tag_number': vet.tag.tag_number,
+                'display_name': display_name,
                 'animal_url': animal_url,
                 'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
                 'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан',
@@ -3862,15 +3895,40 @@ def otbivka_api(request):
     """
     # Получаем параметры
     search_query = request.GET.get('search', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 10))
+    
+    # Парсим даты
+    date_from_obj = None
+    date_to_obj = None
+    
+    if date_from:
+        try:
+            from datetime import datetime
+            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            from datetime import datetime
+            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+        except ValueError:
+            pass
     
     # Собираем всех животных с датой отбивки из всех типов
     animals = []
     
     # Makers
-    makers = Maker.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    for maker in makers:
+    makers_qs = Maker.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    if date_from_obj:
+        makers_qs = makers_qs.filter(date_otbivka__gte=date_from_obj)
+    if date_to_obj:
+        makers_qs = makers_qs.filter(date_otbivka__lte=date_to_obj)
+        
+    for maker in makers_qs:
         # Формируем отображаемое имя для производителя
         display_name = maker.tag.tag_number
         if maker.name:
@@ -3886,8 +3944,13 @@ def otbivka_api(request):
         })
     
     # Rams
-    rams = Ram.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    for ram in rams:
+    rams_qs = Ram.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    if date_from_obj:
+        rams_qs = rams_qs.filter(date_otbivka__gte=date_from_obj)
+    if date_to_obj:
+        rams_qs = rams_qs.filter(date_otbivka__lte=date_to_obj)
+        
+    for ram in rams_qs:
         animals.append({
             'date_otbivka': ram.date_otbivka,
             'tag_number': ram.tag.tag_number,
@@ -3898,8 +3961,13 @@ def otbivka_api(request):
         })
     
     # Ewes
-    ewes = Ewe.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    for ewe in ewes:
+    ewes_qs = Ewe.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    if date_from_obj:
+        ewes_qs = ewes_qs.filter(date_otbivka__gte=date_from_obj)
+    if date_to_obj:
+        ewes_qs = ewes_qs.filter(date_otbivka__lte=date_to_obj)
+        
+    for ewe in ewes_qs:
         animals.append({
             'date_otbivka': ewe.date_otbivka,
             'tag_number': ewe.tag.tag_number,
@@ -3910,8 +3978,13 @@ def otbivka_api(request):
         })
     
     # Sheeps
-    sheeps = Sheep.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    for sheep in sheeps:
+    sheeps_qs = Sheep.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
+    if date_from_obj:
+        sheeps_qs = sheeps_qs.filter(date_otbivka__gte=date_from_obj)
+    if date_to_obj:
+        sheeps_qs = sheeps_qs.filter(date_otbivka__lte=date_to_obj)
+        
+    for sheep in sheeps_qs:
         animals.append({
             'date_otbivka': sheep.date_otbivka,
             'tag_number': sheep.tag.tag_number,
@@ -4019,19 +4092,26 @@ def check_kinship(request):
         if common_ancestors:
             # Создаем ссылки для общих предков
             ancestor_links = []
+            ancestor_display_names = []
             for ancestor_tag in common_ancestors:
                 animal = find_animal_by_tag(ancestor_tag)
                 if animal:
                     animal_type = animal.get_animal_type().lower()
                     url = f"/animals/{animal_type}/{ancestor_tag}/info/"
-                    ancestor_links.append(f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{ancestor_tag}</a>')
+                    
+                    # Получаем display_name для предка
+                    display_name = animal.get_display_name() if hasattr(animal, 'get_display_name') else ancestor_tag
+                    
+                    ancestor_links.append(f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{display_name}</a>')
+                    ancestor_display_names.append(display_name)
                 else:
                     ancestor_links.append(ancestor_tag)
+                    ancestor_display_names.append(ancestor_tag)
             
             # Есть общие предки
             return Response({
                 'has_kinship': True,
-                'message': f'Обнаружены общие предки до 5-го колена: {", ".join(common_ancestors)}',
+                'message': f'Обнаружены общие предки до 5-го колена: {", ".join(ancestor_display_names)}',
                 'message_with_links': f'Обнаружены общие предки до 5-го колена: {", ".join(ancestor_links)}',
                 'common_ancestors': common_ancestors,
                 'warning': True
@@ -4071,21 +4151,32 @@ def check_direct_kinship(tag1, tag2):
         return None
     
     def create_animal_link(tag, animal):
-        """Создает ссылку на страницу животного"""
+        """Создает ссылку на страницу животного с правильным отображением имени"""
         animal_type = animal.get_animal_type().lower()
         url = f"/animals/{animal_type}/{tag}/info/"
-        return f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{tag}</a>'
+        
+        # Для производителей используем display_name
+        if hasattr(animal, 'get_display_name'):
+            display_name = animal.get_display_name()
+        else:
+            display_name = tag
+            
+        return f'<a href="{url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">{display_name}</a>'
+    
+    # Получаем display_name для животных
+    animal1_display = animal1.get_display_name() if hasattr(animal1, 'get_display_name') else tag1
+    animal2_display = animal2.get_display_name() if hasattr(animal2, 'get_display_name') else tag2
     
     # Проверяем, является ли animal1 родителем animal2
     if animal2.father and animal2.father.strip() == tag1:
-        message = f"{tag1} является отцом {tag2}"
+        message = f"{animal1_display} является отцом {animal2_display}"
         message_with_links = f"{create_animal_link(tag1, animal1)} является отцом {create_animal_link(tag2, animal2)}"
         return {
             "message": message,
             "message_with_links": message_with_links
         }
     if animal2.mother and animal2.mother.strip() == tag1:
-        message = f"{tag1} является матерью {tag2}"
+        message = f"{animal1_display} является матерью {animal2_display}"
         message_with_links = f"{create_animal_link(tag1, animal1)} является матерью {create_animal_link(tag2, animal2)}"
         return {
             "message": message,
@@ -4094,14 +4185,14 @@ def check_direct_kinship(tag1, tag2):
     
     # Проверяем, является ли animal2 родителем animal1
     if animal1.father and animal1.father.strip() == tag2:
-        message = f"{tag2} является отцом {tag1}"
+        message = f"{animal2_display} является отцом {animal1_display}"
         message_with_links = f"{create_animal_link(tag2, animal2)} является отцом {create_animal_link(tag1, animal1)}"
         return {
             "message": message,
             "message_with_links": message_with_links
         }
     if animal1.mother and animal1.mother.strip() == tag2:
-        message = f"{tag2} является матерью {tag1}"
+        message = f"{animal2_display} является матерью {animal1_display}"
         message_with_links = f"{create_animal_link(tag2, animal2)} является матерью {create_animal_link(tag1, animal1)}"
         return {
             "message": message,

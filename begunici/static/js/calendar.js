@@ -339,9 +339,9 @@ class LambingCalendar {
                 // Создаем ссылку для отца
                 let fatherDisplay = `<strong>Отец:</strong> ${lambing.father_type} `;
                 if (lambing.father_url) {
-                    fatherDisplay += `<a href="${lambing.father_url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">${lambing.father_tag}</a>`;
+                    fatherDisplay += `<a href="${lambing.father_url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">${lambing.father_display_name || lambing.father_tag}</a>`;
                 } else {
-                    fatherDisplay += `<strong>${lambing.father_tag}</strong>`;
+                    fatherDisplay += `<strong>${lambing.father_display_name || lambing.father_tag}</strong>`;
                 }
                 
                 content += `

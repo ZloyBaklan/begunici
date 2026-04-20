@@ -171,7 +171,7 @@ function renderVetList(vetRecords) {
         const row = `<tr>
             <td>
                 <a href="${vet.animal_url}" class="text-decoration-none">
-                    ${vet.tag_number}
+                    ${vet.display_name || vet.tag_number}
                 </a>
             </td>
             <td>${vet.care_name}</td>

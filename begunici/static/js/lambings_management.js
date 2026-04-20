@@ -8,6 +8,8 @@ let currentPage = 1;
 const pageSize = 10;
 let dateFrom = '';
 let dateTo = '';
+let plannedDateFrom = '';
+let plannedDateTo = '';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM загружен, инициализируем страницу управления окотами');
@@ -19,9 +21,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Восстанавливаем сохраненные значения фильтра дат
     if (window.lambingsDateFrom) {
         document.getElementById('date-from').value = window.lambingsDateFrom;
+        dateFrom = window.lambingsDateFrom;
     }
     if (window.lambingsDateTo) {
         document.getElementById('date-to').value = window.lambingsDateTo;
+        dateTo = window.lambingsDateTo;
+    }
+    if (window.lambingsPlannedDateFrom) {
+        document.getElementById('planned-date-from').value = window.lambingsPlannedDateFrom;
+        plannedDateFrom = window.lambingsPlannedDateFrom;
+    }
+    if (window.lambingsPlannedDateTo) {
+        document.getElementById('planned-date-to').value = window.lambingsPlannedDateTo;
+        plannedDateTo = window.lambingsPlannedDateTo;
     }
     
     // Загружаем активные окоты
@@ -108,6 +120,12 @@ async function loadActiveLambings() {
         if (dateTo) {
             url += `&start_date_to=${dateTo}`;
         }
+        if (plannedDateFrom) {
+            url += `&planned_date_from=${plannedDateFrom}`;
+        }
+        if (plannedDateTo) {
+            url += `&planned_date_to=${plannedDateTo}`;
+        }
         
         const response = await apiRequest(url);
         console.log('Ответ API:', response);
@@ -143,6 +161,7 @@ function createLambingRow(lambing) {
     // Получаем информацию о матери и отце из сериализатора
     const motherTag = lambing.mother_tag || 'Неизвестно';
     const fatherTag = lambing.father_tag || 'Неизвестно';
+    const fatherDisplayName = lambing.father_display_name || fatherTag; // Используем display_name для отображения
     const motherType = lambing.mother_type || 'Неизвестно';
     const fatherType = lambing.father_type || 'Неизвестно';
     const motherFound = lambing.mother_found !== undefined ? lambing.mother_found : true; // По умолчанию считаем найденной
@@ -150,7 +169,7 @@ function createLambingRow(lambing) {
     
     // Создаем ссылки на животных
     const motherLink = createAnimalLink(motherTag, motherType, motherFound);
-    const fatherLink = createAnimalLink(fatherTag, fatherType, true); // Отцы всегда должны быть в БД
+    const fatherLink = createAnimalLink(fatherTag, fatherType, true, fatherDisplayName); // Передаем display_name
     
     // Форматируем даты
     const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
@@ -173,14 +192,14 @@ function createLambingRow(lambing) {
 }
 
 // Создание ссылки на животное
-function createAnimalLink(tagNumber, animalType, isFound = true) {
+function createAnimalLink(tagNumber, animalType, isFound = true, displayName = null) {
     if (tagNumber === 'Неизвестно' || animalType === 'Неизвестно') {
         return `${tagNumber} (${animalType})`;
     }
     
     // Если животное не найдено в БД, показываем без ссылки
     if (!isFound) {
-        return `${tagNumber} (${animalType}) (не найдена)`;
+        return `${displayName || tagNumber} (${animalType}) (не найдена)`;
     }
     
     // Определяем URL в зависимости от типа животного
@@ -200,7 +219,10 @@ function createAnimalLink(tagNumber, animalType, isFound = true) {
             break;
     }
     
-    return `<a href="${url}" style="color: #007bff; text-decoration: underline; font-weight: bold;">${tagNumber}</a> (${animalType})`;
+    // Используем displayName если передан, иначе tagNumber
+    const linkText = displayName || tagNumber;
+    
+    return `<a href="${url}" style="color: #007bff; text-decoration: underline; font-weight: bold;">${linkText}</a> (${animalType})`;
 }
 
 // Обновление пагинации
@@ -291,10 +313,14 @@ function changePage(page) {
 function applyDateFilter() {
     dateFrom = document.getElementById('date-from').value;
     dateTo = document.getElementById('date-to').value;
+    plannedDateFrom = document.getElementById('planned-date-from').value;
+    plannedDateTo = document.getElementById('planned-date-to').value;
     
     // Сохраняем значения в глобальных переменных
     window.lambingsDateFrom = dateFrom;
     window.lambingsDateTo = dateTo;
+    window.lambingsPlannedDateFrom = plannedDateFrom;
+    window.lambingsPlannedDateTo = plannedDateTo;
     
     currentPage = 1; // Сбрасываем на первую страницу
     loadActiveLambings();
@@ -304,13 +330,19 @@ function applyDateFilter() {
 function clearDateFilter() {
     document.getElementById('date-from').value = '';
     document.getElementById('date-to').value = '';
+    document.getElementById('planned-date-from').value = '';
+    document.getElementById('planned-date-to').value = '';
     
     // Очищаем глобальные переменные
     window.lambingsDateFrom = '';
     window.lambingsDateTo = '';
+    window.lambingsPlannedDateFrom = '';
+    window.lambingsPlannedDateTo = '';
     
     dateFrom = '';
     dateTo = '';
+    plannedDateFrom = '';
+    plannedDateTo = '';
     currentPage = 1;
     loadActiveLambings();
 }

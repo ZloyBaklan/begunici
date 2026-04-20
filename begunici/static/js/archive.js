@@ -166,7 +166,7 @@ function displayArchive(data, startIndex = null) {
         row.innerHTML = `
             <td>${recordNumber}</td>
             <td>${animalType}</td>
-            <td><a href="${detailUrl}">${tagNumber}</a></td>
+            <td><a href="${detailUrl}">${animal.display_name || tagNumber}</a></td>
             <td style="background-color:${statusColor}">${status}</td>
             <td>${archivedDate}</td>
             <td>${age}</td>
