@@ -95,6 +95,27 @@
                             <div class="input-group">
                                 <input type="text" id="maker-search" class="form-control" placeholder="Поиск производителей...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performMakerSearch()">Поиск</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleMakerAdditionalFilters()">Доп. фильтры</button>
+                            </div>
+                            <div id="maker-advanced-filters" class="mt-2" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label for="maker-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                        <input type="date" id="maker-birth-date-from" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="maker-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                        <input type="date" id="maker-birth-date-to" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="maker-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
+                                        <input type="text" id="maker-father-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="maker-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
+                                        <input type="text" id="maker-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-2">
@@ -400,8 +421,18 @@ input[type="checkbox"]:focus {
 <script>
     function performMakerSearch() {
         const query = document.getElementById('maker-search').value;
+        const birthDateFrom = document.getElementById('maker-birth-date-from')?.value || '';
+        const birthDateTo = document.getElementById('maker-birth-date-to')?.value || '';
+        const fatherTag = document.getElementById('maker-father-tag-filter')?.value || '';
+        const motherTag = document.getElementById('maker-mother-tag-filter')?.value || '';
         if (window.fetchMakers) {
-            window.fetchMakers(1, query);
+            window.fetchMakers(1, {
+                search: query,
+                birth_date_from: birthDateFrom,
+                birth_date_to: birthDateTo,
+                father_tag: fatherTag,
+                mother_tag: motherTag
+            });
         }
     }
 

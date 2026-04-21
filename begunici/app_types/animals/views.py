@@ -35,6 +35,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.http import JsonResponse
 from django.db.models import Count, Q, F
 from datetime import datetime, timedelta
+from django.utils import timezone
 
 from begunici.app_types.veterinary.vet_models import (
     WeightRecord,
@@ -101,6 +102,65 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         # Выполняем стандартное удаление
         return super().destroy(request, *args, **kwargs)
 
+    def apply_extended_list_filters(self, queryset):
+        """
+        Общие расширенные фильтры для списков животных:
+        - диапазон даты рождения
+        - бирка отца/матери (без учета регистра)
+        """
+        birth_date_from = self.request.query_params.get('birth_date_from', '').strip()
+        birth_date_to = self.request.query_params.get('birth_date_to', '').strip()
+        father_tag = self.request.query_params.get('father_tag', '').strip()
+        mother_tag = self.request.query_params.get('mother_tag', '').strip()
+
+        if birth_date_from:
+            try:
+                from_date = datetime.strptime(birth_date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(birth_date__gte=from_date)
+            except ValueError:
+                pass
+
+        if birth_date_to:
+            try:
+                to_date = datetime.strptime(birth_date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(birth_date__lte=to_date)
+            except ValueError:
+                pass
+
+        if father_tag:
+            father_lower = father_tag.lower()
+            father_upper = father_tag.upper()
+            father_title = father_tag.title()
+            father_filter = (
+                Q(father__exact=father_tag) |
+                Q(father__exact=father_lower) |
+                Q(father__exact=father_upper) |
+                Q(father__exact=father_title) |
+                Q(father__contains=father_tag) |
+                Q(father__contains=father_lower) |
+                Q(father__contains=father_upper) |
+                Q(father__contains=father_title)
+            )
+            queryset = queryset.filter(father_filter)
+
+        if mother_tag:
+            mother_lower = mother_tag.lower()
+            mother_upper = mother_tag.upper()
+            mother_title = mother_tag.title()
+            mother_filter = (
+                Q(mother__exact=mother_tag) |
+                Q(mother__exact=mother_lower) |
+                Q(mother__exact=mother_upper) |
+                Q(mother__exact=mother_title) |
+                Q(mother__contains=mother_tag) |
+                Q(mother__contains=mother_lower) |
+                Q(mother__contains=mother_upper) |
+                Q(mother__contains=mother_title)
+            )
+            queryset = queryset.filter(mother_filter)
+
+        return queryset
+
 
 class MakerViewSet(AnimalBaseViewSet):
     queryset = Maker.objects.filter(is_archived=False).select_related(
@@ -159,7 +219,7 @@ class MakerViewSet(AnimalBaseViewSet):
             
             queryset = queryset.filter(search_filter)
         
-        return queryset
+        return self.apply_extended_list_filters(queryset)
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -599,7 +659,7 @@ class RamViewSet(AnimalBaseViewSet):
             
             queryset = queryset.filter(search_filter)
         
-        return queryset
+        return self.apply_extended_list_filters(queryset)
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -934,7 +994,7 @@ class EweViewSet(AnimalBaseViewSet):
             
             queryset = queryset.filter(search_filter)
         
-        return queryset
+        return self.apply_extended_list_filters(queryset)
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -1283,7 +1343,7 @@ class SheepViewSet(AnimalBaseViewSet):
             
             queryset = queryset.filter(search_filter)
         
-        return queryset
+        return self.apply_extended_list_filters(queryset)
 
     def get_object(self):
         tag_number = self.kwargs["pk"]
@@ -3703,15 +3763,24 @@ def vet_list_api(request):
         expiry_date_from = request.GET.get('expiry_date_from', '')
         expiry_date_to = request.GET.get('expiry_date_to', '')
         is_hidden = request.GET.get('is_hidden', '')
+        sort_by = request.GET.get('sort_by', 'id').strip()
+        sort_order = request.GET.get('sort_order', 'desc').strip().lower()
         
         # Параметры пагинации
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 10))
         
         # Базовый запрос
+        sort_fields_map = {
+            'id': 'id',
+            'date_of_care': 'date_of_care',
+        }
+        sort_field = sort_fields_map.get(sort_by, 'id')
+        sort_prefix = '' if sort_order == 'asc' else '-'
+
         queryset = Veterinary.objects.select_related(
             'tag', 'veterinary_care'
-        ).all().order_by('-date_of_care')
+        ).all().order_by(f'{sort_prefix}{sort_field}')
         
         # Применяем фильтры
         if tag_search:
@@ -3825,6 +3894,9 @@ def vet_list_api(request):
             
             # Получаем дату обработки
             care_date = vet.date_of_care
+            if hasattr(care_date, 'astimezone') and timezone.is_aware(care_date):
+                care_date = timezone.localtime(care_date)
+
             if hasattr(care_date, 'date'):
                 care_date_str = care_date.date().strftime('%Y-%m-%d')
             else:
@@ -4428,4 +4500,102 @@ def bulk_otbivka(request):
     except Exception as e:
         return Response({
             'error': f'Ошибка при выполнении массовой отбивки: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def bulk_vaccination(request):
+    """
+    API для массовой вакцинации животных.
+    """
+    vaccination_date = request.data.get('vaccination_date')
+    veterinary_care_id = request.data.get('veterinary_care_id')
+    care_name = (request.data.get('care_name') or '').strip()
+    duration_days = request.data.get('duration_days', 0)
+    animal_tags = request.data.get('animal_tags', [])
+    
+    if not vaccination_date:
+        return Response({
+            'error': 'Необходимо указать дату вакцинации'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not veterinary_care_id and not care_name:
+        return Response({
+            'error': 'Необходимо выбрать обработку для вакцинации'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not animal_tags:
+        return Response({
+            'error': 'Необходимо выбрать животных'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        vaccination_date_obj = datetime.strptime(vaccination_date, '%Y-%m-%d').date()
+    except ValueError:
+        return Response({
+            'error': 'Некорректный формат даты вакцинации'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Сохраняем "дату без времени" как полдень по МСК, чтобы избежать сдвигов даты при UTC-конвертации.
+    vaccination_datetime = timezone.make_aware(
+        datetime.combine(vaccination_date_obj, datetime.min.time().replace(hour=12))
+    )
+    
+    try:
+        # Ищем обработку (ветеринарную помощь) по id, либо по имени (обратная совместимость со старым фронтом)
+        try:
+            if veterinary_care_id:
+                veterinary_care = VeterinaryCare.objects.get(id=veterinary_care_id)
+            else:
+                veterinary_care = VeterinaryCare.objects.filter(care_name=care_name).order_by('id').first()
+                if not veterinary_care:
+                    raise VeterinaryCare.DoesNotExist
+        except VeterinaryCare.DoesNotExist:
+            return Response({
+                'error': 'Выбранная обработка не найдена в базе данных'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        updated_count = 0
+        errors = []
+        
+        for tag_number in animal_tags:
+            try:
+                # Ищем животное во всех типах
+                animal = find_animal_by_tag(tag_number)
+                
+                if not animal:
+                    errors.append(f'Животное с биркой {tag_number} не найдено')
+                    continue
+                
+                # Получаем или создаем Tag объект
+                tag_obj = animal.tag
+                
+                # Создаем запись о вакцинации
+                veterinary_record = Veterinary.objects.create(
+                    tag=tag_obj,
+                    veterinary_care=veterinary_care,
+                    date_of_care=vaccination_datetime,
+                    duration_days=int(duration_days),
+                    comments=f'Ковровая вакцинация от {vaccination_date_obj.strftime("%Y-%m-%d")}'
+                )
+                
+                # Добавляем запись в историю ветеринарных обработок животного
+                animal.veterinary_history.add(veterinary_record)
+                
+                updated_count += 1
+                
+            except Exception as e:
+                errors.append(f'Ошибка обработки животного {tag_number}: {str(e)}')
+        
+        return Response({
+            'success': True,
+            'updated_count': updated_count,
+            'total_requested': len(animal_tags),
+            'errors': errors
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': f'Ошибка при выполнении массовой вакцинации: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -19,10 +19,59 @@ function loadSelectedEwes() {
 loadSelectedEwes();
 
 let currentPage = 1;
+let currentFilters = {};
 const pageSize = 10;
 
+function toggleEweAdditionalFilters() {
+    const filtersBlock = document.getElementById('ewe-advanced-filters');
+    if (!filtersBlock) return;
+    filtersBlock.style.display = filtersBlock.style.display === 'none' || filtersBlock.style.display === '' ? 'block' : 'none';
+}
+
+function getEweFiltersFromInputs() {
+    return {
+        search: document.getElementById('ewe-search')?.value || '',
+        birth_date_from: document.getElementById('ewe-birth-date-from')?.value || '',
+        birth_date_to: document.getElementById('ewe-birth-date-to')?.value || '',
+        father_tag: document.getElementById('ewe-father-tag-filter')?.value || '',
+        mother_tag: document.getElementById('ewe-mother-tag-filter')?.value || ''
+    };
+}
+
+function initializeEweFiltersFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const filters = {
+        search: urlParams.get('search') || '',
+        birth_date_from: urlParams.get('birth_date_from') || '',
+        birth_date_to: urlParams.get('birth_date_to') || '',
+        father_tag: urlParams.get('father_tag') || '',
+        mother_tag: urlParams.get('mother_tag') || ''
+    };
+
+    const searchInput = document.getElementById('ewe-search');
+    if (searchInput) searchInput.value = filters.search;
+    const birthDateFromInput = document.getElementById('ewe-birth-date-from');
+    if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
+    const birthDateToInput = document.getElementById('ewe-birth-date-to');
+    if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const fatherTagInput = document.getElementById('ewe-father-tag-filter');
+    if (fatherTagInput) fatherTagInput.value = filters.father_tag;
+    const motherTagInput = document.getElementById('ewe-mother-tag-filter');
+    if (motherTagInput) motherTagInput.value = filters.mother_tag;
+
+    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag) {
+        const filtersBlock = document.getElementById('ewe-advanced-filters');
+        if (filtersBlock) {
+            filtersBlock.style.display = 'block';
+        }
+    }
+
+    return filters;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-    fetchEwes();  // Загружаем список ярок при загрузке страницы
+    const initialFilters = initializeEweFiltersFromUrl();
+    fetchEwes(1, initialFilters);  // Загружаем список ярок при загрузке страницы
     loadStatuses();
     loadPlaces();
 
@@ -67,15 +116,30 @@ const createEwe = saveEwe;
 
 // Функция загрузки списка ярок
 // Функция загрузки списка ярок
-async function fetchEwes(page = 1, query = '') {
+async function fetchEwes(page = 1, filters = {}) {
     try {
+        if (typeof filters === 'string') {
+            filters = { search: filters };
+        }
+
+        if (!filters || typeof filters !== 'object') {
+            filters = {};
+        }
+
+        currentFilters = { ...currentFilters, ...filters };
+
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        if (query && query.trim()) {
-            urlParams.set('search', query);
-        } else {
-            urlParams.delete('search');
-        }
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'father_tag', 'mother_tag'];
+        filterKeys.forEach(key => {
+            const value = (currentFilters[key] || '').toString().trim();
+            currentFilters[key] = value;
+            if (value) {
+                urlParams.set(key, value);
+            } else {
+                urlParams.delete(key);
+            }
+        });
         
         // Обновляем URL без перезагрузки страницы
         const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
@@ -88,8 +152,20 @@ async function fetchEwes(page = 1, query = '') {
         // Добавляем параметр страницы
         params.set('page', page);
         
-        if (query && query.trim()) {
-            params.set('search', query);
+        if (currentFilters.search) {
+            params.set('search', currentFilters.search);
+        }
+        if (currentFilters.birth_date_from) {
+            params.set('birth_date_from', currentFilters.birth_date_from);
+        }
+        if (currentFilters.birth_date_to) {
+            params.set('birth_date_to', currentFilters.birth_date_to);
+        }
+        if (currentFilters.father_tag) {
+            params.set('father_tag', currentFilters.father_tag);
+        }
+        if (currentFilters.mother_tag) {
+            params.set('mother_tag', currentFilters.mother_tag);
         }
         
         if (params.toString()) {
@@ -110,7 +186,7 @@ async function fetchEwes(page = 1, query = '') {
                 updatePagination(response);
             } else {
                 // Для неограниченного списка создаем простую пагинацию
-                updateSimplePagination(ewes.length, query);
+                updateSimplePagination(ewes.length, currentFilters.search);
             }
         } else {
             console.error('Некорректный ответ от API:', response);
@@ -217,14 +293,14 @@ async function loadPlaces() {
 
 // Функция поиска ярок
 async function searchEwes() {
-    const searchTerm = document.getElementById('ewe-search').value;
+    const filters = getEweFiltersFromInputs();
     
     // Сохраняем выбранные чекбоксы
     const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedEwes"]:checked'))
         .map(cb => cb.value);
     
     currentPage = 1;
-    await fetchEwes(currentPage, searchTerm);
+    await fetchEwes(currentPage, filters);
     
     // Восстанавливаем выбранные чекбоксы
     selectedCheckboxes.forEach(tagNumber => {
@@ -489,7 +565,7 @@ function updateLocalPagination(totalItems, currentPage, searchQuery = '') {
         prevButton.innerText = 'Предыдущая';
         prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
-            fetchEwes(currentPage - 1, searchQuery);
+            fetchEwes(currentPage - 1, { ...currentFilters, search: searchQuery });
         };
         paginationContainer.appendChild(prevButton);
     } else {
@@ -513,7 +589,7 @@ function updateLocalPagination(totalItems, currentPage, searchQuery = '') {
         nextButton.innerText = 'Следующая';
         nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
-            fetchEwes(currentPage + 1, searchQuery);
+            fetchEwes(currentPage + 1, { ...currentFilters, search: searchQuery });
         };
         paginationContainer.appendChild(nextButton);
     } else {
@@ -543,8 +619,7 @@ function updatePagination(response) {
         prevButton.innerText = 'Предыдущая';
         prevButton.className = 'btn btn-outline-primary btn-sm';
         prevButton.onclick = () => {
-            const searchQuery = document.getElementById('ewe-search').value;
-            fetchEwes(currentPage - 1, searchQuery);
+            fetchEwes(currentPage - 1, currentFilters);
         };
         paginationContainer.appendChild(prevButton);
     } else {
@@ -568,8 +643,7 @@ function updatePagination(response) {
         nextButton.innerText = 'Следующая';
         nextButton.className = 'btn btn-outline-primary btn-sm';
         nextButton.onclick = () => {
-            const searchQuery = document.getElementById('ewe-search').value;
-            fetchEwes(currentPage + 1, searchQuery);
+            fetchEwes(currentPage + 1, currentFilters);
         };
         paginationContainer.appendChild(nextButton);
     } else {
@@ -601,20 +675,4 @@ window.saveEwe = saveEwe;
 window.fetchEwes = fetchEwes;
 window.searchEwes = searchEwes;
 window.performSearch = performSearch;
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-    // Восстанавливаем поисковый запрос из URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const searchQuery = urlParams.get('search');
-    if (searchQuery) {
-        const searchInput = document.getElementById('ewe-search');
-        if (searchInput) {
-            searchInput.value = searchQuery;
-        }
-    }
-    
-    fetchEwes(1, searchQuery || '');
-    loadStatuses();
-    loadPlaces();
-});
+window.toggleEweAdditionalFilters = toggleEweAdditionalFilters;

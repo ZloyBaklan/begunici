@@ -80,6 +80,27 @@
                             <div class="input-group">
                                 <input type="text" id="ewe-search" class="form-control" placeholder="Поиск ярок...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performSearch()">Поиск</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleEweAdditionalFilters()">Доп. фильтры</button>
+                            </div>
+                            <div id="ewe-advanced-filters" class="mt-2" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label for="ewe-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                        <input type="date" id="ewe-birth-date-from" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="ewe-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                        <input type="date" id="ewe-birth-date-to" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="ewe-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
+                                        <input type="text" id="ewe-father-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="ewe-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
+                                        <input type="text" id="ewe-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-2">
@@ -362,8 +383,18 @@ input[type="checkbox"]:focus {
 <script>
     function performSearch() {
         const query = document.getElementById('ewe-search').value;
+        const birthDateFrom = document.getElementById('ewe-birth-date-from')?.value || '';
+        const birthDateTo = document.getElementById('ewe-birth-date-to')?.value || '';
+        const fatherTag = document.getElementById('ewe-father-tag-filter')?.value || '';
+        const motherTag = document.getElementById('ewe-mother-tag-filter')?.value || '';
         if (window.fetchEwes) {
-            window.fetchEwes(1, query);
+            window.fetchEwes(1, {
+                search: query,
+                birth_date_from: birthDateFrom,
+                birth_date_to: birthDateTo,
+                father_tag: fatherTag,
+                mother_tag: motherTag
+            });
         }
     }
 

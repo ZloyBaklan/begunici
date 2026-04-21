@@ -80,6 +80,27 @@
                             <div class="input-group">
                                 <input type="text" id="sheep-search" class="form-control" placeholder="Поиск овец...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performSheepSearch()">Поиск</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleSheepAdditionalFilters()">Доп. фильтры</button>
+                            </div>
+                            <div id="sheep-advanced-filters" class="mt-2" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label for="sheep-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                        <input type="date" id="sheep-birth-date-from" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="sheep-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                        <input type="date" id="sheep-birth-date-to" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="sheep-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
+                                        <input type="text" id="sheep-father-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="sheep-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
+                                        <input type="text" id="sheep-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-2">
@@ -362,8 +383,18 @@ input[type="checkbox"]:focus {
 <script>
     function performSheepSearch() {
         const query = document.getElementById('sheep-search').value;
+        const birthDateFrom = document.getElementById('sheep-birth-date-from')?.value || '';
+        const birthDateTo = document.getElementById('sheep-birth-date-to')?.value || '';
+        const fatherTag = document.getElementById('sheep-father-tag-filter')?.value || '';
+        const motherTag = document.getElementById('sheep-mother-tag-filter')?.value || '';
         if (window.fetchSheeps) {
-            window.fetchSheeps(1, query);
+            window.fetchSheeps(1, {
+                search: query,
+                birth_date_from: birthDateFrom,
+                birth_date_to: birthDateTo,
+                father_tag: fatherTag,
+                mother_tag: motherTag
+            });
         }
     }
 

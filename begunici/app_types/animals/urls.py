@@ -41,6 +41,7 @@ from .views import (
     check_kinship,
     get_animals_without_otbivka,
     bulk_otbivka,
+    bulk_vaccination,
 )
 
 # Создаем маршруты для ViewSet
@@ -264,4 +265,7 @@ urlpatterns = [
     # API для ковровой отбивки
     path("api/animals-without-otbivka/", get_animals_without_otbivka, name="animals-without-otbivka"),  # Животные без отбивки
     path("api/bulk-otbivka/", bulk_otbivka, name="bulk-otbivka"),  # Массовая отбивка
+    
+    # API для ковровой вакцинации
+    path("api/bulk-vaccination/", bulk_vaccination, name="bulk-vaccination"),  # Массовая вакцинация
 ]

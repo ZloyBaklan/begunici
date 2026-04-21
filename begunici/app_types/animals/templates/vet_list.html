@@ -72,6 +72,42 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Ковровая вакцинация под фильтрами -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Ковровая вакцинация</h5>
+                </div>
+                <div class="card-body">
+                    <form id="bulk-vaccination-form">
+                        <div class="mb-3">
+                            <label for="vaccination-date" class="form-label">Дата вакцинации</label>
+                            <input type="date" class="form-control" id="vaccination-date" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="vaccination-care" class="form-label">Обработка</label>
+                            <select id="vaccination-care" class="form-select" required>
+                                <option value="">Выберите обработку</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Выбор животных</label>
+                            <button type="button" class="btn btn-outline-primary w-100" onclick="window.showSelectAnimalsForVaccinationModal()">
+                                Выбрать животных
+                            </button>
+                            <div id="selected-animals-vaccination-display" class="mt-2 text-muted">
+                                Не выбрано
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-success w-100" onclick="window.performBulkVaccination()" id="bulk-vaccination-btn" disabled>
+                            Выполнить вакцинацию
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
 
         <!-- Таблица ветобработок справа -->
@@ -126,4 +162,34 @@
 </div>
 
 <script src="{% static 'js/vet_list.js' %}"></script>
+
+<!-- Модальное окно выбора животных для вакцинации -->
+<div class="modal fade" id="selectAnimalsVaccinationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Выбор животных для вакцинации</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="animalsVaccinationSearch" placeholder="Введите номер бирки для поиска...">
+                        <button class="btn btn-primary" type="button" id="searchAnimalsVaccinationBtn">Поиск</button>
+                    </div>
+                </div>
+                <div id="animals-vaccination-list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">
+                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="window.confirmAnimalsSelectionForVaccination()">Выбрать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
