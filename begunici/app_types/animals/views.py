@@ -4359,18 +4359,33 @@ def find_common_ancestors(ancestors1, ancestors2):
 @permission_classes([AllowAny])
 def get_animals_without_otbivka(request):
     """
-    API для получения всех активных животных без даты отбивки.
+    API для получения активных животных:
+    - по умолчанию: только без даты отбивки
+    - при include_with_otbivka=true|1|yes: с датой отбивки и без
     """
     search_query = request.GET.get('search', '').strip()
+    include_with_otbivka = request.GET.get('include_with_otbivka', '').strip().lower() in ('1', 'true', 'yes')
     
     try:
         animals = []
         
-        # Получаем всех активных животных без даты отбивки
-        makers = Maker.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
-        rams = Ram.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
-        ewes = Ewe.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
-        sheep = Sheep.objects.filter(is_archived=False, date_otbivka__isnull=True).select_related('tag', 'animal_status')
+        # Базовые queryset: только неархивные
+        makers = Maker.objects.filter(is_archived=False)
+        rams = Ram.objects.filter(is_archived=False)
+        ewes = Ewe.objects.filter(is_archived=False)
+        sheep = Sheep.objects.filter(is_archived=False)
+
+        # Для массовой отбивки по умолчанию показываем только животных без даты отбивки
+        if not include_with_otbivka:
+            makers = makers.filter(date_otbivka__isnull=True)
+            rams = rams.filter(date_otbivka__isnull=True)
+            ewes = ewes.filter(date_otbivka__isnull=True)
+            sheep = sheep.filter(date_otbivka__isnull=True)
+
+        makers = makers.select_related('tag', 'animal_status')
+        rams = rams.select_related('tag', 'animal_status')
+        ewes = ewes.select_related('tag', 'animal_status')
+        sheep = sheep.select_related('tag', 'animal_status')
         
         # Добавляем производителей
         for maker in makers:

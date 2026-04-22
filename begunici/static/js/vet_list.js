@@ -340,7 +340,7 @@ async function searchAnimalsForVaccination() {
     `;
     
     try {
-        const response = await apiRequest(`/animals/api/animals-without-otbivka/?search=${encodeURIComponent(search)}`);
+        const response = await apiRequest(`/animals/api/animals-without-otbivka/?search=${encodeURIComponent(search)}&include_with_otbivka=1`);
         const animals = response || [];
         
         const animalsList = document.getElementById('animals-vaccination-list');
