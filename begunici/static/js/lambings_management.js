@@ -10,6 +10,8 @@ let dateFrom = '';
 let dateTo = '';
 let plannedDateFrom = '';
 let plannedDateTo = '';
+let motherTagFilter = '';
+let fatherTagFilter = '';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM загружен, инициализируем страницу управления окотами');
@@ -34,6 +36,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.lambingsPlannedDateTo) {
         document.getElementById('planned-date-to').value = window.lambingsPlannedDateTo;
         plannedDateTo = window.lambingsPlannedDateTo;
+    }
+    if (window.lambingsMotherTagFilter) {
+        document.getElementById('mother-tag-filter').value = window.lambingsMotherTagFilter;
+        motherTagFilter = window.lambingsMotherTagFilter;
+    }
+    if (window.lambingsFatherTagFilter) {
+        document.getElementById('father-tag-filter').value = window.lambingsFatherTagFilter;
+        fatherTagFilter = window.lambingsFatherTagFilter;
     }
     
     // Загружаем активные окоты
@@ -125,6 +135,12 @@ async function loadActiveLambings() {
         }
         if (plannedDateTo) {
             url += `&planned_date_to=${plannedDateTo}`;
+        }
+        if (motherTagFilter) {
+            url += `&mother_tag=${encodeURIComponent(motherTagFilter)}`;
+        }
+        if (fatherTagFilter) {
+            url += `&father_tag=${encodeURIComponent(fatherTagFilter)}`;
         }
         
         const response = await apiRequest(url);
@@ -315,12 +331,16 @@ function applyDateFilter() {
     dateTo = document.getElementById('date-to').value;
     plannedDateFrom = document.getElementById('planned-date-from').value;
     plannedDateTo = document.getElementById('planned-date-to').value;
+    motherTagFilter = document.getElementById('mother-tag-filter').value.trim();
+    fatherTagFilter = document.getElementById('father-tag-filter').value.trim();
     
     // Сохраняем значения в глобальных переменных
     window.lambingsDateFrom = dateFrom;
     window.lambingsDateTo = dateTo;
     window.lambingsPlannedDateFrom = plannedDateFrom;
     window.lambingsPlannedDateTo = plannedDateTo;
+    window.lambingsMotherTagFilter = motherTagFilter;
+    window.lambingsFatherTagFilter = fatherTagFilter;
     
     currentPage = 1; // Сбрасываем на первую страницу
     loadActiveLambings();
@@ -332,17 +352,23 @@ function clearDateFilter() {
     document.getElementById('date-to').value = '';
     document.getElementById('planned-date-from').value = '';
     document.getElementById('planned-date-to').value = '';
+    document.getElementById('mother-tag-filter').value = '';
+    document.getElementById('father-tag-filter').value = '';
     
     // Очищаем глобальные переменные
     window.lambingsDateFrom = '';
     window.lambingsDateTo = '';
     window.lambingsPlannedDateFrom = '';
     window.lambingsPlannedDateTo = '';
+    window.lambingsMotherTagFilter = '';
+    window.lambingsFatherTagFilter = '';
     
     dateFrom = '';
     dateTo = '';
     plannedDateFrom = '';
     plannedDateTo = '';
+    motherTagFilter = '';
+    fatherTagFilter = '';
     currentPage = 1;
     loadActiveLambings();
 }

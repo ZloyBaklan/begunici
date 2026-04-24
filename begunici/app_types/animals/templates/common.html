@@ -1,0 +1,350 @@
+﻿{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Управление животными (общее)</h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0" id="form-title">Создать животное</h5>
+                </div>
+                <div class="card-body">
+                    <form id="create-common-form">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label for="create-animal-type" class="form-label">Тип животного:</label>
+                            <select id="create-animal-type" class="form-select" required>
+                                <option value="">Выберите тип</option>
+                                <option value="maker">Производитель</option>
+                                <option value="ram">Баран</option>
+                                <option value="ewe">Ярка</option>
+                                <option value="sheep">Овца</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="tag" class="form-label">Бирка:</label>
+                            <input type="text" id="tag" name="tag" class="form-control" placeholder="Введите бирку">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="animal_status" class="form-label">Статус животного:</label>
+                            <select id="animal_status" name="animal_status" class="form-select"></select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="birth_date" class="form-label">Дата рождения:</label>
+                            <input type="date" id="birth_date" name="birth_date" class="form-control">
+                        </div>
+
+                        <div id="maker-fields" style="display: none;">
+                            <div class="mb-3">
+                                <label for="plemstatus" class="form-label">Племенной статус:</label>
+                                <input type="text" id="plemstatus" name="plemstatus" class="form-control">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="working_condition" class="form-label">Рабочее состояние:</label>
+                                <input type="text" id="working_condition" name="working_condition" class="form-control">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Имя (необязательно):</label>
+                                <input type="text" id="name" name="name" class="form-control" maxlength="50">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="place" class="form-label">Овчарня:</label>
+                            <select id="place" name="place" class="form-select"></select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="rshn_tag" class="form-label">Бирка РСХН:</label>
+                            <input type="text" id="rshn_tag" name="rshn_tag" class="form-control">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" min="0" max="100" step="0.01">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="note" class="form-label">Примечание:</label>
+                            <input type="text" id="note" name="note" class="form-control">
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="button" id="create-common-button" class="btn btn-primary" onclick="saveCommonAnimal()">Создать животное</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-9 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <h5 class="card-title mb-0">Общий список животных</h5>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input type="text" id="common-search" class="form-control" placeholder="Поиск животных...">
+                                <button class="btn btn-outline-primary" type="button" onclick="performCommonSearch()">Поиск</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleCommonAdditionalFilters()">Доп. фильтры</button>
+                            </div>
+                            <div id="common-advanced-filters" class="mt-2" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label for="common-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                        <input type="date" id="common-birth-date-from" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="common-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                        <input type="date" id="common-birth-date-to" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="common-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
+                                        <input type="text" id="common-father-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="common-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
+                                        <input type="text" id="common-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="common-animal-type-filter" class="form-label small mb-1">Тип животного</label>
+                                        <select id="common-animal-type-filter" class="form-select form-select-sm">
+                                            <option value="">Все типы</option>
+                                            <option value="maker">Производители</option>
+                                            <option value="ram">Бараны</option>
+                                            <option value="ewe">Ярки</option>
+                                            <option value="sheep">Овцы</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <a href="/animals/main_archive/" class="btn btn-outline-secondary">Архив</a>
+                                <button class="btn btn-outline-success" onclick="openExportModal('common')">Экспорт</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="3%"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                                    <th width="5%">№</th>
+                                    <th width="10%">Тип животного</th>
+                                    <th width="12%">Бирка</th>
+                                    <th width="12%">Статус</th>
+                                    <th width="9%">Возраст</th>
+                                    <th width="12%">Овчарня</th>
+                                    <th width="8%">Дорперность</th>
+                                    <th width="15%">Последнее взвешивание</th>
+                                    <th width="15%">Последняя Ветобработка</th>
+                                    <th width="12%">Текущий статус работы</th>
+                                    <th width="8%">Бирка РСХН</th>
+                                    <th width="10%">Примечание</th>
+                                </tr>
+                            </thead>
+                            <tbody id="common-list"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="selected-actions" class="mt-3" style="display: none;">
+                        <div class="d-flex gap-2">
+                            {% if user_permissions.can_delete_animals %}
+                            <button id="delete-selected-button" class="btn btn-outline-danger btn-sm" onclick="deleteSelectedAnimals()">Удалить выбранные</button>
+                            {% endif %}
+                            <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">Перенести в архив</button>
+                        </div>
+                    </div>
+
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="delete-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Подтверждение удаления</h5></div>
+            <div class="modal-body"><p id="delete-modal-message"></p></div>
+            <div class="modal-footer">
+                <button id="delete-confirm-button" class="btn btn-danger">Да</button>
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">Нет</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="archive-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Перенос в архив</h5></div>
+            <div class="modal-body">
+                <p>Выберите статус, который будет установлен для выбранных животных:</p>
+                <select id="archive-status-select" class="form-select mb-3"></select>
+                <label for="archive-status-date" class="form-label">Дата присвоения статуса:</label>
+                <input type="date" id="archive-status-date" class="form-control" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="applyArchiveStatus()">Применить</button>
+                <button class="btn btn-secondary" onclick="closeArchiveModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="export-modal" class="modal" style="display:none;">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Экспорт в Excel</h5>
+            </div>
+            <div class="modal-body">
+                <div class="export-filters">
+                    <div class="mb-3" id="export-selected-section" style="display: none;">
+                        <div class="alert alert-info">
+                            <strong>Выбрано животных для экспорта: <span id="selected-count">0</span></strong>
+                            <br>При экспорте выбранных животных другие фильтры недоступны.
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="filter-limit-section">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-limit-enabled" class="form-check-input export-checkbox">
+                            <label class="form-check-label" for="filter-limit-enabled">Экспортировать первые N животных</label>
+                        </div>
+                        <input type="number" id="filter-limit" class="form-control mt-2" placeholder="Количество" min="1" disabled>
+                    </div>
+
+                    <div class="mb-3" id="filter-weight-section">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input export-checkbox">
+                            <label class="form-check-label" for="filter-weight-enabled">Фильтр по весу (кг)</label>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6"><input type="number" id="filter-weight-min" class="form-control" placeholder="От" step="0.1" disabled></div>
+                            <div class="col-6"><input type="number" id="filter-weight-max" class="form-control" placeholder="До" step="0.1" disabled></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="filter-age-section">
+                        <div class="form-check">
+                            <input type="checkbox" id="filter-age-enabled" class="form-check-input export-checkbox">
+                            <label class="form-check-label" for="filter-age-enabled">Фильтр по возрасту (месяцы)</label>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6"><input type="number" id="filter-age-min" class="form-control" placeholder="От" step="0.1" disabled></div>
+                            <div class="col-6"><input type="number" id="filter-age-max" class="form-control" placeholder="До" step="0.1" disabled></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="include-details-section">
+                        <div class="form-check">
+                            <input type="checkbox" id="include-details" class="form-check-input export-checkbox">
+                            <label class="form-check-label" for="include-details">Включить родителей, детей и историю (вес, ветобработки)</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="performExport('common')">Экспортировать</button>
+                <button class="btn btn-secondary" onclick="closeExportModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th { border-top: none; font-weight: 600; }
+.table td { vertical-align: middle; }
+
+.modal {
+    background-color: rgba(0,0,0,0.5);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dialog { max-width: 500px; width: 90%; }
+.modal-lg { max-width: 800px; }
+
+.export-checkbox {
+    width: 18px !important;
+    height: 18px !important;
+    border: 2px solid #495057 !important;
+    background-color: #ffffff !important;
+    cursor: pointer;
+    margin-top: 0.125rem;
+}
+
+.export-checkbox:checked {
+    background-color: #0d6efd !important;
+    border-color: #0d6efd !important;
+}
+
+@media (max-width: 768px) {
+    .table-responsive { font-size: 0.875rem; }
+}
+</style>
+
+<script type="module" src="{% static 'js/common.js' %}"></script>
+<script src="{% static 'js/export-common.js' %}"></script>
+<script>
+    function performCommonSearch() {
+        const query = document.getElementById('common-search').value;
+        const birthDateFrom = document.getElementById('common-birth-date-from')?.value || '';
+        const birthDateTo = document.getElementById('common-birth-date-to')?.value || '';
+        const fatherTag = document.getElementById('common-father-tag-filter')?.value || '';
+        const motherTag = document.getElementById('common-mother-tag-filter')?.value || '';
+        const animalType = document.getElementById('common-animal-type-filter')?.value || '';
+        if (window.fetchCommonAnimals) {
+            window.fetchCommonAnimals(1, {
+                search: query,
+                birth_date_from: birthDateFrom,
+                birth_date_to: birthDateTo,
+                father_tag: fatherTag,
+                mother_tag: motherTag,
+                animal_type: animalType
+            });
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('common-search');
+        if (searchInput) {
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performCommonSearch();
+                }
+            });
+        }
+    });
+</script>
+
+{% endblock %}

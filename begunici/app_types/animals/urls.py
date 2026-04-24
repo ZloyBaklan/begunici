@@ -16,6 +16,8 @@ from .views import (
     CalendarNoteViewSet,
     animals,
     create_animal,
+    common_animals,
+    common_animals_api,
     ArchiveViewSet,
     ArchiveView,
     AnimalActionsViewSet,
@@ -27,6 +29,7 @@ from .views import (
     get_all_tags,
     get_all_statuses,
     export_to_excel,
+    export_animal_detail_excel,
     create_backup,
     backup_info,
     check_auto_backup,
@@ -224,8 +227,15 @@ urlpatterns = [
     path("api/yearly-statistics/", yearly_statistics, name="yearly-statistics"),  # API годовой статистики
     path("api/all-tags/", get_all_tags, name="all-tags"),  # API всех бирок
     path("api/all-statuses/", get_all_statuses, name="all-statuses"),  # API всех статусов
+    path("api/common/", common_animals_api, name="common-animals-api"),  # API общего списка животных
     path("api/export-excel/", export_to_excel, name="export-excel"),  # API экспорта в Excel
+    path(
+        "api/<str:animal_type>/<str:tag_number>/export-detail-excel/",
+        export_animal_detail_excel,
+        name="export-animal-detail-excel",
+    ),
     path("main/", animals, name="animals"),  # Главная страница
+    path("common/", common_animals, name="common"),  # Общая страница животных
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
     path("vet-list/", vet_list, name="vet-list"),  # Страница списка ветобработок
     path("api/otbivka/", otbivka_api, name="otbivka-api"),  # API для списка отбивки

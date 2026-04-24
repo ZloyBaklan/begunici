@@ -80,6 +80,7 @@
                     <div class="card-body">
                         <div class="d-flex gap-2">
                             <button id="analytics-button" type="button" class="btn btn-info">Аналитика</button>
+                            <button id="export-button" type="button" class="btn btn-outline-success" onclick="openAnimalExportModal()">Экспорт</button>
                             {% if animal_type == 'ewe' %}
                             <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцу</button>
                             {% endif %}
@@ -417,6 +418,52 @@
         </div>
         {% endif %}
 
+    </div>
+</div>
+<!-- Модальное окно экспорта в Excel -->
+<div class="modal fade" id="animalExportModal" tabindex="-1" aria-labelledby="animalExportModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="animalExportModalLabel">Экспорт в Excel</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Выберите разделы для экспорта:</p>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="basic_info" id="export-basic-info">
+                    <label class="form-check-label" for="export-basic-info">Основная информация</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="current_vet_treatments" id="export-current-vet">
+                    <label class="form-check-label" for="export-current-vet">Текущие ветобработки</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="weight_history" id="export-weight-history">
+                    <label class="form-check-label" for="export-weight-history">История веса</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="vet_history" id="export-vet-history">
+                    <label class="form-check-label" for="export-vet-history">История ветобработок</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="children" id="export-children">
+                    <label class="form-check-label" for="export-children">Список детей (с пометкой архивных)</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="place_history" id="export-place-history">
+                    <label class="form-check-label" for="export-place-history">История перемещений</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input animal-export-section" type="checkbox" value="status_history" id="export-status-history">
+                    <label class="form-check-label" for="export-status-history">История статусов</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-success" onclick="exportAnimalToExcel()">Экспортировать</button>
+            </div>
+        </div>
     </div>
 </div>
 <!-- Модальное окно для завершения окота -->

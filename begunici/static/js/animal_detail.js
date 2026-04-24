@@ -46,6 +46,102 @@ async function apiRequest(url, method, body) {
     }
 }
 
+function openAnimalExportModal() {
+    const modalElement = document.getElementById('animalExportModal');
+    if (!modalElement) return;
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+}
+
+function closeAnimalExportModal() {
+    const modalElement = document.getElementById('animalExportModal');
+    if (!modalElement) return;
+    const modal = bootstrap.Modal.getInstance(modalElement);
+    if (modal) {
+        modal.hide();
+    }
+}
+
+function getSelectedAnimalExportSections() {
+    return Array.from(document.querySelectorAll('.animal-export-section:checked')).map((checkbox) => checkbox.value);
+}
+
+function resolveExportFilename(response, fallbackName) {
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match && utf8Match[1]) {
+        return decodeURIComponent(utf8Match[1]);
+    }
+
+    const plainMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+    if (plainMatch && plainMatch[1]) {
+        return plainMatch[1];
+    }
+
+    return fallbackName;
+}
+
+async function exportAnimalToExcel() {
+    const animalDetail = document.getElementById('animal-detail');
+    if (!animalDetail) {
+        alert('Не удалось определить животное для экспорта');
+        return;
+    }
+
+    const selectedSections = getSelectedAnimalExportSections();
+    if (selectedSections.length === 0) {
+        alert('Выберите хотя бы один раздел для экспорта');
+        return;
+    }
+
+    const animalType = animalDetail.dataset.animalType;
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const exportUrl = `/animals/api/${animalType}/${encodeURIComponent(tagNumber)}/export-detail-excel/`;
+
+    try {
+        const response = await fetch(exportUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken(),
+            },
+            body: JSON.stringify({ sections: selectedSections }),
+        });
+
+        if (!response.ok) {
+            let errorText = `Ошибка экспорта (${response.status})`;
+            try {
+                const errorData = await response.json();
+                errorText = errorData.error || errorData.detail || errorText;
+            } catch (_) {
+                const rawText = await response.text();
+                if (rawText) {
+                    errorText = rawText;
+                }
+            }
+            throw new Error(errorText);
+        }
+
+        const blob = await response.blob();
+        const fallbackName = `${animalType}_${tagNumber}.xlsx`;
+        const filename = resolveExportFilename(response, fallbackName);
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        closeAnimalExportModal();
+    } catch (error) {
+        console.error('Ошибка экспорта в Excel:', error);
+        alert(`Ошибка при экспорте: ${error.message}`);
+    }
+}
+
 // Загрузка данных при загрузке страницы
 // (Обработчик перенесен в конец файла для поддержки окотов)
 
@@ -1717,3 +1813,5 @@ async function completeLambingWithChildren() {
 // Экспортируем новые функции для глобального доступа
 window.completeLambingWithChildren = completeLambingWithChildren;
 window.removeLambForm = removeLambForm;
+window.openAnimalExportModal = openAnimalExportModal;
+window.exportAnimalToExcel = exportAnimalToExcel;
