@@ -18,7 +18,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
-from .views import index  # Импортируем view для главной страницы
+from django.views.generic import RedirectView
+from .views import index, internal_login  # Импортируем view для главной страницы
 from begunici.app_types.veterinary.vet_views import places_map  # Импортируем view для карты овчарен
 from begunici.app_types.animals.views_admin import admin_panel, admin_logs_api  # Импортируем admin views
 
@@ -26,8 +27,10 @@ urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора Django
     path("", index, name="index"),  # Главная страница
     path("places/map/", places_map, name="places_map"),  # Карта овчарен
+    path("login/", internal_login, name="login"),  # Вход во внутреннюю часть
+    path("login", RedirectView.as_view(url="/login/", permanent=False)),  # Поддержка /login без слеша
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),  # Выход
-    path("accounts/login/", auth_views.LoginView.as_view(template_name='admin/login.html'), name="login"),  # Логин
+    path("accounts/login/", RedirectView.as_view(url="/login/", permanent=False)),  # Старый URL логина
     # Панель администратора для логов
     path("admin-panel/", admin_panel, name="admin_panel"),  # Панель администратора
     path("admin-panel/logs/api/", admin_logs_api, name="admin_logs_api"),  # API для логов

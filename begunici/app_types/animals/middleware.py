@@ -25,7 +25,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
         # Пропускаем статические файлы и админку Django
         if (request.path.startswith('/static/') or 
             request.path.startswith('/admin/') or
-            request.path.startswith('/site/login/')):
+            request.path.startswith('/login/')):
             return response
         
         # Пропускаем автоматические и технические запросы

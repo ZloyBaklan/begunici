@@ -58,9 +58,9 @@ MIDDLEWARE = [
 ]
 
 # Настройки аутентификации
-LOGIN_URL = '/site/login/'  # Перенаправление на нашу кастомную страницу входа
-LOGIN_REDIRECT_URL = '/'     # Куда перенаправлять после входа
-LOGOUT_REDIRECT_URL = '/site/login/'  # Куда перенаправлять после выхода
+LOGIN_URL = '/login/'  # Внутренняя страница входа
+LOGIN_REDIRECT_URL = '/'  # После входа открываем внутреннюю главную
+LOGOUT_REDIRECT_URL = '/login/'  # После выхода возвращаем на страницу входа
 
 ROOT_URLCONF = "begunici.urls"
 
