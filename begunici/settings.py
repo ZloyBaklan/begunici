@@ -10,8 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
+
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,7 +28,20 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = ["*"]
+def _split_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+ALLOWED_HOSTS = _split_csv(
+    config("ALLOWED_HOSTS", default="127.0.0.1,localhost")
+)
+
+CSRF_TRUSTED_ORIGINS = _split_csv(
+    config(
+        "CSRF_TRUSTED_ORIGINS",
+        default="http://127.0.0.1:8000,http://localhost:8000",
+    )
+)
 
 
 # Application definition
@@ -86,8 +100,6 @@ WSGI_APPLICATION = "begunici.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-import os
 
 DATABASES = {
     "default": {
