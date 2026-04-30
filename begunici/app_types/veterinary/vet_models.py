@@ -190,28 +190,66 @@ class WeightRecord(models.Model):
 
 
 class VeterinaryCare(models.Model):
-    care_type = models.CharField(max_length=100, verbose_name="Тип обработки")
+    TYPE_VACCINATION = "Вакцинация"
+    TYPE_ANTIPARASITIC = "Противопаразитарная"
+
+    CLASS_IMMUNIZATION = "Иммунизация"
+    CLASS_ANTIHELMINTHIC = "Антигельминтная"
+    CLASS_ANTIPROTOZOAL = "Противопротозойная"
+    CLASS_DISINSECTION = "Дезинсекция"
+
+    CARE_TYPE_CHOICES = (
+        (TYPE_VACCINATION, TYPE_VACCINATION),
+        (TYPE_ANTIPARASITIC, TYPE_ANTIPARASITIC),
+    )
+    CARE_CLASS_CHOICES = (
+        (CLASS_IMMUNIZATION, CLASS_IMMUNIZATION),
+        (CLASS_ANTIHELMINTHIC, CLASS_ANTIHELMINTHIC),
+        (CLASS_ANTIPROTOZOAL, CLASS_ANTIPROTOZOAL),
+        (CLASS_DISINSECTION, CLASS_DISINSECTION),
+    )
+
+    care_type = models.CharField(
+        max_length=100,
+        verbose_name="Тип ветобработки",
+        choices=CARE_TYPE_CHOICES,
+        default=TYPE_VACCINATION,
+    )
     care_name = models.CharField(
-        max_length=200, verbose_name="Название обработки"
-    )  # Название прививки/обработки
+        max_length=200,
+        verbose_name="Класс ветобработки",
+        choices=CARE_CLASS_CHOICES,
+        default=CLASS_IMMUNIZATION,
+    )
     medication = models.CharField(
         max_length=200, verbose_name="Препарат/материал", blank=True, null=True
-    )  # Лекарство или материал, если есть
+    )
     purpose = models.CharField(
         max_length=200, verbose_name="Цель обработки", blank=True, null=True
-    )  # Причина/цель обработки
+    )
     default_duration_days = models.PositiveIntegerField(
-        verbose_name="Срок действия (дней)", 
+        verbose_name="Срок действия (дней)",
         default=0,
-        help_text="0 = бессрочно"
+        help_text="0 = бессрочно",
     )
 
     def __str__(self):
-        return self.care_type
+        return f"{self.care_type}: {self.care_name}"
+
+    @classmethod
+    def is_valid_type_class(cls, care_type, care_name):
+        if care_type == cls.TYPE_VACCINATION:
+            return care_name == cls.CLASS_IMMUNIZATION
+        if care_type == cls.TYPE_ANTIPARASITIC:
+            return care_name in {
+                cls.CLASS_ANTIHELMINTHIC,
+                cls.CLASS_ANTIPROTOZOAL,
+                cls.CLASS_DISINSECTION,
+            }
+        return False
 
     class Meta:
-        unique_together = ("care_type", "care_name", "medication")
-
+        unique_together = ("care_type", "care_name", "medication", "purpose")
 
 class Veterinary(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name="Бирка")

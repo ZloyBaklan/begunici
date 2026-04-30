@@ -196,6 +196,32 @@ function formatDateToOutput(dateString) {
     return date.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+function formatDateToShortOutput(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU');
+}
+
+function updateCarcassWeightDisplay(animal) {
+    const carcassRow = document.getElementById('carcass-weight-row');
+    const carcassDisplay = document.getElementById('carcass-weight-display');
+    if (!carcassRow || !carcassDisplay) return;
+
+    if (!animal.is_archived) {
+        carcassRow.style.display = 'none';
+        carcassDisplay.textContent = '-';
+        return;
+    }
+
+    carcassRow.style.display = '';
+    if (animal.carcass_weight !== null && animal.carcass_weight !== undefined && animal.carcass_weight !== '') {
+        const archiveDate = formatDateToShortOutput(animal.archived_date);
+        carcassDisplay.textContent = `${archiveDate}, ${animal.carcass_weight} кг`;
+    } else {
+        carcassDisplay.textContent = '-';
+    }
+}
+
 
 async function loadAnimalDetails(animalType, tagNumber) {
     try {
@@ -228,6 +254,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
         }
         
         document.getElementById('note').value = animal.note || '';
+        updateCarcassWeightDisplay(animal);
 
         console.log('Загружаем дополнительные данные (статусы, места, вес, ветобработки)...');
         await Promise.all([
@@ -244,17 +271,18 @@ async function loadAnimalDetails(animalType, tagNumber) {
 
 
 
-// Загрузка последнего веса
+// Загрузка живого веса
 async function loadLastWeight(animalType, tagNumber) {
     try {
+        const display = document.getElementById('last-weight-display');
+        if (!display) return;
+
         const weights = await apiRequest(`/animals/${animalType}/${tagNumber}/weight_history/`, 'GET');
         if (weights.length) {
-            const lastWeight = weights[0]; // Берем самый последний вес
-            document.getElementById('last-weight-date').textContent = formatDateToOutput(lastWeight.weight_date);
-            document.getElementById('last-weight-value').textContent = `${lastWeight.weight} кг`;
+            const lastWeight = weights[0]; // Берем последний живой вес
+            display.textContent = `${formatDateToShortOutput(lastWeight.weight_date)}, ${lastWeight.weight} кг`;
         } else {
-            document.getElementById('last-weight-date').textContent = '-';
-            document.getElementById('last-weight-value').textContent = '-';
+            display.textContent = '-';
         }
     } catch (error) {
         console.error('Ошибка загрузки последнего веса:', error);
@@ -337,8 +365,9 @@ function createVetTreatmentRow(treatment) {
     }
     
     row.innerHTML = `
-        <td>${treatment.veterinary_care?.care_type || 'Не указан'}</td>
-        <td>${treatment.veterinary_care?.care_name || 'Не указано'}</td>
+        <td>${treatment.veterinary_care?.care_name || 'Не указан'}</td>
+        <td>${treatment.veterinary_care?.medication || 'Нет препарата'}</td>
+        <td>${treatment.veterinary_care?.purpose || 'Нет цели'}</td>
         <td>${careDate.toLocaleDateString('ru-RU')}</td>
         <td>${expiryDate.toLocaleDateString('ru-RU')}</td>
         <td class="${remainingClass}">${remainingText}</td>
@@ -575,10 +604,13 @@ async function loadVetTreatments() {
         treatments.forEach(treatment => {
             const option = document.createElement('option');
             option.value = treatment.id; // ID обработки
-            option.textContent = treatment.care_name;
+            const medicationText = (treatment.medication || '').trim() || 'Не указан препарат';
+            const purposeText = (treatment.purpose || '').trim() || 'Не указана цель';
+            option.textContent = `${medicationText} — ${purposeText}`;
 
             // Сохраняем дополнительные данные обработки
             option.dataset.type = treatment.care_type || 'Не указан';
+            option.dataset.class = treatment.care_name || 'Не указан';
             option.dataset.medication = treatment.medication || 'Не указан';
             option.dataset.purpose = treatment.purpose || 'Нет цели';
             option.dataset.defaultDuration = treatment.default_duration_days || '0';
@@ -598,8 +630,9 @@ function displayTreatmentDetails() {
     if (selectedOption.value) {
         // Отображаем данные обработки
         document.getElementById('treatment-type').innerHTML = `<strong>Тип:</strong> ${selectedOption.dataset.type || '-'}`;
-        document.getElementById('treatment-description').innerHTML = `<strong>Цель:</strong> ${selectedOption.dataset.purpose || '-'}`;
+        document.getElementById('treatment-class').innerHTML = `<strong>Класс:</strong> ${selectedOption.dataset.class || '-'}`;
         document.getElementById('treatment-medicine').innerHTML = `<strong>Препарат:</strong> ${selectedOption.dataset.medication || '-'}`;
+        document.getElementById('treatment-description').innerHTML = `<strong>Цель:</strong> ${selectedOption.dataset.purpose || '-'}`;
         
         // Отображаем срок действия
         const durationDays = selectedOption.dataset.defaultDuration || '0';
@@ -613,6 +646,7 @@ function displayTreatmentDetails() {
     } else {
         // Очищаем отображение если ничего не выбрано
         document.getElementById('treatment-type').innerHTML = '<strong>Тип:</strong> -';
+        document.getElementById('treatment-class').innerHTML = '<strong>Класс:</strong> -';
         document.getElementById('treatment-description').innerHTML = '<strong>Цель:</strong> -';
         document.getElementById('treatment-medicine').innerHTML = '<strong>Препарат:</strong> -';
         document.getElementById('treatment-duration').innerHTML = '<strong>Срок действия:</strong> -';

@@ -20,13 +20,16 @@
                     {% csrf_token %}
                     <form id="create-care-form">
                         <div class="mb-3">
-                            <label for="care-type" class="form-label">Тип обработки:</label>
-                            <input type="text" id="care-type" name="care-type" class="form-control" placeholder="Введите тип обработки">
+                            <label for="care-type" class="form-label">Тип ветобработки:</label>
+                            <select id="care-type" name="care-type" class="form-select">
+                                <option value="Вакцинация">Вакцинация</option>
+                                <option value="Противопаразитарная">Противопаразитарная</option>
+                            </select>
                         </div>
 
                         <div class="mb-3">
-                            <label for="care-name" class="form-label">Название обработки:</label>
-                            <input type="text" id="care-name" name="care-name" class="form-control" placeholder="Введите название">
+                            <label for="care-name" class="form-label">Класс ветобработки:</label>
+                            <select id="care-name" name="care-name" class="form-select"></select>
                         </div>
 
                         <div class="mb-3">
@@ -63,11 +66,16 @@
             <div class="card">
                 <div class="card-header">
                     <div class="row align-items-center">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <h5 class="card-title mb-0">Список обработок</h5>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <input type="text" id="care-search" class="form-control" placeholder="Поиск по обработкам...">
+                        </div>
+                        <div class="col-md-3 mt-2 mt-md-0 text-md-end">
+                            <button type="button" id="export-cares-button" class="btn btn-success w-100">
+                                Экспорт
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -78,7 +86,7 @@
                                 <tr>
                                     <th width="5%">№</th>
                                     <th width="15%">Тип обработки</th>
-                                    <th width="20%">Название</th>
+                                    <th width="20%">Класс</th>
                                     <th width="15%">Препарат</th>
                                     <th width="15%">Цель</th>
                                     <th width="10%">Срок действия</th>

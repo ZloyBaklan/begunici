@@ -288,10 +288,10 @@ async function loadVaccinationCares() {
         const careSelect = document.getElementById('vaccination-care');
         if (careSelect) {
             careSelect.innerHTML = '<option value="">Выберите обработку</option>';
-            response.care_names.forEach(name => {
+            (response.care_options || []).forEach(careOption => {
                 const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
+                option.value = String(careOption.id);
+                option.textContent = careOption.label;
                 careSelect.appendChild(option);
             });
         }
@@ -449,14 +449,14 @@ function confirmAnimalsSelectionForVaccination() {
 async function performBulkVaccination() {
     const vaccinationDate = document.getElementById('vaccination-date').value;
     const careSelect = document.getElementById('vaccination-care');
-    const careName = careSelect.value;
+    const veterinaryCareId = careSelect.value;
     
     if (!vaccinationDate) {
         alert('Укажите дату вакцинации');
         return;
     }
     
-    if (!careName) {
+    if (!veterinaryCareId) {
         alert('Выберите обработку');
         return;
     }
@@ -466,7 +466,8 @@ async function performBulkVaccination() {
         return;
     }
     
-    const confirmMessage = `Выполнить вакцинацию "${careName}" для ${window.selectedAnimalsForVaccinationArray.length} животных на дату ${vaccinationDate}?`;
+    const selectedCareLabel = careSelect.options[careSelect.selectedIndex]?.textContent || 'выбранная обработка';
+    const confirmMessage = `Выполнить вакцинацию "${selectedCareLabel}" для ${window.selectedAnimalsForVaccinationArray.length} животных на дату ${vaccinationDate}?`;
     if (!confirm(confirmMessage)) {
         return;
     }
@@ -476,7 +477,7 @@ async function performBulkVaccination() {
         
         const response = await apiRequest('/animals/api/bulk-vaccination/', 'POST', {
             vaccination_date: vaccinationDate,
-            care_name: careName,
+            veterinary_care_id: parseInt(veterinaryCareId, 10),
             animal_tags: animalTags
         });
         

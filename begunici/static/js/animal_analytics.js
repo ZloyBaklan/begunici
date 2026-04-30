@@ -165,12 +165,14 @@ async function loadVetCalendar(animalType, tagNumber, page = 1) {
                 row.innerHTML = `
                     <td>${formattedDate}</td>
                     <td>${entry.veterinary_care?.care_name || 'Не указано'}</td>
+                    <td>${entry.veterinary_care?.medication || 'Нет препарата'}</td>
+                    <td>${entry.veterinary_care?.purpose || 'Нет цели'}</td>
                     <td>${entry.comments || 'Нет комментария'}</td>
                 `;
                 Vetcalendar.appendChild(row);
             });
         } else {
-            Vetcalendar.innerHTML = '<tr><td colspan="3">Нет записей о ветобработках</td></tr>';
+            Vetcalendar.innerHTML = '<tr><td colspan="5">Нет записей о ветобработках</td></tr>';
         }
 
         prevButton.disabled = !response.previous;
@@ -362,4 +364,3 @@ function renderPageNumbers(container, currentPage, totalPages, onPageClick) {
         container.appendChild(pageButton);
     }
 }
-

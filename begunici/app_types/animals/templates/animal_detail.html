@@ -128,27 +128,10 @@
                                 <tr><th>Имя</th><td>{{ animal.name|default:"-" }}</td></tr>
                                 {% endif %}
                                 <tr><th>Дата отбивки</th><td>{{ animal.date_otbivka|date:"d.m.Y"|default:"-" }}</td></tr>
+                                <tr><th>Живой вес</th><td id="last-weight-display">-</td></tr>
+                                <tr id="carcass-weight-row" style="display: none;"><th>Вес туши</th><td id="carcass-weight-display">-</td></tr>
                                 <tr><th>Примечание</th><td style="word-wrap: break-word; max-width: 300px;">{{ animal.note }}</td></tr>
                             </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Последний вес -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Последний вес</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-6">
-                                <p class="mb-1"><strong>Дата:</strong></p>
-                                <p class="text-muted" id="last-weight-date">-</p>
-                            </div>
-                            <div class="col-6">
-                                <p class="mb-1"><strong>Вес:</strong></p>
-                                <p class="text-muted" id="last-weight-value">-</p>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -188,8 +171,9 @@
                             <table class="table table-striped" id="current-vet-treatments-table">
                                 <thead>
                                     <tr>
-                                        <th>Тип обработки</th>
-                                        <th>Название</th>
+                                        <th>Класс</th>
+                                        <th>Препарат</th>
+                                        <th>Цель</th>
                                         <th>Дата обработки</th>
                                         <th>Дата окончания</th>
                                         <th>Дней осталось</th>
@@ -224,8 +208,9 @@
                             <div class="col-12">
                                 <div class="bg-light p-2 rounded">
                                     <p class="mb-1" id="treatment-type"><strong>Тип:</strong> -</p>
-                                    <p class="mb-1" id="treatment-description"><strong>Цель:</strong> -</p>
+                                    <p class="mb-1" id="treatment-class"><strong>Класс:</strong> -</p>
                                     <p class="mb-1" id="treatment-medicine"><strong>Препарат:</strong> -</p>
+                                    <p class="mb-1" id="treatment-description"><strong>Цель:</strong> -</p>
                                     <p class="mb-0" id="treatment-duration"><strong>Срок действия:</strong> -</p>
                                 </div>
                             </div>

@@ -113,6 +113,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             raise serializers.ValidationError("Дата отбивки не может быть в будущем.")
         return value
 
+    def validate_carcass_weight(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Вес туши не может быть отрицательным.")
+        return value
+
     def create(self, validated_data):
         tag_data = validated_data.pop('tag')
         # tag_data содержит строку номера бирки из поля tag_number
@@ -226,7 +231,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'birth_date': 'Дата рождения',
             'note': 'Примечание',
             'plemstatus': 'Племенной статус',
-            'working_condition': 'Рабочее состояние'
+            'working_condition': 'Рабочее состояние',
+            'carcass_weight': 'Вес туши (кг)',
         }
         
         for field, display_name in field_names.items():

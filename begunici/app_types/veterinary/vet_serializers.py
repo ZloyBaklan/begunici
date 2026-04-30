@@ -229,6 +229,27 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
         model = VeterinaryCare
         fields = "__all__"
 
+    def validate(self, attrs):
+        care_type = attrs.get("care_type")
+        care_name = attrs.get("care_name")
+
+        if self.instance:
+            if care_type is None:
+                care_type = self.instance.care_type
+            if care_name is None:
+                care_name = self.instance.care_name
+
+        if care_type and care_name and not VeterinaryCare.is_valid_type_class(care_type, care_name):
+            raise serializers.ValidationError(
+                {
+                    "care_name": (
+                        "Недопустимый класс для выбранного типа ветобработки."
+                    )
+                }
+            )
+
+        return attrs
+
     def create(self, validated_data):
         # Создаем ветеринарную обработку
         care = VeterinaryCare.objects.create(**validated_data)

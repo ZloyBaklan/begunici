@@ -475,6 +475,8 @@ function openArchiveModal() {
     const localDate = new Date(now.getTime() - offset * 60000).toISOString().split("T")[0];
     const archiveDateInput = document.getElementById("archive-status-date");
     if (archiveDateInput) archiveDateInput.value = localDate;
+    const carcassWeightInput = document.getElementById("archive-carcass-weight");
+    if (carcassWeightInput) carcassWeightInput.value = "";
 
     loadArchiveStatuses();
 }
@@ -525,6 +527,7 @@ async function applyArchiveStatus() {
 
     const statusId = document.getElementById("archive-status-select")?.value;
     const statusDate = document.getElementById("archive-status-date")?.value;
+    const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
 
     if (!statusId) {
         alert("Выберите статус.");
@@ -536,11 +539,21 @@ async function applyArchiveStatus() {
         return;
     }
 
+    let carcassWeight = null;
+    if (carcassWeightRaw) {
+        carcassWeight = parseFloat(carcassWeightRaw);
+        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
+            alert("Вес туши должен быть числом не меньше 0.");
+            return;
+        }
+    }
+
     try {
         for (const item of selected) {
             await apiRequest(`/animals/${item.animalType}/${item.tagNumber}/`, "PATCH", {
                 animal_status_id: statusId,
                 status_date: statusDate,
+                carcass_weight: carcassWeight,
             });
         }
 

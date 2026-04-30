@@ -2239,6 +2239,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     'animal_type': vet.tag.animal_type,
                     'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
                     'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                    'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан препарат',
+                    'purpose': vet.veterinary_care.purpose if vet.veterinary_care and vet.veterinary_care.purpose else 'Не указана цель',
                     'date_of_care': care_date_str,
                     'duration_days': vet.duration_days,
                     'expiry_date': vet.get_expiry_date().strftime('%Y-%m-%d') if vet.get_expiry_date() else None
@@ -2276,6 +2278,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                                 'animal_type': vet.tag.animal_type,
                                 'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
                                 'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                                'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан препарат',
+                                'purpose': vet.veterinary_care.purpose if vet.veterinary_care and vet.veterinary_care.purpose else 'Не указана цель',
                                 'date_of_care': care_date.strftime('%Y-%m-%d'),
                                 'expiry_date': expiry_date_str
                             })
@@ -2305,6 +2309,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                                 'animal_type': vet.tag.animal_type,
                                 'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
                                 'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                                'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан препарат',
+                                'purpose': vet.veterinary_care.purpose if vet.veterinary_care and vet.veterinary_care.purpose else 'Не указана цель',
                                 'date_of_care': care_date.strftime('%Y-%m-%d'),
                                 'expiry_date': expiry_date_str
                             })
@@ -3130,7 +3136,7 @@ def export_to_excel(request):
                 })
 
         print(f"Найдено {len(animals_list)} животных для экспорта")
-        headers = ['№', 'Бирка', 'Статус', 'Возраст (мес)', 'Овчарня', 'Последний вес (кг)', 'Дата взвешивания']
+        headers = ['№', 'Бирка', 'Статус', 'Возраст (мес)', 'Овчарня', 'Живой вес (кг)', 'Дата взвешивания']
         if animal_type == 'common':
             headers.insert(1, 'Тип животного')
         
@@ -4526,7 +4532,7 @@ def vet_list_api(request):
 def vet_filter_options(request):
     """API для получения опций фильтров ветобработок"""
     try:
-        # Получаем уникальные названия обработок
+        # Получаем уникальные классы обработок
         care_names = VeterinaryCare.objects.values_list('care_name', flat=True).distinct().order_by('care_name')
         
         # Получаем уникальные препараты (исключаем пустые и None)
@@ -4535,10 +4541,25 @@ def vet_filter_options(request):
         ).exclude(
             medication__exact=''
         ).values_list('medication', flat=True).distinct().order_by('medication')
+
+        # Опции для выпадающих списков выбора ветобработки: отображаем только препарат и цель
+        care_options = []
+        for care in VeterinaryCare.objects.all().order_by('id'):
+            medication_text = (care.medication or '').strip() or 'Не указан препарат'
+            purpose_text = (care.purpose or '').strip() or 'Не указана цель'
+            care_options.append(
+                {
+                    'id': care.id,
+                    'label': f'{medication_text} — {purpose_text}',
+                    'medication': care.medication,
+                    'purpose': care.purpose,
+                }
+            )
         
         return JsonResponse({
             'care_names': list(care_names),
-            'medications': list(medications)
+            'medications': list(medications),
+            'care_options': care_options,
         })
         
     except Exception as e:
@@ -5203,4 +5224,3 @@ def bulk_vaccination(request):
         return Response({
             'error': f'Ошибка при выполнении массовой вакцинации: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-

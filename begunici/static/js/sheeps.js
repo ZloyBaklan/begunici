@@ -529,6 +529,10 @@ function openArchiveModal() {
     // Устанавливаем текущую дату
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('archive-status-date').value = today;
+    const carcassWeightInput = document.getElementById('archive-carcass-weight');
+    if (carcassWeightInput) {
+        carcassWeightInput.value = '';
+    }
     
     loadArchiveStatuses();
 }
@@ -585,11 +589,22 @@ async function applyArchiveStatus() {
         return;
     }
 
+    const carcassWeightRaw = document.getElementById('archive-carcass-weight')?.value?.trim();
+    let carcassWeight = null;
+    if (carcassWeightRaw) {
+        carcassWeight = parseFloat(carcassWeightRaw);
+        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
+            alert('Вес туши должен быть неотрицательным числом.');
+            return;
+        }
+    }
+
     try {
         for (const tag of selectedTags) {
             await apiRequest(`/animals/sheep/${tag}/`, 'PATCH', { 
                 animal_status_id: statusId,
-                status_date: statusDate
+                status_date: statusDate,
+                carcass_weight: carcassWeight
             });
         }
         alert('Выбранные записи успешно перенесены в архив.');

@@ -370,6 +370,8 @@ class LambingCalendar {
             content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
             
             vetData.vet_treatments.forEach(vet => {
+                const medicationText = (vet.medication || '').trim() || 'Не указан препарат';
+                const purposeText = (vet.purpose || '').trim() || 'Не указана цель';
                 content += `
                     <div class="list-group-item">
                         <div class="d-flex w-100 justify-content-between">
@@ -377,7 +379,7 @@ class LambingCalendar {
                                 <a href="/animals/${this.getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
                                     ${vet.tag_number}
                                 </a>
-                                <span class="text-muted ms-2">${vet.care_type} - ${vet.care_name}</span>
+                                <span class="text-muted ms-2">${medicationText} - ${purposeText}</span>
                             </h6>
                         </div>
                         <small>
@@ -397,6 +399,8 @@ class LambingCalendar {
             content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
             
             vetData.vet_expiring.forEach(vet => {
+                const medicationText = (vet.medication || '').trim() || 'Не указан препарат';
+                const purposeText = (vet.purpose || '').trim() || 'Не указана цель';
                 content += `
                     <div class="list-group-item">
                         <div class="d-flex w-100 justify-content-between">
@@ -404,7 +408,7 @@ class LambingCalendar {
                                 <a href="/animals/${this.getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
                                     ${vet.tag_number}
                                 </a>
-                                <span class="text-muted ms-2">${vet.care_type} - ${vet.care_name}</span>
+                                <span class="text-muted ms-2">${medicationText} - ${purposeText}</span>
                             </h6>
                         </div>
                         <small>

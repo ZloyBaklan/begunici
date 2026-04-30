@@ -4,9 +4,11 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.utils import timezone
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.views.generic import TemplateView
 from rest_framework.exceptions import ValidationError
+from datetime import datetime
 from .vet_models import (
     Veterinary,
     Status,
@@ -303,3 +305,70 @@ def get_all_veterinary_cares(request):
     cares = VeterinaryCare.objects.all().order_by('care_type', 'care_name')
     serializer = VeterinaryCareSerializer(cares, many=True)
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+def export_veterinary_cares_excel(request):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return Response(
+            {"error": "Библиотека openpyxl не установлена. Экспорт XLSX недоступен."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    cares = VeterinaryCare.objects.all().order_by("id")
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Vet Cares"
+
+    headers = [
+        "№",
+        "ID",
+        "Тип ветобработки",
+        "Класс ветобработки",
+        "Препарат/материал",
+        "Цель",
+        "Срок действия (дней)",
+    ]
+
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for col_num, header in enumerate(headers, 1):
+        cell = worksheet.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for index, care in enumerate(cares, start=1):
+        row = [
+            index,
+            care.id,
+            care.care_type,
+            care.care_name,
+            care.medication or "",
+            care.purpose or "",
+            care.default_duration_days,
+        ]
+        worksheet.append(row)
+
+    for column_cells in worksheet.columns:
+        max_length = 0
+        column_index = column_cells[0].column
+        for cell in column_cells:
+            value = "" if cell.value is None else str(cell.value)
+            if len(value) > max_length:
+                max_length = len(value)
+        worksheet.column_dimensions[get_column_letter(column_index)].width = min(max_length + 2, 60)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    filename = f'veterinary_cares_{datetime.now().strftime("%Y-%m-%d")}.xlsx'
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    workbook.save(response)
+    return response

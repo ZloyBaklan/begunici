@@ -62,6 +62,14 @@ class AnimalBase(models.Model):
         help_text="Указывает, была ли дорперность задана вручную или рассчитана автоматически"
     )
     is_archived = models.BooleanField(default=False, verbose_name="В архиве", db_index=True)
+    carcass_weight = models.DecimalField(
+        max_digits=6,
+        decimal_places=1,
+        verbose_name="Вес туши (кг)",
+        null=True,
+        blank=True,
+        help_text="Заполняется при архивировании животного",
+    )
     # Поля для родителей (текстовые поля с номерами бирок)
     mother = models.CharField(
         max_length=50,
@@ -699,6 +707,7 @@ class Ewe(AnimalBase):
             rshn_tag=self.rshn_tag,  # ДОБАВЛЕНО: бирка РСХН
             date_otbivka=self.date_otbivka,  # ДОБАВЛЕНО: дата отбивки
             is_archived=self.is_archived,  # ДОБАВЛЕНО: статус архива
+            carcass_weight=self.carcass_weight,  # ДОБАВЛЕНО: вес туши
             mother=self.mother,
             father=self.father,
             place=self.place,
@@ -936,7 +945,6 @@ class CalendarNote(models.Model):
             return "0, 0, 0"
         except:
             return "0, 0, 0"
-
 
 
 

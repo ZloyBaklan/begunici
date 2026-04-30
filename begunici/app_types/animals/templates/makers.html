@@ -205,6 +205,8 @@
                 
                 <label for="archive-status-date" class="form-label">Дата присвоения статуса:</label>
                 <input type="date" id="archive-status-date" class="form-control" required>
+                <label for="archive-carcass-weight" class="form-label mt-3">Вес туши (кг):</label>
+                <input type="number" id="archive-carcass-weight" class="form-control" step="0.1" min="0" placeholder="Необязательно">
             </div>
             <div class="modal-footer">
                 <button class="btn btn-primary" onclick="applyArchiveStatus()">Применить</button>
