@@ -373,6 +373,32 @@ function clearDateFilter() {
     loadActiveLambings();
 }
 
+function exportLambingsToExcel() {
+    const params = new URLSearchParams();
+    params.set('is_active', 'true');
+
+    if (dateFrom) {
+        params.set('start_date_from', dateFrom);
+    }
+    if (dateTo) {
+        params.set('start_date_to', dateTo);
+    }
+    if (plannedDateFrom) {
+        params.set('planned_date_from', plannedDateFrom);
+    }
+    if (plannedDateTo) {
+        params.set('planned_date_to', plannedDateTo);
+    }
+    if (motherTagFilter) {
+        params.set('mother_tag', motherTagFilter);
+    }
+    if (fatherTagFilter) {
+        params.set('father_tag', fatherTagFilter);
+    }
+
+    window.location.href = `/animals/api/lambings/export-excel/?${params.toString()}`;
+}
+
 // Показать модальное окно выбора матерей
 async function showSelectMothersModal() {
     // Очищаем выбранных матерей и поле поиска
@@ -793,6 +819,10 @@ function showCompleteLambingModal(lambingId) {
     // Устанавливаем текущую дату как дату фактических родов
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('actual-lambing-date').value = today;
+    const deadLambsCountInput = document.getElementById('dead-lambs-count');
+    if (deadLambsCountInput) {
+        deadLambsCountInput.value = '0';
+    }
     
     // Загружаем список статусов
     loadStatusesForMother();
@@ -880,6 +910,13 @@ function createLambForm(index) {
                     <option value="">Выберите статус</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>Живой вес (кг):</label>
+                <input type="number" class="lamb-live-weight" min="0" step="0.1" placeholder="Необязательно">
+            </div>
+        </div>
+
+        <div class="form-row">
             <div class="form-group">
                 <label>Овчарня:</label>
                 <select class="lamb-place">
@@ -969,6 +1006,7 @@ async function completeLambingWithChildren() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
+    const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
     const lambingNote = document.getElementById('lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox').checked;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
@@ -980,6 +1018,11 @@ async function completeLambingWithChildren() {
     
     if (!newMotherStatusId) {
         alert('Пожалуйста, выберите новый статус для матери');
+        return;
+    }
+
+    if (lambsCount < 0 || deadLambsCount < 0) {
+        alert('Количество живых и мертвых ягнят не может быть отрицательным');
         return;
     }
     
@@ -996,6 +1039,16 @@ async function completeLambingWithChildren() {
                 const status = form.querySelector('.lamb-status').value;
                 const place = form.querySelector('.lamb-place').value;
                 const note = form.querySelector('.lamb-note').value.trim();
+                const liveWeightRaw = form.querySelector('.lamb-live-weight')?.value?.trim();
+                let liveWeight = null;
+
+                if (liveWeightRaw) {
+                    liveWeight = parseFloat(liveWeightRaw);
+                    if (Number.isNaN(liveWeight) || liveWeight < 0) {
+                        alert('Живой вес ягненка должен быть неотрицательным числом');
+                        return;
+                    }
+                }
                 
                 if (!gender || !tag) {
                     alert('Пожалуйста, заполните тип животного и бирку для всех ягнят');
@@ -1007,7 +1060,8 @@ async function completeLambingWithChildren() {
                     tag_number: tag,
                     animal_status_id: status ? parseInt(status) : null,
                     place_id: place ? parseInt(place) : null,
-                    note: note || ''
+                    note: note || '',
+                    live_weight: liveWeight
                 });
             }
         }
@@ -1016,6 +1070,7 @@ async function completeLambingWithChildren() {
         const completionData = {
             actual_lambing_date: actualDate,
             number_of_lambs: lambsCount,
+            dead_lambs_count: deadLambsCount,
             note: lambingNote,
             new_mother_status_id: parseInt(newMotherStatusId),
             lambs: lambsData
@@ -1050,6 +1105,7 @@ window.removeLambForm = removeLambForm;
 window.changePage = changePage;
 window.applyDateFilter = applyDateFilter;
 window.clearDateFilter = clearDateFilter;
+window.exportLambingsToExcel = exportLambingsToExcel;
 
 // Функции для проверки родства
 window.showSelectKinshipFatherModal = showSelectKinshipFatherModal;

@@ -116,6 +116,25 @@ async function performOtbivkaSearch() {
     fetchOtbivka(currentPage, searchTerm, dateFrom, dateTo);
 }
 
+function exportOtbivkaToExcel() {
+    const params = new URLSearchParams();
+    const searchTerm = document.getElementById('otbivka-search').value.trim();
+    const dateFrom = document.getElementById('otbivka-date-from').value;
+    const dateTo = document.getElementById('otbivka-date-to').value;
+
+    if (searchTerm) {
+        params.set('search', searchTerm);
+    }
+    if (dateFrom) {
+        params.set('date_from', dateFrom);
+    }
+    if (dateTo) {
+        params.set('date_to', dateTo);
+    }
+
+    window.location.href = `/animals/api/otbivka/export-excel/?${params.toString()}`;
+}
+
 // Обновление пагинации
 function updatePagination(response) {
     const pagination = document.getElementById('pagination');
@@ -198,6 +217,7 @@ function showError(message) {
 // Экспортируем функции для глобального доступа
 window.fetchOtbivka = fetchOtbivka;
 window.performOtbivkaSearch = performOtbivkaSearch;
+window.exportOtbivkaToExcel = exportOtbivkaToExcel;
 
 // Функции для ковровой отбивки
 window.showSelectAnimalsModal = showSelectAnimalsModal;

@@ -334,6 +334,39 @@ function performArchiveSearch() {
 }
 window.performArchiveSearch = performArchiveSearch; // Делаем функцию глобальной
 
+function exportArchiveToExcel() {
+    const params = new URLSearchParams();
+    const animalType = document.getElementById('animal-type-filter').value;
+    const status = document.getElementById('status-filter').value;
+    const search = document.getElementById('archive-search').value.trim();
+    const archiveDateFrom = document.getElementById('archive-date-from').value;
+    const archiveDateTo = document.getElementById('archive-date-to').value;
+    const placeInput = document.getElementById('place-filter');
+    const place = placeInput ? placeInput.value : '';
+
+    if (search) {
+        params.set('search', search);
+    }
+    if (animalType) {
+        params.set('type', animalType);
+    }
+    if (status) {
+        params.set('animal_status', status);
+    }
+    if (place) {
+        params.set('place', place);
+    }
+    if (archiveDateFrom) {
+        params.set('archive_date_from', archiveDateFrom);
+    }
+    if (archiveDateTo) {
+        params.set('archive_date_to', archiveDateTo);
+    }
+
+    window.location.href = `/animals/api/archive/export-excel/?${params.toString()}`;
+}
+window.exportArchiveToExcel = exportArchiveToExcel;
+
 // Функция фильтрации с загрузкой всех данных
 async function filterArchiveDataWithSearch(animalType, status, search) {
     try {

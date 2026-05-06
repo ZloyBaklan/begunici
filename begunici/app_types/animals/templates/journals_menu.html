@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}Журналы{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Журналы</h1>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Выберите журнал</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:journal-progeny' %}" class="btn btn-outline-primary w-100 py-3">
+                        1. Приплод
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:journal-insemination' %}" class="btn btn-outline-primary w-100 py-3">
+                        2. Осеменение - случки
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:journal-three' %}" class="btn btn-outline-primary w-100 py-3">
+                        3. Журнал 3
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:journal-shift-transfer' %}" class="btn btn-outline-primary w-100 py-3">
+                        4. Передача смены
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

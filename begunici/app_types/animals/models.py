@@ -488,6 +488,11 @@ class Lambing(models.Model):
     number_of_lambs = models.IntegerField(
         verbose_name="Количество ягнят", null=True, blank=True
     )
+    dead_lambs_count = models.PositiveIntegerField(
+        verbose_name="Количество мертвых ягнят",
+        default=0,
+        help_text="Если не указано, считается 0",
+    )
     note = models.TextField(
         verbose_name="Примечание", null=True, blank=True
     )
@@ -947,5 +952,115 @@ class CalendarNote(models.Model):
             return "0, 0, 0"
 
 
+class ShiftTransferNote(models.Model):
+    """
+    Модель заметок для журнала передачи смены.
+    Полностью независима от заметок календаря.
+    """
+    date = models.DateField(verbose_name="Дата")
+    text = models.TextField(verbose_name="Текст заметки")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Заметка передачи смены"
+        verbose_name_plural = "Заметки передачи смены"
+        ordering = ["-date", "-id"]
+
+    def __str__(self):
+        return f"Передача смены {self.date}: {self.text[:120]}..."
+
+    def get_formatted_text(self):
+        """
+        Преобразует текст заметки, заменяя бирки на HTML-ссылки и статусы на цветные элементы.
+        Логика соответствует заметкам календаря.
+        """
+        import re
+
+        formatted_text = self.text
+        tag_pattern = r"\b([А-Яа-яA-Za-z0-9]{2,})\b"
+
+        def replace_tag_link(match):
+            tag_text = match.group(1)
+
+            if len(tag_text) < 2:
+                return tag_text
+            if len(tag_text) > 10:
+                return tag_text
+
+            has_digit = bool(re.search(r"[0-9]", tag_text))
+            has_uppercase = bool(re.search(r"[А-ЯA-Z]", tag_text))
+            is_short = len(tag_text) <= 5
+            if not (has_digit or has_uppercase or is_short):
+                return tag_text
+
+            try:
+                from django.urls import reverse
+
+                tag_obj = Tag.objects.filter(tag_number__iexact=tag_text).first()
+                if not tag_obj:
+                    return tag_text
+
+                url_map = {
+                    "Maker": "animals:maker-detail",
+                    "Ram": "animals:ram-detail",
+                    "Ewe": "animals:ewe-detail",
+                    "Sheep": "animals:sheep-detail",
+                }
+
+                if tag_obj.animal_type not in url_map:
+                    return tag_text
+
+                url = reverse(url_map[tag_obj.animal_type], kwargs={"tag_number": tag_obj.tag_number})
+                display_text = tag_text
+
+                if tag_obj.animal_type == "Maker":
+                    maker = Maker.objects.filter(tag=tag_obj).first()
+                    if maker and maker.name:
+                        display_text = f"{maker.name}({tag_text})"
+
+                return (
+                    f'<a href="{url}" style="color: #007bff; text-decoration: underline; '
+                    f'font-weight: bold;">{display_text}</a>'
+                )
+            except Exception:
+                return tag_text
+
+        formatted_text = re.sub(tag_pattern, replace_tag_link, formatted_text)
+
+        try:
+            statuses = Status.objects.all()
+            for status_obj in statuses:
+                status_pattern = re.compile(
+                    r"\b" + re.escape(status_obj.status_type) + r"\b",
+                    re.IGNORECASE,
+                )
+
+                def replace_status(match):
+                    status_text = match.group(0)
+                    color = status_obj.color if status_obj.color else "#000000"
+                    return (
+                        f'<span style="border: 1px solid {color}; padding: 2px 4px; '
+                        f'border-radius: 3px; font-weight: bold; display: inline-block; '
+                        f'background-color: rgba({self._hex_to_rgb(color)}, 0.1);">{status_text}</span>'
+                    )
+
+                formatted_text = status_pattern.sub(replace_status, formatted_text)
+        except Exception:
+            pass
+
+        return formatted_text
+
+    def _hex_to_rgb(self, hex_color):
+        try:
+            hex_color = hex_color.lstrip("#")
+            if len(hex_color) == 6:
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+                return f"{r}, {g}, {b}"
+            return "0, 0, 0"
+        except Exception:
+            return "0, 0, 0"
 
 

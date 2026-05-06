@@ -148,6 +148,23 @@ async function loadVetList() {
     }
 }
 
+function exportVetListToExcel() {
+    const params = new URLSearchParams({
+        tag_search: document.getElementById('tag-search').value.trim(),
+        care_name: document.getElementById('care-name-filter').value,
+        medication: document.getElementById('medication-filter').value,
+        care_date_from: document.getElementById('care-date-from').value,
+        care_date_to: document.getElementById('care-date-to').value,
+        expiry_date_from: document.getElementById('expiry-date-from').value,
+        expiry_date_to: document.getElementById('expiry-date-to').value,
+        is_hidden: document.getElementById('is-hidden-filter').value,
+        sort_by: 'id',
+        sort_order: 'desc'
+    });
+
+    window.location.href = `/animals/api/vet-list/export-excel/?${params.toString()}`;
+}
+
 // Отображение списка ветобработок
 function renderVetList(vetRecords) {
     const vetList = document.getElementById('vet-list');
@@ -506,6 +523,7 @@ window.searchAnimalsForVaccination = searchAnimalsForVaccination;
 window.confirmAnimalsSelectionForVaccination = confirmAnimalsSelectionForVaccination;
 window.performBulkVaccination = performBulkVaccination;
 window.changePage = changePage;
+window.exportVetListToExcel = exportVetListToExcel;
 
 // Очищение формы ковровой вакцинации
 function resetBulkVaccinationForm() {

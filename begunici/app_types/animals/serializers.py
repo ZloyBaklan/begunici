@@ -628,7 +628,7 @@ class LambingSerializer(serializers.ModelSerializer):
         model = Lambing
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
-            'number_of_lambs', 'note', 'is_active', 'created_at',
+            'number_of_lambs', 'dead_lambs_count', 'note', 'is_active', 'created_at',
             'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
             'mother_tag_text', 'mother_type_text'  # Добавляем новые поля

@@ -38,13 +38,22 @@ from .views import (
     bulk_create_lambings,
     otbivka_list,
     otbivka_api,
+    otbivka_export_excel,
     vet_list,
     vet_list_api,
+    vet_list_export_excel,
     vet_filter_options,
+    lambings_export_excel,
+    archive_export_excel,
     check_kinship,
     get_animals_without_otbivka,
     bulk_otbivka,
     bulk_vaccination,
+    journals_menu,
+    journal_progeny,
+    journal_insemination,
+    journal_three,
+    journal_shift_transfer,
 )
 
 # Создаем маршруты для ViewSet
@@ -238,9 +247,18 @@ urlpatterns = [
     path("common/", common_animals, name="common"),  # Общая страница животных
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
     path("vet-list/", vet_list, name="vet-list"),  # Страница списка ветобработок
+    path("journals/", journals_menu, name="journals"),  # Меню журналов
+    path("journals/progeny/", journal_progeny, name="journal-progeny"),  # Журнал приплода
+    path("journals/insemination/", journal_insemination, name="journal-insemination"),  # Журнал осеменения
+    path("journals/three/", journal_three, name="journal-three"),  # Журнал 3
+    path("journals/shift-transfer/", journal_shift_transfer, name="journal-shift-transfer"),  # Журнал передачи смены
     path("api/otbivka/", otbivka_api, name="otbivka-api"),  # API для списка отбивки
+    path("api/otbivka/export-excel/", otbivka_export_excel, name="otbivka-export-excel"),  # API экспорта отбивки
     path("api/vet-list/", vet_list_api, name="vet-list-api"),  # API для списка ветобработок
+    path("api/vet-list/export-excel/", vet_list_export_excel, name="vet-list-export-excel"),  # API экспорта ветобработок
     path("api/vet-filter-options/", vet_filter_options, name="vet-filter-options"),  # API для опций фильтров ветобработок
+    path("api/lambings/export-excel/", lambings_export_excel, name="lambings-export-excel"),  # API экспорта окотов
+    path("api/archive/export-excel/", archive_export_excel, name="archive-export-excel"),  # API экспорта архива
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"

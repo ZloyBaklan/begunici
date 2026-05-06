@@ -82,16 +82,19 @@ async function createStatus() {
 }
 
 // Функция загрузки списка статусов
-async function fetchStatuses(page = 1, searchQuery = '') {
+async function fetchStatuses(page = 1, searchQuery = null) {
     try {
         console.log('Fetching statuses...');
-        let url = `/veterinary/api/status/?page=${page}&page_size=100`; // Увеличиваем размер страницы для локальной фильтрации
+        let url = '/veterinary/api/all-statuses/';
+        if (searchQuery === null) {
+            const searchInput = document.getElementById('status-search');
+            searchQuery = searchInput ? searchInput.value : '';
+        }
         
         const response = await apiRequest(url);
         console.log('Statuses response:', response);
         
-        // Обрабатываем пагинированный ответ
-        let statuses = Array.isArray(response) ? response : response.results;
+        let statuses = Array.isArray(response) ? response : (response.results || []);
         
         // Применяем локальную фильтрацию по поисковому запросу
         if (searchQuery && searchQuery.trim()) {
@@ -101,12 +104,14 @@ async function fetchStatuses(page = 1, searchQuery = '') {
             );
         }
         
-        // Применяем пагинацию к отфильтрованным данным
-        const startIndex = (page - 1) * pageSize;
+        // Применяем локальную пагинацию с защитой от выхода за пределы
+        const totalPages = Math.max(1, Math.ceil(statuses.length / pageSize));
+        const safePage = Math.min(Math.max(page, 1), totalPages);
+        const startIndex = (safePage - 1) * pageSize;
         const endIndex = startIndex + pageSize;
         const paginatedStatuses = statuses.slice(startIndex, endIndex);
         
-        currentPage = page;
+        currentPage = safePage;
         
         const statusTable = document.getElementById('status-list');
         statusTable.innerHTML = '';
@@ -159,7 +164,7 @@ async function fetchStatuses(page = 1, searchQuery = '') {
         }
         
         // Обновляем пагинацию для отфильтрованных данных
-        updateLocalPagination(statuses.length, page, searchQuery);
+        updateLocalPagination(statuses.length, safePage, searchQuery);
     } catch (error) {
         console.error('Ошибка при загрузке статусов:', error);
         const statusTable = document.getElementById('status-list');
@@ -253,7 +258,7 @@ function updateLocalPagination(totalItems, currentPage, searchQuery = '') {
     const paginationElement = document.getElementById('pagination');
     paginationElement.innerHTML = '';
 
-    const totalPages = Math.ceil(totalItems / pageSize);
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
     
     // Левая часть - кнопка "Предыдущая"
     const leftContainer = document.createElement('div');
@@ -364,4 +369,3 @@ function showMessage(message, type) {
 
 // Делаем функцию глобальной для использования в HTML
 window.handleCreateOrUpdateStatus = handleCreateOrUpdateStatus;
-

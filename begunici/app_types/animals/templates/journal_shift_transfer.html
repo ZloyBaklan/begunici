@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Журнал: Передача смены{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <h1 class="mb-0 order-2">Журнал: Передача смены</h1>
+        <a href="{% url 'animals:journals' %}" class="btn btn-outline-secondary order-1">К списку журналов</a>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">Фильтры</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="month" class="form-label">Месяц</label>
+                    <select class="form-select" id="month" name="month">
+                        <option value="">Все</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="year" class="form-label">Год</label>
+                    <select class="form-select" id="year" name="year">
+                        <option value="">Все</option>
+                        {% for year_option in years %}
+                            <option value="{{ year_option }}" {% if selected_year == year_option %}selected{% endif %}>{{ year_option }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Применить</button>
+                    <a href="{% url 'animals:journal-shift-transfer' %}" class="btn btn-secondary">Сбросить</a>
+                    <a href="{% url 'animals:journal-shift-transfer' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success ms-auto">
+                        Экспорт
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-8 order-2 order-lg-2">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Список записей</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 70px;">№</th>
+                                    <th style="width: 130px;">Дата</th>
+                                    <th>Заметка</th>
+                                    <th style="width: 140px;">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for note in page_obj %}
+                                    <tr>
+                                        <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                                        <td>{{ note.date|date:"d.m.Y" }}</td>
+                                        <td class="note-cell">{{ note.get_formatted_text|safe }}</td>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-primary"
+                                                onclick="openEditShiftNoteModal('{{ note.id }}', '{{ note.date|date:"Y-m-d" }}', '{{ note.text|escapejs }}')"
+                                            >
+                                                Редактировать
+                                            </button>
+                                        </td>
+                                    </tr>
+                                {% empty %}
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted">Записей нет</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if page_obj.paginator.num_pages > 1 %}
+                        <nav aria-label="Пагинация журнала передачи смены">
+                            <ul class="pagination pagination-sm justify-content-center mb-0">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.previous_page_number }}">‹</a>
+                                    </li>
+                                {% endif %}
+
+                                {% for page_number in pagination_items %}
+                                    {% if page_number %}
+                                        {% if page_number == page_obj.number %}
+                                            <li class="page-item active"><span class="page-link">{{ page_number }}</span></li>
+                                        {% else %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_number }}">{{ page_number }}</a>
+                                            </li>
+                                        {% endif %}
+                                    {% else %}
+                                        <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+                                    {% endif %}
+                                {% endfor %}
+
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.next_page_number }}">›</a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 order-1 order-lg-1">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Новая запись</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="create">
+                        <input type="hidden" name="return_query" value="{{ base_query }}">
+                        <div class="mb-3">
+                            <label for="note_date" class="form-label">Дата</label>
+                            <input type="date" id="note_date" name="note_date" class="form-control" value="{{ today }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="create-note-text" class="form-label">Заметка</label>
+                            <textarea id="create-note-text" name="note_text" class="form-control" rows="7" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-outline-info btn-sm" onclick="showShiftTagModal('create-note-text')">
+                                Вставить бирку
+                            </button>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Сохранить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editShiftNoteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" id="edit-note-id" name="note_id">
+                <input type="hidden" name="return_query" value="{{ base_query }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактирование заметки</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Дата</label>
+                        <input type="date" id="edit-note-date" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit-note-text" class="form-label">Текст заметки</label>
+                        <textarea id="edit-note-text" name="updated_text" class="form-control" rows="8" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-info btn-sm" onclick="showShiftTagModal('edit-note-text')">
+                            Вставить бирку
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="shiftTagModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Выбор бирки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="text" id="shiftTagSearchInput" class="form-control" placeholder="Введите номер бирки для поиска...">
+                    <button type="button" class="btn btn-primary" id="shiftTagSearchBtn">Поиск</button>
+                </div>
+                <div id="shiftTagsList" class="shift-tags-list">
+                    <div class="text-muted text-center py-3">
+                        Введите номер бирки и нажмите «Поиск»
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.note-cell {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.note-cell a {
+    color: #007bff;
+    text-decoration: underline;
+    font-weight: 600;
+}
+
+.shift-tags-list {
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.shift-tag-item {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+
+.shift-tag-item:hover {
+    background-color: #f1f3f5;
+}
+</style>
+
+<script src="{% static 'js/journal_shift_transfer.js' %}"></script>
+{% endblock %}
