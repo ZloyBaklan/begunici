@@ -204,16 +204,16 @@ function createSectionCellFromStats(section, animalStats) {
         if (animalStats.makers > 0) {
             const makersSpan = document.createElement('span');
             makersSpan.className = 'animal-count makers';
-            makersSpan.textContent = `Производители: ${animalStats.makers}`;
-            makersSpan.onclick = () => loadAndShowAnimalsModal('Производители', section.id, section.name);
+            makersSpan.textContent = `Бараны-Производители: ${animalStats.makers}`;
+            makersSpan.onclick = () => loadAndShowAnimalsModal('Бараны-Производители', section.id, section.name);
             animalsDiv.appendChild(makersSpan);
         }
         
         if (animalStats.rams > 0) {
             const ramsSpan = document.createElement('span');
             ramsSpan.className = 'animal-count rams';
-            ramsSpan.textContent = `Бараны: ${animalStats.rams}`;
-            ramsSpan.onclick = () => loadAndShowAnimalsModal('Бараны', section.id, section.name);
+            ramsSpan.textContent = `Баранчики: ${animalStats.rams}`;
+            ramsSpan.onclick = () => loadAndShowAnimalsModal('Баранчики', section.id, section.name);
             animalsDiv.appendChild(ramsSpan);
         }
         
@@ -228,8 +228,8 @@ function createSectionCellFromStats(section, animalStats) {
         if (animalStats.sheep > 0) {
             const sheepSpan = document.createElement('span');
             sheepSpan.className = 'animal-count sheep';
-            sheepSpan.textContent = `Овцы: ${animalStats.sheep}`;
-            sheepSpan.onclick = () => loadAndShowAnimalsModal('Овцы', section.id, section.name);
+            sheepSpan.textContent = `Овцематки: ${animalStats.sheep}`;
+            sheepSpan.onclick = () => loadAndShowAnimalsModal('Овцематки', section.id, section.name);
             animalsDiv.appendChild(sheepSpan);
         }
         
@@ -256,10 +256,10 @@ async function loadAndShowAnimalsModal(animalType, placeId, sectionName) {
         // Фильтруем по типу
         const filteredAnimals = animals.filter(animal => {
             const typeMap = {
-                'Производители': 'Производитель',
-                'Бараны': 'Баран',
+                'Бараны-Производители': 'Баран-Производитель',
+                'Баранчики': 'Баранчик',
                 'Ярки': 'Ярка',
-                'Овцы': 'Овца'
+                'Овцематки': 'Овцематка'
             };
             return animal.type === typeMap[animalType];
         });
@@ -428,16 +428,16 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
         if (animals.makers.length > 0) {
             const makersSpan = document.createElement('span');
             makersSpan.className = 'animal-count makers';
-            makersSpan.textContent = `Производители: ${animals.makers.length}`;
-            makersSpan.onclick = () => showAnimalsModal('Производители', animals.makers, section.name);
+            makersSpan.textContent = `Бараны-Производители: ${animals.makers.length}`;
+            makersSpan.onclick = () => showAnimalsModal('Бараны-Производители', animals.makers, section.name);
             animalsDiv.appendChild(makersSpan);
         }
         
         if (animals.rams.length > 0) {
             const ramsSpan = document.createElement('span');
             ramsSpan.className = 'animal-count rams';
-            ramsSpan.textContent = `Бараны: ${animals.rams.length}`;
-            ramsSpan.onclick = () => showAnimalsModal('Бараны', animals.rams, section.name);
+            ramsSpan.textContent = `Баранчики: ${animals.rams.length}`;
+            ramsSpan.onclick = () => showAnimalsModal('Баранчики', animals.rams, section.name);
             animalsDiv.appendChild(ramsSpan);
         }
         
@@ -452,8 +452,8 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
         if (animals.sheep.length > 0) {
             const sheepSpan = document.createElement('span');
             sheepSpan.className = 'animal-count sheep';
-            sheepSpan.textContent = `Овцы: ${animals.sheep.length}`;
-            sheepSpan.onclick = () => showAnimalsModal('Овцы', animals.sheep, section.name);
+            sheepSpan.textContent = `Овцематки: ${animals.sheep.length}`;
+            sheepSpan.onclick = () => showAnimalsModal('Овцематки', animals.sheep, section.name);
             animalsDiv.appendChild(sheepSpan);
         }
         
@@ -531,10 +531,10 @@ function showAnimalsModal(animalType, animals, sectionName) {
 // Вспомогательная функция для преобразования категории в тип животного
 function getAnimalTypeFromCategory(category) {
     const typeMap = {
-        'Производители': 'maker',
-        'Бараны': 'ram',
+        'Бараны-Производители': 'maker',
+        'Баранчики': 'ram',
         'Ярки': 'ewe',
-        'Овцы': 'sheep'
+        'Овцематки': 'sheep'
     };
     return typeMap[category] || 'sheep';
 }

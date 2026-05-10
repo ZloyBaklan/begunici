@@ -16,12 +16,12 @@ class Command(BaseCommand):
         parser.add_argument(
             '--care-type',
             type=str,
-            help='Обновить только записи с указанным типом обработки',
+            help='Обновить только записи с указанным классом обработки',
         )
         parser.add_argument(
             '--care-name',
             type=str,
-            help='Обновить только записи с указанным названием обработки',
+            help='Обновить только записи с указанным типом обработки',
         )
         parser.add_argument(
             '--after-date',
@@ -94,9 +94,9 @@ class Command(BaseCommand):
         if care_type or care_name or after_date or before_date:
             self.stdout.write('Применяемые фильтры:')
             if care_type:
-                self.stdout.write(f'  - Тип обработки содержит: "{care_type}"')
+                self.stdout.write(f'  - Класс обработки содержит: "{care_type}"')
             if care_name:
-                self.stdout.write(f'  - Название обработки содержит: "{care_name}"')
+                self.stdout.write(f'  - Тип обработки содержит: "{care_name}"')
             if after_date:
                 self.stdout.write(f'  - Дата обработки после: {after_date}')
             if before_date:

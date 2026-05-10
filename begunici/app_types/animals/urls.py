@@ -46,6 +46,7 @@ from .views import (
     lambings_export_excel,
     archive_export_excel,
     check_kinship,
+    kinship_pairs_export_excel,
     get_animals_without_otbivka,
     bulk_otbivka,
     bulk_vaccination,
@@ -289,6 +290,7 @@ urlpatterns = [
     path("api/all-fathers/", get_all_fathers, name="all-fathers"),  # Все отцы
     path("api/bulk-create-lambings/", bulk_create_lambings, name="bulk-create-lambings"),  # Массовое создание окотов
     path("api/check-kinship/", check_kinship, name="check-kinship"),  # Проверка родства
+    path("api/kinship-pairs/export-excel/", kinship_pairs_export_excel, name="kinship-pairs-export-excel"),  # Экспорт подбора пар по родству
     
     # API для ковровой отбивки
     path("api/animals-without-otbivka/", get_animals_without_otbivka, name="animals-without-otbivka"),  # Животные без отбивки

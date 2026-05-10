@@ -82,7 +82,10 @@
                             <button id="analytics-button" type="button" class="btn btn-info">Аналитика</button>
                             <button id="export-button" type="button" class="btn btn-outline-success" onclick="openAnimalExportModal()">Экспорт</button>
                             {% if animal_type == 'ewe' %}
-                            <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцу</button>
+                            <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцематку</button>
+                            {% endif %}
+                            {% if animal_type == 'ram' and can_convert_to_maker %}
+                            <button id="convert-to-maker-button" type="button" onclick="openConvertRamToMakerModal()" class="btn btn-warning">Преобразовать в барана-производителя</button>
                             {% endif %}
                         </div>
                     </div>
@@ -108,7 +111,7 @@
                                 <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
                                 {% endif %}
                                 <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
-                                <tr><th>Дорперность</th><td id="dorper-display">-</td></tr>
+                                <tr><th>Кровность по основной породе</th><td id="dorper-display">-</td></tr>
                                 <tr>
                                     <th>Мать</th>
                                     <td>
@@ -207,8 +210,8 @@
                             </div>
                             <div class="col-12">
                                 <div class="bg-light p-2 rounded">
-                                    <p class="mb-1" id="treatment-type"><strong>Тип:</strong> -</p>
                                     <p class="mb-1" id="treatment-class"><strong>Класс:</strong> -</p>
+                                    <p class="mb-1" id="treatment-type"><strong>Тип:</strong> -</p>
                                     <p class="mb-1" id="treatment-medicine"><strong>Препарат:</strong> -</p>
                                     <p class="mb-1" id="treatment-description"><strong>Цель:</strong> -</p>
                                     <p class="mb-0" id="treatment-duration"><strong>Срок действия:</strong> -</p>
@@ -259,8 +262,8 @@
                                     <select id="place" class="form-select"></select>
                                 </div>
                                 <div class="col-12">
-                                    <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
-                                    <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Введите процент дорперности">
+                                    <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
+                                    <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Введите процент кровности по основной породе">
                                     <div class="form-text">Оставьте пустым для автоматического расчета на основе родителей.</div>
                                 </div>
                                 {% if animal_type == 'maker' %}
@@ -280,7 +283,7 @@
                                 {% if animal_type == 'maker' %}
                                 <div class="col-12">
                                     <label for="name" class="form-label">Имя (необязательно):</label>
-                                    <input type="text" id="name" value="{{ animal.name|default:'' }}" class="form-control" maxlength="50" placeholder="Введите имя производителя">
+                                    <input type="text" id="name" value="{{ animal.name|default:'' }}" class="form-control" maxlength="50" placeholder="Введите имя барана-производителя">
                                 </div>
                                 {% endif %}
                                 <div class="col-12">
@@ -325,7 +328,7 @@
             </div>
         </div>
 
-        <!-- Секция окотов (только для овец и ярок) -->
+        <!-- Секция окотов (только для овцематок и ярок) -->
         {% if animal_type == 'sheep' or animal_type == 'ewe' %}
         <div class="row">
             <div class="col-12">
@@ -355,7 +358,7 @@
                                         <input type="date" id="lambing-start-date" required class="form-control">
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="lambing-father-tag" class="form-label">Бирка отца (производитель/баран):</label>
+                                        <label for="lambing-father-tag" class="form-label">Бирка отца (баран-производитель/баранчик):</label>
                                         <input type="text" id="lambing-father-tag" placeholder="Введите бирку отца" required class="form-control">
                                     </div>
                                     <div class="col-12">
@@ -383,7 +386,7 @@
         </div>
         {% endif %}
 
-        <!-- Секция истории окотов (для производителей и баранов) -->
+        <!-- Секция истории окотов (для баранов-производителей и баранчиков) -->
         {% if animal_type == 'maker' or animal_type == 'ram' %}
         <div class="row">
             <div class="col-12">
@@ -485,10 +488,10 @@
                     <div class="mb-3">
                         <label class="form-label">Новый статус для матери:</label>
                         <select id="new-mother-status" class="form-control">
-                            <option value="">Не менять статус матери</option>
+                            <option value="">Выберите статус...</option>
                             <!-- Статусы будут загружены через JavaScript -->
                         </select>
-                        <div class="form-text">Оставьте пустым, если не нужно менять статус матери или если матери нет в БД</div>
+                        <div class="form-text">По умолчанию подставляется статус «Лактирующая».</div>
                     </div>
                     
                     <hr>
@@ -511,6 +514,32 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                 <button type="button" class="btn btn-success" onclick="completeLambingWithChildren()">Завершить окот</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно преобразования баранчика в барана-производителя -->
+<div class="modal fade" id="convertRamToMakerModal" tabindex="-1" aria-labelledby="convertRamToMakerModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="convertRamToMakerModalLabel">Преобразование в барана-производителя</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="maker-plemstatus-input" class="form-label">Племенной статус:</label>
+                    <input type="text" id="maker-plemstatus-input" class="form-control" maxlength="200" placeholder="Укажите племенной статус" />
+                </div>
+                <div>
+                    <label for="maker-working-condition-input" class="form-label">Рабочее состояние:</label>
+                    <input type="text" id="maker-working-condition-input" class="form-control" maxlength="200" placeholder="Укажите рабочее состояние" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-success" onclick="submitRamToMakerConversion()">Продолжить</button>
             </div>
         </div>
     </div>
@@ -573,3 +602,4 @@
 
 <script src="{% static 'js/animal_detail.js' %}"></script>
 {% endblock %}
+

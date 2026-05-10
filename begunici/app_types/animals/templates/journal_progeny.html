@@ -15,7 +15,12 @@
         </div>
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end">
-                <div class="col-md-3">
+                <div class="col-12 d-flex justify-content-end">
+                    <a href="{% url 'animals:journal-progeny' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success">
+                        Экспорт
+                    </a>
+                </div>
+                <div class="col-md-2">
                     <label for="month" class="form-label">Месяц</label>
                     <select class="form-select" id="month" name="month">
                         <option value="">Все</option>
@@ -24,7 +29,25 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label for="month_from" class="form-label">Месяц с</label>
+                    <select class="form-select" id="month_from" name="month_from">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_from == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="month_to" class="form-label">Месяц по</label>
+                    <select class="form-select" id="month_to" name="month_to">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_to == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
                     <label for="year" class="form-label">Год</label>
                     <select class="form-select" id="year" name="year">
                         <option value="">Все</option>
@@ -33,12 +56,37 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-6 d-flex gap-2">
-                    <button type="submit" class="btn btn-primary">Применить</button>
-                    <a href="{% url 'animals:journal-progeny' %}" class="btn btn-secondary">Сбросить</a>
-                    <a href="{% url 'animals:journal-progeny' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success ms-auto">
-                        Экспорт
-                    </a>
+                <div class="col-md-2">
+                    <label for="mother_tag" class="form-label">Бирка матери</label>
+                    <input type="text" class="form-control" id="mother_tag" name="mother_tag" value="{{ selected_mother_tag }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">Применить</button>
+                        <a href="{% url 'animals:journal-progeny' %}" class="btn btn-secondary flex-fill">Сбросить</a>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="abortion_only" name="abortion_only" value="1" {% if selected_abortion_only %}checked{% endif %}>
+                            <label class="form-check-label" for="abortion_only">Аборты (все дети мертвые)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="has_dead_only" name="has_dead_only" value="1" {% if selected_has_dead_only %}checked{% endif %}>
+                            <label class="form-check-label" for="has_dead_only">Есть мертвые ягнята</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="last_lambing_only" name="last_lambing_only" value="1" {% if selected_last_lambing_only %}checked{% endif %}>
+                            <label class="form-check-label" for="last_lambing_only">Только последние окоты матерей</label>
+                        </div>
+                        <div class="form-check d-flex align-items-center gap-2">
+                            <input class="form-check-input" type="checkbox" id="bad_mother_only" name="bad_mother_only" value="1" {% if selected_bad_mother_only %}checked{% endif %}>
+                            <label class="form-check-label" for="bad_mother_only">Злостная матка</label>
+                            <span class="text-muted small">После последнего окота прошло 305+ дней и нет активного окота.</span>
+                        </div>
+                    </div>
                 </div>
             </form>
         </div>
@@ -60,7 +108,7 @@
                     <thead class="table-light">
                         <tr>
                             <th rowspan="2" style="width: 70px;">№</th>
-                            <th rowspan="2">Бирка мамы</th>
+                            <th rowspan="2">Бирка матери</th>
                             <th rowspan="2">Дата окота</th>
                             <th rowspan="2">Родилось всего</th>
                             <th colspan="3" class="text-center">Родившиеся ягнята</th>
@@ -85,18 +133,34 @@
                                 <td>{{ row.actual_lambing_date|date:"d.m.Y" }}</td>
                                 <td>{{ row.total_born }}</td>
                                 <td>
-                                    {% if row.ewe_tags %}
-                                        {% for tag_number in row.ewe_tags %}
-                                            <div>{{ forloop.counter }}. {{ tag_number }}</div>
+                                    {% if row.ewe_tag_links %}
+                                        {% for lamb in row.ewe_tag_links %}
+                                            <div>
+                                                {{ forloop.counter }}.
+                                                {% if lamb.url %}
+                                                    <a href="{{ lamb.url }}">{{ lamb.tag_number }}</a>
+                                                {% else %}
+                                                    {{ lamb.tag_number }}
+                                                {% endif %}
+                                                {% if lamb.weight_display %} ({{ lamb.weight_display }}){% endif %}
+                                            </div>
                                         {% endfor %}
                                     {% else %}
                                         -
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if row.ram_tags %}
-                                        {% for tag_number in row.ram_tags %}
-                                            <div>{{ forloop.counter }}. {{ tag_number }}</div>
+                                    {% if row.ram_tag_links %}
+                                        {% for lamb in row.ram_tag_links %}
+                                            <div>
+                                                {{ forloop.counter }}.
+                                                {% if lamb.url %}
+                                                    <a href="{{ lamb.url }}">{{ lamb.tag_number }}</a>
+                                                {% else %}
+                                                    {{ lamb.tag_number }}
+                                                {% endif %}
+                                                {% if lamb.weight_display %} ({{ lamb.weight_display }}){% endif %}
+                                            </div>
                                         {% endfor %}
                                     {% else %}
                                         -

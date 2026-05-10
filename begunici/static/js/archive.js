@@ -1,715 +1,461 @@
 import { apiRequest, formatDateToOutput } from "./utils.js";
 
-// Получаем права пользователя из глобальной переменной
+const pageSize = 10;
+let currentPage = 1;
+
 function getUserPermissions() {
-    return window.userPermissions || {
-        can_restore_from_archive: true
-    };
+    return window.userPermissions || { can_restore_from_archive: true };
 }
 
-let allArchiveData = []; // Храним все данные архива
-let currentPage = 1; // Текущая страница
-const pageSize = 10; // Количество записей на странице
+function getUrlParams() {
+    return new URLSearchParams(window.location.search);
+}
 
-document.addEventListener('DOMContentLoaded', function () {
-    // Устанавливаем начальный фильтр по типу животного, если он передан
-    const initialType = window.initialAnimalType || '';
-    if (initialType) {
-        const typeFilter = document.getElementById('animal-type-filter');
-        if (typeFilter) {
-            typeFilter.value = initialType;
+function setUrlParams(params) {
+    const query = params.toString();
+    const newUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+    window.history.replaceState({}, "", newUrl);
+}
+
+function toggleMotherFilterByType(animalType) {
+    const group = document.getElementById("mother-tag-filter-group");
+    const header = document.getElementById("mother-column-header");
+    if (!group) return;
+
+    const isLambType = animalType === "Lamb";
+    window.isLambArchive = isLambType;
+
+    if (isLambType) {
+        group.classList.remove("d-none");
+        if (header) {
+            header.classList.remove("d-none");
+        }
+    } else {
+        group.classList.add("d-none");
+        if (header) {
+            header.classList.add("d-none");
+        }
+        const motherInput = document.getElementById("mother-tag-filter");
+        if (motherInput) {
+            motherInput.value = "";
         }
     }
-    
-    loadArchiveStatuses();  // Загружаем статусы для фильтра
-    fetchArchive();  // Загружаем архив при загрузке страницы
-});
+}
 
-// Функция загрузки статусов для фильтра
+function buildAnimalInfo(animal) {
+    const tagNumber = animal.tag_number;
+    const animalTypeCode = animal.animal_type;
+
+    if (animalTypeCode === "Maker") {
+        return { label: "Баран-Производитель", detailUrl: `/animals/maker/${tagNumber}/info/` };
+    }
+    if (animalTypeCode === "Ram") {
+        return { label: "Баранчик", detailUrl: `/animals/ram/${tagNumber}/info/` };
+    }
+    if (animalTypeCode === "Ewe") {
+        return { label: "Ярка", detailUrl: `/animals/ewe/${tagNumber}/info/` };
+    }
+    if (animalTypeCode === "Sheep") {
+        return { label: "Овцематка", detailUrl: `/animals/sheep/${tagNumber}/info/` };
+    }
+
+    return { label: "Неизвестно", detailUrl: "#" };
+}
+
+function formatWeightCell(value) {
+    if (value === null || value === undefined || value === "" || value === "-") {
+        return "-";
+    }
+    return `${value} кг`;
+}
+
+function buildMotherCell(animal) {
+    if (!window.isLambArchive) {
+        return "";
+    }
+
+    const motherTag = animal.mother_tag || "-";
+    if (!animal.mother_url || motherTag === "-") {
+        return `<td>${motherTag}</td>`;
+    }
+
+    return `<td><a href="${animal.mother_url}">${motherTag}</a></td>`;
+}
+
+function buildActionsCell(animal, animalTypeCode, tagNumber) {
+    const permissions = getUserPermissions();
+
+    if (!animal.is_archived) {
+        return "<span class=\"text-muted\">-</span>";
+    }
+
+    if (!permissions.can_restore_from_archive) {
+        return "<span class=\"text-muted\">Нет прав</span>";
+    }
+
+    return `
+        <button class="btn btn-outline-success btn-sm" onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">
+            Восстановить
+        </button>
+    `;
+}
+
+function displayArchive(data) {
+    const archiveTable = document.getElementById("archive-list");
+    if (!archiveTable) return;
+
+    archiveTable.innerHTML = "";
+
+    data.forEach((animal, index) => {
+        const row = document.createElement("tr");
+        const tagNumber = animal.tag_number;
+        const status = animal.status || "Не указан";
+        const statusColor = animal.status_color || "#FFFFFF";
+        const archivedDate = formatDateToOutput(animal.archived_date) || "Не указана";
+        const age = animal.age || "Не указан";
+        const place = animal.place || "Не указано";
+        const recordNumber = (currentPage - 1) * pageSize + index + 1;
+        const animalInfo = buildAnimalInfo(animal);
+
+        row.innerHTML = `
+            <td>${recordNumber}</td>
+            <td>${animalInfo.label}</td>
+            <td><a href="${animalInfo.detailUrl}">${animal.display_name || tagNumber}</a></td>
+            <td style="background-color:${statusColor}">${status}</td>
+            ${buildMotherCell(animal)}
+            <td>${archivedDate}</td>
+            <td>${age}</td>
+            <td>${place}</td>
+            <td>${formatWeightCell(animal.last_live_weight)}</td>
+            <td>${formatWeightCell(animal.carcass_weight)}</td>
+            <td>${buildActionsCell(animal, animal.animal_type, tagNumber)}</td>
+        `;
+
+        archiveTable.appendChild(row);
+    });
+}
+
+function getAnimalNameByType(animalType) {
+    if (animalType === "Maker") return "баранов-производителей";
+    if (animalType === "Sheep") return "овцематок";
+    if (animalType === "Ewe") return "ярок";
+    if (animalType === "Ram") return "баранчиков";
+    if (animalType === "Lamb") return "ягнят";
+    return "животных";
+}
+
+function updateArchivePagination(response) {
+    const pagination = document.getElementById("pagination");
+    if (!pagination) return;
+
+    pagination.innerHTML = "";
+
+    const paginationContainer = document.createElement("div");
+    paginationContainer.style.display = "flex";
+    paginationContainer.style.alignItems = "center";
+    paginationContainer.style.justifyContent = "center";
+    paginationContainer.style.gap = "15px";
+
+    if (response.previous) {
+        const prevButton = document.createElement("button");
+        prevButton.innerText = "Предыдущая";
+        prevButton.className = "btn btn-outline-primary btn-sm";
+        prevButton.onclick = () => fetchArchive(currentPage - 1);
+        paginationContainer.appendChild(prevButton);
+    } else {
+        const emptyLeft = document.createElement("div");
+        emptyLeft.style.width = "100px";
+        paginationContainer.appendChild(emptyLeft);
+    }
+
+    const urlParams = getUrlParams();
+    const animalType = urlParams.get("type") || "";
+    const pageInfo = document.createElement("span");
+    pageInfo.innerText = `Страница ${currentPage} (всего: ${response.count} ${getAnimalNameByType(animalType)})`;
+    pageInfo.style.fontWeight = "500";
+    pageInfo.style.minWidth = "260px";
+    pageInfo.style.textAlign = "center";
+    paginationContainer.appendChild(pageInfo);
+
+    if (response.next) {
+        const nextButton = document.createElement("button");
+        nextButton.innerText = "Следующая";
+        nextButton.className = "btn btn-outline-primary btn-sm";
+        nextButton.onclick = () => fetchArchive(currentPage + 1);
+        paginationContainer.appendChild(nextButton);
+    } else {
+        const emptyRight = document.createElement("div");
+        emptyRight.style.width = "100px";
+        paginationContainer.appendChild(emptyRight);
+    }
+
+    pagination.appendChild(paginationContainer);
+}
+
 async function loadArchiveStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/?page_size=100');
+        const response = await apiRequest("/veterinary/api/status/?page_size=200");
         const statuses = response.results || response;
-        
-        // Оставляем только архивные статусы (как было в оригинале)
-        const archiveStatuses = statuses.filter(status => 
-            ['Убой', 'Убыл', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type)
+
+        const archiveStatuses = statuses.filter((status) =>
+            ["Убой", "Убыл", "Продажа на мясо", "Продажа на племя"].includes(status.status_type)
         );
-        
-        const statusSelect = document.getElementById('status-filter');
+
+        const statusSelect = document.getElementById("status-filter");
+        if (!statusSelect) return;
+
         statusSelect.innerHTML = '<option value="">Все статусы</option>';
-        
-        archiveStatuses.forEach(status => {
-            const option = document.createElement('option');
+        archiveStatuses.forEach((status) => {
+            const option = document.createElement("option");
             option.value = status.id;
             option.text = status.status_type;
             statusSelect.add(option);
         });
     } catch (error) {
-        console.error('Ошибка при загрузке статусов:', error);
+        console.error("Ошибка при загрузке статусов:", error);
     }
 }
 
-// Функция загрузки архива
 async function fetchArchive(page = 1) {
     try {
-        // Сохраняем параметры поиска в URL для сохранения при пагинации
-        const urlParams = new URLSearchParams(window.location.search);
-        const searchQuery = urlParams.get('search') || '';
-        const animalType = urlParams.get('type') || window.initialAnimalType || '';
-        const statusFilter = urlParams.get('animal_status') || '';
-        const placeFilter = urlParams.get('place') || '';
-        const archiveDateFrom = urlParams.get('archive_date_from') || '';
-        const archiveDateTo = urlParams.get('archive_date_to') || '';
-        
-        // Формируем параметры запроса
-        let apiUrl = '/animals/archive/';
-        const params = new URLSearchParams();
-        
-        // Добавляем параметр страницы
-        params.set('page', page);
-        
-        if (searchQuery && searchQuery.trim()) {
-            params.set('search', searchQuery);
-        }
-        if (animalType) {
-            params.set('type', animalType);
-        }
-        if (statusFilter) {
-            params.set('animal_status', statusFilter);
-        }
-        if (placeFilter) {
-            params.set('place', placeFilter);
-        }
-        if (archiveDateFrom) {
-            params.set('archive_date_from', archiveDateFrom);
-        }
-        if (archiveDateTo) {
-            params.set('archive_date_to', archiveDateTo);
-        }
-        
-        apiUrl += '?' + params.toString();
+        const paramsFromUrl = getUrlParams();
+        const requestParams = new URLSearchParams();
+
+        requestParams.set("page", page);
+        requestParams.set("page_size", pageSize);
+
+        const supportedParams = [
+            "search",
+            "type",
+            "animal_status",
+            "place",
+            "archive_date_from",
+            "archive_date_to",
+            "mother_tag",
+        ];
+
+        supportedParams.forEach((key) => {
+            const value = paramsFromUrl.get(key);
+            if (value) {
+                requestParams.set(key, value);
+            }
+        });
 
         currentPage = page;
-        const response = await apiRequest(apiUrl);
-        
-        // Обрабатываем пагинированный ответ
+        const response = await apiRequest(`/animals/archive/?${requestParams.toString()}`);
+
         if (response && response.results) {
-            // Пагинированный ответ
             displayArchive(response.results);
             updateArchivePagination(response);
-        } else if (Array.isArray(response)) {
-            // Массив (для обратной совместимости)
-            displayArchive(response);
-            updateSimpleArchivePagination(response.length, searchQuery, animalType);
-        } else {
-            console.error('Неожиданный формат ответа:', response);
+            return;
         }
+
+        if (Array.isArray(response)) {
+            displayArchive(response);
+            updateArchivePagination({ previous: null, next: null, count: response.length });
+            return;
+        }
+
+        console.error("Неожиданный формат ответа:", response);
     } catch (error) {
-        console.error('Ошибка при загрузке архива:', error);
+        console.error("Ошибка при загрузке архива:", error);
     }
 }
 
-// Функция отображения архива
-function displayArchive(data, startIndex = null) {
-    const archiveTable = document.getElementById('archive-list');
-    
-    archiveTable.innerHTML = '';
+function performArchiveSearch() {
+    const animalType = document.getElementById("animal-type-filter")?.value || "";
+    const status = document.getElementById("status-filter")?.value || "";
+    const place = document.getElementById("place-filter")?.value || "";
+    const search = document.getElementById("archive-search")?.value || "";
+    const archiveDateFrom = document.getElementById("archive-date-from")?.value || "";
+    const archiveDateTo = document.getElementById("archive-date-to")?.value || "";
+    const motherTag = document.getElementById("mother-tag-filter")?.value || "";
 
-    data.forEach((animal, index) => {
-        const row = document.createElement('tr');
-        
-        // Получаем данные с учетом формата ArchiveAnimalSerializer
-        const tagNumber = animal.tag_number;
-        const animalTypeCode = animal.animal_type;
-        const status = animal.status || 'Не указан';
-        const statusColor = animal.status_color || '#FFFFFF';
-        const archivedDate = formatDateToOutput(animal.archived_date) || 'Не указана';
-        const age = animal.age || 'Не указан';
-        const place = animal.place || 'Не указано';
-        
-        // Определяем тип животного и URL
-        let animalType = 'Неизвестно';
-        let detailUrl = '';
-        
-        if (animalTypeCode === 'Maker') {
-            animalType = 'Производитель';
-            detailUrl = `/animals/maker/${tagNumber}/info/`;
-        } else if (animalTypeCode === 'Ram') {
-            animalType = 'Баран';
-            detailUrl = `/animals/ram/${tagNumber}/info/`;
-        } else if (animalTypeCode === 'Ewe') {
-            animalType = 'Ярка';
-            detailUrl = `/animals/ewe/${tagNumber}/info/`;
-        } else if (animalTypeCode === 'Sheep') {
-            animalType = 'Овца';
-            detailUrl = `/animals/sheep/${tagNumber}/info/`;
-        }
-        
-        // Создаем кнопку восстановления только если есть права
-        const permissions = getUserPermissions();
-        let actionsHtml = '';
-        
-        if (permissions.can_restore_from_archive) {
-            actionsHtml = `
-                <button class="btn btn-outline-success btn-sm" onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">
-                    Восстановить
-                </button>
-            `;
+    toggleMotherFilterByType(animalType);
+
+    const params = getUrlParams();
+    const values = {
+        search,
+        type: animalType,
+        animal_status: status,
+        place,
+        archive_date_from: archiveDateFrom,
+        archive_date_to: archiveDateTo,
+        mother_tag: animalType === "Lamb" ? motherTag : "",
+    };
+
+    Object.entries(values).forEach(([key, value]) => {
+        const trimmed = typeof value === "string" ? value.trim() : value;
+        if (trimmed) {
+            params.set(key, trimmed);
         } else {
-            actionsHtml = '<span class="text-muted">Нет прав</span>';
+            params.delete(key);
         }
-        
-        // Если startIndex не передан, используем стандартную пагинацию
-        const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
-        
-        row.innerHTML = `
-            <td>${recordNumber}</td>
-            <td>${animalType}</td>
-            <td><a href="${detailUrl}">${animal.display_name || tagNumber}</a></td>
-            <td style="background-color:${statusColor}">${status}</td>
-            <td>${archivedDate}</td>
-            <td>${age}</td>
-            <td>${place}</td>
-            <td>${actionsHtml}</td>
-        `;
-        archiveTable.appendChild(row);
     });
+
+    setUrlParams(params);
+    fetchArchive(1);
 }
 
-// Функция фильтрации архива (алиас для обратной совместимости)
-async function filterArchiveData(animalType, status, search) {
-    // Перенаправляем на новую функцию с полной загрузкой данных
-    return filterArchiveDataWithSearch(animalType, status, search);
+function exportArchiveToExcel() {
+    const animalType = document.getElementById("animal-type-filter")?.value || "";
+    const status = document.getElementById("status-filter")?.value || "";
+    const place = document.getElementById("place-filter")?.value || "";
+    const search = document.getElementById("archive-search")?.value?.trim() || "";
+    const archiveDateFrom = document.getElementById("archive-date-from")?.value || "";
+    const archiveDateTo = document.getElementById("archive-date-to")?.value || "";
+    const motherTag = document.getElementById("mother-tag-filter")?.value?.trim() || "";
+
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (animalType) params.set("type", animalType);
+    if (status) params.set("animal_status", status);
+    if (place) params.set("place", place);
+    if (archiveDateFrom) params.set("archive_date_from", archiveDateFrom);
+    if (archiveDateTo) params.set("archive_date_to", archiveDateTo);
+    if (animalType === "Lamb" && motherTag) params.set("mother_tag", motherTag);
+
+    window.location.href = `/animals/api/archive/export-excel/?${params.toString()}`;
 }
 
-// Функция восстановления животного из архива
-async function restoreAnimal(animalType, tagNumber) {
-    // Открываем модальное окно для выбора статуса
-    openRestoreModal(animalType, tagNumber);
-}
-
-// Функция открытия модального окна восстановления
-async function openRestoreModal(animalType, tagNumber) {
-    const modal = document.getElementById('restore-modal');
-    const confirmButton = document.getElementById('restore-confirm-button');
-    
-    // Загружаем статусы
-    await loadRestoreStatuses();
-    
-    // Показываем модальное окно
-    modal.style.display = 'block';
-    
-    // Настраиваем обработчик подтверждения
-    confirmButton.onclick = () => performRestore(animalType, tagNumber);
-}
-
-// Функция загрузки статусов для восстановления
 async function loadRestoreStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/');
-        // API возвращает пагинированные данные, нужно взять results
+        const response = await apiRequest("/veterinary/api/status/?page_size=200");
         const statuses = response.results || response;
-        
-        // Исключаем архивные статусы
-        const activeStatuses = statuses.filter(status => 
-            !['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type)
+
+        const activeStatuses = statuses.filter((status) =>
+            !["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"].includes(status.status_type)
         );
 
-        const statusSelect = document.getElementById('restore-status-select');
-        statusSelect.innerHTML = '<option value="">Выберите статус</option>';
+        const statusSelect = document.getElementById("restore-status-select");
+        if (!statusSelect) return;
 
+        statusSelect.innerHTML = '<option value="">Выберите статус</option>';
         if (activeStatuses.length === 0) {
             statusSelect.innerHTML = '<option value="">Нет доступных статусов</option>';
             return;
         }
 
-        activeStatuses.forEach(status => {
-            const option = document.createElement('option');
+        activeStatuses.forEach((status) => {
+            const option = document.createElement("option");
             option.value = status.id;
             option.textContent = status.status_type;
             statusSelect.appendChild(option);
         });
     } catch (error) {
-        console.error('Ошибка при загрузке статусов:', error);
-        const statusSelect = document.getElementById('restore-status-select');
-        statusSelect.innerHTML = '<option value="">Ошибка загрузки статусов</option>';
+        console.error("Ошибка при загрузке статусов:", error);
+        const statusSelect = document.getElementById("restore-status-select");
+        if (statusSelect) {
+            statusSelect.innerHTML = '<option value="">Ошибка загрузки статусов</option>';
+        }
     }
 }
 
-// Функция выполнения восстановления с выбранным статусом
+async function openRestoreModal(animalType, tagNumber) {
+    const modal = document.getElementById("restore-modal");
+    const confirmButton = document.getElementById("restore-confirm-button");
+
+    await loadRestoreStatuses();
+
+    if (modal) {
+        modal.style.display = "block";
+    }
+
+    if (confirmButton) {
+        confirmButton.onclick = () => performRestore(animalType, tagNumber);
+    }
+}
+
+function closeRestoreModal() {
+    const modal = document.getElementById("restore-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+
 async function performRestore(animalType, tagNumber) {
-    const statusId = document.getElementById('restore-status-select').value;
-    
+    const statusId = document.getElementById("restore-status-select")?.value;
     if (!statusId) {
-        alert('Пожалуйста, выберите статус для животного');
+        alert("Пожалуйста, выберите статус для животного");
         return;
     }
 
     try {
-        // Определяем URL для восстановления в зависимости от типа животного
-        let restoreUrl = '';
-        switch (animalType) {
-            case 'Maker':
-                restoreUrl = `/animals/maker/${tagNumber}/restore/`;
-                break;
-            case 'Ram':
-                restoreUrl = `/animals/ram/${tagNumber}/restore/`;
-                break;
-            case 'Ewe':
-                restoreUrl = `/animals/ewe/${tagNumber}/restore/`;
-                break;
-            case 'Sheep':
-                restoreUrl = `/animals/sheep/${tagNumber}/restore/`;
-                break;
-            default:
-                throw new Error('Неизвестный тип животного');
+        let restoreUrl = "";
+        if (animalType === "Maker") restoreUrl = `/animals/maker/${tagNumber}/restore/`;
+        if (animalType === "Ram") restoreUrl = `/animals/ram/${tagNumber}/restore/`;
+        if (animalType === "Ewe") restoreUrl = `/animals/ewe/${tagNumber}/restore/`;
+        if (animalType === "Sheep") restoreUrl = `/animals/sheep/${tagNumber}/restore/`;
+
+        if (!restoreUrl) {
+            throw new Error("Неизвестный тип животного");
         }
-        
-        // Отправляем запрос с выбранным статусом
-        await apiRequest(restoreUrl, 'POST', { status_id: statusId });
-        alert('Животное успешно восстановлено из архива');
+
+        await apiRequest(restoreUrl, "POST", { status_id: statusId });
+        alert("Животное успешно восстановлено из архива");
         closeRestoreModal();
-        fetchArchive(currentPage); // Обновляем текущую страницу архива
+        fetchArchive(currentPage);
     } catch (error) {
-        console.error('Ошибка при восстановлении животного:', error);
-        alert('Ошибка при восстановлении животного');
+        console.error("Ошибка при восстановлении животного:", error);
+        alert("Ошибка при восстановлении животного");
     }
 }
 
-// Функция закрытия модального окна восстановления
-function closeRestoreModal() {
-    const modal = document.getElementById('restore-modal');
-    modal.style.display = 'none';
+function restoreAnimal(animalType, tagNumber) {
+    openRestoreModal(animalType, tagNumber);
 }
 
-// Функция поиска в архиве
-function performArchiveSearch() {
-    const animalType = document.getElementById('animal-type-filter').value;
-    const status = document.getElementById('status-filter').value;
-    const place = document.getElementById('place-filter') ? document.getElementById('place-filter').value : '';
-    const search = document.getElementById('archive-search').value;
-    const archiveDateFrom = document.getElementById('archive-date-from').value;
-    const archiveDateTo = document.getElementById('archive-date-to').value;
-    
-    // Сохраняем параметры поиска в URL
-    const urlParams = new URLSearchParams(window.location.search);
-    if (search && search.trim()) {
-        urlParams.set('search', search);
-    } else {
-        urlParams.delete('search');
-    }
-    if (animalType) {
-        urlParams.set('type', animalType);
-    } else {
-        urlParams.delete('type');
-    }
-    if (status) {
-        urlParams.set('animal_status', status);
-    } else {
-        urlParams.delete('animal_status');
-    }
-    if (place) {
-        urlParams.set('place', place);
-    } else {
-        urlParams.delete('place');
-    }
-    if (archiveDateFrom) {
-        urlParams.set('archive_date_from', archiveDateFrom);
-    } else {
-        urlParams.delete('archive_date_from');
-    }
-    if (archiveDateTo) {
-        urlParams.set('archive_date_to', archiveDateTo);
-    } else {
-        urlParams.delete('archive_date_to');
-    }
-    
-    // Обновляем URL без перезагрузки страницы
-    const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
-    window.history.replaceState({}, '', newUrl);
-    
-    // Выполняем поиск
-    fetchArchive(1);
-}
-window.performArchiveSearch = performArchiveSearch; // Делаем функцию глобальной
+function hydrateFiltersFromUrl() {
+    const params = getUrlParams();
 
-function exportArchiveToExcel() {
-    const params = new URLSearchParams();
-    const animalType = document.getElementById('animal-type-filter').value;
-    const status = document.getElementById('status-filter').value;
-    const search = document.getElementById('archive-search').value.trim();
-    const archiveDateFrom = document.getElementById('archive-date-from').value;
-    const archiveDateTo = document.getElementById('archive-date-to').value;
-    const placeInput = document.getElementById('place-filter');
-    const place = placeInput ? placeInput.value : '';
+    const search = params.get("search") || "";
+    const animalType = params.get("type") || window.initialAnimalType || "";
+    const archiveDateFrom = params.get("archive_date_from") || "";
+    const archiveDateTo = params.get("archive_date_to") || "";
+    const motherTag = params.get("mother_tag") || "";
 
-    if (search) {
-        params.set('search', search);
-    }
-    if (animalType) {
-        params.set('type', animalType);
-    }
-    if (status) {
-        params.set('animal_status', status);
-    }
-    if (place) {
-        params.set('place', place);
-    }
-    if (archiveDateFrom) {
-        params.set('archive_date_from', archiveDateFrom);
-    }
-    if (archiveDateTo) {
-        params.set('archive_date_to', archiveDateTo);
-    }
+    const searchInput = document.getElementById("archive-search");
+    const typeFilter = document.getElementById("animal-type-filter");
+    const dateFromInput = document.getElementById("archive-date-from");
+    const dateToInput = document.getElementById("archive-date-to");
+    const motherTagInput = document.getElementById("mother-tag-filter");
 
-    window.location.href = `/animals/api/archive/export-excel/?${params.toString()}`;
-}
-window.exportArchiveToExcel = exportArchiveToExcel;
+    if (searchInput) searchInput.value = search;
+    if (typeFilter) typeFilter.value = animalType;
+    if (dateFromInput) dateFromInput.value = archiveDateFrom;
+    if (dateToInput) dateToInput.value = archiveDateTo;
+    if (motherTagInput) motherTagInput.value = motherTag;
 
-// Функция фильтрации с загрузкой всех данных
-async function filterArchiveDataWithSearch(animalType, status, search) {
-    try {
-        currentPage = 1; // Сбрасываем на первую страницу при фильтрации
-        
-        // Всегда загружаем больше данных для корректной фильтрации
-        let url = `/animals/archive/?page=1&page_size=500`;
-        
-        // Добавляем тип животного в запрос если указан
-        if (animalType) {
-            url += `&type=${encodeURIComponent(animalType)}`;
-        }
-        
-        // Добавляем даты архивирования если указаны
-        const archiveDateFrom = document.getElementById('archive-date-from').value;
-        const archiveDateTo = document.getElementById('archive-date-to').value;
-        
-        if (archiveDateFrom) {
-            url += `&archive_date_from=${encodeURIComponent(archiveDateFrom)}`;
-        }
-        if (archiveDateTo) {
-            url += `&archive_date_to=${encodeURIComponent(archiveDateTo)}`;
-        }
-        
-        const response = await apiRequest(url);
-        let allData = response.results || response;
-        
-        // Применяем локальную фильтрацию
-        let filteredData = allData;
-        
-        // Фильтрация по статусу
-        if (status) {
-            filteredData = filteredData.filter(animal => 
-                animal.status && animal.status === status
-            );
-        }
-        
-        // Фильтрация по поиску (case-insensitive)
-        if (search && search.trim()) {
-            const searchLower = search.toLowerCase();
-            filteredData = filteredData.filter(animal => 
-                animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
-            );
-        }
-        
-        // Применяем пагинацию к отфильтрованным данным
-        const startIndex = (currentPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const paginatedData = filteredData.slice(startIndex, endIndex);
-        
-        displayArchive(paginatedData, startIndex);
-        updateLocalArchivePagination(filteredData.length, currentPage, animalType, status, search);
-    } catch (error) {
-        console.error('Ошибка при фильтрации архива:', error);
-        // Fallback к локальной фильтрации существующих данных
-        let filteredData = allArchiveData || [];
-        
-        if (animalType) {
-            filteredData = filteredData.filter(animal => animal.animal_type === animalType);
-        }
-        if (status) {
-            filteredData = filteredData.filter(animal => 
-                animal.status && animal.status === status
-            );
-        }
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredData = filteredData.filter(animal => 
-                animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
-            );
-        }
-        
-        displayArchive(filteredData);
-    }
+    toggleMotherFilterByType(animalType);
 }
 
-// Функция обновления пагинации для локальной фильтрации
-function updateSimpleArchivePagination(totalItems, searchQuery = '', animalType = '') {
-    const paginationContainer = document.getElementById('pagination');
-    if (!paginationContainer) return;
+document.addEventListener("DOMContentLoaded", async () => {
+    hydrateFiltersFromUrl();
 
-    // Определяем название животного для отображения
-    let animalName = 'животных';
-    if (animalType === 'Maker') animalName = 'производителей';
-    else if (animalType === 'Sheep') animalName = 'овец';
-    else if (animalType === 'Ewe') animalName = 'ярок';
-    else if (animalType === 'Ram') animalName = 'баранов';
+    await loadArchiveStatuses();
 
-    // Для неограниченного списка показываем только информацию о количестве
-    paginationContainer.innerHTML = `
-        <div class="pagination-info">
-            <span>Показано: ${totalItems} ${animalName} в архиве</span>
-            ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
-            ${animalType ? `<span class="filter-info">Тип: ${animalType}</span>` : ''}
-        </div>
-    `;
-}
-
-// Функция обновления пагинации для API с пагинацией
-function updateArchivePagination(response) {
-    const pagination = document.getElementById('pagination');
-    if (!pagination) return;
-    
-    pagination.innerHTML = ''; // Очищаем старую навигацию
-    
-    // Создаем контейнер для пагинации с центрированием
-    const paginationContainer = document.createElement('div');
-    paginationContainer.style.display = 'flex';
-    paginationContainer.style.alignItems = 'center';
-    paginationContainer.style.justifyContent = 'center';
-    paginationContainer.style.gap = '15px';
-
-    // Кнопка "Предыдущая" (слева)
-    if (response.previous) {
-        const prevButton = document.createElement('button');
-        prevButton.innerText = 'Предыдущая';
-        prevButton.className = 'btn btn-outline-primary btn-sm';
-        prevButton.onclick = () => {
-            fetchArchive(currentPage - 1);
-        };
-        paginationContainer.appendChild(prevButton);
-    } else {
-        // Пустой элемент для сохранения симметрии
-        const emptyDiv = document.createElement('div');
-        emptyDiv.style.width = '80px';
-        paginationContainer.appendChild(emptyDiv);
-    }
-
-    // Информация о странице (по центру)
-    const pageInfo = document.createElement('span');
-    pageInfo.innerText = `Страница ${currentPage} (всего: ${response.count})`;
-    pageInfo.style.fontWeight = '500';
-    pageInfo.style.minWidth = '200px';
-    pageInfo.style.textAlign = 'center';
-    paginationContainer.appendChild(pageInfo);
-
-    // Кнопка "Следующая" (справа)
-    if (response.next) {
-        const nextButton = document.createElement('button');
-        nextButton.innerText = 'Следующая';
-        nextButton.className = 'btn btn-outline-primary btn-sm';
-        nextButton.onclick = () => {
-            fetchArchive(currentPage + 1);
-        };
-        paginationContainer.appendChild(nextButton);
-    } else {
-        // Пустой элемент для сохранения симметрии
-        const emptyDiv = document.createElement('div');
-        emptyDiv.style.width = '80px';
-        paginationContainer.appendChild(emptyDiv);
-    }
-
-    pagination.appendChild(paginationContainer);
-}
-
-function updateLocalArchivePagination(totalItems, currentPage, animalType = '', status = '', search = '') {
-    const pagination = document.getElementById('pagination');
-    pagination.innerHTML = ''; // Очищаем старую навигацию
-    
-    const totalPages = Math.ceil(totalItems / pageSize);
-    
-    // Создаем контейнер для пагинации с центрированием
-    const paginationContainer = document.createElement('div');
-    paginationContainer.style.display = 'flex';
-    paginationContainer.style.alignItems = 'center';
-    paginationContainer.style.justifyContent = 'center';
-    paginationContainer.style.gap = '15px';
-
-    // Кнопка "Предыдущая" (слева)
-    if (currentPage > 1) {
-        const prevButton = document.createElement('button');
-        prevButton.innerText = 'Предыдущая';
-        prevButton.className = 'btn btn-outline-primary btn-sm';
-        prevButton.onclick = () => {
-            fetchArchiveWithFilters(currentPage - 1, animalType, status, search);
-        };
-        paginationContainer.appendChild(prevButton);
-    } else {
-        // Пустой элемент для сохранения симметрии
-        const emptyDiv = document.createElement('div');
-        emptyDiv.style.width = '80px';
-        paginationContainer.appendChild(emptyDiv);
-    }
-
-    // Информация о странице (по центру)
-    const pageInfo = document.createElement('span');
-    pageInfo.innerText = `Страница ${currentPage} из ${totalPages} (всего: ${totalItems})`;
-    pageInfo.style.fontWeight = '500';
-    pageInfo.style.minWidth = '200px';
-    pageInfo.style.textAlign = 'center';
-    paginationContainer.appendChild(pageInfo);
-
-    // Кнопка "Следующая" (справа)
-    if (currentPage < totalPages) {
-        const nextButton = document.createElement('button');
-        nextButton.innerText = 'Следующая';
-        nextButton.className = 'btn btn-outline-primary btn-sm';
-        nextButton.onclick = () => {
-            fetchArchiveWithFilters(currentPage + 1, animalType, status, search);
-        };
-        paginationContainer.appendChild(nextButton);
-    } else {
-        // Пустой элемент для сохранения симметрии
-        const emptyDiv = document.createElement('div');
-        emptyDiv.style.width = '80px';
-        paginationContainer.appendChild(emptyDiv);
-    }
-
-    pagination.appendChild(paginationContainer);
-}
-
-// Функция для загрузки архива с фильтрами (для пагинации)
-async function fetchArchiveWithFilters(page, animalType, status, search) {
-    try {
-        // Всегда загружаем больше данных для корректной фильтрации
-        let url = `/animals/archive/?page=1&page_size=500`;
-        
-        if (animalType) {
-            url += `&type=${encodeURIComponent(animalType)}`;
-        }
-        
-        // Добавляем даты архивирования если указаны
-        const archiveDateFrom = document.getElementById('archive-date-from').value;
-        const archiveDateTo = document.getElementById('archive-date-to').value;
-        
-        if (archiveDateFrom) {
-            url += `&archive_date_from=${encodeURIComponent(archiveDateFrom)}`;
-        }
-        if (archiveDateTo) {
-            url += `&archive_date_to=${encodeURIComponent(archiveDateTo)}`;
-        }
-        
-        const response = await apiRequest(url);
-        let allData = response.results || response;
-        
-        // Применяем локальную фильтрацию
-        let filteredData = allData;
-        
-        // Фильтрация по статусу
-        if (status) {
-            filteredData = filteredData.filter(animal => 
-                animal.status && animal.status === status
-            );
-        }
-        
-        // Фильтрация по поиску (case-insensitive)
-        if (search && search.trim()) {
-            const searchLower = search.toLowerCase();
-            filteredData = filteredData.filter(animal => 
-                animal.tag_number && animal.tag_number.toLowerCase().includes(searchLower)
-            );
-        }
-        
-        // Применяем пагинацию к отфильтрованным данным
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const paginatedData = filteredData.slice(startIndex, endIndex);
-        
-        currentPage = page;
-        displayArchive(paginatedData, startIndex);
-        updateLocalArchivePagination(filteredData.length, page, animalType, status, search);
-    } catch (error) {
-        console.error('Ошибка при загрузке архива с фильтрами:', error);
-    }
-}
-
-// Функция обновления пагинации
-function updatePagination(response) {
-    const pagination = document.getElementById('pagination');
-    pagination.innerHTML = ''; // Очищаем старую навигацию
-
-    if (response.previous) {
-        const prevButton = document.createElement('button');
-        prevButton.className = 'btn btn-outline-primary btn-sm';
-        prevButton.innerText = 'Предыдущая';
-        prevButton.onclick = () => {
-            currentPage--;
-            fetchArchive(currentPage);
-        };
-        pagination.appendChild(prevButton);
-    }
-
-    const pageInfo = document.createElement('span');
-    pageInfo.className = 'mx-2';
-    pageInfo.innerText = `Страница ${currentPage}`;
-    pagination.appendChild(pageInfo);
-
-    if (response.next) {
-        const nextButton = document.createElement('button');
-        nextButton.className = 'btn btn-outline-primary btn-sm';
-        nextButton.innerText = 'Следующая';
-        nextButton.onclick = () => {
-            currentPage++;
-            fetchArchive(currentPage);
-        };
-        pagination.appendChild(nextButton);
-    }
-}
-
-// Экспортируем функции для использования в HTML
-window.filterArchiveData = filterArchiveData;
-window.restoreAnimal = restoreAnimal;
-window.closeRestoreModal = closeRestoreModal;
-window.performArchiveSearch = performArchiveSearch;
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-    // Восстанавливаем параметры из URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const searchQuery = urlParams.get('search');
-    const animalType = urlParams.get('type');
-    const archiveDateFrom = urlParams.get('archive_date_from');
-    const archiveDateTo = urlParams.get('archive_date_to');
-    
-    if (searchQuery) {
-        const searchInput = document.getElementById('archive-search');
-        if (searchInput) {
-            searchInput.value = searchQuery;
+    const params = getUrlParams();
+    const selectedStatus = params.get("animal_status");
+    if (selectedStatus) {
+        const statusSelect = document.getElementById("status-filter");
+        if (statusSelect) {
+            statusSelect.value = selectedStatus;
         }
     }
-    
-    if (animalType) {
-        const typeFilter = document.getElementById('animal-type-filter');
-        if (typeFilter) {
-            typeFilter.value = animalType;
-        }
-        // Устанавливаем глобальную переменную для совместимости
-        window.initialAnimalType = animalType;
+
+    const typeSelect = document.getElementById("animal-type-filter");
+    if (typeSelect) {
+        typeSelect.addEventListener("change", () => {
+            toggleMotherFilterByType(typeSelect.value);
+        });
     }
-    
-    if (archiveDateFrom) {
-        const dateFromInput = document.getElementById('archive-date-from');
-        if (dateFromInput) {
-            dateFromInput.value = archiveDateFrom;
-        }
-    }
-    
-    if (archiveDateTo) {
-        const dateToInput = document.getElementById('archive-date-to');
-        if (dateToInput) {
-            dateToInput.value = archiveDateTo;
-        }
-    }
-    
+
     fetchArchive(1);
 });
+
+window.filterArchiveData = performArchiveSearch;
+window.performArchiveSearch = performArchiveSearch;
+window.exportArchiveToExcel = exportArchiveToExcel;
+window.restoreAnimal = restoreAnimal;
+window.closeRestoreModal = closeRestoreModal;
+

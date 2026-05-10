@@ -156,13 +156,16 @@ function displayLogs(logs) {
                 const animalType = log.animal_link_info.url_type;
                 objectIdCell = `<a href="/animals/${animalType}/${log.object_id}/info/" target="_blank" class="text-decoration-none">${log.object_id}</a>`;
             }
-        } else if (log.object_id && log.object_type && ['Производитель', 'Баран', 'Ярка', 'Овца'].includes(log.object_type)) {
+        } else if (log.object_id && log.object_type && ['Производитель', 'Баран-Производитель', 'Баран', 'Баранчик', 'Ярка', 'Овца', 'Овцематка'].includes(log.object_type)) {
             // Старая логика для обратной совместимости
             const animalTypeMap = {
                 'Производитель': 'maker',
-                'Баран': 'ram', 
+                'Баран-Производитель': 'maker',
+                'Баран': 'ram',
+                'Баранчик': 'ram', 
                 'Ярка': 'ewe',
-                'Овца': 'sheep'
+                'Овца': 'sheep',
+                'Овцематка': 'sheep'
             };
             const animalType = animalTypeMap[log.object_type];
             if (animalType) {

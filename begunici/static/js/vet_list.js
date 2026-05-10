@@ -74,7 +74,7 @@ async function loadFilterOptions() {
     try {
         const response = await apiRequest('/animals/api/vet-filter-options/');
         
-        // Заполняем селект названий обработок
+        // Заполняем селект типов обработок
         const careNameSelect = document.getElementById('care-name-filter');
         careNameSelect.innerHTML = '<option value="">Все</option>';
         response.care_names.forEach(name => {
@@ -203,6 +203,7 @@ function renderVetList(vetRecords) {
             </td>
             <td>${vet.care_name}</td>
             <td>${vet.medication}</td>
+            <td>${vet.purpose}</td>
             <td>${durationText}</td>
             <td>${careDateText}</td>
             <td>${expiryText}</td>

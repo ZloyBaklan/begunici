@@ -33,6 +33,8 @@ function getMakerFiltersFromInputs() {
         search: document.getElementById('maker-search')?.value || '',
         birth_date_from: document.getElementById('maker-birth-date-from')?.value || '',
         birth_date_to: document.getElementById('maker-birth-date-to')?.value || '',
+        age_min: document.getElementById('maker-age-min-filter')?.value || '',
+        age_max: document.getElementById('maker-age-max-filter')?.value || '',
         father_tag: document.getElementById('maker-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('maker-mother-tag-filter')?.value || ''
     };
@@ -44,6 +46,8 @@ function initializeMakerFiltersFromUrl() {
         search: urlParams.get('search') || '',
         birth_date_from: urlParams.get('birth_date_from') || '',
         birth_date_to: urlParams.get('birth_date_to') || '',
+        age_min: urlParams.get('age_min') || '',
+        age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || ''
     };
@@ -54,12 +58,16 @@ function initializeMakerFiltersFromUrl() {
     if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
     const birthDateToInput = document.getElementById('maker-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const ageMinInput = document.getElementById('maker-age-min-filter');
+    if (ageMinInput) ageMinInput.value = filters.age_min;
+    const ageMaxInput = document.getElementById('maker-age-max-filter');
+    if (ageMaxInput) ageMaxInput.value = filters.age_max;
     const fatherTagInput = document.getElementById('maker-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('maker-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
         const filtersBlock = document.getElementById('maker-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -71,7 +79,7 @@ function initializeMakerFiltersFromUrl() {
 
 document.addEventListener('DOMContentLoaded', function () {
     const initialFilters = initializeMakerFiltersFromUrl();
-    fetchMakers(1, initialFilters);  // Загрузка списка производителей при загрузке страницы
+    fetchMakers(1, initialFilters);  // Загрузка списка баранов-производителей при загрузке страницы
     loadAnimalStatuses();
     loadPlaces();
     setupArchiveButton(); // Устанавливаем URL для кнопки архива
@@ -143,15 +151,15 @@ async function loadPlaces() {
 }
 
 
-// Функция для скрытия/показа формы создания производителя
+// Функция для скрытия/показа формы создания барана-производителя
 function toggleForm() {
     const form = document.getElementById('create-maker-form');
     const toggleButton = document.getElementById('toggle-create-maker-form');
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
-    toggleButton.innerText = form.style.display === 'none' ? '▼ Создать производителя' : '▲ Скрыть форму';
+    toggleButton.innerText = form.style.display === 'none' ? '▼ Создать барана-производителя' : '▲ Скрыть форму';
 }
 
-// Создание нового производителя
+// Создание нового барана-производителя
 async function saveMaker() {
     const url = '/animals/maker/';
     const method = 'POST';
@@ -179,16 +187,16 @@ async function saveMaker() {
 
     try {
         await apiRequest(url, method, data);
-        alert('Производитель успешно создан');
+        alert('Баран-Производитель успешно создан');
         document.getElementById('create-maker-form').reset();
         fetchMakers();
     } catch (error) {
-        console.error('Ошибка при создании производителя:', error);
+        console.error('Ошибка при создании барана-производителя:', error);
         alert('Ошибка: Проверьте корректность введенных данных');
     }
 }
 
-// Загрузка списка производителей
+// Загрузка списка баранов-производителей
 async function fetchMakers(page = 1, filters = {}) {
     try {
         if (typeof filters === 'string') {
@@ -204,7 +212,7 @@ async function fetchMakers(page = 1, filters = {}) {
         
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -241,6 +249,12 @@ async function fetchMakers(page = 1, filters = {}) {
         if (currentFilters.birth_date_to) {
             params.append('birth_date_to', currentFilters.birth_date_to);
         }
+        if (currentFilters.age_min) {
+            params.append('age_min', currentFilters.age_min);
+        }
+        if (currentFilters.age_max) {
+            params.append('age_max', currentFilters.age_max);
+        }
         if (currentFilters.father_tag) {
             params.append('father_tag', currentFilters.father_tag);
         }
@@ -266,16 +280,16 @@ async function fetchMakers(page = 1, filters = {}) {
             }
         } else {
             console.error('Некорректный ответ от API:', response);
-            alert('Ошибка: данные производителей не найдены.');
+            alert('Ошибка: данные баранов-производителей не найдены.');
         }
     } catch (error) {
-        console.error('Ошибка при загрузке производителей:', error);
-        alert('Ошибка при загрузке списка производителей.');
+        console.error('Ошибка при загрузке баранов-производителей:', error);
+        alert('Ошибка при загрузке списка баранов-производителей.');
     }
 }
 
 
-// Рендеринг списка производителей
+// Рендеринг списка баранов-производителей
 function renderMakers(makers, startIndex = null) {
     const makerList = document.getElementById('maker-list');
     const rows = [];
@@ -302,9 +316,7 @@ function renderMakers(makers, startIndex = null) {
             <td>${maker.weight_records && maker.weight_records.length > 0 
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
-            <td>${maker.veterinary_history && maker.veterinary_history.length > 0 
-                ? `${formatDateToOutput(maker.veterinary_history[0].date_of_care)}: ${maker.veterinary_history[0].veterinary_care.care_name}`
-                : 'Нет записей'}</td>
+            <td>${formatLastVetTreatment(maker.veterinary_history)}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
             <td>${maker.rshn_tag || '-'}</td>
             <td>${maker.note}</td>
@@ -329,9 +341,23 @@ function renderMakers(makers, startIndex = null) {
     toggleDeleteButton();
 }
 
+function formatLastVetTreatment(veterinaryHistory) {
+    if (!Array.isArray(veterinaryHistory) || veterinaryHistory.length === 0) {
+        return 'Нет записей';
+    }
+
+    const lastVet = veterinaryHistory[0];
+    const care = lastVet?.veterinary_care;
+    const careType = care?.care_name || 'Не указан тип';
+    const medication = care?.medication || 'без препарата';
+    const careDate = lastVet?.date_of_care ? formatDateToOutput(lastVet.date_of_care) : '-';
+
+    return `${careDate}: ${careType} (${medication})`;
+}
 
 
-// Функция поиска производителей
+
+// Функция поиска баранов-производителей
 async function searchMakers() {
     const filters = getMakerFiltersFromInputs();
     const statusFilter = document.getElementById('status-filter') ? document.getElementById('status-filter').value : '';
@@ -473,7 +499,7 @@ function closeDeleteModal() {
 // Функция для сброса состояния кнопки
 function resetButton() {
     const createButton = document.getElementById('create-maker-button');
-    createButton.innerText = 'Создать производителя';
+    createButton.innerText = 'Создать барана-производителя';
     createButton.removeAttribute('data-id');
     createButton.onclick = () => saveMaker();
 }
@@ -486,7 +512,7 @@ function updateSimpleMakersPagination(totalItems, searchQuery = '') {
     // Для неограниченного списка показываем только информацию о количестве
     paginationContainer.innerHTML = `
         <div class="pagination-info">
-            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'производитель', 'производителя', 'производителей')}</span>
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'баран-производитель', 'барана-производителя', 'баранов-производителей')}</span>
             ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
         </div>
     `;
@@ -772,6 +798,10 @@ function clearFilters() {
     if (birthDateFromInput) birthDateFromInput.value = '';
     const birthDateToInput = document.getElementById('maker-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = '';
+    const ageMinInput = document.getElementById('maker-age-min-filter');
+    if (ageMinInput) ageMinInput.value = '';
+    const ageMaxInput = document.getElementById('maker-age-max-filter');
+    if (ageMaxInput) ageMaxInput.value = '';
     const fatherTagInput = document.getElementById('maker-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = '';
     const motherTagInput = document.getElementById('maker-mother-tag-filter');
@@ -797,3 +827,4 @@ function clearFilters() {
 }
 
 window.clearFilters = clearFilters;
+

@@ -20,7 +20,7 @@
                     {% csrf_token %}
                     <form id="create-care-form">
                         <div class="mb-3">
-                            <label for="care-type" class="form-label">Тип ветобработки:</label>
+                            <label for="care-type" class="form-label">Класс ветобработки:</label>
                             <select id="care-type" name="care-type" class="form-select">
                                 <option value="Вакцинация">Вакцинация</option>
                                 <option value="Противопаразитарная">Противопаразитарная</option>
@@ -28,7 +28,7 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="care-name" class="form-label">Класс ветобработки:</label>
+                            <label for="care-name" class="form-label">Тип ветобработки:</label>
                             <select id="care-name" name="care-name" class="form-select"></select>
                         </div>
 
@@ -85,8 +85,8 @@
                             <thead class="table-light">
                                 <tr>
                                     <th width="5%">№</th>
-                                    <th width="15%">Тип обработки</th>
-                                    <th width="20%">Класс</th>
+                                    <th width="15%">Класс обработки</th>
+                                    <th width="20%">Тип</th>
                                     <th width="15%">Препарат</th>
                                     <th width="15%">Цель</th>
                                     <th width="10%">Срок действия</th>

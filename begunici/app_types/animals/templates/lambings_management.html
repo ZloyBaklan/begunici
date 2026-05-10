@@ -11,7 +11,7 @@
         <div class="col-md-4">
             <div class="card">
                 <div class="card-header">
-                    <h5>Завод окотов</h5>
+                    <h5>Завод случек</h5>
                 </div>
                 <div class="card-body">
                     <form id="create-lambing-form">
@@ -21,9 +21,9 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label">Выбор производителя/барана</label>
+                            <label class="form-label">Выбор барана-производителя/баранчика</label>
                             <button type="button" class="btn btn-outline-primary w-100" onclick="showSelectFatherModal()">
-                                Выбрать производителя/барана
+                                Выбрать барана-производителя/баранчика
                             </button>
                             <div id="selected-father-display" class="mt-2 text-muted">
                                 Не выбран
@@ -31,9 +31,9 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label">Выбор ярок/овец</label>
+                            <label class="form-label">Выбор ярок/овцематок</label>
                             <button type="button" class="btn btn-outline-primary w-100" onclick="showSelectMothersModal()">
-                                Выбрать ярок/овец
+                                Выбрать ярок/овцематок
                             </button>
                             <div id="selected-mothers-display" class="mt-2 text-muted">
                                 Не выбрано
@@ -53,7 +53,7 @@
                         </div>
                         
                         <button type="button" class="btn btn-success w-100" onclick="createMultipleLambings()">
-                            Завести окот
+                            Завести случку
                         </button>
                     </form>
                 </div>
@@ -62,14 +62,14 @@
             <!-- Блок проверки родства -->
             <div class="card mt-3">
                 <div class="card-header">
-                    <h5>Проверка родства</h5>
+                    <h5>Подбор пар (проверка родства)</h5>
                 </div>
                 <div class="card-body">
                     <form id="kinship-check-form">
                         <div class="mb-3">
-                            <label class="form-label">Выбор производителя/барана</label>
+                            <label class="form-label">Выбор барана-производителя/баранчика</label>
                             <button type="button" class="btn btn-outline-info w-100" onclick="showSelectKinshipFatherModal()">
-                                Выбрать производителя/барана
+                                Выбрать барана-производителя/баранчика
                             </button>
                             <div id="kinship-father-display" class="mt-2 text-muted">
                                 Не выбран
@@ -77,17 +77,20 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label">Выбор ярки/овцы</label>
+                            <label class="form-label">Выбор овцематок/ярок</label>
                             <button type="button" class="btn btn-outline-info w-100" onclick="showSelectKinshipMotherModal()">
-                                Выбрать ярку/овцу
+                                Выбрать овцематок/ярок
                             </button>
                             <div id="kinship-mother-display" class="mt-2 text-muted">
-                                Не выбрана
+                                Не выбрано
                             </div>
                         </div>
                         
                         <button type="button" class="btn btn-warning w-100" onclick="checkKinship()" id="check-kinship-btn" disabled>
                             Проверить родство
+                        </button>
+                        <button type="button" class="btn btn-success w-100 mt-2" onclick="exportKinshipPairsToExcel()" id="export-kinship-btn" disabled>
+                            Экспорт в Excel
                         </button>
                         
                         <!-- Результат проверки -->
@@ -105,7 +108,7 @@
         <div class="col-md-8">
             <div class="card">
                 <div class="card-header">
-                    <h5>Активные окоты</h5>
+                    <h5>Активные случки</h5>
                     <!-- Фильтр по диапазону дат -->
                     <div class="row mt-3">
                         <div class="col-md-4">
@@ -188,12 +191,12 @@
     </div>
 </div>
 
-<!-- Модальное окно выбора овец/ярок -->
+<!-- Модальное окно выбора овцематок/ярок -->
 <div class="modal fade" id="selectMothersModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Выбор ярок/овец</h5>
+                <h5 class="modal-title">Выбор ярок/овцематок</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -222,7 +225,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Выбор производителя/барана</h5>
+                <h5 class="modal-title">Выбор барана-производителя/баранчика</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -314,12 +317,12 @@
 </div>
 
 <!-- Модальные окна для проверки родства -->
-<!-- Модальное окно выбора производителя/барана для проверки родства -->
+<!-- Модальное окно выбора барана-производителя/баранчика для проверки родства -->
 <div class="modal fade" id="selectKinshipFatherModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Выбор производителя/барана для проверки родства</h5>
+                <h5 class="modal-title">Выбор барана-производителя/баранчика для проверки родства</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -343,12 +346,12 @@
     </div>
 </div>
 
-<!-- Модальное окно выбора ярки/овцы для проверки родства -->
+<!-- Модальное окно выбора овцематок/ярок для проверки родства -->
 <div class="modal fade" id="selectKinshipMotherModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Выбор ярки/овцы для проверки родства</h5>
+                <h5 class="modal-title">Выбор овцематок/ярок для проверки родства</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -367,6 +370,39 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                 <button type="button" class="btn btn-primary" onclick="confirmKinshipMotherSelection()">Выбрать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно детализации проблем родства -->
+<div class="modal fade" id="kinshipProblemsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Детализация проблем родства</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">№</th>
+                                <th style="width: 180px;">Мать</th>
+                                <th>Комментарий</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kinship-problems-details">
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Нет данных</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
             </div>
         </div>
     </div>
@@ -429,3 +465,4 @@
 
 <script type="module" src="{% static 'js/lambings_management.js' %}"></script>
 {% endblock %}
+

@@ -25,6 +25,24 @@
                     </select>
                 </div>
                 <div class="col-md-2">
+                    <label for="month_from" class="form-label">Месяц с</label>
+                    <select class="form-select" id="month_from" name="month_from">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_from == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="month_to" class="form-label">Месяц по</label>
+                    <select class="form-select" id="month_to" name="month_to">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_to == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
                     <label for="year" class="form-label">Год</label>
                     <select class="form-select" id="year" name="year">
                         <option value="">Все</option>
@@ -33,20 +51,18 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label for="mother_tag" class="form-label">Бирка мамы</label>
+                <div class="col-md-2">
+                    <label for="mother_tag" class="form-label">Бирка матери</label>
                     <input type="text" class="form-control" id="mother_tag" name="mother_tag" value="{{ selected_mother_tag }}">
                 </div>
-                <div class="col-md-3">
-                    <label for="father_tag" class="form-label">Бирка папы</label>
+                <div class="col-md-2">
+                    <label for="father_tag" class="form-label">Бирка отца</label>
                     <input type="text" class="form-control" id="father_tag" name="father_tag" value="{{ selected_father_tag }}">
                 </div>
-                <div class="col-md-2 d-flex gap-2">
+                <div class="col-12 d-flex gap-2">
                     <button type="submit" class="btn btn-primary">Применить</button>
                     <a href="{% url 'animals:journal-insemination' %}" class="btn btn-secondary">Сбросить</a>
-                </div>
-                <div class="col-12 d-flex justify-content-end">
-                    <a href="{% url 'animals:journal-insemination' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success">
+                    <a href="{% url 'animals:journal-insemination' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success ms-auto">
                         Экспорт
                     </a>
                 </div>
@@ -65,8 +81,8 @@
                     <thead class="table-light">
                         <tr>
                             <th style="width: 70px;">№</th>
-                            <th>Бирка мамы</th>
-                            <th>Бирка папы</th>
+                            <th>Бирка матери</th>
+                            <th>Бирка отца</th>
                             <th>Дата случки</th>
                             <th>Дата фактических родов</th>
                         </tr>

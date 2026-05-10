@@ -20,13 +20,10 @@ def user_permissions(request):
                 'can_delete_vet_data': False,
             })
         
-        # Права для Admin (все права + панель администратора)
-        elif 'Admin' in user_groups:
+        # Права для Admin и Main (все права + панель администратора)
+        elif 'Admin' in user_groups or 'Main' in user_groups:
             permissions.update({
                 'can_access_admin_panel': True,
             })
-        
-        # Права для main (все права, но без панели администратора)
-        # Остаются по умолчанию True
     
     return {'user_permissions': permissions}

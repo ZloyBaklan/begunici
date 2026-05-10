@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.db import models
+from django.urls import reverse
+from decimal import Decimal
 from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
 from begunici.app_types.veterinary.vet_models import (
     Place,
@@ -71,7 +73,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
     
-    # Поле для отображения дорперности с форматированием
+    # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
 
     class Meta:
@@ -79,7 +81,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         fields = "__all__"
     
     def get_dorper_display(self, obj):
-        """Возвращает отформатированную дорперность с процентом и звездочкой для ручных значений"""
+        """Возвращает отформатированную кровность по основной породе с процентом и звездочкой для ручных значений"""
         if obj.dorper_percentage is None:
             return None
         
@@ -102,10 +104,10 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return value
     
     def validate_dorper_percentage(self, value):
-        """Валидация дорперности (0-100%)"""
+        """Валидация кровности по основной породе (0-100%)"""
         if value is not None:
             if value < 0 or value > 100:
-                raise serializers.ValidationError("Дорперность должна быть в диапазоне от 0 до 100%.")
+                raise serializers.ValidationError("Кровность по основной породе должна быть в диапазоне от 0 до 100%.")
         return value
 
     def validate_date_otbivka(self, value):
@@ -149,10 +151,10 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             
             # Переводим тип животного на русский
             animal_type_translations = {
-                'Maker': 'Производитель',
-                'Ram': 'Баран',
+                'Maker': 'Баран-Производитель',
+                'Ram': 'Баранчик',
                 'Ewe': 'Ярка',
-                'Sheep': 'Овца'
+                'Sheep': 'Овцематка'
             }
             
             english_type = instance.get_animal_type()
@@ -201,7 +203,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             new_status_name = validated_data['animal_status'].status_type
             
             # Проверяем, является ли новый статус архивным
-            archive_statuses = ['Продажа', 'Убыл', 'Убой']
+            archive_statuses = ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой']
             if new_status_name in archive_statuses:
                 # Это архивирование
                 changes.append(f"{old_status_name} → {new_status_name}")
@@ -336,10 +338,10 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 
                 # Переводим тип животного на русский
                 animal_type_translations = {
-                    'Maker': 'Производитель',
-                    'Ram': 'Баран',
+                    'Maker': 'Баран-Производитель',
+                    'Ram': 'Баранчик',
                     'Ewe': 'Ярка',
-                    'Sheep': 'Овца'
+                    'Sheep': 'Овцематка'
                 }
                 
                 english_type = instance.get_animal_type()
@@ -348,9 +350,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 # Определяем тип действия
                 action_type = "Редактирование животного"
                 new_status = validated_data.get('animal_status')
-                if new_status and new_status.status_type in ['Продажа', 'Убыл', 'Убой']:
+                if new_status and new_status.status_type in ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой']:
                     action_type = "Архивирование животного"
-                elif old_status and old_status.status_type in ['Продажа', 'Убыл', 'Убой'] and new_status:
+                elif old_status and old_status.status_type in ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой'] and new_status:
                     action_type = "Восстановление из архива"
                 
                 changes_text = "; ".join(changes)
@@ -460,7 +462,7 @@ class UniversalChildSerializer(serializers.Serializer):
         if not obj.tag:
             return "Нет бирки"
         
-        # Для производителей проверяем наличие имени
+        # Для баранов-производителей проверяем наличие имени
         if hasattr(obj, 'name') and obj.name:
             return f"{obj.name}({obj.tag.tag_number})"
         
@@ -472,10 +474,10 @@ class UniversalChildSerializer(serializers.Serializer):
         
         # Словарь для перевода типов животных на русский язык
         type_translations = {
-            'Maker': 'Производитель',
-            'Ram': 'Баран',
+            'Maker': 'Баран-Производитель',
+            'Ram': 'Баранчик',
             'Ewe': 'Ярка', 
-            'Sheep': 'Овца'
+            'Sheep': 'Овцематка'
         }
         
         english_type = obj.tag.animal_type
@@ -592,12 +594,12 @@ class SheepSerializer(AnimalBaseSerializer):
         fields = "__all__"
 
     def get_lambing_history(self, obj):
-        # Получаем все окоты для овцы
+        # Получаем все окоты для овцематки
         lambings = Lambing.objects.filter(sheep=obj).order_by('-start_date')
         return LambingSerializer(lambings, many=True).data
     
     def get_active_lambings(self, obj):
-        """Получаем активные окоты для овцы"""
+        """Получаем активные окоты для овцематки"""
         try:
             lambings = Lambing.objects.filter(sheep=obj, is_active=True)
             return LambingSerializer(lambings, many=True).data
@@ -655,7 +657,7 @@ class LambingSerializer(serializers.ModelSerializer):
         try:
             father = obj.get_father()
             if father and father.tag:
-                # Если отец - производитель с именем, возвращаем Имя(Бирка)
+                # Если отец - баран-производитель с именем, возвращаем Имя(Бирка)
                 if hasattr(father, 'name') and father.name:
                     return f"{father.name}({father.tag.tag_number})"
                 return father.tag.tag_number
@@ -698,7 +700,7 @@ class LambingSerializer(serializers.ModelSerializer):
                 data['sheep'] = None
             except Ewe.DoesNotExist:
                 raise serializers.ValidationError(
-                    f"Мать с биркой {mother_tag_number} не найдена среди овец и ярок"
+                    f"Мать с биркой {mother_tag_number} не найдена среди овцематок и ярок"
                 )
         
         # Проверяем существование отца
@@ -716,14 +718,14 @@ class LambingSerializer(serializers.ModelSerializer):
                 data['maker'] = None
             except Ram.DoesNotExist:
                 raise serializers.ValidationError(
-                    f"Отец с биркой {father_tag_number} не найден среди производителей и баранов"
+                    f"Отец с биркой {father_tag_number} не найден среди баранов-производителей и баранчиков"
                 )
         
         # Проверяем, что у матери нет активного окота
         # Временно отключено для отладки
         # if mother:
         #     # Проверяем активные окоты в зависимости от типа матери
-        #     if data.get('sheep'):  # Если мать - овца
+        #     if data.get('sheep'):  # Если мать - овцематка
         #         existing_active = Lambing.objects.filter(sheep=data['sheep'], is_active=True)
         #     elif data.get('ewe'):  # Если мать - ярка
         #         existing_active = Lambing.objects.filter(ewe=data['ewe'], is_active=True)
@@ -755,7 +757,7 @@ class LambingSerializer(serializers.ModelSerializer):
 
 class ArchiveAnimalSerializer(serializers.Serializer):
     """
-    Полиморфный сериализатор для архива животных.
+    Polymorphic serializer for archive animal lists.
     """
 
     tag_number = serializers.CharField()
@@ -763,52 +765,85 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     status = serializers.CharField(source="animal_status__status_type", allow_null=True)
     place = serializers.CharField(source="place__sheepfold", allow_null=True)
     birth_date = serializers.DateField()
-    age = serializers.SerializerMethodField()  # Изменяем на SerializerMethodField
+    age = serializers.SerializerMethodField()
+
+    @staticmethod
+    def _format_weight(value):
+        if value is None:
+            return None
+        try:
+            decimal_value = Decimal(value)
+        except Exception:
+            return None
+        return f"{decimal_value:.2f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _get_last_live_weight(tag_obj):
+        if not tag_obj:
+            return None
+
+        last_weight = (
+            WeightRecord.objects.filter(tag=tag_obj)
+            .order_by("-weight_date", "-id")
+            .first()
+        )
+        if not last_weight:
+            return None
+
+        return ArchiveAnimalSerializer._format_weight(last_weight.weight)
+
+    @staticmethod
+    def _build_mother_url(mother_tag):
+        if not mother_tag:
+            return None
+
+        if Ewe.objects.filter(tag__tag_number=mother_tag).exists():
+            return reverse("animals:ewe-detail", kwargs={"tag_number": mother_tag})
+        if Sheep.objects.filter(tag__tag_number=mother_tag).exists():
+            return reverse("animals:sheep-detail", kwargs={"tag_number": mother_tag})
+        return None
 
     def to_representation(self, instance):
-        # Если instance — это словарь (после использования .values())
+        from begunici.app_types.veterinary.vet_models import StatusHistory
+        from begunici.app_types.animals.models import Tag
+        from dateutil.relativedelta import relativedelta
+        from datetime import datetime
+
         if isinstance(instance, dict):
-            # Для словаря нужно получить дату из StatusHistory
-            from begunici.app_types.veterinary.vet_models import StatusHistory
-            from begunici.app_types.animals.models import Tag
-            
+            tag_number = instance.get("tag__tag_number") or instance.get("tag_number")
+            animal_type = instance.get("tag__animal_type") or instance.get("animal_type")
+            status_type = instance.get("animal_status__status_type") or "Нет данных"
+
             archived_date = None
-            if instance.get("animal_status__status_type"):
+            tag_obj = None
+            if tag_number:
                 try:
-                    tag = Tag.objects.get(tag_number=instance["tag__tag_number"])
-                    last_status_change = StatusHistory.objects.filter(
-                        tag=tag,
-                        new_status__status_type=instance["animal_status__status_type"]
-                    ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
-                    
-                    if last_status_change:
-                        archived_date = last_status_change.change_date
+                    tag_obj = Tag.objects.get(tag_number=tag_number)
                 except Tag.DoesNotExist:
-                    pass
-            
-            # Вычисляем возраст в новом формате для словарей
+                    tag_obj = None
+
+            if status_type and tag_obj:
+                last_status_change = (
+                    StatusHistory.objects.filter(
+                        tag=tag_obj,
+                        new_status__status_type=status_type,
+                    )
+                    .order_by("-id")
+                    .first()
+                )
+                if last_status_change:
+                    archived_date = last_status_change.change_date
+
             age_display = None
-            if instance.get("birth_date"):
+            birth_date_value = instance.get("birth_date")
+            if birth_date_value:
                 try:
-                    from django.utils import timezone
-                    from dateutil.relativedelta import relativedelta
-                    
-                    current_date = timezone.now().date()
-                    birth_date = instance["birth_date"]
-                    
-                    # Убеждаемся, что birth_date - это объект date
-                    if isinstance(birth_date, str):
-                        from datetime import datetime
-                        birth_date = datetime.strptime(birth_date, '%Y-%m-%d').date()
-                    
-                    delta = relativedelta(current_date, birth_date)
-                    
-                    # Рассчитываем полные месяцы
+                    if isinstance(birth_date_value, str):
+                        birth_date_value = datetime.strptime(birth_date_value, "%Y-%m-%d").date()
+                    delta = relativedelta(timezone.now().date(), birth_date_value)
                     total_months = delta.years * 12 + delta.months
-                    
-                    # Рассчитываем дни (округляем до целых)
                     days = round(delta.days)
-                    
+
                     if total_months == 0 and days == 0:
                         age_display = "0 мес."
                     elif total_months == 0:
@@ -817,61 +852,66 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                         age_display = f"{total_months} мес."
                     else:
                         age_display = f"{total_months} мес. ({days} сут.)"
-                        
                 except (ValueError, TypeError):
                     age_display = None
-            
+
+            mother_tag = (instance.get("mother") or "").strip() or None
             return {
-                "tag_number": instance["tag__tag_number"],
-                "animal_type": instance["tag__animal_type"],
-                "status": instance.get("animal_status__status_type", "Нет данных"),
+                "tag_number": tag_number or "Нет данных",
+                "animal_type": animal_type or "Unknown",
+                "display_name": tag_number or "Нет данных",
+                "status": status_type,
+                "status_color": instance.get("animal_status__color", "#FFFFFF"),
                 "archived_date": archived_date,
-                "place": instance.get("place__sheepfold", "Нет данных"),
-                "birth_date": instance["birth_date"],
+                "place": instance.get("place__sheepfold") or "Нет данных",
+                "birth_date": birth_date_value,
                 "age": age_display,
+                "is_archived": bool(instance.get("is_archived", False)),
+                "last_live_weight": self._get_last_live_weight(tag_obj),
+                "carcass_weight": self._format_weight(instance.get("carcass_weight")),
+                "mother_tag": mother_tag,
+                "mother_url": self._build_mother_url(mother_tag),
             }
-        
-        # Если instance — это объект модели
+
         tag_number = instance.tag.tag_number if instance.tag else "Нет данных"
         animal_type = instance.tag.animal_type if instance.tag else "Unknown"
-        
-        # Получаем дату архивирования из StatusHistory
+
         archived_date = None
-        if instance.animal_status:
-            from begunici.app_types.veterinary.vet_models import StatusHistory
-            last_status_change = StatusHistory.objects.filter(
-                tag=instance.tag,
-                new_status=instance.animal_status
-            ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
-            
+        if instance.animal_status and instance.tag:
+            last_status_change = (
+                StatusHistory.objects.filter(
+                    tag=instance.tag,
+                    new_status=instance.animal_status,
+                )
+                .order_by("-id")
+                .first()
+            )
             if last_status_change:
                 archived_date = last_status_change.change_date
-        
+
+        mother_tag = (instance.mother or "").strip() or None
+
         return {
             "tag_number": tag_number,
             "animal_type": animal_type,
-            "display_name": instance.get_display_name() if hasattr(instance, 'get_display_name') else tag_number,
-            "status": instance.animal_status.status_type
-            if instance.animal_status
-            else "Нет данных",
-            "status_color": instance.animal_status.color
-            if instance.animal_status
-            else "#FFFFFF",
+            "display_name": instance.get_display_name() if hasattr(instance, "get_display_name") else tag_number,
+            "status": instance.animal_status.status_type if instance.animal_status else "Нет данных",
+            "status_color": instance.animal_status.color if instance.animal_status else "#FFFFFF",
             "archived_date": archived_date,
             "place": instance.place.sheepfold if instance.place else "Нет данных",
             "birth_date": instance.birth_date,
-            "age": instance.get_age_display(),  # Используем новый формат
+            "age": instance.get_age_display(),
+            "is_archived": instance.is_archived,
+            "last_live_weight": self._get_last_live_weight(instance.tag),
+            "carcass_weight": self._format_weight(instance.carcass_weight),
+            "mother_tag": mother_tag,
+            "mother_url": self._build_mother_url(mother_tag),
         }
 
     def get_age(self, obj):
-        """Возвращает возраст в новом формате 'X мес. (Y сут.)'"""
         if isinstance(obj, dict):
-            # Для словарей нужно создать временный объект или вычислить возраст
-            # Пока возвращаем None, так как для словарей сложно вычислить возраст
             return None
-        else:
-            # Для объектов модели используем метод get_age_display
-            return obj.get_age_display()
+        return obj.get_age_display()
 
 
 class CalendarNoteSerializer(serializers.ModelSerializer):
@@ -965,3 +1005,4 @@ class CalendarNoteSerializer(serializers.ModelSerializer):
                 )
         
         return instance
+

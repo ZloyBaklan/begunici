@@ -46,9 +46,9 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
                             <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" 
-                                   placeholder="Введите процент дорперности" min="0" max="100" step="0.01">
+                                   placeholder="Введите процент кровности по основной породе" min="0" max="100" step="0.01">
                             <div class="form-text">Необязательно. Если не указано, будет рассчитано автоматически на основе родителей.</div>
                         </div>
 
@@ -93,10 +93,20 @@
                                         <input type="date" id="ewe-birth-date-to" class="form-control form-control-sm">
                                     </div>
                                     <div class="col-md-3">
+                                        <label for="ewe-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                        <input type="number" id="ewe-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="ewe-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                        <input type="number" id="ewe-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-6">
                                         <label for="ewe-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
                                         <input type="text" id="ewe-father-tag-filter" class="form-control form-control-sm">
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label for="ewe-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
                                         <input type="text" id="ewe-mother-tag-filter" class="form-control form-control-sm">
                                     </div>
@@ -124,7 +134,7 @@
                                     <th width="12%">Статус</th>
                                     <th width="10%">Возраст</th>
                                     <th width="15%">Овчарня</th>
-                                    <th width="8%">Дорперность</th>
+                                    <th width="8%">Кровность по основной породе</th>
                                     <th width="18%">Последнее Взвешивание</th>
                                     <th width="15%">Последняя Ветобработка</th>
                                     <th width="8%">Бирка РСХН</th>
@@ -418,3 +428,5 @@ input[type="checkbox"]:focus {
 </script>
 
 {% endblock %}
+
+

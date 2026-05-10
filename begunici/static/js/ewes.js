@@ -33,6 +33,8 @@ function getEweFiltersFromInputs() {
         search: document.getElementById('ewe-search')?.value || '',
         birth_date_from: document.getElementById('ewe-birth-date-from')?.value || '',
         birth_date_to: document.getElementById('ewe-birth-date-to')?.value || '',
+        age_min: document.getElementById('ewe-age-min-filter')?.value || '',
+        age_max: document.getElementById('ewe-age-max-filter')?.value || '',
         father_tag: document.getElementById('ewe-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('ewe-mother-tag-filter')?.value || ''
     };
@@ -44,6 +46,8 @@ function initializeEweFiltersFromUrl() {
         search: urlParams.get('search') || '',
         birth_date_from: urlParams.get('birth_date_from') || '',
         birth_date_to: urlParams.get('birth_date_to') || '',
+        age_min: urlParams.get('age_min') || '',
+        age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || ''
     };
@@ -54,12 +58,16 @@ function initializeEweFiltersFromUrl() {
     if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
     const birthDateToInput = document.getElementById('ewe-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const ageMinInput = document.getElementById('ewe-age-min-filter');
+    if (ageMinInput) ageMinInput.value = filters.age_min;
+    const ageMaxInput = document.getElementById('ewe-age-max-filter');
+    if (ageMaxInput) ageMaxInput.value = filters.age_max;
     const fatherTagInput = document.getElementById('ewe-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('ewe-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
         const filtersBlock = document.getElementById('ewe-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -130,7 +138,7 @@ async function fetchEwes(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -160,6 +168,12 @@ async function fetchEwes(page = 1, filters = {}) {
         }
         if (currentFilters.birth_date_to) {
             params.set('birth_date_to', currentFilters.birth_date_to);
+        }
+        if (currentFilters.age_min) {
+            params.set('age_min', currentFilters.age_min);
+        }
+        if (currentFilters.age_max) {
+            params.set('age_max', currentFilters.age_max);
         }
         if (currentFilters.father_tag) {
             params.set('father_tag', currentFilters.father_tag);
@@ -225,9 +239,7 @@ function renderEwes(ewes) {
             <td>${ewe.weight_records && ewe.weight_records.length > 0 
                 ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
-            <td>${ewe.veterinary_history && ewe.veterinary_history.length > 0 
-                ? `${formatDateToOutput(ewe.veterinary_history[0].date_of_care)}: ${ewe.veterinary_history[0].veterinary_care.care_name}`
-                : 'Нет записей'}</td>
+            <td>${formatLastVetTreatment(ewe.veterinary_history)}</td>
             <td>${ewe.rshn_tag || '-'}</td>
             <td>${ewe.note || ''}</td>
         </tr>`;
@@ -249,6 +261,20 @@ function renderEwes(ewes) {
     
     // Обновляем кнопки действий
     toggleDeleteButton();
+}
+
+function formatLastVetTreatment(veterinaryHistory) {
+    if (!Array.isArray(veterinaryHistory) || veterinaryHistory.length === 0) {
+        return 'Нет записей';
+    }
+
+    const lastVet = veterinaryHistory[0];
+    const care = lastVet?.veterinary_care;
+    const careType = care?.care_name || 'Не указан тип';
+    const medication = care?.medication || 'без препарата';
+    const careDate = lastVet?.date_of_care ? formatDateToOutput(lastVet.date_of_care) : '-';
+
+    return `${careDate}: ${careType} (${medication})`;
 }
 
 // Функция загрузки статусов

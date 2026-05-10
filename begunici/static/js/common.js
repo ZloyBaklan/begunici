@@ -1,14 +1,14 @@
-﻿import { apiRequest, formatDateToOutput } from "./utils.js";
+import { apiRequest, formatDateToOutput } from "./utils.js";
 
 let selectedAnimals = new Map();
 let currentPage = 1;
 let currentFilters = {};
 
 const typeDisplayMap = {
-    maker: "Производитель",
-    ram: "Баран",
+    maker: "Баран-Производитель",
+    ram: "Баранчик",
     ewe: "Ярка",
-    sheep: "Овца",
+    sheep: "Овцематка",
 };
 
 function getSelectionKey(animalType, tagNumber) {
@@ -51,6 +51,8 @@ function getCommonFiltersFromInputs() {
         search: document.getElementById("common-search")?.value || "",
         birth_date_from: document.getElementById("common-birth-date-from")?.value || "",
         birth_date_to: document.getElementById("common-birth-date-to")?.value || "",
+        age_min: document.getElementById("common-age-min-filter")?.value || "",
+        age_max: document.getElementById("common-age-max-filter")?.value || "",
         father_tag: document.getElementById("common-father-tag-filter")?.value || "",
         mother_tag: document.getElementById("common-mother-tag-filter")?.value || "",
         animal_type: document.getElementById("common-animal-type-filter")?.value || "",
@@ -63,6 +65,8 @@ function initializeCommonFiltersFromUrl() {
         search: urlParams.get("search") || "",
         birth_date_from: urlParams.get("birth_date_from") || "",
         birth_date_to: urlParams.get("birth_date_to") || "",
+        age_min: urlParams.get("age_min") || "",
+        age_max: urlParams.get("age_max") || "",
         father_tag: urlParams.get("father_tag") || "",
         mother_tag: urlParams.get("mother_tag") || "",
         animal_type: urlParams.get("animal_type") || "",
@@ -77,6 +81,12 @@ function initializeCommonFiltersFromUrl() {
     const birthDateToInput = document.getElementById("common-birth-date-to");
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
 
+    const ageMinInput = document.getElementById("common-age-min-filter");
+    if (ageMinInput) ageMinInput.value = filters.age_min;
+
+    const ageMaxInput = document.getElementById("common-age-max-filter");
+    if (ageMaxInput) ageMaxInput.value = filters.age_max;
+
     const fatherTagInput = document.getElementById("common-father-tag-filter");
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
 
@@ -86,7 +96,7 @@ function initializeCommonFiltersFromUrl() {
     const animalTypeInput = document.getElementById("common-animal-type-filter");
     if (animalTypeInput) animalTypeInput.value = filters.animal_type;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag || filters.animal_type) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type) {
         const filtersBlock = document.getElementById("common-advanced-filters");
         if (filtersBlock) {
             filtersBlock.style.display = "block";
@@ -209,7 +219,7 @@ async function saveCommonAnimal() {
         const workingCondition = document.getElementById("working_condition")?.value?.trim() || "";
 
         if (!plemstatus || !workingCondition) {
-            alert("Для производителя заполните поля: Племенной статус и Рабочее состояние.");
+            alert("Для барана-производителя заполните поля: Племенной статус и Рабочее состояние.");
             return;
         }
 
@@ -246,7 +256,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...filters };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "father_tag", "mother_tag", "animal_type"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type"];
 
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
@@ -268,6 +278,8 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         if (currentFilters.search) params.set("search", currentFilters.search);
         if (currentFilters.birth_date_from) params.set("birth_date_from", currentFilters.birth_date_from);
         if (currentFilters.birth_date_to) params.set("birth_date_to", currentFilters.birth_date_to);
+        if (currentFilters.age_min) params.set("age_min", currentFilters.age_min);
+        if (currentFilters.age_max) params.set("age_max", currentFilters.age_max);
         if (currentFilters.father_tag) params.set("father_tag", currentFilters.father_tag);
         if (currentFilters.mother_tag) params.set("mother_tag", currentFilters.mother_tag);
         if (currentFilters.animal_type) params.set("animal_type", currentFilters.animal_type);
@@ -307,9 +319,11 @@ function renderCommonAnimals(animals) {
             ? `${animal.last_weight_date}: ${animal.last_weight} кг`
             : "Нет записей";
 
-        const vetText = animal.last_vet_date && animal.last_vet_name
-            ? `${formatDateToOutput(animal.last_vet_date)}: ${animal.last_vet_name}`
-            : "Нет записей";
+        const vetText = formatLastVetTreatment(
+            animal.last_vet_date,
+            animal.last_vet_name,
+            animal.last_vet_medication
+        );
 
         rows.push(`
             <tr>
@@ -357,6 +371,16 @@ function renderCommonAnimals(animals) {
     }
 
     toggleSelectedActions();
+}
+
+function formatLastVetTreatment(lastVetDate, lastVetType, lastVetMedication) {
+    if (!lastVetDate || !lastVetType) {
+        return "Нет записей";
+    }
+
+    const formattedDate = formatDateToOutput(lastVetDate);
+    const medication = lastVetMedication || "без препарата";
+    return `${formattedDate}: ${lastVetType} (${medication})`;
 }
 
 function toggleSelectAll(checkbox) {
@@ -637,3 +661,4 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.saveCommonAnimal = saveCommonAnimal;
+

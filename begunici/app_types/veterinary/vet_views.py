@@ -64,7 +64,7 @@ def get_animals_by_place(request, place_id):
                 display_name = f"{maker.name}({maker.tag.tag_number})"
             
             animals.append({
-                'type': 'Производитель',
+                'type': 'Баран-Производитель',
                 'tag_number': maker.tag.tag_number if maker.tag else 'Нет бирки',
                 'display_name': display_name,
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
@@ -73,7 +73,7 @@ def get_animals_by_place(request, place_id):
             
         for ram in rams:
             animals.append({
-                'type': 'Баран',
+                'type': 'Баранчик',
                 'tag_number': ram.tag.tag_number if ram.tag else 'Нет бирки',
                 'display_name': ram.tag.tag_number if ram.tag else 'Нет бирки',
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
@@ -91,7 +91,7 @@ def get_animals_by_place(request, place_id):
             
         for s in sheep:
             animals.append({
-                'type': 'Овца',
+                'type': 'Овцематка',
                 'tag_number': s.tag.tag_number if s.tag else 'Нет бирки',
                 'display_name': s.tag.tag_number if s.tag else 'Нет бирки',
                 'status': s.animal_status.status_type if s.animal_status else 'Нет статуса',
@@ -328,8 +328,8 @@ def export_veterinary_cares_excel(request):
     headers = [
         "№",
         "ID",
-        "Тип ветобработки",
         "Класс ветобработки",
+        "Тип ветобработки",
         "Препарат/материал",
         "Цель",
         "Срок действия (дней)",
@@ -372,3 +372,4 @@ def export_veterinary_cares_excel(request):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     workbook.save(response)
     return response
+

@@ -770,6 +770,14 @@ th {
     line-height: 1.4;
 }
 
+#births-stats .young-stock-row {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e9ecef;
+    font-weight: 700;
+    color: #495057;
+}
+
 .yearly-stat-section small {
     color: #868e96;
     font-size: 11px;

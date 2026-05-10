@@ -164,7 +164,7 @@ async function loadVetCalendar(animalType, tagNumber, page = 1) {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${formattedDate}</td>
-                    <td>${entry.veterinary_care?.care_name || 'Не указано'}</td>
+                    <td>${entry.veterinary_care?.care_type || 'Не указано'}</td>
                     <td>${entry.veterinary_care?.medication || 'Нет препарата'}</td>
                     <td>${entry.veterinary_care?.purpose || 'Нет цели'}</td>
                     <td>${entry.comments || 'Нет комментария'}</td>
@@ -293,7 +293,7 @@ async function loadPlaceHistory(animalType, tagNumber, page = 1) {
 // Делаем функцию глобальной
 window.onChildClick = async function(animalType, tagNumber, childTagNumber) {
     try {
-        // Делаем запрос на API для получения всех детей производителя
+        // Делаем запрос на API для получения всех детей барана-производителя
         const response = await apiRequest(`/animals/${animalType}/${tagNumber}/children/`);
 
         // Ищем конкретного ребёнка по tag_number
@@ -364,3 +364,4 @@ function renderPageNumbers(container, currentPage, totalPages, onPageClick) {
         container.appendChild(pageButton);
     }
 }
+

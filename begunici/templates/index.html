@@ -16,10 +16,10 @@
                 <h4>Активные животные</h4>
                 <div class="stat-number" id="total-active">-</div>
                 <div class="stat-details">
-                    <p>Производители: <span id="active-makers">-</span></p>
-                    <p>Бараны: <span id="active-rams">-</span></p>
+                    <p>Бараны-Производители: <span id="active-makers">-</span></p>
+                    <p>Баранчики: <span id="active-rams">-</span></p>
                     <p>Ярки: <span id="active-ewes">-</span></p>
-                    <p>Овцы: <span id="active-sheep">-</span></p>
+                    <p>Овцематки: <span id="active-sheep">-</span></p>
                 </div>
             </div>
             
@@ -28,11 +28,11 @@
                 <div class="stat-number" id="total-archived">-</div>
                 <div class="stat-details">
                     <div class="animal-type-section">
-                        <strong>Производители:</strong> <span id="archived-makers-total">-</span>
+                        <strong>Бараны-Производители:</strong> <span id="archived-makers-total">-</span>
                         <div class="status-breakdown" id="archived-makers-breakdown"></div>
                     </div>
                     <div class="animal-type-section">
-                        <strong>Бараны:</strong> <span id="archived-rams-total">-</span>
+                        <strong>Баранчики:</strong> <span id="archived-rams-total">-</span>
                         <div class="status-breakdown" id="archived-rams-breakdown"></div>
                     </div>
                     <div class="animal-type-section">
@@ -40,7 +40,7 @@
                         <div class="status-breakdown" id="archived-ewes-breakdown"></div>
                     </div>
                     <div class="animal-type-section">
-                        <strong>Овцы:</strong> <span id="archived-sheep-total">-</span>
+                        <strong>Овцематки:</strong> <span id="archived-sheep-total">-</span>
                         <div class="status-breakdown" id="archived-sheep-breakdown"></div>
                     </div>
                 </div>
@@ -50,7 +50,7 @@
                 <h4>Родилось (месяц)</h4>
                 <div class="stat-number" id="total-born">-</div>
                 <div class="stat-details">
-                    <p>Бараны: <span id="born-rams">-</span></p>
+                    <p>Баранчики: <span id="born-rams">-</span></p>
                     <p>Ярки: <span id="born-ewes">-</span></p>
                 </div>
             </div>
@@ -140,7 +140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const statusMap = {
                 'Убыл': 'убыло',
                 'Убой': 'убой', 
-                'Продажа': 'продажа'
+                'Продажа на мясо': 'продажа на мясо',
+                'Продажа на племя': 'продажа на племя'
             };
             
             return statusData.map(item => {
@@ -149,12 +150,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }).join('');
         }
         
-        // Производители
+        // Бараны-Производители
         document.getElementById('archived-makers-total').textContent = data.archived_last_month.by_type.makers.total;
         document.getElementById('archived-makers-breakdown').innerHTML = 
             createStatusBreakdown(data.archived_last_month.by_type.makers.by_status);
         
-        // Бараны
+        // Баранчики
         document.getElementById('archived-rams-total').textContent = data.archived_last_month.by_type.rams.total;
         document.getElementById('archived-rams-breakdown').innerHTML = 
             createStatusBreakdown(data.archived_last_month.by_type.rams.by_status);
@@ -164,7 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('archived-ewes-breakdown').innerHTML = 
             createStatusBreakdown(data.archived_last_month.by_type.ewes.by_status);
         
-        // Овцы
+        // Овцематки
         document.getElementById('archived-sheep-total').textContent = data.archived_last_month.by_type.sheep.total;
         document.getElementById('archived-sheep-breakdown').innerHTML = 
             createStatusBreakdown(data.archived_last_month.by_type.sheep.by_status);
@@ -229,7 +230,7 @@ async function loadYearlyStatistics(year) {
     containers.forEach(id => {
         const container = document.getElementById(id);
         if (container) {
-            container.innerHTML = '<div style="text-align: center; padding: 20px;">⏳ Загрузка статистики...</div>';
+            container.innerHTML = '<div style="text-align: center; padding: 20px;">Загрузка статистики...</div>';
         }
     });
     
@@ -410,15 +411,21 @@ function displayAnimalsByStatus(statusData) {
 function displayBirths(birthsData) {
     const container = document.getElementById('births-stats');
     
-    if (!birthsData || birthsData.total === 0) {
+    if (!birthsData) {
         container.innerHTML = 'Нет данных';
         return;
     }
     
+    const total = birthsData.total ?? 0;
+    const boys = birthsData.boys ?? 0;
+    const girls = birthsData.girls ?? 0;
+    const youngStockTotal = birthsData.young_stock_total ?? 0;
+
     container.innerHTML = `
-        <div><strong>Всего: ${birthsData.total}</strong></div>
-        <div>Мальчики: ${birthsData.boys}</div>
-        <div>Девочки: ${birthsData.girls}</div>
+        <div><strong>Всего: ${total}</strong></div>
+        <div>Мальчики: ${boys}</div>
+        <div>Девочки: ${girls}</div>
+        <div class="young-stock-row">Молодняк: всего ${youngStockTotal}</div>
     `;
 }
 
@@ -646,3 +653,4 @@ function getCookie(name) {
 </script>
 
 {% endblock %}
+

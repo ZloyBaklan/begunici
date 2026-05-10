@@ -33,6 +33,8 @@ function getRamFiltersFromInputs() {
         search: document.getElementById('ram-search')?.value || '',
         birth_date_from: document.getElementById('ram-birth-date-from')?.value || '',
         birth_date_to: document.getElementById('ram-birth-date-to')?.value || '',
+        age_min: document.getElementById('ram-age-min-filter')?.value || '',
+        age_max: document.getElementById('ram-age-max-filter')?.value || '',
         father_tag: document.getElementById('ram-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('ram-mother-tag-filter')?.value || ''
     };
@@ -44,6 +46,8 @@ function initializeRamFiltersFromUrl() {
         search: urlParams.get('search') || '',
         birth_date_from: urlParams.get('birth_date_from') || '',
         birth_date_to: urlParams.get('birth_date_to') || '',
+        age_min: urlParams.get('age_min') || '',
+        age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || ''
     };
@@ -54,12 +58,16 @@ function initializeRamFiltersFromUrl() {
     if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
     const birthDateToInput = document.getElementById('ram-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const ageMinInput = document.getElementById('ram-age-min-filter');
+    if (ageMinInput) ageMinInput.value = filters.age_min;
+    const ageMaxInput = document.getElementById('ram-age-max-filter');
+    if (ageMaxInput) ageMaxInput.value = filters.age_max;
     const fatherTagInput = document.getElementById('ram-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('ram-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
         const filtersBlock = document.getElementById('ram-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -71,7 +79,7 @@ function initializeRamFiltersFromUrl() {
 
 document.addEventListener('DOMContentLoaded', function () {
     const initialFilters = initializeRamFiltersFromUrl();
-    fetchRams(1, initialFilters);  // Загружаем список баранов при загрузке страницы
+    fetchRams(1, initialFilters);  // Загружаем список баранчиков при загрузке страницы
     loadStatuses();
     loadPlaces();
 
@@ -81,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
-// Функция создания барана
+// Функция создания баранчика
 async function saveRam() {
     const formData = new FormData(document.getElementById('create-ram-form'));
     const data = {
@@ -102,11 +110,11 @@ async function saveRam() {
 
     try {
         await apiRequest('/animals/ram/', 'POST', data);
-        alert('Баран успешно создан');
+        alert('Баранчик успешно создан');
         document.getElementById('create-ram-form').reset();
         fetchRams();
     } catch (error) {
-        console.error('Ошибка создания барана:', error);
+        console.error('Ошибка создания баранчика:', error);
         alert(`Ошибка: ${error.message}`);
     }
 }
@@ -114,8 +122,8 @@ async function saveRam() {
 // Алиас для обратной совместимости
 const createRam = saveRam;
 
-// Функция загрузки списка баранов
-// Функция загрузки списка баранов
+// Функция загрузки списка баранчиков
+// Функция загрузки списка баранчиков
 async function fetchRams(page = 1, filters = {}) {
     try {
         if (typeof filters === 'string') {
@@ -130,7 +138,7 @@ async function fetchRams(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -161,6 +169,12 @@ async function fetchRams(page = 1, filters = {}) {
         if (currentFilters.birth_date_to) {
             params.set('birth_date_to', currentFilters.birth_date_to);
         }
+        if (currentFilters.age_min) {
+            params.set('age_min', currentFilters.age_min);
+        }
+        if (currentFilters.age_max) {
+            params.set('age_max', currentFilters.age_max);
+        }
         if (currentFilters.father_tag) {
             params.set('father_tag', currentFilters.father_tag);
         }
@@ -190,16 +204,16 @@ async function fetchRams(page = 1, filters = {}) {
             }
         } else {
             console.error('Некорректный ответ от API:', response);
-            alert('Ошибка: данные баранов не найдены.');
+            alert('Ошибка: данные баранчиков не найдены.');
         }
     } catch (error) {
-        console.error('Ошибка при загрузке баранов:', error);
-        alert('Ошибка при загрузке списка баранов.');
+        console.error('Ошибка при загрузке баранчиков:', error);
+        alert('Ошибка при загрузке списка баранчиков.');
     }
 }
 
 
-// Рендеринг списка баранов
+// Рендеринг списка баранчиков
 function renderRams(rams, startIndex = null) {
     const ramTable = document.getElementById('ram-list');
     const rows = [];
@@ -226,9 +240,7 @@ function renderRams(rams, startIndex = null) {
             <td>${ram.weight_records && ram.weight_records.length > 0 
                 ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
-            <td>${ram.veterinary_history && ram.veterinary_history.length > 0 
-                ? `${formatDateToOutput(ram.veterinary_history[0].date_of_care)}: ${ram.veterinary_history[0].veterinary_care.care_name}`
-                : 'Нет записей'}</td>
+            <td>${formatLastVetTreatment(ram.veterinary_history)}</td>
             <td>${ram.rshn_tag || '-'}</td>
             <td>${ram.note || ''}</td>
         </tr>`;
@@ -250,6 +262,20 @@ function renderRams(rams, startIndex = null) {
     
     // Обновляем кнопки действий
     toggleDeleteButton();
+}
+
+function formatLastVetTreatment(veterinaryHistory) {
+    if (!Array.isArray(veterinaryHistory) || veterinaryHistory.length === 0) {
+        return 'Нет записей';
+    }
+
+    const lastVet = veterinaryHistory[0];
+    const care = lastVet?.veterinary_care;
+    const careType = care?.care_name || 'Не указан тип';
+    const medication = care?.medication || 'без препарата';
+    const careDate = lastVet?.date_of_care ? formatDateToOutput(lastVet.date_of_care) : '-';
+
+    return `${careDate}: ${careType} (${medication})`;
 }
 
 // Функция загрузки статусов
@@ -292,7 +318,7 @@ async function loadPlaces() {
     }
 }
 
-// Функция поиска баранов
+// Функция поиска баранчиков
 async function searchRams() {
     const filters = getRamFiltersFromInputs();
     
@@ -327,10 +353,10 @@ function toggleForm() {
     
     if (form.style.display === 'none' || form.style.display === '') {
         form.style.display = 'block';
-        button.textContent = '▲ Скрыть форму создания барана';
+        button.textContent = '▲ Скрыть форму создания баранчика';
     } else {
         form.style.display = 'none';
-        button.textContent = '▼ Создать барана';
+        button.textContent = '▼ Создать баранчика';
     }
 }
 
@@ -539,7 +565,7 @@ function updateSimpleRamsPagination(totalItems, searchQuery = '') {
     // Для неограниченного списка показываем только информацию о количестве
     paginationContainer.innerHTML = `
         <div class="pagination-info">
-            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'баран', 'барана', 'баранов')}</span>
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'баранчик', 'баранчика', 'баранчиков')}</span>
             ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
         </div>
     `;
@@ -692,3 +718,4 @@ window.fetchRams = fetchRams;
 window.searchRams = searchRams;
 window.performRamSearch = performRamSearch;
 window.toggleRamAdditionalFilters = toggleRamAdditionalFilters;
+

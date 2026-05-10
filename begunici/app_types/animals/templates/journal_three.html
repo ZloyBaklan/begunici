@@ -15,7 +15,7 @@
         </div>
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end">
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="month" class="form-label">Месяц</label>
                     <select class="form-select" id="month" name="month">
                         <option value="">Все</option>
@@ -24,7 +24,25 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label for="month_from" class="form-label">Месяц с</label>
+                    <select class="form-select" id="month_from" name="month_from">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_from == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="month_to" class="form-label">Месяц по</label>
+                    <select class="form-select" id="month_to" name="month_to">
+                        <option value="">Любой</option>
+                        {% for month_value, month_label in months %}
+                            <option value="{{ month_value }}" {% if selected_month_to == month_value %}selected{% endif %}>{{ month_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
                     <label for="year" class="form-label">Год</label>
                     <select class="form-select" id="year" name="year">
                         <option value="">Все</option>
@@ -33,7 +51,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-6 d-flex gap-2">
+                <div class="col-md-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary">Применить</button>
                     <a href="{% url 'animals:journal-three' %}" class="btn btn-secondary">Сбросить</a>
                     <a href="{% url 'animals:journal-three' %}?{% if base_query %}{{ base_query }}&{% endif %}export=1" class="btn btn-success ms-auto">

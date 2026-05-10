@@ -3,7 +3,7 @@ import { apiRequest } from "./utils.js";
 let currentPage = 1;
 const pageSize = 10;
 
-const CARE_CLASSES_BY_TYPE = {
+const CARE_TYPES_BY_CLASS = {
     "Вакцинация": ["Иммунизация"],
     "Противопаразитарная": ["Антигельминтная", "Противопротозойная", "Дезинсекция"],
 };
@@ -14,34 +14,34 @@ function getUserPermissions() {
     };
 }
 
-function syncCareClassOptions(selectedType, selectedClass = null) {
-    const classSelect = document.getElementById("care-name");
-    if (!classSelect) return;
+function syncCareTypeOptions(selectedClass, selectedType = null) {
+    const typeSelect = document.getElementById("care-name");
+    if (!typeSelect) return;
 
-    const classes = CARE_CLASSES_BY_TYPE[selectedType] || [];
-    classSelect.innerHTML = "";
+    const types = CARE_TYPES_BY_CLASS[selectedClass] || [];
+    typeSelect.innerHTML = "";
 
-    classes.forEach((value) => {
+    types.forEach((value) => {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = value;
-        classSelect.appendChild(option);
+        typeSelect.appendChild(option);
     });
 
-    if (selectedClass && classes.includes(selectedClass)) {
-        classSelect.value = selectedClass;
-    } else if (classes.length > 0) {
-        classSelect.value = classes[0];
+    if (selectedType && types.includes(selectedType)) {
+        typeSelect.value = selectedType;
+    } else if (types.length > 0) {
+        typeSelect.value = types[0];
     }
 }
 
 function initCareTypeClassControls() {
-    const typeSelect = document.getElementById("care-type");
-    if (!typeSelect) return;
+    const classSelect = document.getElementById("care-type");
+    if (!classSelect) return;
 
-    syncCareClassOptions(typeSelect.value);
-    typeSelect.addEventListener("change", () => {
-        syncCareClassOptions(typeSelect.value);
+    syncCareTypeOptions(classSelect.value);
+    classSelect.addEventListener("change", () => {
+        syncCareTypeOptions(classSelect.value);
     });
 }
 
@@ -80,8 +80,8 @@ function handleCreateOrUpdateCare() {
 
 function cancelEdit() {
     document.getElementById("create-care-form").reset();
-    const typeSelect = document.getElementById("care-type");
-    syncCareClassOptions(typeSelect.value);
+    const classSelect = document.getElementById("care-type");
+    syncCareTypeOptions(classSelect.value);
     resetButton();
     document.getElementById("form-title").textContent = "Создать обработку";
     document.getElementById("cancel-edit-button").style.display = "none";
@@ -107,7 +107,7 @@ async function createCare() {
         await apiRequest("/veterinary/api/care/", "POST", data);
         showMessage("Ветобработка успешно создана", "success");
         document.getElementById("create-care-form").reset();
-        syncCareClassOptions(document.getElementById("care-type").value);
+        syncCareTypeOptions(document.getElementById("care-type").value);
         fetchCares(currentPage);
         resetButton();
     } catch (error) {
@@ -194,7 +194,7 @@ async function editCare(careId) {
         const care = await apiRequest(`/veterinary/api/care/${careId}/`);
 
         document.getElementById("care-type").value = care.care_type;
-        syncCareClassOptions(care.care_type, care.care_name);
+        syncCareTypeOptions(care.care_type, care.care_name);
         document.getElementById("medication").value = care.medication || "";
         document.getElementById("purpose").value = care.purpose || "";
         document.getElementById("default-duration-days").value = care.default_duration_days || 0;

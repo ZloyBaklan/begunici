@@ -34,6 +34,8 @@ function getSheepFiltersFromInputs() {
         search: document.getElementById('sheep-search')?.value || '',
         birth_date_from: document.getElementById('sheep-birth-date-from')?.value || '',
         birth_date_to: document.getElementById('sheep-birth-date-to')?.value || '',
+        age_min: document.getElementById('sheep-age-min-filter')?.value || '',
+        age_max: document.getElementById('sheep-age-max-filter')?.value || '',
         father_tag: document.getElementById('sheep-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('sheep-mother-tag-filter')?.value || ''
     };
@@ -45,6 +47,8 @@ function initializeSheepFiltersFromUrl() {
         search: urlParams.get('search') || '',
         birth_date_from: urlParams.get('birth_date_from') || '',
         birth_date_to: urlParams.get('birth_date_to') || '',
+        age_min: urlParams.get('age_min') || '',
+        age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || ''
     };
@@ -55,12 +59,16 @@ function initializeSheepFiltersFromUrl() {
     if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
     const birthDateToInput = document.getElementById('sheep-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const ageMinInput = document.getElementById('sheep-age-min-filter');
+    if (ageMinInput) ageMinInput.value = filters.age_min;
+    const ageMaxInput = document.getElementById('sheep-age-max-filter');
+    if (ageMaxInput) ageMaxInput.value = filters.age_max;
     const fatherTagInput = document.getElementById('sheep-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('sheep-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
         const filtersBlock = document.getElementById('sheep-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -72,7 +80,7 @@ function initializeSheepFiltersFromUrl() {
 
 document.addEventListener('DOMContentLoaded', function () {
     const initialFilters = initializeSheepFiltersFromUrl();
-    fetchSheeps(1, initialFilters);  // Загружаем список овец при загрузке страницы
+    fetchSheeps(1, initialFilters);  // Загружаем список овцематок при загрузке страницы
     loadStatuses();
     loadPlaces();
 
@@ -92,7 +100,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
-// Функция создания овцы
+// Функция создания овцематки
 async function saveSheep() {
     const formData = new FormData(document.getElementById('create-sheep-form'));
     const data = {
@@ -113,11 +121,11 @@ async function saveSheep() {
 
     try {
         await apiRequest('/animals/sheep/', 'POST', data);
-        alert('Овца успешно создана');
+        alert('Овцематка успешно создана');
         document.getElementById('create-sheep-form').reset();
         fetchSheeps();
     } catch (error) {
-        console.error('Ошибка создания овцы:', error);
+        console.error('Ошибка создания овцематки:', error);
         alert(`Ошибка: ${error.message}`);
     }
 }
@@ -125,7 +133,7 @@ async function saveSheep() {
 // Алиас для обратной совместимости
 const createSheep = saveSheep;
 
-// Функция загрузки списка овец
+// Функция загрузки списка овцематок
 async function fetchSheeps(page = 1, filters = {}) {
     try {
         if (typeof filters === 'string') {
@@ -140,7 +148,7 @@ async function fetchSheeps(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -171,6 +179,12 @@ async function fetchSheeps(page = 1, filters = {}) {
         if (currentFilters.birth_date_to) {
             params.set('birth_date_to', currentFilters.birth_date_to);
         }
+        if (currentFilters.age_min) {
+            params.set('age_min', currentFilters.age_min);
+        }
+        if (currentFilters.age_max) {
+            params.set('age_max', currentFilters.age_max);
+        }
         if (currentFilters.father_tag) {
             params.set('father_tag', currentFilters.father_tag);
         }
@@ -200,15 +214,15 @@ async function fetchSheeps(page = 1, filters = {}) {
             }
         } else {
             console.error('Некорректный ответ от API:', response);
-            alert('Ошибка: данные овец не найдены.');
+            alert('Ошибка: данные овцематок не найдены.');
         }
     } catch (error) {
-        console.error('Ошибка при загрузке овец:', error);
-        alert('Ошибка при загрузке списка овец.');
+        console.error('Ошибка при загрузке овцематок:', error);
+        alert('Ошибка при загрузке списка овцематок.');
     }
 }
 
-// Рендеринг списка овец
+// Рендеринг списка овцематок
 function renderSheeps(sheeps, startIndex = null) {
     const sheepTable = document.getElementById('sheep-list');
     const rows = [];
@@ -235,9 +249,7 @@ function renderSheeps(sheeps, startIndex = null) {
             <td>${sheep.weight_records && sheep.weight_records.length > 0 
                 ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
-            <td>${sheep.veterinary_history && sheep.veterinary_history.length > 0 
-                ? `${formatDateToOutput(sheep.veterinary_history[0].date_of_care)}: ${sheep.veterinary_history[0].veterinary_care.care_name}`
-                : 'Нет записей'}</td>
+            <td>${formatLastVetTreatment(sheep.veterinary_history)}</td>
             <td>${sheep.rshn_tag || '-'}</td>
             <td>${sheep.note || ''}</td>
         </tr>`;
@@ -259,6 +271,20 @@ function renderSheeps(sheeps, startIndex = null) {
     
     // Обновляем кнопки действий
     toggleDeleteButton();
+}
+
+function formatLastVetTreatment(veterinaryHistory) {
+    if (!Array.isArray(veterinaryHistory) || veterinaryHistory.length === 0) {
+        return 'Нет записей';
+    }
+
+    const lastVet = veterinaryHistory[0];
+    const care = lastVet?.veterinary_care;
+    const careType = care?.care_name || 'Не указан тип';
+    const medication = care?.medication || 'без препарата';
+    const careDate = lastVet?.date_of_care ? formatDateToOutput(lastVet.date_of_care) : '-';
+
+    return `${careDate}: ${careType} (${medication})`;
 }
 
 // Функция загрузки статусов
@@ -301,7 +327,7 @@ async function loadPlaces() {
     }
 }
 
-// Функция поиска овец
+// Функция поиска овцематок
 async function searchSheeps() {
     const filters = getSheepFiltersFromInputs();
     
@@ -337,7 +363,7 @@ function updateSimpleSheepsPagination(totalItems, searchQuery = '') {
     // Для неограниченного списка показываем только информацию о количестве
     paginationContainer.innerHTML = `
         <div class="pagination-info">
-            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'овца', 'овцы', 'овец')}</span>
+            <span>Показано: ${totalItems} ${getAnimalWord(totalItems, 'овцематка', 'овцематки', 'овцематок')}</span>
             ${searchQuery ? `<span class="search-info">Поиск: "${searchQuery}"</span>` : ''}
         </div>
     `;
@@ -423,10 +449,10 @@ function toggleForm() {
     
     if (form.style.display === 'none' || form.style.display === '') {
         form.style.display = 'block';
-        button.textContent = '▲ Скрыть форму создания овцы';
+        button.textContent = '▲ Скрыть форму создания овцематки';
     } else {
         form.style.display = 'none';
-        button.textContent = '▼ Создать овцу';
+        button.textContent = '▼ Создать овцематку';
     }
 }
 
@@ -701,3 +727,4 @@ window.fetchSheeps = fetchSheeps;
 window.searchSheeps = searchSheeps;
 window.performSheepSearch = performSheepSearch;
 window.toggleSheepAdditionalFilters = toggleSheepAdditionalFilters;
+

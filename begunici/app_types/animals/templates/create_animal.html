@@ -13,26 +13,26 @@
     <!-- Вкладки для выбора типа животного -->
     <ul class="nav nav-tabs" id="animalTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="maker-tab" data-bs-toggle="tab" data-bs-target="#maker" type="button" role="tab" aria-controls="maker" aria-selected="true">Создать производителя</button>
+            <button class="nav-link active" id="maker-tab" data-bs-toggle="tab" data-bs-target="#maker" type="button" role="tab" aria-controls="maker" aria-selected="true">Создать барана-производителя</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="ram-tab" data-bs-toggle="tab" data-bs-target="#ram" type="button" role="tab" aria-controls="ram" aria-selected="false">Создать барана</button>
+            <button class="nav-link" id="ram-tab" data-bs-toggle="tab" data-bs-target="#ram" type="button" role="tab" aria-controls="ram" aria-selected="false">Создать баранчика</button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="ewe-tab" data-bs-toggle="tab" data-bs-target="#ewe" type="button" role="tab" aria-controls="ewe" aria-selected="false">Создать ярку</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="sheep-tab" data-bs-toggle="tab" data-bs-target="#sheep" type="button" role="tab" aria-controls="sheep" aria-selected="false">Создать овцу</button>
+            <button class="nav-link" id="sheep-tab" data-bs-toggle="tab" data-bs-target="#sheep" type="button" role="tab" aria-controls="sheep" aria-selected="false">Создать овцематку</button>
         </li>
     </ul>
 
     <!-- Содержимое вкладок -->
     <div class="tab-content" id="animalTabContent">
-        <!-- Вкладка производителя -->
+        <!-- Вкладка барана-производителя -->
         <div class="tab-pane fade show active" id="maker" role="tabpanel" aria-labelledby="maker-tab">
             <div class="card mt-3">
                 <div class="card-header">
-                    <h5>Создать производителя</h5>
+                    <h5>Создать барана-производителя</h5>
                 </div>
                 <div class="card-body">
                     <form id="create-maker-form">
@@ -71,17 +71,17 @@
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="createMaker()">Создать производителя</button>
+                        <button type="button" class="btn btn-primary" onclick="createMaker()">Создать барана-производителя</button>
                     </form>
                 </div>
             </div>
         </div>
 
-        <!-- Вкладка барана -->
+        <!-- Вкладка баранчика -->
         <div class="tab-pane fade" id="ram" role="tabpanel" aria-labelledby="ram-tab">
             <div class="card mt-3">
                 <div class="card-header">
-                    <h5>Создать барана</h5>
+                    <h5>Создать баранчика</h5>
                 </div>
                 <div class="card-body">
                     <form id="create-ram-form">
@@ -112,7 +112,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="createRam()">Создать барана</button>
+                        <button type="button" class="btn btn-primary" onclick="createRam()">Создать баранчика</button>
                     </form>
                 </div>
             </div>
@@ -159,11 +159,11 @@
             </div>
         </div>
 
-        <!-- Вкладка овцы -->
+        <!-- Вкладка овцематки -->
         <div class="tab-pane fade" id="sheep" role="tabpanel" aria-labelledby="sheep-tab">
             <div class="card mt-3">
                 <div class="card-header">
-                    <h5>Создать овцу</h5>
+                    <h5>Создать овцематку</h5>
                 </div>
                 <div class="card-body">
                     <form id="create-sheep-form">
@@ -194,7 +194,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="createSheep()">Создать овцу</button>
+                        <button type="button" class="btn btn-primary" onclick="createSheep()">Создать овцематку</button>
                     </form>
                 </div>
             </div>
@@ -342,15 +342,15 @@ function createMaker() {
     .then(response => response.json())
     .then(data => {
         if (data.id) {
-            alert('Производитель создан успешно!');
+            alert('Баран-Производитель создан успешно!');
             document.getElementById('create-maker-form').reset();
         } else {
-            alert('Ошибка при создании производителя: ' + JSON.stringify(data));
+            alert('Ошибка при создании барана-производителя: ' + JSON.stringify(data));
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании производителя');
+        alert('Произошла ошибка при создании барана-производителя');
     });
 }
 
@@ -375,15 +375,15 @@ function createRam() {
     .then(response => response.json())
     .then(data => {
         if (data.id) {
-            alert('Баран создан успешно!');
+            alert('Баранчик создан успешно!');
             document.getElementById('create-ram-form').reset();
         } else {
-            alert('Ошибка при создании барана: ' + JSON.stringify(data));
+            alert('Ошибка при создании баранчика: ' + JSON.stringify(data));
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании барана');
+        alert('Произошла ошибка при создании баранчика');
     });
 }
 
@@ -441,15 +441,15 @@ function createSheep() {
     .then(response => response.json())
     .then(data => {
         if (data.id) {
-            alert('Овца создана успешно!');
+            alert('Овцематка создана успешно!');
             document.getElementById('create-sheep-form').reset();
         } else {
-            alert('Ошибка при создании овцы: ' + JSON.stringify(data));
+            alert('Ошибка при создании овцематки: ' + JSON.stringify(data));
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании овцы');
+        alert('Произошла ошибка при создании овцематки');
     });
 }
 

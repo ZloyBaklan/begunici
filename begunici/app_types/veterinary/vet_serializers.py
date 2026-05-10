@@ -243,7 +243,7 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {
                     "care_name": (
-                        "Недопустимый класс для выбранного типа ветобработки."
+                        "Недопустимый тип для выбранного класса ветобработки."
                     )
                 }
             )
@@ -266,8 +266,8 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
             
             # Формируем сокращенные детали создания
             details = []
-            details.append(f"Тип: {care.care_type}")
-            details.append(f"Название: {care.care_name}")
+            details.append(f"Класс: {care.care_type}")
+            details.append(f"Тип: {care.care_name}")
             if care.medication:
                 # Ограничиваем длину препарата
                 medication = care.medication[:20] + "..." if len(care.medication) > 20 else care.medication
@@ -302,12 +302,12 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
         old_care_type = instance.care_type
         new_care_type = validated_data.get("care_type", instance.care_type)
         if old_care_type != new_care_type:
-            changes.append(f"Тип: {old_care_type} → {new_care_type}")
+            changes.append(f"Класс: {old_care_type} → {new_care_type}")
         
         old_care_name = instance.care_name
         new_care_name = validated_data.get("care_name", instance.care_name)
         if old_care_name != new_care_name:
-            changes.append(f"Название: {old_care_name} → {new_care_name}")
+            changes.append(f"Тип: {old_care_name} → {new_care_name}")
         
         old_medication = instance.medication or "Не указан"
         new_medication = validated_data.get("medication", instance.medication) or "Не указан"

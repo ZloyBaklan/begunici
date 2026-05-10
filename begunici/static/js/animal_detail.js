@@ -241,13 +241,13 @@ async function loadAnimalDetails(animalType, tagNumber) {
             workingConditionField.value = animal.working_condition || '';
         }
         
-        // Поле дорперности
+        // Поле кровности по основной породе
         const dorperField = document.getElementById('dorper_percentage');
         if (dorperField) {
             dorperField.value = animal.dorper_percentage || '';
         }
         
-        // Отображение дорперности в основной информации
+        // Отображение кровности по основной породе в основной информации
         const dorperDisplay = document.getElementById('dorper-display');
         if (dorperDisplay) {
             dorperDisplay.textContent = animal.dorper_display || '-';
@@ -265,7 +265,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
         ]);
         console.log('Все дополнительные данные загружены');
     } catch (error) {
-        console.error('Ошибка загрузки производителя:', error);
+        console.error('Ошибка загрузки барана-производителя:', error);
     }
 }
 
@@ -365,7 +365,7 @@ function createVetTreatmentRow(treatment) {
     }
     
     row.innerHTML = `
-        <td>${treatment.veterinary_care?.care_name || 'Не указан'}</td>
+        <td>${treatment.veterinary_care?.care_type || 'Не указан'}</td>
         <td>${treatment.veterinary_care?.medication || 'Нет препарата'}</td>
         <td>${treatment.veterinary_care?.purpose || 'Нет цели'}</td>
         <td>${careDate.toLocaleDateString('ru-RU')}</td>
@@ -455,7 +455,7 @@ window.saveMakerDetails = saveAnimalDetails;
 
 
 // Добавление взвешивания
-// Глобальная переменная для хранения данных о производителе
+// Глобальная переменная для хранения данных о баране-производителе
 let animalData = null;
 
 async function addWeightRecord() {
@@ -465,13 +465,13 @@ async function addWeightRecord() {
     const weight = document.getElementById('edit-weight-value').value;
     const weightDate = document.getElementById('edit-weight-date').value;
     
-    // Если данные о производителе ещё не загружены, загружаем их
+    // Если данные о баране-производителе ещё не загружены, загружаем их
     if (!animalData) {
         try {
             animalData = await apiRequest(`/animals/${animalType}/${tagNum}/api/`, 'GET');
         } catch (error) {
-            console.error('Ошибка при загрузке данных производителя:', error);
-            alert('Не удалось загрузить данные о производителе');
+            console.error('Ошибка при загрузке данных барана-производителя:', error);
+            alert('Не удалось загрузить данные о баране-производителе');
             return;
         }
     }
@@ -494,15 +494,15 @@ async function addWeightRecord() {
     
     try {
         console.log('[v3] Начало addWeightRecord');
-        // Используем данные из уже загруженного производителя
+        // Используем данные из уже загруженного барана-производителя
         if (!animalData || !animalData.id) {
-            throw new Error('[v3] Не удалось загрузить данные производителя');
+            throw new Error('[v3] Не удалось загрузить данные барана-производителя');
         }
         
         // Проверяем, есть ли у нас данные о бирке
         if (!animalData.tag || !animalData.tag.tag_number) {
             console.error('[v3] Проверка бирки не удалась. animalData.tag:', animalData.tag);
-            throw new Error('[v3] Номер бирки не найден в данных производителя');
+            throw new Error('[v3] Номер бирки не найден в данных барана-производителя');
         }
         
         const data = {
@@ -609,8 +609,8 @@ async function loadVetTreatments() {
             option.textContent = `${medicationText} — ${purposeText}`;
 
             // Сохраняем дополнительные данные обработки
-            option.dataset.type = treatment.care_type || 'Не указан';
-            option.dataset.class = treatment.care_name || 'Не указан';
+            option.dataset.type = treatment.care_name || 'Не указан';
+            option.dataset.class = treatment.care_type || 'Не указан';
             option.dataset.medication = treatment.medication || 'Не указан';
             option.dataset.purpose = treatment.purpose || 'Нет цели';
             option.dataset.defaultDuration = treatment.default_duration_days || '0';
@@ -798,7 +798,7 @@ async function findOrValidateTag(tagNumber) {
 
 
 
-// Функция преобразования ярки в овцу
+// Функция преобразования ярки в овцематку
 async function convertEweToSheep() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
@@ -812,7 +812,7 @@ async function convertEweToSheep() {
     
     // Подтверждение действия
     const confirmConvert = confirm(
-        `Вы уверены, что хотите преобразовать ярку ${tagNumber} в овцу? ` +
+        `Вы уверены, что хотите преобразовать ярку ${tagNumber} в овцематку? ` +
         'Это действие нельзя отменить!'
     );
     
@@ -823,19 +823,97 @@ async function convertEweToSheep() {
     try {
         const response = await apiRequest(`/animals/ewe/${tagNumber}/to_sheep/`, 'POST');
         
-        alert('Ярка успешно преобразована в овцу!');
+        alert('Ярка успешно преобразована в овцематку!');
         
-        // Перенаправляем на страницу новой овцы
+        // Перенаправляем на страницу новой овцематки
         window.location.href = `/animals/sheep/${tagNumber}/info/`;
         
     } catch (error) {
-        console.error('Ошибка при преобразовании ярки в овцу:', error);
+        console.error('Ошибка при преобразовании ярки в овцематку:', error);
         alert('Ошибка при преобразовании: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
 // Экспортируем функцию для глобального доступа
 window.convertEweToSheep = convertEweToSheep;
+
+function openConvertRamToMakerModal() {
+    const modalElement = document.getElementById('convertRamToMakerModal');
+    if (!modalElement) return;
+
+    const plemstatusInput = document.getElementById('maker-plemstatus-input');
+    const workingConditionInput = document.getElementById('maker-working-condition-input');
+    if (plemstatusInput) plemstatusInput.value = '';
+    if (workingConditionInput) workingConditionInput.value = '';
+
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+}
+
+// Функция преобразования баранчика в барана-производителя
+async function convertRamToMaker(plemstatus, workingCondition) {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+
+    // Проверяем, что это действительно баранчик
+    if (animalType !== 'ram') {
+        alert('Эта функция доступна только для баранчиков');
+        return;
+    }
+
+    try {
+        await apiRequest(`/animals/ram/${tagNumber}/to_maker/`, 'POST', {
+            plemstatus: plemstatus.trim(),
+            working_condition: workingCondition.trim(),
+        });
+
+        alert('Баранчик успешно преобразован в барана-производителя!');
+
+        // Перенаправляем на страницу нового барана-производителя
+        window.location.href = `/animals/maker/${tagNumber}/info/`;
+    } catch (error) {
+        console.error('Ошибка при преобразовании баранчика в барана-производителя:', error);
+        alert('Ошибка при преобразовании: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function submitRamToMakerConversion() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+
+    const plemstatusInput = document.getElementById('maker-plemstatus-input');
+    const workingConditionInput = document.getElementById('maker-working-condition-input');
+
+    const plemstatus = plemstatusInput ? plemstatusInput.value.trim() : '';
+    const workingCondition = workingConditionInput ? workingConditionInput.value.trim() : '';
+
+    if (!plemstatus) {
+        alert('Племенной статус обязателен');
+        return;
+    }
+
+    if (!workingCondition) {
+        alert('Рабочее состояние обязательно');
+        return;
+    }
+
+    // Подтверждение действия (оставляем как было)
+    const confirmConvert = confirm(
+        `Вы уверены, что хотите преобразовать баранчика ${tagNumber} в барана-производителя? ` +
+        'Это действие нельзя отменить!'
+    );
+    if (!confirmConvert) {
+        return;
+    }
+
+    await convertRamToMaker(plemstatus, workingCondition);
+}
+
+// Экспортируем функцию для глобального доступа
+window.convertRamToMaker = convertRamToMaker;
+window.openConvertRamToMakerModal = openConvertRamToMakerModal;
+window.submitRamToMakerConversion = submitRamToMakerConversion;
 
 // ===== ФУНКЦИИ ДЛЯ РАБОТЫ С ОКОТАМИ =====
 
@@ -845,7 +923,7 @@ async function loadLambings() {
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
     
-    // Проверяем, что это овца или ярка
+    // Проверяем, что это овцематка или ярка
     if (animalType !== 'sheep' && animalType !== 'ewe') {
         return;
     }
@@ -858,13 +936,13 @@ async function loadLambings() {
     }
 }
 
-// Загрузка истории окотов для отцов (производители и бараны)
+// Загрузка истории окотов для отцов (бараны-производители и баранчики)
 async function loadFatherLambings() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
     
-    // Проверяем, что это производитель или баран
+    // Проверяем, что это баран-производитель или баранчик
     if (animalType !== 'maker' && animalType !== 'ram') {
         return;
     }
@@ -1289,6 +1367,41 @@ function sortFatherLambings(lambings) {
     });
 }
 
+function formatLiveLambTagsLinks(lambing) {
+    const liveLambLinks = Array.isArray(lambing.live_lamb_links) ? lambing.live_lamb_links : [];
+    if (!liveLambLinks.length) {
+        return '';
+    }
+
+    return liveLambLinks
+        .map((lambLink) => {
+            if (lambLink.url) {
+                return `<a href="${lambLink.url}">${lambLink.tag_number}</a>`;
+            }
+            return lambLink.tag_number;
+        })
+        .join(', ');
+}
+
+function formatLiveLambsDisplay(lambing) {
+    const liveCount = lambing.number_of_lambs ?? 0;
+    const tagsLinks = formatLiveLambTagsLinks(lambing);
+    return tagsLinks ? `${liveCount} (${tagsLinks})` : `${liveCount}`;
+}
+
+function formatAnimalTypeLabel(animalType) {
+    const typeLabelMap = {
+        'Производитель': 'Баран-Производитель',
+        'Баран-Производитель': 'Баран-Производитель',
+        'Баран': 'Баранчик',
+        'Баранчик': 'Баранчик',
+        'Ярка': 'Ярка',
+        'Овца': 'Овцематка',
+        'Овцематка': 'Овцематка',
+    };
+    return typeLabelMap[animalType] || animalType || 'Неизвестно';
+}
+
 // Создание карточки окота
 function createLambingCard(lambing, isActive) {
     const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
@@ -1298,6 +1411,12 @@ function createLambingCard(lambing, isActive) {
     
     // Показываем примечание только если оно не об импорте
     const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
+
+    const fatherTypeDisplay = formatAnimalTypeLabel(lambing.father_type);
+    let fatherTagContent = lambing.father_display_name || lambing.father_tag || 'Неизвестно';
+    if (lambing.father_url && lambing.father_tag) {
+        fatherTagContent = `<a href="${lambing.father_url}">${fatherTagContent}</a>`;
+    }
     
     return `
         <div class="lambing-card ${isActive ? 'active' : 'completed'}">
@@ -1306,7 +1425,7 @@ function createLambingCard(lambing, isActive) {
                     <strong>Дата случки:</strong> ${startDate}
                 </div>
                 <div>
-                    <strong>Отец:</strong> ${lambing.father_type} ${lambing.father_tag}
+                    <strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}
                 </div>
                 <div>
                     <strong>Планируемые роды:</strong> 
@@ -1315,7 +1434,7 @@ function createLambingCard(lambing, isActive) {
                 ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
                 ${!isActive ? `
                     <div style="grid-column: 2;">
-                        <div><strong>Живые ягнята:</strong> ${lambing.number_of_lambs ?? 0}</div>
+                        <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
                     </div>
                 ` : ''}
@@ -1344,11 +1463,17 @@ function createFatherLambingCard(lambing) {
     const statusText = lambing.is_active ? 'Активный' : 'Завершен';
     
     // Формируем информацию о матери
+    let motherTagContent = lambing.mother_tag;
+    if (lambing.mother_url && lambing.mother_found) {
+        motherTagContent = `<a href="${lambing.mother_url}">${lambing.mother_tag}</a>`;
+    }
+
     let motherInfo = '';
+    const motherTypeDisplay = formatAnimalTypeLabel(lambing.mother_type);
     if (lambing.mother_found) {
-        motherInfo = `${lambing.mother_type} ${lambing.mother_tag}`;
+        motherInfo = `${motherTypeDisplay} ${motherTagContent}`;
     } else {
-        motherInfo = `${lambing.mother_type || 'Неизвестно'} ${lambing.mother_tag} (не найдена)`;
+        motherInfo = `${motherTypeDisplay} ${lambing.mother_tag} (не найдена)`;
     }
     
     // Показываем примечание только если оно не об импорте
@@ -1373,7 +1498,7 @@ function createFatherLambingCard(lambing) {
                 ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
                 ${!lambing.is_active ? `
                     <div style="grid-column: 2;">
-                        <div><strong>Живые ягнята:</strong> ${lambing.number_of_lambs ?? 0}</div>
+                        <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
                     </div>
                 ` : ''}
@@ -1484,13 +1609,22 @@ async function completeLambing(lambingId) {
         
         const statusSelect = document.getElementById('new-mother-status');
         statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
-        
+        let lactatingStatusId = null;
+
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             statusSelect.appendChild(option);
+
+            if (status.status_type === 'Лактирующая') {
+                lactatingStatusId = String(status.id);
+            }
         });
+
+        if (lactatingStatusId) {
+            statusSelect.value = lactatingStatusId;
+        }
     } catch (error) {
         console.error('Ошибка загрузки статусов:', error);
     }
@@ -1559,13 +1693,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('3. Загружаем список ветобработок...');
         await loadVetTreatments();
 
-        // Загружаем окоты для овец и ярок
+        // Загружаем окоты для овцематок и ярок
         if (animalType === 'sheep' || animalType === 'ewe') {
             console.log('4. Загружаем окоты...');
             await loadLambings();
         }
 
-        // Загружаем историю окотов для производителей и баранов (как отцы)
+        // Загружаем историю окотов для баранов-производителей и баранчиков (как отцы)
         if (animalType === 'maker' || animalType === 'ram') {
             console.log('4. Загружаем историю окотов как отец...');
             await loadFatherLambings();
@@ -1618,7 +1752,7 @@ function createLambForm(index) {
                 <label>Тип животного:</label>
                 <select class="lamb-gender" required>
                     <option value="">Выберите тип</option>
-                    <option value="male">Баран</option>
+                    <option value="male">Баранчик</option>
                     <option value="female">Ярка</option>
                 </select>
             </div>
@@ -1757,7 +1891,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Завершить окот (для отцов - производителей и баранов)
+// Завершить окот (для отцов - баранов-производителей и баранчиков)
 async function completeFatherLambing(lambingId) {
     // Сохраняем ID окота для использования в модальном окне
     window.currentLambingId = lambingId;
@@ -1783,14 +1917,23 @@ async function completeFatherLambing(lambingId) {
         }
         
         const statusSelect = document.getElementById('new-mother-status');
-        statusSelect.innerHTML = '<option value="">Не менять статус матери</option>';
-        
+        statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
+        let lactatingStatusId = null;
+
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             statusSelect.appendChild(option);
+
+            if (status.status_type === 'Лактирующая') {
+                lactatingStatusId = String(status.id);
+            }
         });
+
+        if (lactatingStatusId) {
+            statusSelect.value = lactatingStatusId;
+        }
     } catch (error) {
         console.error('Ошибка загрузки статусов:', error);
     }
@@ -1925,3 +2068,4 @@ window.completeLambingWithChildren = completeLambingWithChildren;
 window.removeLambForm = removeLambForm;
 window.openAnimalExportModal = openAnimalExportModal;
 window.exportAnimalToExcel = exportAnimalToExcel;
+

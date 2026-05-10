@@ -39,7 +39,7 @@ def can_restore_from_archive(user):
 def can_access_admin_panel(user):
     """Проверяет, может ли пользователь получить доступ к панели администратора"""
     role = get_user_role(user)
-    return role == 'admin'
+    return role in ['main', 'admin']
 
 
 def get_user_permissions(user):

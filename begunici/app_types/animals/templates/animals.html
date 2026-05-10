@@ -22,12 +22,12 @@
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:makers' %}" class="btn btn-secondary w-100 mb-2">
-                                Производители
+                                Бараны-Производители
                             </a>
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:rams' %}" class="btn btn-secondary w-100 mb-2">
-                                Бараны
+                                Баранчики
                             </a>
                         </div>
                         <div class="col-md-6">
@@ -37,7 +37,7 @@
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:sheeps' %}" class="btn btn-secondary w-100 mb-2">
-                                Овцы
+                                Овцематки
                             </a>
                         </div>
                     </div>
@@ -57,12 +57,12 @@
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:main_archive' %}?type=Maker" class="btn btn-outline-secondary w-100 mb-2">
-                                Архив производителей
+                                Архив баранов-производителей
                             </a>
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:main_archive' %}?type=Ram" class="btn btn-outline-secondary w-100 mb-2">
-                                Архив баранов
+                                Архив баранчиков
                             </a>
                         </div>
                         <div class="col-md-6">
@@ -72,7 +72,12 @@
                         </div>
                         <div class="col-md-6">
                             <a href="{% url 'animals:main_archive' %}?type=Sheep" class="btn btn-outline-secondary w-100 mb-2">
-                                Архив овец
+                                Архив овцематок
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:main_archive' %}?type=Lamb" class="btn btn-outline-secondary w-100 mb-2">
+                                Архив ягнят
                             </a>
                         </div>
                     </div>
@@ -315,3 +320,4 @@
 
 <script src="{% static 'js/calendar.js' %}"></script>
 {% endblock %}
+

@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% load static %}
 
 {% block content %}
@@ -23,10 +23,10 @@
                             <label for="create-animal-type" class="form-label">Тип животного:</label>
                             <select id="create-animal-type" class="form-select" required>
                                 <option value="">Выберите тип</option>
-                                <option value="maker">Производитель</option>
-                                <option value="ram">Баран</option>
+                                <option value="maker">Баран-Производитель</option>
+                                <option value="ram">Баранчик</option>
                                 <option value="ewe">Ярка</option>
-                                <option value="sheep">Овца</option>
+                                <option value="sheep">Овцематка</option>
                             </select>
                         </div>
 
@@ -73,7 +73,7 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
                             <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" min="0" max="100" step="0.01">
                         </div>
 
@@ -114,10 +114,20 @@
                                         <input type="date" id="common-birth-date-to" class="form-control form-control-sm">
                                     </div>
                                     <div class="col-md-3">
+                                        <label for="common-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                        <input type="number" id="common-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="common-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                        <input type="number" id="common-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-4">
                                         <label for="common-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
                                         <input type="text" id="common-father-tag-filter" class="form-control form-control-sm">
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label for="common-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
                                         <input type="text" id="common-mother-tag-filter" class="form-control form-control-sm">
                                     </div>
@@ -125,10 +135,10 @@
                                         <label for="common-animal-type-filter" class="form-label small mb-1">Тип животного</label>
                                         <select id="common-animal-type-filter" class="form-select form-select-sm">
                                             <option value="">Все типы</option>
-                                            <option value="maker">Производители</option>
-                                            <option value="ram">Бараны</option>
+                                            <option value="maker">Бараны-Производители</option>
+                                            <option value="ram">Баранчики</option>
                                             <option value="ewe">Ярки</option>
-                                            <option value="sheep">Овцы</option>
+                                            <option value="sheep">Овцематки</option>
                                         </select>
                                     </div>
                                 </div>
@@ -154,7 +164,7 @@
                                     <th width="12%">Статус</th>
                                     <th width="9%">Возраст</th>
                                     <th width="12%">Овчарня</th>
-                                    <th width="8%">Дорперность</th>
+                                    <th width="8%">Кровность по основной породе</th>
                                     <th width="15%">Последнее взвешивание</th>
                                     <th width="15%">Последняя Ветобработка</th>
                                     <th width="12%">Текущий статус работы</th>
@@ -350,3 +360,4 @@
 </script>
 
 {% endblock %}
+

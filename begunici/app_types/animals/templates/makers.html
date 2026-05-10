@@ -5,7 +5,7 @@
 <div class="container-fluid">
     <div class="row mb-4">
         <div class="col-12">
-            <h1 class="mb-3">Управление производителями</h1>
+            <h1 class="mb-3">Управление баранами-производителями</h1>
         </div>
     </div>
 
@@ -14,7 +14,7 @@
         <div class="col-lg-3 mb-4">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0" id="form-title">Создать производителя</h5>
+                    <h5 class="card-title mb-0" id="form-title">Создать барана-производителя</h5>
                 </div>
                 <div class="card-body">
                     <form id="create-maker-form">
@@ -56,15 +56,15 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="dorper_percentage" class="form-label">Дорперность (%):</label>
+                            <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
                             <input type="number" id="dorper_percentage" name="dorper_percentage" class="form-control" 
-                                   placeholder="Введите процент дорперности" min="0" max="100" step="0.01">
+                                   placeholder="Введите процент кровности по основной породе" min="0" max="100" step="0.01">
                             <div class="form-text">Необязательно. Если не указано, будет рассчитано автоматически на основе родителей.</div>
                         </div>
 
                         <div class="mb-3">
                             <label for="name" class="form-label">Имя (необязательно):</label>
-                            <input type="text" id="name" name="name" class="form-control" placeholder="Введите имя производителя" maxlength="50">
+                            <input type="text" id="name" name="name" class="form-control" placeholder="Введите имя барана-производителя" maxlength="50">
                         </div>
 
                         <div class="mb-3">
@@ -73,7 +73,7 @@
                         </div>
 
                         <div class="d-grid gap-2">
-                            <button type="button" id="create-maker-button" class="btn btn-primary" onclick="saveMaker()">Создать производителя</button>
+                            <button type="button" id="create-maker-button" class="btn btn-primary" onclick="saveMaker()">Создать барана-производителя</button>
                             <button type="button" id="cancel-edit-button" class="btn btn-secondary" onclick="cancelEdit()" style="display: none;">
                                 Отменить редактирование
                             </button>
@@ -83,17 +83,17 @@
             </div>
         </div>
 
-        <!-- Список производителей -->
+        <!-- Список баранов-производителей -->
         <div class="col-lg-9 mb-4">
             <div class="card">
                 <div class="card-header">
                     <div class="row align-items-center">
                         <div class="col-md-4">
-                            <h5 class="card-title mb-0">Список производителей</h5>
+                            <h5 class="card-title mb-0">Список баранов-производителей</h5>
                         </div>
                         <div class="col-md-6">
                             <div class="input-group">
-                                <input type="text" id="maker-search" class="form-control" placeholder="Поиск производителей...">
+                                <input type="text" id="maker-search" class="form-control" placeholder="Поиск баранов-производителей...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performMakerSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleMakerAdditionalFilters()">Доп. фильтры</button>
                             </div>
@@ -108,10 +108,20 @@
                                         <input type="date" id="maker-birth-date-to" class="form-control form-control-sm">
                                     </div>
                                     <div class="col-md-3">
+                                        <label for="maker-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                        <input type="number" id="maker-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="maker-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                        <input type="number" id="maker-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-6">
                                         <label for="maker-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
                                         <input type="text" id="maker-father-tag-filter" class="form-control form-control-sm">
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label for="maker-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
                                         <input type="text" id="maker-mother-tag-filter" class="form-control form-control-sm">
                                     </div>
@@ -139,7 +149,7 @@
                                     <th width="10%">Статус</th>
                                     <th width="8%">Возраст</th>
                                     <th width="12%">Овчарня</th>
-                                    <th width="8%">Дорперность</th>
+                                    <th width="8%">Кровность по основной породе</th>
                                     <th width="15%">Последнее Взвешивание</th>
                                     <th width="15%">Последняя Ветобработка</th>
                                     <th width="12%">Текущий статус работы</th>
@@ -456,3 +466,5 @@ input[type="checkbox"]:focus {
 </script>
 
 {% endblock %}
+
+

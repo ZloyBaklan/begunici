@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -627,26 +627,56 @@ class Lambing(models.Model):
         Переопределение метода save для автоматического изменения статуса матери
         """
         is_new = self.pk is None
-        
+        was_active = False
+        if not is_new:
+            was_active = Lambing.objects.filter(pk=self.pk, is_active=True).exists()
+
         if is_new and self.is_active:
-            # При создании нового активного окота меняем статус матери на "Окот"
-            mother = self.get_mother()
-            if mother:
-                try:
-                    # Ищем статус "Окот"
-                    okot_status = Status.objects.filter(status_type__iexact="Окот").first()
-                    if okot_status:
-                        # Устанавливаем статус "Окот"
-                        mother.animal_status = okot_status
+            try:
+                sluchka_status = Status.objects.filter(status_type__iexact="Случка").first()
+                if sluchka_status:
+                    mother = self.get_mother()
+                    if mother:
+                        mother.animal_status = sluchka_status
                         mother.save()
-                except Exception as e:
-                    print(f"Ошибка при изменении статуса на 'Окот': {e}")
+
+                    father = self.get_father()
+                    if father:
+                        father.animal_status = sluchka_status
+                        father.save()
+            except Exception as e:
+                print(f"Ошибка при изменении статуса родителей на 'Случка': {e}")
         
         # Рассчитываем планируемую дату окота если нужно
         if self.start_date and not self.planned_lambing_date:
             self.calculate_planned_lambing_date()
             
         super(Lambing, self).save(*args, **kwargs)
+
+        just_completed = not is_new and was_active and not self.is_active
+        if just_completed:
+            father = self.get_father()
+            if father:
+                has_other_active_lambings = False
+                if self.maker_id:
+                    has_other_active_lambings = Lambing.objects.filter(
+                        maker_id=self.maker_id,
+                        is_active=True,
+                    ).exclude(pk=self.pk).exists()
+                elif self.ram_id:
+                    has_other_active_lambings = Lambing.objects.filter(
+                        ram_id=self.ram_id,
+                        is_active=True,
+                    ).exclude(pk=self.pk).exists()
+
+                if not has_other_active_lambings:
+                    try:
+                        otkorm_status = Status.objects.filter(status_type__iexact="Откорм").first()
+                        if otkorm_status:
+                            father.animal_status = otkorm_status
+                            father.save()
+                    except Exception as e:
+                        print(f"Ошибка при установке статуса 'Откорм' отцу после завершения окота: {e}")
 
 
 class Ram(AnimalBase):
@@ -670,6 +700,70 @@ class Ram(AnimalBase):
         # Сортируем детей по дате рождения
         children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
         return children
+
+    def is_older_than_two_years(self):
+        """
+        Проверка, что барану 2 года и больше.
+        """
+        if self.birth_date:
+            delta = relativedelta(timezone.now().date(), self.birth_date)
+            return delta.years >= 2
+
+        if self.age is not None:
+            try:
+                return float(self.age) >= 24
+            except (TypeError, ValueError):
+                return False
+
+        return False
+
+    def to_maker(self, plemstatus, working_condition):
+        """
+        Преобразование барана в производителя с переносом всех данных.
+        """
+        if not self.is_older_than_two_years():
+            raise ValueError("Преобразование доступно только для баранов старше 2 лет")
+
+        plemstatus = (plemstatus or "").strip()
+        working_condition = (working_condition or "").strip()
+        if not plemstatus:
+            raise ValueError("Не указан племенной статус")
+        if not working_condition:
+            raise ValueError("Не указано рабочее состояние")
+
+        with transaction.atomic():
+            maker = Maker.objects.create(
+                tag=self.tag,
+                animal_status=self.animal_status,
+                birth_date=self.birth_date,
+                age=self.age,
+                note=self.note,
+                rshn_tag=self.rshn_tag,
+                date_otbivka=self.date_otbivka,
+                dorper_percentage=self.dorper_percentage,
+                is_manual_dorper=self.is_manual_dorper,
+                is_archived=self.is_archived,
+                carcass_weight=self.carcass_weight,
+                mother=self.mother,
+                father=self.father,
+                place=self.place,
+                name=None,
+                plemstatus=plemstatus,
+                working_condition=working_condition,
+                working_condition_date=None,
+            )
+
+            # Переносим связи ManyToMany.
+            maker.weight_records.set(self.weight_records.all())
+            maker.veterinary_history.set(self.veterinary_history.all())
+
+            # Переносим все окоты, где отец был бараном.
+            Lambing.objects.filter(ram=self).update(maker=maker, ram=None)
+
+            # Удаляем исходного барана.
+            self.delete()
+
+        return maker
 
     def __str__(self):
         return f"Баран {self.tag.tag_number}"
@@ -1062,5 +1156,3 @@ class ShiftTransferNote(models.Model):
             return "0, 0, 0"
         except Exception:
             return "0, 0, 0"
-
-

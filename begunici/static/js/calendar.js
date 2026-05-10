@@ -509,9 +509,12 @@ class LambingCalendar {
             'Sheep': 'sheep',
             // Русские названия
             'Производитель': 'maker',
+            'Баран-Производитель': 'maker',
             'Баран': 'ram',
+            'Баранчик': 'ram',
             'Ярка': 'ewe',
-            'Овца': 'sheep'
+            'Овца': 'sheep',
+            'Овцематка': 'sheep'
         };
         
         return typeMap[animalType] || 'maker';
@@ -535,3 +538,4 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Элементы календаря не найдены на странице - календарь не инициализирован');
     }
 });
+
