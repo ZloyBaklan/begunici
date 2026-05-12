@@ -2,10 +2,12 @@ import { apiRequest } from "./utils.js";
 
 let currentPage = 1;
 const pageSize = 10;
+const OTHER_CARE_CLASS = "Прочее";
 
 const CARE_TYPES_BY_CLASS = {
     "Вакцинация": ["Иммунизация"],
     "Противопаразитарная": ["Антигельминтная", "Противопротозойная", "Дезинсекция"],
+    [OTHER_CARE_CLASS]: [],
 };
 
 function getUserPermissions() {
@@ -16,7 +18,23 @@ function getUserPermissions() {
 
 function syncCareTypeOptions(selectedClass, selectedType = null) {
     const typeSelect = document.getElementById("care-name");
+    const customInput = document.getElementById("care-name-custom");
+    const selectGroup = document.getElementById("care-name-select-group");
+    const customGroup = document.getElementById("care-name-custom-group");
     if (!typeSelect) return;
+
+    if (selectedClass === OTHER_CARE_CLASS) {
+        if (selectGroup) selectGroup.style.display = "none";
+        if (customGroup) customGroup.style.display = "block";
+
+        if (customInput && selectedType !== null) {
+            customInput.value = selectedType || "";
+        }
+        return;
+    }
+
+    if (selectGroup) selectGroup.style.display = "block";
+    if (customGroup) customGroup.style.display = "none";
 
     const types = CARE_TYPES_BY_CLASS[selectedClass] || [];
     typeSelect.innerHTML = "";
@@ -30,9 +48,23 @@ function syncCareTypeOptions(selectedClass, selectedType = null) {
 
     if (selectedType && types.includes(selectedType)) {
         typeSelect.value = selectedType;
+    } else if (selectedType && !types.includes(selectedType)) {
+        const fallbackOption = document.createElement("option");
+        fallbackOption.value = selectedType;
+        fallbackOption.textContent = selectedType;
+        typeSelect.appendChild(fallbackOption);
+        typeSelect.value = selectedType;
     } else if (types.length > 0) {
         typeSelect.value = types[0];
     }
+}
+
+function getCareNameValue() {
+    const selectedClass = document.getElementById("care-type")?.value;
+    if (selectedClass === OTHER_CARE_CLASS) {
+        return (document.getElementById("care-name-custom")?.value || "").trim();
+    }
+    return (document.getElementById("care-name")?.value || "").trim();
 }
 
 function initCareTypeClassControls() {
@@ -90,10 +122,15 @@ window.cancelEdit = cancelEdit;
 
 async function createCare() {
     const careType = document.getElementById("care-type").value;
-    const careName = document.getElementById("care-name").value;
+    const careName = getCareNameValue();
     const medication = document.getElementById("medication").value;
     const purpose = document.getElementById("purpose").value;
     const defaultDurationDays = document.getElementById("default-duration-days").value;
+
+    if (!careName) {
+        showMessage("Укажите тип ветобработки", "warning");
+        return;
+    }
 
     const data = {
         care_type: careType,
@@ -195,6 +232,12 @@ async function editCare(careId) {
 
         document.getElementById("care-type").value = care.care_type;
         syncCareTypeOptions(care.care_type, care.care_name);
+        if (care.care_type === OTHER_CARE_CLASS) {
+            const customInput = document.getElementById("care-name-custom");
+            if (customInput) {
+                customInput.value = care.care_name || "";
+            }
+        }
         document.getElementById("medication").value = care.medication || "";
         document.getElementById("purpose").value = care.purpose || "";
         document.getElementById("default-duration-days").value = care.default_duration_days || 0;
@@ -213,10 +256,15 @@ async function editCare(careId) {
 
 async function updateCare(careId) {
     const careType = document.getElementById("care-type").value;
-    const careName = document.getElementById("care-name").value;
+    const careName = getCareNameValue();
     const medication = document.getElementById("medication").value;
     const purpose = document.getElementById("purpose").value;
     const defaultDurationDays = document.getElementById("default-duration-days").value;
+
+    if (!careName) {
+        showMessage("Укажите тип ветобработки", "warning");
+        return;
+    }
 
     const data = {
         care_type: careType,

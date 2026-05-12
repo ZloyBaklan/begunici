@@ -501,6 +501,10 @@ function openArchiveModal() {
     if (archiveDateInput) archiveDateInput.value = localDate;
     const carcassWeightInput = document.getElementById("archive-carcass-weight");
     if (carcassWeightInput) carcassWeightInput.value = "";
+    const actNumberInput = document.getElementById("archive-act-number");
+    if (actNumberInput) actNumberInput.value = "";
+    const actNumberGroup = document.getElementById("archive-act-number-group");
+    if (actNumberGroup) actNumberGroup.style.display = "none";
 
     loadArchiveStatuses();
 }
@@ -508,6 +512,21 @@ function openArchiveModal() {
 function closeArchiveModal() {
     const modal = document.getElementById("archive-modal");
     if (modal) modal.style.display = "none";
+}
+
+function toggleArchiveActNumberField() {
+    const statusSelect = document.getElementById("archive-status-select");
+    const actNumberGroup = document.getElementById("archive-act-number-group");
+    const actNumberInput = document.getElementById("archive-act-number");
+    if (!statusSelect || !actNumberGroup) return;
+
+    const selectedStatusName =
+        statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || "";
+    const shouldShow = selectedStatusName === "Убыл";
+    actNumberGroup.style.display = shouldShow ? "block" : "none";
+    if (!shouldShow && actNumberInput) {
+        actNumberInput.value = "";
+    }
 }
 
 async function loadArchiveStatuses() {
@@ -536,6 +555,8 @@ async function loadArchiveStatuses() {
             option.text = status.status_type;
             statusSelect.add(option);
         });
+        statusSelect.onchange = toggleArchiveActNumberField;
+        toggleArchiveActNumberField();
     } catch (error) {
         console.error("Ошибка загрузки архивных статусов:", error);
     }
@@ -549,9 +570,12 @@ async function applyArchiveStatus() {
         return;
     }
 
-    const statusId = document.getElementById("archive-status-select")?.value;
+    const statusSelect = document.getElementById("archive-status-select");
+    const statusId = statusSelect?.value;
     const statusDate = document.getElementById("archive-status-date")?.value;
     const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
+    const selectedStatusName = statusSelect?.options[statusSelect.selectedIndex]?.text?.trim() || "";
+    const actNumberRaw = document.getElementById("archive-act-number")?.value?.trim() || "";
 
     if (!statusId) {
         alert("Выберите статус.");
@@ -578,6 +602,7 @@ async function applyArchiveStatus() {
                 animal_status_id: statusId,
                 status_date: statusDate,
                 carcass_weight: carcassWeight,
+                act_number: selectedStatusName === "Убыл" ? actNumberRaw : "",
             });
         }
 

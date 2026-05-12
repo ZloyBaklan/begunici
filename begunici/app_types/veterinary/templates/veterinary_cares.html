@@ -24,12 +24,24 @@
                             <select id="care-type" name="care-type" class="form-select">
                                 <option value="Вакцинация">Вакцинация</option>
                                 <option value="Противопаразитарная">Противопаразитарная</option>
+                                <option value="Прочее">Прочее</option>
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label for="care-name" class="form-label">Тип ветобработки:</label>
-                            <select id="care-name" name="care-name" class="form-select"></select>
+                            <div id="care-name-select-group">
+                                <select id="care-name" name="care-name" class="form-select"></select>
+                            </div>
+                            <div id="care-name-custom-group" style="display: none;">
+                                <input
+                                    type="text"
+                                    id="care-name-custom"
+                                    name="care-name-custom"
+                                    class="form-control"
+                                    placeholder="Введите тип ветобработки"
+                                >
+                            </div>
                         </div>
 
                         <div class="mb-3">

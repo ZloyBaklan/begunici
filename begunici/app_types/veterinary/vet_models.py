@@ -192,6 +192,7 @@ class WeightRecord(models.Model):
 class VeterinaryCare(models.Model):
     TYPE_VACCINATION = "Вакцинация"
     TYPE_ANTIPARASITIC = "Противопаразитарная"
+    TYPE_OTHER = "Прочее"
 
     CLASS_IMMUNIZATION = "Иммунизация"
     CLASS_ANTIHELMINTHIC = "Антигельминтная"
@@ -201,6 +202,7 @@ class VeterinaryCare(models.Model):
     CARE_TYPE_CHOICES = (
         (TYPE_VACCINATION, TYPE_VACCINATION),
         (TYPE_ANTIPARASITIC, TYPE_ANTIPARASITIC),
+        (TYPE_OTHER, TYPE_OTHER),
     )
     CARE_CLASS_CHOICES = (
         (CLASS_IMMUNIZATION, CLASS_IMMUNIZATION),
@@ -218,7 +220,6 @@ class VeterinaryCare(models.Model):
     care_name = models.CharField(
         max_length=200,
         verbose_name="Класс ветобработки",
-        choices=CARE_CLASS_CHOICES,
         default=CLASS_IMMUNIZATION,
     )
     medication = models.CharField(
@@ -246,6 +247,8 @@ class VeterinaryCare(models.Model):
                 cls.CLASS_ANTIPROTOZOAL,
                 cls.CLASS_DISINSECTION,
             }
+        if care_type == cls.TYPE_OTHER:
+            return bool(care_name and str(care_name).strip())
         return False
 
     class Meta:

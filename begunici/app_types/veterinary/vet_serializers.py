@@ -239,6 +239,19 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
             if care_name is None:
                 care_name = self.instance.care_name
 
+        if isinstance(care_name, str):
+            care_name = care_name.strip()
+            attrs["care_name"] = care_name
+
+        if care_type == VeterinaryCare.TYPE_OTHER and not care_name:
+            raise serializers.ValidationError(
+                {
+                    "care_name": (
+                        "Для класса 'Прочее' нужно указать тип ветобработки."
+                    )
+                }
+            )
+
         if care_type and care_name and not VeterinaryCare.is_valid_type_class(care_type, care_name):
             raise serializers.ValidationError(
                 {

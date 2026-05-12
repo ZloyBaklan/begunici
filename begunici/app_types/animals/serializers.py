@@ -72,6 +72,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
+    # Поле для номера акта при архивировании со статусом "Убыл"
+    act_number = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        max_length=255,
+    )
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
@@ -193,6 +200,21 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         # Извлекаем дату статуса если она передана
         status_date = validated_data.pop("status_date", None)
+        # Извлекаем номер акта (для статуса "Убыл")
+        act_number = (validated_data.pop("act_number", "") or "").strip()
+
+        selected_status = validated_data.get("animal_status")
+        if selected_status and selected_status.status_type == "Убыл" and act_number:
+            prefix = f"Номер акта: {act_number}"
+            existing_note = validated_data.get("note")
+            if existing_note is None:
+                existing_note = instance.note or ""
+
+            if existing_note:
+                if not str(existing_note).startswith(prefix):
+                    validated_data["note"] = f"{prefix}\n{existing_note}"
+            else:
+                validated_data["note"] = prefix
         
         # Создаем список изменений для лога
         changes = []
@@ -803,11 +825,46 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             return reverse("animals:sheep-detail", kwargs={"tag_number": mother_tag})
         return None
 
+    @staticmethod
+    def _format_age_at_date(birth_date, reference_date):
+        if not birth_date:
+            return None
+
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        try:
+            if isinstance(birth_date, str):
+                birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
+            elif hasattr(birth_date, "date"):
+                birth_date = birth_date.date()
+
+            if hasattr(reference_date, "date"):
+                reference_date = reference_date.date()
+            if reference_date is None:
+                reference_date = timezone.now().date()
+
+            # Защита от неконсистентных данных
+            if reference_date < birth_date:
+                return "0 мес."
+
+            delta = relativedelta(reference_date, birth_date)
+            total_months = delta.years * 12 + delta.months
+            days = round(delta.days)
+
+            if total_months == 0 and days == 0:
+                return "0 мес."
+            if total_months == 0:
+                return f"{days} сут."
+            if days == 0:
+                return f"{total_months} мес."
+            return f"{total_months} мес. ({days} сут.)"
+        except (ValueError, TypeError):
+            return None
+
     def to_representation(self, instance):
         from begunici.app_types.veterinary.vet_models import StatusHistory
         from begunici.app_types.animals.models import Tag
-        from dateutil.relativedelta import relativedelta
-        from datetime import datetime
 
         if isinstance(instance, dict):
             tag_number = instance.get("tag__tag_number") or instance.get("tag_number")
@@ -834,26 +891,8 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                 if last_status_change:
                     archived_date = last_status_change.change_date
 
-            age_display = None
             birth_date_value = instance.get("birth_date")
-            if birth_date_value:
-                try:
-                    if isinstance(birth_date_value, str):
-                        birth_date_value = datetime.strptime(birth_date_value, "%Y-%m-%d").date()
-                    delta = relativedelta(timezone.now().date(), birth_date_value)
-                    total_months = delta.years * 12 + delta.months
-                    days = round(delta.days)
-
-                    if total_months == 0 and days == 0:
-                        age_display = "0 мес."
-                    elif total_months == 0:
-                        age_display = f"{days} сут."
-                    elif days == 0:
-                        age_display = f"{total_months} мес."
-                    else:
-                        age_display = f"{total_months} мес. ({days} сут.)"
-                except (ValueError, TypeError):
-                    age_display = None
+            age_display = self._format_age_at_date(birth_date_value, archived_date)
 
             mother_tag = (instance.get("mother") or "").strip() or None
             return {
@@ -890,6 +929,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                 archived_date = last_status_change.change_date
 
         mother_tag = (instance.mother or "").strip() or None
+        age_display = self._format_age_at_date(instance.birth_date, archived_date)
 
         return {
             "tag_number": tag_number,
@@ -900,7 +940,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "archived_date": archived_date,
             "place": instance.place.sheepfold if instance.place else "Нет данных",
             "birth_date": instance.birth_date,
-            "age": instance.get_age_display(),
+            "age": age_display,
             "is_archived": instance.is_archived,
             "last_live_weight": self._get_last_live_weight(instance.tag),
             "carcass_weight": self._format_weight(instance.carcass_weight),
@@ -1005,4 +1045,5 @@ class CalendarNoteSerializer(serializers.ModelSerializer):
                 )
         
         return instance
+
 
