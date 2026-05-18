@@ -6612,7 +6612,17 @@ def get_animals_without_otbivka(request):
     - при include_with_otbivka=true|1|yes: с датой отбивки и без
     """
     search_query = request.GET.get('search', '').strip()
+    place_id_raw = request.GET.get('place_id', '').strip()
     include_with_otbivka = request.GET.get('include_with_otbivka', '').strip().lower() in ('1', 'true', 'yes')
+
+    place_id = None
+    if place_id_raw:
+        try:
+            place_id = int(place_id_raw)
+        except ValueError:
+            return Response({
+                'error': 'Некорректный ID овчарни'
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         animals = []
@@ -6622,6 +6632,12 @@ def get_animals_without_otbivka(request):
         rams = Ram.objects.filter(is_archived=False)
         ewes = Ewe.objects.filter(is_archived=False)
         sheep = Sheep.objects.filter(is_archived=False)
+
+        if place_id is not None:
+            makers = makers.filter(place_id=place_id)
+            rams = rams.filter(place_id=place_id)
+            ewes = ewes.filter(place_id=place_id)
+            sheep = sheep.filter(place_id=place_id)
 
         # Для массовой отбивки по умолчанию показываем только животных без даты отбивки
         if not include_with_otbivka:

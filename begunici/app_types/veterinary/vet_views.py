@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.views.generic import TemplateView
 from rest_framework.exceptions import ValidationError
-from datetime import datetime
+from datetime import datetime, timedelta
 from .vet_models import (
     Veterinary,
     Status,
@@ -111,7 +111,9 @@ def get_barn_statistics(request, barn_number):
     """
     try:
         from begunici.app_types.animals.models import Maker, Ram, Ewe, Sheep
-        from django.db.models import Count, Q
+        
+        today = timezone.now().date()
+        lamb_cutoff_date = today - timedelta(days=100)
         
         # Получаем места для этой овчарни
         places = Place.objects.filter(sheepfold__icontains=f'Овчарня {barn_number} Отсек')
@@ -139,14 +141,58 @@ def get_barn_statistics(request, barn_number):
                 
             section_number = int(match.group(1))
             
-            # Считаем животных в этом отсеке
-            makers_count = Maker.objects.filter(place=place, is_archived=False).count()
-            rams_count = Ram.objects.filter(place=place, is_archived=False).count()
-            ewes_count = Ewe.objects.filter(place=place, is_archived=False).count()
-            sheep_count = Sheep.objects.filter(place=place, is_archived=False).count()
+            # Получаем животных в этом отсеке
+            makers = list(Maker.objects.filter(place=place, is_archived=False).select_related('tag'))
+            rams = list(Ram.objects.filter(place=place, is_archived=False).select_related('tag'))
+            ewes = list(Ewe.objects.filter(place=place, is_archived=False).select_related('tag'))
+            sheep = list(Sheep.objects.filter(place=place, is_archived=False).select_related('tag'))
+
+            makers_count = len(makers)
+            rams_count = len(rams)
+            ewes_count = len(ewes)
+            sheep_count = len(sheep)
+            all_animals = makers + rams + ewes + sheep
             
             section_total = makers_count + rams_count + ewes_count + sheep_count
             total_animals += section_total
+
+            # Средний возраст в месяцах
+            age_values = []
+            # Ягнята: без отбивки и младше 100 суток
+            lambs_count = 0
+            tag_ids = []
+
+            for animal in all_animals:
+                if getattr(animal, 'tag_id', None):
+                    tag_ids.append(animal.tag_id)
+
+                age_months = None
+                if animal.age is not None:
+                    age_months = float(animal.age)
+                elif animal.birth_date:
+                    age_months = max((today - animal.birth_date).days / 30.0, 0)
+
+                if age_months is not None:
+                    age_values.append(age_months)
+
+                if animal.birth_date and not animal.date_otbivka:
+                    if lamb_cutoff_date < animal.birth_date <= today:
+                        lambs_count += 1
+
+            avg_age_months = round(sum(age_values) / len(age_values), 1) if age_values else None
+
+            # Средний живой вес по последним записям взвешивания животных в отсеке
+            avg_weight_kg = None
+            if tag_ids:
+                latest_weights = (
+                    WeightRecord.objects
+                    .filter(tag_id__in=tag_ids)
+                    .order_by('tag_id', '-weight_date', '-id')
+                    .distinct('tag_id')
+                )
+                weight_values = [float(record.weight) for record in latest_weights if record.weight is not None]
+                if weight_values:
+                    avg_weight_kg = round(sum(weight_values) / len(weight_values), 1)
             
             sections_data.append({
                 'id': place.id,
@@ -160,7 +206,10 @@ def get_barn_statistics(request, barn_number):
                 'rams': rams_count,
                 'ewes': ewes_count,
                 'sheep': sheep_count,
-                'total': section_total
+                'total': section_total,
+                'avg_age_months': avg_age_months,
+                'avg_weight_kg': avg_weight_kg,
+                'lambs_count': lambs_count,
             }
         
         # Сортируем отсеки по номерам

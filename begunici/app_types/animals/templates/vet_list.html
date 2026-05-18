@@ -182,9 +182,20 @@
                         <button class="btn btn-primary" type="button" id="searchAnimalsVaccinationBtn">Поиск</button>
                     </div>
                 </div>
+                <div class="mb-3">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" id="toggleVaccinationAdditionalFiltersBtn">
+                        Доп. фильтр
+                    </button>
+                </div>
+                <div class="mb-3" id="vaccination-additional-filters" style="display: none;">
+                    <label for="vaccination-place-filter" class="form-label">Овчарня:</label>
+                    <select id="vaccination-place-filter" class="form-select">
+                        <option value="">Все овчарни</option>
+                    </select>
+                </div>
                 <div id="animals-vaccination-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или выберите овчарню и нажмите "Поиск"
                     </div>
                 </div>
             </div>

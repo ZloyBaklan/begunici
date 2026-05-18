@@ -152,6 +152,9 @@ backups/
 # Import data and Excel files
 importer/
 
+# Local one-off data migration command
+begunici/app_types/animals/management/commands/kaliningrad.py
+
 # mypy
 .mypy_cache/
 .dmypy.json

@@ -9,6 +9,23 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+function formatSectionMetric(value, unit) {
+    if (value === null || value === undefined || value === '') {
+        return '-';
+    }
+
+    const numberValue = Number(value);
+    if (Number.isNaN(numberValue)) {
+        return '-';
+    }
+
+    const normalized = Number.isInteger(numberValue)
+        ? `${numberValue}`
+        : numberValue.toFixed(1).replace(/\.0$/, '');
+
+    return unit ? `${normalized} ${unit}` : normalized;
+}
+
 // Показать селектор овчарен
 function showBarnsSelector() {
     document.getElementById('barns-selector').style.display = 'block';
@@ -193,42 +210,62 @@ function displayBarnFromStatistics(barnStats) {
 function createSectionCellFromStats(section, animalStats) {
     const cell = document.createElement('td');
     cell.className = 'section-cell';
-    
-    cell.innerHTML = `<div class="section-number">Отсек ${section.section_number}</div>`;
-    
-    if (animalStats && animalStats.total > 0) {
+
+    const stats = animalStats || {
+        makers: 0,
+        rams: 0,
+        ewes: 0,
+        sheep: 0,
+        total: 0,
+        avg_age_months: null,
+        avg_weight_kg: null,
+        lambs_count: 0,
+    };
+
+    const avgAgeText = formatSectionMetric(stats.avg_age_months, 'мес.');
+    const avgWeightText = formatSectionMetric(stats.avg_weight_kg, 'кг');
+    const lambsText = Number(stats.lambs_count || 0);
+
+    cell.innerHTML = `
+        <div class="section-number">
+            Отсек ${section.section_number}
+            (ср. возраст: ${avgAgeText}, ср. вес: ${avgWeightText}, ягнят: ${lambsText})
+        </div>
+    `;
+
+    if (stats.total > 0) {
         const animalsDiv = document.createElement('div');
         animalsDiv.className = 'animals-info';
         
         // Отображаем количество каждого типа животных
-        if (animalStats.makers > 0) {
+        if (stats.makers > 0) {
             const makersSpan = document.createElement('span');
             makersSpan.className = 'animal-count makers';
-            makersSpan.textContent = `Бараны-Производители: ${animalStats.makers}`;
+            makersSpan.textContent = `Бараны-Производители: ${stats.makers}`;
             makersSpan.onclick = () => loadAndShowAnimalsModal('Бараны-Производители', section.id, section.name);
             animalsDiv.appendChild(makersSpan);
         }
         
-        if (animalStats.rams > 0) {
+        if (stats.rams > 0) {
             const ramsSpan = document.createElement('span');
             ramsSpan.className = 'animal-count rams';
-            ramsSpan.textContent = `Баранчики: ${animalStats.rams}`;
+            ramsSpan.textContent = `Баранчики: ${stats.rams}`;
             ramsSpan.onclick = () => loadAndShowAnimalsModal('Баранчики', section.id, section.name);
             animalsDiv.appendChild(ramsSpan);
         }
         
-        if (animalStats.ewes > 0) {
+        if (stats.ewes > 0) {
             const ewesSpan = document.createElement('span');
             ewesSpan.className = 'animal-count ewes';
-            ewesSpan.textContent = `Ярки: ${animalStats.ewes}`;
+            ewesSpan.textContent = `Ярки: ${stats.ewes}`;
             ewesSpan.onclick = () => loadAndShowAnimalsModal('Ярки', section.id, section.name);
             animalsDiv.appendChild(ewesSpan);
         }
         
-        if (animalStats.sheep > 0) {
+        if (stats.sheep > 0) {
             const sheepSpan = document.createElement('span');
             sheepSpan.className = 'animal-count sheep';
-            sheepSpan.textContent = `Овцематки: ${animalStats.sheep}`;
+            sheepSpan.textContent = `Овцематки: ${stats.sheep}`;
             sheepSpan.onclick = () => loadAndShowAnimalsModal('Овцематки', section.id, section.name);
             animalsDiv.appendChild(sheepSpan);
         }

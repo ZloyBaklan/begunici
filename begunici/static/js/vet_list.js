@@ -269,6 +269,7 @@ function renderPagination(response) {
 // Глобальные переменные для ковровой вакцинации
 let selectedAnimalsForVaccination = new Set();
 let selectedAnimalsForVaccinationData = new Map();
+let vaccinationPlacesLoaded = false;
 
 // Инициализация элементов ковровой вакцинации
 document.addEventListener('DOMContentLoaded', function() {
@@ -293,10 +294,51 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    const toggleAdditionalFiltersBtn = document.getElementById('toggleVaccinationAdditionalFiltersBtn');
+    if (toggleAdditionalFiltersBtn) {
+        toggleAdditionalFiltersBtn.addEventListener('click', toggleVaccinationAdditionalFilters);
+    }
     
     // Заполняем селект обработок
     loadVaccinationCares();
 });
+
+async function loadVaccinationPlacesFilter() {
+    if (vaccinationPlacesLoaded) {
+        return;
+    }
+
+    try {
+        const places = await apiRequest('/veterinary/api/all-places/');
+        const placeSelect = document.getElementById('vaccination-place-filter');
+        if (!placeSelect) return;
+
+        placeSelect.innerHTML = '<option value="">Все овчарни</option>';
+        (places || []).forEach((place) => {
+            const option = document.createElement('option');
+            option.value = String(place.id);
+            option.textContent = place.sheepfold;
+            placeSelect.appendChild(option);
+        });
+
+        vaccinationPlacesLoaded = true;
+    } catch (error) {
+        console.error('Ошибка загрузки овчарен для фильтра:', error);
+    }
+}
+
+function toggleVaccinationAdditionalFilters() {
+    const filtersBlock = document.getElementById('vaccination-additional-filters');
+    if (!filtersBlock) return;
+
+    const shouldShow = filtersBlock.style.display === 'none' || filtersBlock.style.display === '';
+    filtersBlock.style.display = shouldShow ? 'block' : 'none';
+
+    if (shouldShow) {
+        loadVaccinationPlacesFilter();
+    }
+}
 
 // Загрузка доступных обработок для вакцинации
 async function loadVaccinationCares() {
@@ -323,9 +365,17 @@ function showSelectAnimalsForVaccinationModal() {
     selectedAnimalsForVaccination.clear();
     selectedAnimalsForVaccinationData.clear();
     document.getElementById('animalsVaccinationSearch').value = '';
+    const placeFilter = document.getElementById('vaccination-place-filter');
+    if (placeFilter) {
+        placeFilter.value = '';
+    }
+    const additionalFiltersBlock = document.getElementById('vaccination-additional-filters');
+    if (additionalFiltersBlock) {
+        additionalFiltersBlock.style.display = 'none';
+    }
     document.getElementById('animals-vaccination-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или выберите овчарню и нажмите "Поиск"
         </div>
     `;
     
@@ -336,11 +386,12 @@ function showSelectAnimalsForVaccinationModal() {
 // Поиск животных для вакцинации
 async function searchAnimalsForVaccination() {
     const search = document.getElementById('animalsVaccinationSearch').value.trim();
+    const placeId = document.getElementById('vaccination-place-filter')?.value || '';
     
-    if (!search) {
+    if (!search && !placeId) {
         document.getElementById('animals-vaccination-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или выберите овчарню
             </div>
         `;
         return;
@@ -358,7 +409,17 @@ async function searchAnimalsForVaccination() {
     `;
     
     try {
-        const response = await apiRequest(`/animals/api/animals-without-otbivka/?search=${encodeURIComponent(search)}&include_with_otbivka=1`);
+        const params = new URLSearchParams({
+            include_with_otbivka: '1'
+        });
+        if (search) {
+            params.set('search', search);
+        }
+        if (placeId) {
+            params.set('place_id', placeId);
+        }
+
+        const response = await apiRequest(`/animals/api/animals-without-otbivka/?${params.toString()}`);
         const animals = response || [];
         
         const animalsList = document.getElementById('animals-vaccination-list');
@@ -537,6 +598,15 @@ function resetBulkVaccinationForm() {
     document.getElementById('selected-animals-vaccination-display').textContent = 'Не выбрано';
     document.getElementById('selected-animals-vaccination-display').className = 'mt-2 text-muted';
     document.getElementById('bulk-vaccination-btn').disabled = true;
+
+    const placeFilter = document.getElementById('vaccination-place-filter');
+    if (placeFilter) {
+        placeFilter.value = '';
+    }
+    const additionalFiltersBlock = document.getElementById('vaccination-additional-filters');
+    if (additionalFiltersBlock) {
+        additionalFiltersBlock.style.display = 'none';
+    }
 }
 
 // Смена страницы
