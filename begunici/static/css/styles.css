@@ -286,13 +286,13 @@ th {
 .barn-table {
     width: 100%;
     border-collapse: separate;
-    border-spacing: 50px 10px;
+    border-spacing: 18px 10px;
     table-layout: fixed;
 }
 
 .section-cell {
-    width: 300px;
-    height: 120px;
+    width: 430px;
+    min-height: 210px;
     border: 2px solid #666;
     border-radius: 5px;
     padding: 10px;
@@ -321,10 +321,85 @@ th {
     text-align: center;
 }
 
+.section-month-stats {
+    flex: 1 1 62%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.section-month-block {
+    border: 1px solid #e2e6ea;
+    border-radius: 4px;
+    padding: 6px 8px;
+    background-color: #f8f9fa;
+}
+
+.section-month-title {
+    font-weight: 700;
+    font-size: 12px;
+    color: #2f3a45;
+    margin-bottom: 2px;
+}
+
+.section-month-period {
+    font-size: 11px;
+    color: #6c757d;
+    margin-bottom: 2px;
+}
+
+.section-month-line {
+    font-size: 11px;
+    color: #333;
+    line-height: 1.35;
+}
+
+@media (max-width: 1200px) {
+    .barn-table {
+        border-spacing: 10px 8px;
+    }
+
+    .section-cell {
+        width: 100%;
+    }
+
+    .section-content-grid {
+        flex-direction: column;
+    }
+
+    .section-composition-block,
+    .section-month-stats {
+        flex: 1 1 auto;
+    }
+}
+
+.section-content-grid {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.section-composition-block {
+    flex: 0 0 38%;
+    border: 1px solid #e2e6ea;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    padding: 6px 8px;
+    min-height: 132px;
+}
+
+.section-composition-title {
+    font-weight: 700;
+    font-size: 12px;
+    color: #2f3a45;
+    margin-bottom: 6px;
+}
+
 .animals-info {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
 }
 
 .animal-count {

@@ -1,5 +1,8 @@
 import { apiRequest } from "./utils.js";
 
+let weightChartInstance = null;
+let maleFertilityInitialized = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
     const analyticsDetail = document.getElementById("analytics-detail");
     
@@ -17,12 +20,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     console.log(`Загрузка аналитики для ${animalType} с биркой ${tagNumber}`);
+    setupWeightChartToggle();
+
     try {
         await loadWeightHistory(animalType, tagNumber);
         await loadChildren(animalType, tagNumber);
         await loadVetCalendar(animalType, tagNumber);
         await loadStatusHistory(animalType, tagNumber);
         await loadPlaceHistory(animalType, tagNumber);
+        await initializeMaleFertilityCard(animalType, tagNumber);
         
         // Обработчик чекбокса для скрытия архивных детей
         const hideArchivedCheckbox = document.getElementById('hide-archived-children');
@@ -63,11 +69,16 @@ function renderWeightChart(data) {
             borderWidth: 1,
         }],
     };
-    new Chart(ctx, {
+    if (weightChartInstance) {
+        weightChartInstance.destroy();
+    }
+
+    weightChartInstance = new Chart(ctx, {
         type: 'line',
         data: chartData,
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     display: true,
@@ -75,6 +86,89 @@ function renderWeightChart(data) {
             },
         },
     });
+}
+
+function setupWeightChartToggle() {
+    const toggleButton = document.getElementById('toggle-weight-chart-btn');
+    const chartCard = document.getElementById('weight-chart-card');
+
+    if (!toggleButton || !chartCard) {
+        return;
+    }
+
+    toggleButton.addEventListener('click', () => {
+        const isCollapsed = chartCard.classList.contains('collapsed');
+        chartCard.classList.toggle('collapsed', !isCollapsed);
+        chartCard.classList.toggle('expanded', isCollapsed);
+        toggleButton.textContent = isCollapsed ? 'Свернуть' : 'Развернуть';
+
+        requestAnimationFrame(() => {
+            if (weightChartInstance) {
+                weightChartInstance.resize();
+            }
+        });
+
+        setTimeout(() => {
+            if (weightChartInstance) {
+                weightChartInstance.resize();
+            }
+        }, 220);
+    });
+}
+
+function updateMaleFertilityCard(data) {
+    const fertilityValue = document.getElementById('male-fertility-value');
+    const firstLambingsValue = document.getElementById('male-first-lambings-value');
+    const yearSelect = document.getElementById('male-fertility-year');
+
+    if (!fertilityValue || !firstLambingsValue || !yearSelect) {
+        return;
+    }
+
+    if (Array.isArray(data.available_years) && data.available_years.length > 0 && !maleFertilityInitialized) {
+        const currentSelection = String(data.year || '');
+        yearSelect.innerHTML = data.available_years
+            .map((year) => `<option value="${year}" ${String(year) === currentSelection ? 'selected' : ''}>${year}</option>`)
+            .join('');
+        maleFertilityInitialized = true;
+    }
+
+    fertilityValue.textContent = data.fertility === null ? '-' : Number(data.fertility).toFixed(2);
+    firstLambingsValue.textContent = data.first_lambings_count ?? 0;
+}
+
+async function initializeMaleFertilityCard(animalType, tagNumber) {
+    const isMale = animalType === 'maker' || animalType === 'ram';
+    const yearSelect = document.getElementById('male-fertility-year');
+    if (!isMale || !yearSelect) {
+        return;
+    }
+
+    if (yearSelect.options.length === 0) {
+        const currentYear = new Date().getFullYear();
+        yearSelect.innerHTML = `<option value="${currentYear}">${currentYear}</option>`;
+    }
+
+    const selectedYear = yearSelect.value || String(new Date().getFullYear());
+    await loadMaleFertilityStats(animalType, tagNumber, selectedYear);
+
+    if (!yearSelect.dataset.bound) {
+        yearSelect.addEventListener('change', async () => {
+            await loadMaleFertilityStats(animalType, tagNumber, yearSelect.value);
+        });
+        yearSelect.dataset.bound = '1';
+    }
+}
+
+async function loadMaleFertilityStats(animalType, tagNumber, year) {
+    try {
+        const response = await apiRequest(
+            `/animals/lambing/father-analytics/?animal_type=${encodeURIComponent(animalType)}&tag_number=${encodeURIComponent(tagNumber)}&year=${encodeURIComponent(year)}`
+        );
+        updateMaleFertilityCard(response);
+    } catch (error) {
+        console.error('Ошибка загрузки плодовитости:', error);
+    }
 }
 
 const analyticsPageSize = 3;

@@ -26,6 +26,53 @@ function formatSectionMetric(value, unit) {
     return unit ? `${normalized} ${unit}` : normalized;
 }
 
+function formatSectionCount(value) {
+    const numberValue = Number(value);
+    if (Number.isNaN(numberValue)) {
+        return '0';
+    }
+    return `${numberValue}`;
+}
+
+function renderMonthStatsBlock(title, monthStats) {
+    if (!monthStats) {
+        return `
+            <div class="section-month-block">
+                <div class="section-month-title">${title}</div>
+                <div class="section-month-line">Нет данных</div>
+            </div>
+        `;
+    }
+
+    const periodText = (monthStats.period_start && monthStats.period_end)
+        ? `${monthStats.period_start} - ${monthStats.period_end}`
+        : 'Период не задан';
+
+    const avgAgeText = formatSectionMetric(monthStats.avg_age_months, 'мес.');
+    const avgWeightLambsText = formatSectionMetric(monthStats.avg_weight_lambs_kg, 'кг');
+    const avgWeightOthersText = formatSectionMetric(monthStats.avg_weight_others_kg, 'кг');
+
+    return `
+        <div class="section-month-block">
+            <div class="section-month-title">${title}</div>
+            <div class="section-month-period">${periodText}</div>
+            <div class="section-month-line">
+                Всего: ${formatSectionCount(monthStats.total)},
+                Б-П: ${formatSectionCount(monthStats.makers)},
+                Б: ${formatSectionCount(monthStats.rams)},
+                Я: ${formatSectionCount(monthStats.ewes)},
+                О: ${formatSectionCount(monthStats.sheep)},
+                Ягнят: ${formatSectionCount(monthStats.lambs_count)}
+            </div>
+            <div class="section-month-line">
+                Ср. возраст: ${avgAgeText},
+                ср. вес ягнят: ${avgWeightLambsText},
+                ср. вес остальных животных: ${avgWeightOthersText}
+            </div>
+        </div>
+    `;
+}
+
 // Показать селектор овчарен
 function showBarnsSelector() {
     document.getElementById('barns-selector').style.display = 'block';
@@ -219,65 +266,83 @@ function createSectionCellFromStats(section, animalStats) {
         total: 0,
         avg_age_months: null,
         avg_weight_kg: null,
+        avg_weight_lambs_kg: null,
+        avg_weight_others_kg: null,
         lambs_count: 0,
+        current_month: null,
+        previous_month: null,
     };
-
-    const avgAgeText = formatSectionMetric(stats.avg_age_months, 'мес.');
-    const avgWeightText = formatSectionMetric(stats.avg_weight_kg, 'кг');
-    const lambsText = Number(stats.lambs_count || 0);
+    const currentMonthStats = stats.current_month || null;
+    const previousMonthStats = stats.previous_month || null;
 
     cell.innerHTML = `
         <div class="section-number">
             Отсек ${section.section_number}
-            (ср. возраст: ${avgAgeText}, ср. вес: ${avgWeightText}, ягнят: ${lambsText})
         </div>
     `;
+
+    const contentGrid = document.createElement('div');
+    contentGrid.className = 'section-content-grid';
+
+    const compositionBlock = document.createElement('div');
+    compositionBlock.className = 'section-composition-block';
+    compositionBlock.innerHTML = '<div class="section-composition-title">Состав животных</div>';
 
     if (stats.total > 0) {
         const animalsDiv = document.createElement('div');
         animalsDiv.className = 'animals-info';
-        
+
         // Отображаем количество каждого типа животных
         if (stats.makers > 0) {
             const makersSpan = document.createElement('span');
             makersSpan.className = 'animal-count makers';
-            makersSpan.textContent = `Бараны-Производители: ${stats.makers}`;
+            makersSpan.textContent = `Б-П: ${stats.makers}`;
             makersSpan.onclick = () => loadAndShowAnimalsModal('Бараны-Производители', section.id, section.name);
             animalsDiv.appendChild(makersSpan);
         }
-        
+
         if (stats.rams > 0) {
             const ramsSpan = document.createElement('span');
             ramsSpan.className = 'animal-count rams';
-            ramsSpan.textContent = `Баранчики: ${stats.rams}`;
+            ramsSpan.textContent = `Б: ${stats.rams}`;
             ramsSpan.onclick = () => loadAndShowAnimalsModal('Баранчики', section.id, section.name);
             animalsDiv.appendChild(ramsSpan);
         }
-        
+
         if (stats.ewes > 0) {
             const ewesSpan = document.createElement('span');
             ewesSpan.className = 'animal-count ewes';
-            ewesSpan.textContent = `Ярки: ${stats.ewes}`;
+            ewesSpan.textContent = `Я: ${stats.ewes}`;
             ewesSpan.onclick = () => loadAndShowAnimalsModal('Ярки', section.id, section.name);
             animalsDiv.appendChild(ewesSpan);
         }
-        
+
         if (stats.sheep > 0) {
             const sheepSpan = document.createElement('span');
             sheepSpan.className = 'animal-count sheep';
-            sheepSpan.textContent = `Овцематки: ${stats.sheep}`;
+            sheepSpan.textContent = `О: ${stats.sheep}`;
             sheepSpan.onclick = () => loadAndShowAnimalsModal('Овцематки', section.id, section.name);
             animalsDiv.appendChild(sheepSpan);
         }
-        
-        cell.appendChild(animalsDiv);
+
+        compositionBlock.appendChild(animalsDiv);
     } else {
-        // Отсек пустой
         const emptyDiv = document.createElement('div');
         emptyDiv.className = 'empty-section';
         emptyDiv.textContent = 'Пусто';
-        cell.appendChild(emptyDiv);
+        compositionBlock.appendChild(emptyDiv);
     }
+
+    const monthStatsCol = document.createElement('div');
+    monthStatsCol.className = 'section-month-stats';
+    monthStatsCol.innerHTML = `
+        ${renderMonthStatsBlock('Текущий месяц', currentMonthStats)}
+        ${renderMonthStatsBlock('Предыдущий месяц', previousMonthStats)}
+    `;
+
+    contentGrid.appendChild(compositionBlock);
+    contentGrid.appendChild(monthStatsCol);
+    cell.appendChild(contentGrid);
     
     return cell;
 }

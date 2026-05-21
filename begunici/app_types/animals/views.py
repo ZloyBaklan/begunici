@@ -2202,6 +2202,142 @@ class LambingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @action(detail=False, methods=['get'], url_path='father-analytics')
+    def father_analytics(self, request):
+        """Показатели плодовитости и первоокотов для отца по выбранному году."""
+        animal_type = request.query_params.get('animal_type')
+        tag_number = request.query_params.get('tag_number')
+        year_raw = request.query_params.get('year')
+
+        if not animal_type or not tag_number:
+            return Response(
+                {"error": "Необходимо указать animal_type и tag_number"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            selected_year = int(year_raw) if year_raw else timezone.now().year
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Некорректный year"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            if animal_type == 'maker':
+                animal = Maker.objects.get(tag__tag_number=tag_number)
+                base_qs = Lambing.objects.filter(maker=animal)
+            elif animal_type == 'ram':
+                animal = Ram.objects.get(tag__tag_number=tag_number)
+                base_qs = Lambing.objects.filter(ram=animal)
+            else:
+                return Response(
+                    {"error": "Неподдерживаемый тип животного для роли отца"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            completed_qs = base_qs.filter(is_active=False, actual_lambing_date__isnull=False)
+            available_years = sorted(
+                {year for year in completed_qs.values_list('actual_lambing_date__year', flat=True) if year},
+                reverse=True,
+            )
+            if selected_year not in available_years:
+                available_years.append(selected_year)
+                available_years = sorted(set(available_years), reverse=True)
+
+            year_lambings = list(
+                completed_qs.filter(actual_lambing_date__year=selected_year).order_by('actual_lambing_date', 'id')
+            )
+
+            live_lambs_total = 0
+            dead_lambs_total = 0
+            mother_keys = set()
+            sheep_ids = set()
+            ewe_ids = set()
+
+            for lambing in year_lambings:
+                live_lambs_total += lambing.number_of_lambs or 0
+                dead_lambs_total += lambing.dead_lambs_count or 0
+
+                if lambing.sheep_id:
+                    key = ('sheep', lambing.sheep_id)
+                    sheep_ids.add(lambing.sheep_id)
+                elif lambing.ewe_id:
+                    key = ('ewe', lambing.ewe_id)
+                    ewe_ids.add(lambing.ewe_id)
+                else:
+                    mother_text = (lambing.mother_tag_text or '').strip().lower()
+                    mother_type_text = (lambing.mother_type_text or '').strip().lower()
+                    if not mother_text:
+                        continue
+                    key = ('text', mother_type_text, mother_text)
+                mother_keys.add(key)
+
+            mothers_count = len(mother_keys)
+            all_lambs_total = live_lambs_total + dead_lambs_total
+            fertility = round(all_lambs_total / mothers_count, 2) if mothers_count else None
+
+            first_lambings_count = 0
+            if year_lambings and (sheep_ids or ewe_ids):
+                mother_filter = Q()
+                if sheep_ids:
+                    mother_filter |= Q(sheep_id__in=sheep_ids)
+                if ewe_ids:
+                    mother_filter |= Q(ewe_id__in=ewe_ids)
+
+                mothers_history = Lambing.objects.filter(
+                    mother_filter,
+                    is_active=False,
+                    actual_lambing_date__isnull=False,
+                ).order_by('actual_lambing_date', 'id')
+
+                first_lambing_id_by_mother = {}
+                for lambing in mothers_history:
+                    if lambing.sheep_id:
+                        mother_key = ('sheep', lambing.sheep_id)
+                    elif lambing.ewe_id:
+                        mother_key = ('ewe', lambing.ewe_id)
+                    else:
+                        continue
+
+                    if mother_key not in first_lambing_id_by_mother:
+                        first_lambing_id_by_mother[mother_key] = lambing.id
+
+                for lambing in year_lambings:
+                    if lambing.sheep_id:
+                        mother_key = ('sheep', lambing.sheep_id)
+                    elif lambing.ewe_id:
+                        mother_key = ('ewe', lambing.ewe_id)
+                    else:
+                        continue
+
+                    if first_lambing_id_by_mother.get(mother_key) == lambing.id:
+                        first_lambings_count += 1
+
+            return Response(
+                {
+                    "animal_tag": animal.tag.tag_number,
+                    "year": selected_year,
+                    "available_years": available_years,
+                    "mothers_count": mothers_count,
+                    "live_lambs_total": live_lambs_total,
+                    "dead_lambs_total": dead_lambs_total,
+                    "fertility": fertility,
+                    "first_lambings_count": first_lambings_count,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except (Maker.DoesNotExist, Ram.DoesNotExist):
+            return Response(
+                {"error": "Животное не найдено"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
 
 class CalendarNoteViewSet(viewsets.ModelViewSet):
     """
@@ -3932,37 +4068,7 @@ def journal_insemination(request):
 
 
 def journal_three(request):
-    month, year, month_from, month_to = _get_month_year_filters(request)
-    years = _get_year_options_from_queryset(
-        Lambing.objects.filter(actual_lambing_date__isnull=False),
-        "actual_lambing_date",
-    )
-    rows = []
-
-    if request.GET.get("export") == "1":
-        return _build_excel_response(
-            filename_prefix="journal_3",
-            sheet_title="Журнал 3",
-            headers=["№", "Данные"],
-            rows=[],
-            summary_lines=["Итого: 0 записей"],
-        )
-
-    paginator = Paginator(rows, 10)
-    page_obj = paginator.get_page(request.GET.get("page"))
-
-    context = {
-        "page_obj": page_obj,
-        "pagination_items": _build_compact_pagination(page_obj),
-        "months": JOURNAL_MONTHS,
-        "years": years,
-        "selected_month": month,
-        "selected_year": year,
-        "selected_month_from": month_from,
-        "selected_month_to": month_to,
-        "base_query": _build_base_query(request),
-    }
-    return render(request, "journal_three.html", context)
+    return redirect("animals:main_archive")
 
 
 def journal_shift_transfer(request):

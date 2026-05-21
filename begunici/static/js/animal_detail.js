@@ -966,6 +966,7 @@ function displayLambings(lambings) {
     
     // Сохраняем все окоты для фильтрации
     window.allLambings = lambings;
+    initializeFemaleLambingsYearStats(lambings);
     
     // Разделяем активные и завершенные окоты
     const activeLambings = lambings.filter(l => l.is_active);
@@ -987,6 +988,46 @@ function displayLambings(lambings) {
 }
 
 // Инициализация пагинации для истории окотов
+function initializeFemaleLambingsYearStats(lambings) {
+    const yearSelect = document.getElementById('female-lambing-year-select');
+    const countElement = document.getElementById('female-lambing-year-count');
+    if (!yearSelect || !countElement) {
+        return;
+    }
+
+    const completedLambings = (lambings || []).filter(
+        (lambing) => !lambing.is_active && lambing.actual_lambing_date
+    );
+
+    const lambingsByYear = new Map();
+    completedLambings.forEach((lambing) => {
+        const date = new Date(lambing.actual_lambing_date);
+        const year = date.getFullYear();
+        if (Number.isNaN(year)) {
+            return;
+        }
+        lambingsByYear.set(year, (lambingsByYear.get(year) || 0) + 1);
+    });
+
+    const currentYear = new Date().getFullYear();
+    const years = Array.from(lambingsByYear.keys()).sort((a, b) => b - a);
+    if (!years.includes(currentYear)) {
+        years.unshift(currentYear);
+    }
+
+    yearSelect.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join('');
+    yearSelect.value = String(currentYear);
+
+    const updateCount = () => {
+        const selectedYear = Number(yearSelect.value);
+        const count = lambingsByYear.get(selectedYear) || 0;
+        countElement.textContent = `Количество окотов за год: ${count}`;
+    };
+
+    yearSelect.onchange = updateCount;
+    updateCount();
+}
+
 function initializeLambingHistoryPagination(lambings) {
     const itemsPerPage = 5;
     let currentPage = 1;

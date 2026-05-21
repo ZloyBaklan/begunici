@@ -13,12 +13,15 @@
         <!-- График веса -->
         <div class="row">
             <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-header">
+                <div id="weight-chart-card" class="card collapsed">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="card-title mb-0">График изменения веса</h5>
                     </div>
                     <div class="card-body">
-                        <div class="chart-container" style="position: relative; height: 500px; width: 100%;">
+                        <div class="text-end mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="toggle-weight-chart-btn">Развернуть</button>
+                        </div>
+                        <div class="weight-chart-container">
                             <canvas id="weight-chart" style="width: 100% !important; height: 100% !important;"></canvas>
                         </div>
                     </div>
@@ -27,9 +30,9 @@
         </div>
 
         <div class="row">
-            <!-- Календарь ветобработок -->
-            <div class="col-lg-6 mb-4">
-                <div class="card">
+            <div class="col-lg-6">
+                <!-- Календарь ветобработок -->
+                <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">История ветобработок</h5>
                     </div>
@@ -57,11 +60,65 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- История статусов -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">История статусов</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Дата изменения</th>
+                                        <th>Новый статус</th>
+                                        <th>Старый статус</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="status-history-list">
+                                    <!-- Заполняется через JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="status-pagination" class="pagination-container mt-3">
+                            <button id="status-history-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
+                            <span id="status-history-page-numbers"></span>
+                            <button id="status-history-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- История перемещений -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">История перемещений</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Дата и время</th>
+                                        <th>Новое место</th>
+                                        <th>Старое место</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="place-history"></tbody>
+                            </table>
+                        </div>
+                        <div id="place-pagination" class="pagination-container mt-3">
+                            <button id="place-history-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
+                            <span id="place-history-page-numbers"></span>
+                            <button id="place-history-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Список детей -->
-            <div class="col-lg-6 mb-4">
-                <div class="card">
+            <div class="col-lg-6">
+                <!-- Список детей -->
+                <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="card-title mb-0">Список детей</h5>
                         <span class="badge bg-secondary" id="children-count">0</span>
@@ -92,66 +149,30 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <div class="row">
-            <!-- История статусов -->
-            <div class="col-lg-6 mb-4">
-                <div class="card">
+                {% if animal_type == 'maker' or animal_type == 'ram' %}
+                <div class="card mb-4">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">История статусов</h5>
+                        <h5 class="card-title mb-0">Плодовитость и первоокоты</h5>
                     </div>
                     <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Дата изменения</th>
-                                        <th>Новый статус</th>
-                                        <th>Старый статус</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="status-history-list">
-                                    <!-- Заполняется через JS -->
-                                </tbody>
-                            </table>
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-auto">
+                                <label for="male-fertility-year" class="form-label mb-1">Год</label>
+                                <select id="male-fertility-year" class="form-select form-select-sm"></select>
+                            </div>
                         </div>
-                        <div id="status-pagination" class="pagination-container mt-3">
-                            <button id="status-history-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
-                            <span id="status-history-page-numbers"></span>
-                            <button id="status-history-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
+                        <div class="mb-2">
+                            <strong>Плодовитость:</strong>
+                            <span id="male-fertility-value">-</span>
+                        </div>
+                        <div>
+                            <strong>Количество первоокотов:</strong>
+                            <span id="male-first-lambings-value">0</span>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- История перемещений -->
-            <div class="col-lg-6 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">История перемещений</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Дата и время</th>
-                                        <th>Новое место</th>
-                                        <th>Старое место</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="place-history"></tbody>
-                            </table>
-                        </div>
-                        <div id="place-pagination" class="pagination-container mt-3">
-                            <button id="place-history-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
-                            <span id="place-history-page-numbers"></span>
-                            <button id="place-history-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
-                        </div>
-                    </div>
-                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -204,6 +225,34 @@
 .pagination-container .page-dots {
     color: #6c757d;
     padding: 0 5px;
+}
+
+#weight-chart-card {
+    width: 100%;
+}
+
+#weight-chart-card.collapsed {
+    max-width: 760px;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+#weight-chart-card.expanded {
+    max-width: 100%;
+}
+
+.weight-chart-container {
+    position: relative;
+    width: 100%;
+    transition: height 0.2s ease-out;
+}
+
+#weight-chart-card.collapsed .weight-chart-container {
+    height: 300px;
+}
+
+#weight-chart-card.expanded .weight-chart-container {
+    height: 500px;
 }
 </style>
 {% endblock %}

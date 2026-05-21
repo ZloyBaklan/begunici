@@ -9,6 +9,7 @@ from django.shortcuts import render
 from django.views.generic import TemplateView
 from rest_framework.exceptions import ValidationError
 from datetime import datetime, timedelta
+from calendar import monthrange
 from .vet_models import (
     Veterinary,
     Status,
@@ -113,7 +114,143 @@ def get_barn_statistics(request, barn_number):
         from begunici.app_types.animals.models import Maker, Ram, Ewe, Sheep
         
         today = timezone.now().date()
-        lamb_cutoff_date = today - timedelta(days=100)
+        current_month_start = today.replace(day=1)
+        current_month_end = today.replace(
+            day=monthrange(today.year, today.month)[1]
+        )
+        previous_month_end = current_month_start - timedelta(days=1)
+        previous_month_start = previous_month_end.replace(day=1)
+
+        def _avg(values):
+            if not values:
+                return None
+            return round(sum(values) / len(values), 1)
+
+        def _get_age_months_as_of(animal, as_of_date):
+            if animal.birth_date:
+                days = (as_of_date - animal.birth_date).days
+                if days < 0:
+                    return None
+                return round(days / 30.0, 1)
+            if animal.age is not None:
+                try:
+                    return float(animal.age)
+                except (TypeError, ValueError):
+                    return None
+            return None
+
+        def _build_period_stats(
+            animal_entries,
+            as_of_date,
+            period_start=None,
+            period_end=None,
+        ):
+            eligible_entries = []
+            for entry in animal_entries:
+                animal = entry["animal"]
+                if animal.birth_date and animal.birth_date > as_of_date:
+                    continue
+                eligible_entries.append(entry)
+
+            counts = {
+                "makers": 0,
+                "rams": 0,
+                "ewes": 0,
+                "sheep": 0,
+            }
+            age_values = []
+            lamb_tag_ids = set()
+            all_tag_ids = []
+            lamb_cutoff_date = as_of_date - timedelta(days=100)
+
+            for entry in eligible_entries:
+                type_key = entry["type"]
+                animal = entry["animal"]
+
+                if type_key in counts:
+                    counts[type_key] += 1
+
+                if getattr(animal, "tag_id", None):
+                    all_tag_ids.append(animal.tag_id)
+
+                age_months = _get_age_months_as_of(animal, as_of_date)
+                if age_months is not None:
+                    age_values.append(age_months)
+
+                if (
+                    animal.birth_date
+                    and not animal.date_otbivka
+                    and lamb_cutoff_date < animal.birth_date <= as_of_date
+                    and getattr(animal, "tag_id", None)
+                ):
+                    lamb_tag_ids.add(animal.tag_id)
+
+            total = counts["makers"] + counts["rams"] + counts["ewes"] + counts["sheep"]
+
+            avg_weight_kg = None
+            avg_weight_lambs_kg = None
+            avg_weight_others_kg = None
+
+            if all_tag_ids:
+                weights_qs = (
+                    WeightRecord.objects
+                    .filter(tag_id__in=all_tag_ids)
+                )
+                if period_start and period_end:
+                    weights_qs = weights_qs.filter(
+                        weight_date__gte=period_start,
+                        weight_date__lte=period_end,
+                    )
+
+                latest_weights = (
+                    weights_qs
+                    .order_by("tag_id", "-weight_date", "-id")
+                    .distinct("tag_id")
+                )
+
+                weight_by_tag = {
+                    record.tag_id: float(record.weight)
+                    for record in latest_weights
+                    if record.weight is not None
+                }
+                all_weights = list(weight_by_tag.values())
+                lamb_weights = [
+                    weight_by_tag[tag_id]
+                    for tag_id in lamb_tag_ids
+                    if tag_id in weight_by_tag
+                ]
+                other_weights = [
+                    value
+                    for tag_id, value in weight_by_tag.items()
+                    if tag_id not in lamb_tag_ids
+                ]
+
+                avg_weight_kg = _avg(all_weights)
+                avg_weight_lambs_kg = _avg(lamb_weights)
+                avg_weight_others_kg = _avg(other_weights)
+
+            return {
+                "makers": counts["makers"],
+                "rams": counts["rams"],
+                "ewes": counts["ewes"],
+                "sheep": counts["sheep"],
+                "total": total,
+                "lambs_count": len(lamb_tag_ids),
+                "avg_age_months": _avg(age_values),
+                "avg_weight_kg": avg_weight_kg,
+                "avg_weight_lambs_kg": avg_weight_lambs_kg,
+                "avg_weight_others_kg": avg_weight_others_kg,
+                "period_start": (
+                    period_start.strftime("%d.%m.%Y")
+                    if period_start
+                    else None
+                ),
+                "period_end": (
+                    period_end.strftime("%d.%m.%Y")
+                    if period_end
+                    else None
+                ),
+            }
         
         # Получаем места для этой овчарни
         places = Place.objects.filter(sheepfold__icontains=f'Овчарня {barn_number} Отсек')
@@ -151,48 +288,32 @@ def get_barn_statistics(request, barn_number):
             rams_count = len(rams)
             ewes_count = len(ewes)
             sheep_count = len(sheep)
-            all_animals = makers + rams + ewes + sheep
+            animal_entries = (
+                [{"type": "makers", "animal": item} for item in makers]
+                + [{"type": "rams", "animal": item} for item in rams]
+                + [{"type": "ewes", "animal": item} for item in ewes]
+                + [{"type": "sheep", "animal": item} for item in sheep]
+            )
             
             section_total = makers_count + rams_count + ewes_count + sheep_count
             total_animals += section_total
 
-            # Средний возраст в месяцах
-            age_values = []
-            # Ягнята: без отбивки и младше 100 суток
-            lambs_count = 0
-            tag_ids = []
-
-            for animal in all_animals:
-                if getattr(animal, 'tag_id', None):
-                    tag_ids.append(animal.tag_id)
-
-                age_months = None
-                if animal.age is not None:
-                    age_months = float(animal.age)
-                elif animal.birth_date:
-                    age_months = max((today - animal.birth_date).days / 30.0, 0)
-
-                if age_months is not None:
-                    age_values.append(age_months)
-
-                if animal.birth_date and not animal.date_otbivka:
-                    if lamb_cutoff_date < animal.birth_date <= today:
-                        lambs_count += 1
-
-            avg_age_months = round(sum(age_values) / len(age_values), 1) if age_values else None
-
-            # Средний живой вес по последним записям взвешивания животных в отсеке
-            avg_weight_kg = None
-            if tag_ids:
-                latest_weights = (
-                    WeightRecord.objects
-                    .filter(tag_id__in=tag_ids)
-                    .order_by('tag_id', '-weight_date', '-id')
-                    .distinct('tag_id')
-                )
-                weight_values = [float(record.weight) for record in latest_weights if record.weight is not None]
-                if weight_values:
-                    avg_weight_kg = round(sum(weight_values) / len(weight_values), 1)
+            snapshot_stats = _build_period_stats(
+                animal_entries=animal_entries,
+                as_of_date=today,
+            )
+            current_month_stats = _build_period_stats(
+                animal_entries=animal_entries,
+                as_of_date=current_month_end,
+                period_start=current_month_start,
+                period_end=current_month_end,
+            )
+            previous_month_stats = _build_period_stats(
+                animal_entries=animal_entries,
+                as_of_date=previous_month_end,
+                period_start=previous_month_start,
+                period_end=previous_month_end,
+            )
             
             sections_data.append({
                 'id': place.id,
@@ -207,9 +328,13 @@ def get_barn_statistics(request, barn_number):
                 'ewes': ewes_count,
                 'sheep': sheep_count,
                 'total': section_total,
-                'avg_age_months': avg_age_months,
-                'avg_weight_kg': avg_weight_kg,
-                'lambs_count': lambs_count,
+                'avg_age_months': snapshot_stats['avg_age_months'],
+                'avg_weight_kg': snapshot_stats['avg_weight_kg'],
+                'avg_weight_lambs_kg': snapshot_stats['avg_weight_lambs_kg'],
+                'avg_weight_others_kg': snapshot_stats['avg_weight_others_kg'],
+                'lambs_count': snapshot_stats['lambs_count'],
+                'current_month': current_month_stats,
+                'previous_month': previous_month_stats,
             }
         
         # Сортируем отсеки по номерам
