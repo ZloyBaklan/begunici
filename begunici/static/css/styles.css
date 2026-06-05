@@ -472,6 +472,16 @@ th {
 }
 
 /* Стили для чекбоксов в модальном окне */
+.animal-search-container {
+    margin-bottom: 12px;
+}
+
+.animal-search-container label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
 .select-all-container {
     margin-bottom: 15px;
     padding: 10px;

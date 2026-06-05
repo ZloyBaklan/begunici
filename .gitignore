@@ -149,6 +149,16 @@ staticfiles/
 # Backup files
 backups/
 
+# Local Docker Compose overrides
+docker-compose.override.yml
+docker-compose.override.yaml
+docker-compose.local.yml
+docker-compose.local.yaml
+compose.override.yml
+compose.override.yaml
+compose.local.yml
+compose.local.yaml
+
 # Import data and Excel files
 importer/
 

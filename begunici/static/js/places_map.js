@@ -576,16 +576,23 @@ function showAnimalsModal(animalType, animals, sectionName) {
     const modal = document.getElementById('animals-modal');
     const title = document.getElementById('modal-title');
     const list = document.getElementById('animals-list');
+    const searchInput = document.getElementById('animals-modal-search');
     
     title.textContent = `${animalType} в ${sectionName}`;
     
     list.innerHTML = '';
+    if (searchInput) {
+        searchInput.value = '';
+    }
+
     animals.forEach((animal, index) => {
         const animalDiv = document.createElement('div');
         animalDiv.className = 'animal-item';
         
         const tagNumber = animal.tag ? animal.tag.tag_number : 'Нет бирки';
         const displayName = animal.display_name || tagNumber;
+        animalDiv.dataset.tagNumber = String(tagNumber).toLocaleLowerCase('ru-RU');
+        animalDiv.dataset.displayName = String(displayName).toLocaleLowerCase('ru-RU');
         
         // Создаем чекбокс для каждого животного
         const checkbox = document.createElement('input');
@@ -625,9 +632,51 @@ function showAnimalsModal(animalType, animals, sectionName) {
     
     // Сбрасываем состояние чекбоксов
     document.getElementById('select-all-animals').checked = false;
+    filterAnimalsModalList();
     updateMoveButtonVisibility();
     
     modal.style.display = 'block';
+}
+
+function filterAnimalsModalList() {
+    const searchInput = document.getElementById('animals-modal-search');
+    const searchValue = (searchInput?.value || '').trim().toLocaleLowerCase('ru-RU');
+    const searchTerms = searchValue
+        .split(',')
+        .map(term => term.trim())
+        .filter(Boolean);
+    const animalItems = document.querySelectorAll('#animals-list .animal-item');
+
+    animalItems.forEach(item => {
+        const tagNumber = item.dataset.tagNumber || '';
+        const displayName = item.dataset.displayName || '';
+        const isVisible = searchTerms.length === 0 || searchTerms.some(term => (
+            tagNumber.includes(term) || displayName.includes(term)
+        ));
+
+        item.style.display = isVisible ? '' : 'none';
+
+        if (!isVisible) {
+            const checkbox = item.querySelector('.animal-checkbox');
+            if (checkbox) {
+                checkbox.checked = false;
+            }
+        }
+    });
+
+    const selectAllCheckbox = document.getElementById('select-all-animals');
+    if (selectAllCheckbox) {
+        const visibleCheckboxes = Array.from(document.querySelectorAll('#animals-list .animal-item'))
+            .filter(item => item.style.display !== 'none')
+            .map(item => item.querySelector('.animal-checkbox'))
+            .filter(Boolean);
+
+        selectAllCheckbox.checked = (
+            visibleCheckboxes.length > 0 && visibleCheckboxes.every(checkbox => checkbox.checked)
+        );
+    }
+
+    updateMoveButtonVisibility();
 }
 
 // Вспомогательная функция для преобразования категории в тип животного
@@ -668,12 +717,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectAllCheckbox = document.getElementById('select-all-animals');
     if (selectAllCheckbox) {
         selectAllCheckbox.addEventListener('change', function() {
-            const animalCheckboxes = document.querySelectorAll('.animal-checkbox');
-            animalCheckboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
+            const animalItems = document.querySelectorAll('#animals-list .animal-item');
+            animalItems.forEach(item => {
+                if (item.style.display === 'none') {
+                    return;
+                }
+
+                const checkbox = item.querySelector('.animal-checkbox');
+                if (checkbox) {
+                    checkbox.checked = this.checked;
+                }
             });
             updateMoveButtonVisibility();
         });
+    }
+
+    const searchInput = document.getElementById('animals-modal-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', filterAnimalsModalList);
     }
 });
 

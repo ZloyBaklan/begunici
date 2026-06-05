@@ -153,36 +153,10 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(age__lte=age_max)
 
         if father_tag:
-            father_lower = father_tag.lower()
-            father_upper = father_tag.upper()
-            father_title = father_tag.title()
-            father_filter = (
-                Q(father__exact=father_tag) |
-                Q(father__exact=father_lower) |
-                Q(father__exact=father_upper) |
-                Q(father__exact=father_title) |
-                Q(father__contains=father_tag) |
-                Q(father__contains=father_lower) |
-                Q(father__contains=father_upper) |
-                Q(father__contains=father_title)
-            )
-            queryset = queryset.filter(father_filter)
+            queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
 
         if mother_tag:
-            mother_lower = mother_tag.lower()
-            mother_upper = mother_tag.upper()
-            mother_title = mother_tag.title()
-            mother_filter = (
-                Q(mother__exact=mother_tag) |
-                Q(mother__exact=mother_lower) |
-                Q(mother__exact=mother_upper) |
-                Q(mother__exact=mother_title) |
-                Q(mother__contains=mother_tag) |
-                Q(mother__contains=mother_lower) |
-                Q(mother__contains=mother_upper) |
-                Q(mother__contains=mother_title)
-            )
-            queryset = queryset.filter(mother_filter)
+            queryset = queryset.filter(_build_case_variants_filter("mother", mother_tag))
 
         return queryset
 
@@ -208,38 +182,12 @@ class MakerViewSet(AnimalBaseViewSet):
         search = self.request.query_params.get('search', '').strip()
         
         if search:
-            # Для кириллицы используем комбинированный подход
-            from django.db.models import Q
-            
-            # Создаем варианты поиска в разных регистрах
-            search_lower = search.lower()
-            search_upper = search.upper()
-            search_title = search.title()
-            
             search_filter = (
-                # Точные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__exact=search) |
-                Q(tag__tag_number__exact=search_lower) |
-                Q(tag__tag_number__exact=search_upper) |
-                Q(tag__tag_number__exact=search_title) |
-                # Частичные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__contains=search) |
-                Q(tag__tag_number__contains=search_lower) |
-                Q(tag__tag_number__contains=search_upper) |
-                Q(tag__tag_number__contains=search_title) |
-                # Поиск по статусу в разных регистрах
-                Q(animal_status__status_type__exact=search) |
-                Q(animal_status__status_type__exact=search_lower) |
-                Q(animal_status__status_type__exact=search_upper) |
-                Q(animal_status__status_type__exact=search_title) |
-                Q(animal_status__status_type__contains=search) |
-                Q(animal_status__status_type__contains=search_lower) |
-                Q(animal_status__status_type__contains=search_upper) |
-                Q(animal_status__status_type__contains=search_title) |
-                # Поиск по другим полям
-                Q(rshn_tag__icontains=search) |
-                Q(place__sheepfold__icontains=search) |
-                Q(name__icontains=search)
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+                | Q(rshn_tag__icontains=search)
+                | Q(place__sheepfold__icontains=search)
+                | Q(name__icontains=search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -649,37 +597,11 @@ class RamViewSet(AnimalBaseViewSet):
         search = self.request.query_params.get('search', '').strip()
         
         if search:
-            # Для кириллицы используем комбинированный подход
-            from django.db.models import Q
-            
-            # Создаем варианты поиска в разных регистрах
-            search_lower = search.lower()
-            search_upper = search.upper()
-            search_title = search.title()
-            
             search_filter = (
-                # Точные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__exact=search) |
-                Q(tag__tag_number__exact=search_lower) |
-                Q(tag__tag_number__exact=search_upper) |
-                Q(tag__tag_number__exact=search_title) |
-                # Частичные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__contains=search) |
-                Q(tag__tag_number__contains=search_lower) |
-                Q(tag__tag_number__contains=search_upper) |
-                Q(tag__tag_number__contains=search_title) |
-                # Поиск по статусу в разных регистрах
-                Q(animal_status__status_type__exact=search) |
-                Q(animal_status__status_type__exact=search_lower) |
-                Q(animal_status__status_type__exact=search_upper) |
-                Q(animal_status__status_type__exact=search_title) |
-                Q(animal_status__status_type__contains=search) |
-                Q(animal_status__status_type__contains=search_lower) |
-                Q(animal_status__status_type__contains=search_upper) |
-                Q(animal_status__status_type__contains=search_title) |
-                # Поиск по другим полям
-                Q(rshn_tag__icontains=search) |
-                Q(place__sheepfold__icontains=search)
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+                | Q(rshn_tag__icontains=search)
+                | Q(place__sheepfold__icontains=search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -1018,37 +940,11 @@ class EweViewSet(AnimalBaseViewSet):
         search = self.request.query_params.get('search', '').strip()
         
         if search:
-            # Для кириллицы используем комбинированный подход
-            from django.db.models import Q
-            
-            # Создаем варианты поиска в разных регистрах
-            search_lower = search.lower()
-            search_upper = search.upper()
-            search_title = search.title()
-            
             search_filter = (
-                # Точные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__exact=search) |
-                Q(tag__tag_number__exact=search_lower) |
-                Q(tag__tag_number__exact=search_upper) |
-                Q(tag__tag_number__exact=search_title) |
-                # Частичные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__contains=search) |
-                Q(tag__tag_number__contains=search_lower) |
-                Q(tag__tag_number__contains=search_upper) |
-                Q(tag__tag_number__contains=search_title) |
-                # Поиск по статусу в разных регистрах
-                Q(animal_status__status_type__exact=search) |
-                Q(animal_status__status_type__exact=search_lower) |
-                Q(animal_status__status_type__exact=search_upper) |
-                Q(animal_status__status_type__exact=search_title) |
-                Q(animal_status__status_type__contains=search) |
-                Q(animal_status__status_type__contains=search_lower) |
-                Q(animal_status__status_type__contains=search_upper) |
-                Q(animal_status__status_type__contains=search_title) |
-                # Поиск по другим полям
-                Q(rshn_tag__icontains=search) |
-                Q(place__sheepfold__icontains=search)
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+                | Q(rshn_tag__icontains=search)
+                | Q(place__sheepfold__icontains=search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -1367,37 +1263,11 @@ class SheepViewSet(AnimalBaseViewSet):
         search = self.request.query_params.get('search', '').strip()
         
         if search:
-            # Для кириллицы используем комбинированный подход
-            from django.db.models import Q
-            
-            # Создаем варианты поиска в разных регистрах
-            search_lower = search.lower()
-            search_upper = search.upper()
-            search_title = search.title()
-            
             search_filter = (
-                # Точные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__exact=search) |
-                Q(tag__tag_number__exact=search_lower) |
-                Q(tag__tag_number__exact=search_upper) |
-                Q(tag__tag_number__exact=search_title) |
-                # Частичные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__contains=search) |
-                Q(tag__tag_number__contains=search_lower) |
-                Q(tag__tag_number__contains=search_upper) |
-                Q(tag__tag_number__contains=search_title) |
-                # Поиск по статусу в разных регистрах
-                Q(animal_status__status_type__exact=search) |
-                Q(animal_status__status_type__exact=search_lower) |
-                Q(animal_status__status_type__exact=search_upper) |
-                Q(animal_status__status_type__exact=search_title) |
-                Q(animal_status__status_type__contains=search) |
-                Q(animal_status__status_type__contains=search_lower) |
-                Q(animal_status__status_type__contains=search_upper) |
-                Q(animal_status__status_type__contains=search_title) |
-                # Поиск по другим полям
-                Q(rshn_tag__icontains=search) |
-                Q(place__sheepfold__icontains=search)
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+                | Q(rshn_tag__icontains=search)
+                | Q(place__sheepfold__icontains=search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -1749,19 +1619,7 @@ class LambingViewSet(viewsets.ModelViewSet):
 
         # Фильтрация по биркам матери и отца (без учета регистра)
         def build_case_variants_q(field_name, value):
-            lowered = value.lower()
-            uppered = value.upper()
-            titled = value.title()
-            return (
-                Q(**{f"{field_name}__exact": value}) |
-                Q(**{f"{field_name}__exact": lowered}) |
-                Q(**{f"{field_name}__exact": uppered}) |
-                Q(**{f"{field_name}__exact": titled}) |
-                Q(**{f"{field_name}__contains": value}) |
-                Q(**{f"{field_name}__contains": lowered}) |
-                Q(**{f"{field_name}__contains": uppered}) |
-                Q(**{f"{field_name}__contains": titled})
-            )
+            return _build_case_variants_filter(field_name, value)
 
         if mother_tag:
             mother_filter = (
@@ -2884,33 +2742,11 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
         # Создаем варианты поиска в разных регистрах если есть поиск
         search_filter = Q()
         if search:
-            search_lower = search.lower()
-            search_upper = search.upper()
-            search_title = search.title()
-            
             search_filter = (
-                # Точные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__exact=search) |
-                Q(tag__tag_number__exact=search_lower) |
-                Q(tag__tag_number__exact=search_upper) |
-                Q(tag__tag_number__exact=search_title) |
-                # Частичные совпадения в разных регистрах для бирки
-                Q(tag__tag_number__contains=search) |
-                Q(tag__tag_number__contains=search_lower) |
-                Q(tag__tag_number__contains=search_upper) |
-                Q(tag__tag_number__contains=search_title) |
-                # Поиск по статусу в разных регистрах
-                Q(animal_status__status_type__exact=search) |
-                Q(animal_status__status_type__exact=search_lower) |
-                Q(animal_status__status_type__exact=search_upper) |
-                Q(animal_status__status_type__exact=search_title) |
-                Q(animal_status__status_type__contains=search) |
-                Q(animal_status__status_type__contains=search_lower) |
-                Q(animal_status__status_type__contains=search_upper) |
-                Q(animal_status__status_type__contains=search_title) |
-                # Поиск по другим полям
-                Q(rshn_tag__icontains=search) |
-                Q(place__sheepfold__icontains=search)
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+                | Q(rshn_tag__icontains=search)
+                | Q(place__sheepfold__icontains=search)
             )
 
         def apply_filters(queryset):
@@ -3099,8 +2935,13 @@ COMMON_ANIMAL_TYPE_MAP = {
 }
 
 
-def _build_case_variants_filter(field_name, value):
-    """Фильтр по строке без учета регистра (по аналогии с основными списками)."""
+def _split_multi_search_terms(value):
+    if value is None:
+        return []
+    return [term.strip() for term in str(value).split(",") if term.strip()]
+
+
+def _build_single_case_variants_filter(field_name, value):
     lowered = value.lower()
     uppered = value.upper()
     titled = value.title()
@@ -3114,6 +2955,21 @@ def _build_case_variants_filter(field_name, value):
         | Q(**{f"{field_name}__contains": uppered})
         | Q(**{f"{field_name}__contains": titled})
     )
+
+
+def _build_case_variants_filter(field_name, value):
+    combined_q = Q()
+    for term in _split_multi_search_terms(value):
+        combined_q |= _build_single_case_variants_filter(field_name, term)
+    return combined_q
+
+
+def _matches_multi_search(value, search):
+    terms = [term.lower() for term in _split_multi_search_terms(search)]
+    if not terms:
+        return True
+    text = str(value or "").lower()
+    return any(term in text for term in terms)
 
 
 def _format_dorper_display(animal):
@@ -5068,22 +4924,9 @@ def get_all_tags(request):
     """
     try:
         search = request.GET.get('search', '').strip()
-        search_lower = search.lower()
 
         def build_case_variants_q(field_name, value):
-            lowered = value.lower()
-            uppered = value.upper()
-            titled = value.title()
-            return (
-                Q(**{f"{field_name}__exact": value}) |
-                Q(**{f"{field_name}__exact": lowered}) |
-                Q(**{f"{field_name}__exact": uppered}) |
-                Q(**{f"{field_name}__exact": titled}) |
-                Q(**{f"{field_name}__contains": value}) |
-                Q(**{f"{field_name}__contains": lowered}) |
-                Q(**{f"{field_name}__contains": uppered}) |
-                Q(**{f"{field_name}__contains": titled})
-            )
+            return _build_case_variants_filter(field_name, value)
 
         tags_data = []
 
@@ -5104,7 +4947,7 @@ def get_all_tags(request):
                 if not animal.tag:
                     continue
                 tag_number = animal.tag.tag_number or ''
-                if search and search_lower not in tag_number.lower():
+                if search and not _matches_multi_search(tag_number, search):
                     continue
                 tags_data.append({
                     'tag_number': tag_number,
@@ -5123,7 +4966,7 @@ def get_all_tags(request):
                 if not animal.tag:
                     continue
                 tag_number = animal.tag.tag_number or ''
-                if search and search_lower not in tag_number.lower():
+                if search and not _matches_multi_search(tag_number, search):
                     continue
                 tags_data.append({
                     'tag_number': tag_number,
@@ -5283,7 +5126,10 @@ def get_inactive_mothers(request):
         
         # Применяем поиск без учета регистра если указан
         if search:
-            inactive_mothers = [mother for mother in inactive_mothers if search.lower() in mother['tag_number'].lower()]
+            inactive_mothers = [
+                mother for mother in inactive_mothers
+                if _matches_multi_search(mother['tag_number'], search)
+            ]
         
         # Сортируем по номеру бирки
         inactive_mothers.sort(key=lambda x: x['tag_number'])
@@ -5344,7 +5190,10 @@ def get_all_fathers(request):
         
         # Применяем поиск без учета регистра если указан
         if search:
-            all_fathers = [father for father in all_fathers if search.lower() in father['tag_number'].lower()]
+            all_fathers = [
+                father for father in all_fathers
+                if _matches_multi_search(father['tag_number'], search)
+            ]
         
         # Сортируем по номеру бирки
         all_fathers.sort(key=lambda x: x['tag_number'])
@@ -5559,19 +5408,7 @@ def _format_date_for_excel(value):
 
 
 def _build_case_variants_q(field_name, value):
-    lowered = value.lower()
-    uppered = value.upper()
-    titled = value.title()
-    return (
-        Q(**{f"{field_name}__exact": value})
-        | Q(**{f"{field_name}__exact": lowered})
-        | Q(**{f"{field_name}__exact": uppered})
-        | Q(**{f"{field_name}__exact": titled})
-        | Q(**{f"{field_name}__contains": value})
-        | Q(**{f"{field_name}__contains": lowered})
-        | Q(**{f"{field_name}__contains": uppered})
-        | Q(**{f"{field_name}__contains": titled})
-    )
+    return _build_case_variants_filter(field_name, value)
 
 
 @api_view(['GET'])
@@ -5685,7 +5522,7 @@ def vet_list_export_excel(request):
     queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all().order_by(f'{sort_prefix}{sort_field}')
 
     if tag_search:
-        queryset = queryset.filter(tag__tag_number__icontains=tag_search)
+        queryset = queryset.filter(_build_case_variants_filter('tag__tag_number', tag_search))
     if care_name:
         queryset = queryset.filter(veterinary_care__care_name=care_name)
     if medication:
@@ -5866,7 +5703,7 @@ def vet_list_api(request):
         
         # Применяем фильтры
         if tag_search:
-            queryset = queryset.filter(tag__tag_number__icontains=tag_search)
+            queryset = queryset.filter(_build_case_variants_filter('tag__tag_number', tag_search))
         
         if care_name:
             queryset = queryset.filter(veterinary_care__care_name=care_name)
@@ -6166,7 +6003,10 @@ def otbivka_api(request):
     
     # Фильтрация по поиску (по номеру бирки)
     if search_query:
-        animals = [animal for animal in animals if search_query.lower() in animal['tag_number'].lower()]
+        animals = [
+            animal for animal in animals
+            if _matches_multi_search(animal['tag_number'], search_query)
+        ]
     
     # Сортировка по дате отбивки (сначала новые)
     animals.sort(key=lambda x: x['date_otbivka'], reverse=True)
@@ -6278,7 +6118,10 @@ def otbivka_export_excel(request):
         )
 
     if search_query:
-        animals = [animal for animal in animals if search_query.lower() in animal['tag_number'].lower()]
+        animals = [
+            animal for animal in animals
+            if _matches_multi_search(animal['tag_number'], search_query)
+        ]
 
     animals.sort(key=lambda item: item['date_otbivka'], reverse=True)
     type_labels = {
@@ -6803,7 +6646,10 @@ def get_animals_without_otbivka(request):
         
         # Фильтрация по поиску
         if search_query:
-            animals = [animal for animal in animals if search_query.lower() in animal['tag_number'].lower()]
+            animals = [
+                animal for animal in animals
+                if _matches_multi_search(animal['tag_number'], search_query)
+            ]
         
         # Ограничиваем до 100 результатов
         animals = animals[:100]
