@@ -632,7 +632,6 @@ function showAnimalsModal(animalType, animals, sectionName) {
     
     // Сбрасываем состояние чекбоксов
     document.getElementById('select-all-animals').checked = false;
-    filterAnimalsModalList();
     updateMoveButtonVisibility();
     
     modal.style.display = 'block';
@@ -734,7 +733,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const searchInput = document.getElementById('animals-modal-search');
     if (searchInput) {
-        searchInput.addEventListener('input', filterAnimalsModalList);
+        searchInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                filterAnimalsModalList();
+            }
+        });
+    }
+
+    const searchButton = document.getElementById('animals-modal-search-button');
+    if (searchButton) {
+        searchButton.addEventListener('click', filterAnimalsModalList);
     }
 });
 
