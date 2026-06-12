@@ -968,13 +968,13 @@ async function loadStatusesForLamb(formElement) {
             option.textContent = status.status_type;
             select.appendChild(option);
             
-            // Ищем статус "Подращивание"
-            if (status.status_type === 'Подращивание') {
+            // Ищем статус "Доращивание"
+            if (status.status_type === 'Доращивание') {
                 growingStatusId = status.id;
             }
         });
         
-        // Устанавливаем статус "Подращивание" по умолчанию
+        // Устанавливаем статус "Доращивание" по умолчанию
         if (growingStatusId) {
             select.value = growingStatusId;
         }

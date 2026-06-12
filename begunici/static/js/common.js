@@ -522,7 +522,7 @@ function toggleArchiveActNumberField() {
 
     const selectedStatusName =
         statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || "";
-    const shouldShow = selectedStatusName === "Убыл";
+    const shouldShow = selectedStatusName === "Выбытие";
     actNumberGroup.style.display = shouldShow ? "block" : "none";
     if (!shouldShow && actNumberInput) {
         actNumberInput.value = "";
@@ -535,7 +535,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"].includes(status.status_type)
+            ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("archive-status-select");
@@ -602,7 +602,7 @@ async function applyArchiveStatus() {
                 animal_status_id: statusId,
                 status_date: statusDate,
                 carcass_weight: carcassWeight,
-                act_number: selectedStatusName === "Убыл" ? actNumberRaw : "",
+                act_number: selectedStatusName === "Выбытие" ? actNumberRaw : "",
             });
         }
 

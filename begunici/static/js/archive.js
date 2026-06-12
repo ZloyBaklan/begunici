@@ -198,7 +198,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Убой", "Убыл", "Продажа на мясо", "Продажа на племя"].includes(status.status_type)
+            ["Убой", "Выбытие", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("status-filter");
@@ -324,7 +324,7 @@ async function loadRestoreStatuses() {
         const statuses = response.results || response;
 
         const activeStatuses = statuses.filter((status) =>
-            !["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"].includes(status.status_type)
+            !["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("restore-status-select");

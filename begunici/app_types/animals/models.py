@@ -347,9 +347,9 @@ class AnimalBase(models.Model):
 
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in [
-            "Убыл",
+            "Выбытие",
             "Убой", 
-            "Продажа на мясо",
+            "Реализация в живом весе",
             "Продажа на племя",
         ]:
             self.is_archived = True

@@ -72,7 +72,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
-    # Поле для номера акта при архивировании со статусом "Убыл"
+    # Поле для номера акта при архивировании со статусом "Выбытие"
     act_number = serializers.CharField(
         write_only=True,
         required=False,
@@ -200,11 +200,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         # Извлекаем дату статуса если она передана
         status_date = validated_data.pop("status_date", None)
-        # Извлекаем номер акта (для статуса "Убыл")
+        # Извлекаем номер акта (для статуса "Выбытие")
         act_number = (validated_data.pop("act_number", "") or "").strip()
 
         selected_status = validated_data.get("animal_status")
-        if selected_status and selected_status.status_type == "Убыл" and act_number:
+        if selected_status and selected_status.status_type == "Выбытие" and act_number:
             prefix = f"Номер акта: {act_number}"
             existing_note = validated_data.get("note")
             if existing_note is None:
@@ -225,7 +225,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             new_status_name = validated_data['animal_status'].status_type
             
             # Проверяем, является ли новый статус архивным
-            archive_statuses = ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой']
+            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой']
             if new_status_name in archive_statuses:
                 # Это архивирование
                 changes.append(f"{old_status_name} → {new_status_name}")
@@ -372,9 +372,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 # Определяем тип действия
                 action_type = "Редактирование животного"
                 new_status = validated_data.get('animal_status')
-                if new_status and new_status.status_type in ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой']:
+                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой']:
                     action_type = "Архивирование животного"
-                elif old_status and old_status.status_type in ['Продажа на мясо', 'Продажа на племя', 'Убыл', 'Убой'] and new_status:
+                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой'] and new_status:
                     action_type = "Восстановление из архива"
                 
                 changes_text = "; ".join(changes)
@@ -516,7 +516,7 @@ class UniversalChildSerializer(serializers.Serializer):
         # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
         from begunici.app_types.veterinary.vet_models import StatusHistory
         
-        archive_statuses = ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя']
+        archive_statuses = ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя']
         if obj.animal_status.status_type in archive_statuses:
             status_history = StatusHistory.objects.filter(
                 tag=obj.tag,

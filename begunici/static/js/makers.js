@@ -683,7 +683,7 @@ function toggleArchiveActNumberField() {
     if (!statusSelect || !actNumberGroup) return;
 
     const selectedStatusName = statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || '';
-    const shouldShow = selectedStatusName === 'Убыл';
+    const shouldShow = selectedStatusName === 'Выбытие';
     actNumberGroup.style.display = shouldShow ? 'block' : 'none';
     if (!shouldShow && actNumberInput) {
         actNumberInput.value = '';
@@ -698,7 +698,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = ''; // Очистка существующих опций
@@ -760,7 +760,7 @@ async function applyArchiveStatus() {
                 animal_status_id: statusId,
                 status_date: statusDate,
                 carcass_weight: carcassWeight,
-                act_number: selectedStatusName === 'Убыл' ? actNumberRaw : ''
+                act_number: selectedStatusName === 'Выбытие' ? actNumberRaw : ''
             });
         }
         alert('Выбранные записи успешно перенесены в архив.');

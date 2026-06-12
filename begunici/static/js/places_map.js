@@ -1,5 +1,8 @@
 import { apiRequest } from "./utils.js";
 
+let currentBarnStats = null;
+let showEmptySections = false;
+
 document.addEventListener('DOMContentLoaded', function () {
     loadBarnsSelector();
     
@@ -7,6 +10,17 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('back-to-list').addEventListener('click', function() {
         showBarnsSelector();
     });
+
+    const showEmptySectionsCheckbox = document.getElementById('show-empty-sections-checkbox');
+    if (showEmptySectionsCheckbox) {
+        showEmptySectionsCheckbox.checked = false;
+        showEmptySectionsCheckbox.addEventListener('change', function() {
+            showEmptySections = this.checked;
+            if (currentBarnStats) {
+                displayBarnFromStatistics(currentBarnStats);
+            }
+        });
+    }
 });
 
 function formatSectionMetric(value, unit) {
@@ -177,9 +191,15 @@ function createBarnSelectorCard(barn) {
 async function loadSpecificBarn(barnNumber) {
     const container = document.getElementById('barn-content');
     const title = document.getElementById('selected-barn-title');
+    const showEmptySectionsCheckbox = document.getElementById('show-empty-sections-checkbox');
     
     title.textContent = `Овчарня ${barnNumber}`;
     container.innerHTML = '<div class="loading">Загрузка овчарни...</div>';
+    currentBarnStats = null;
+    showEmptySections = false;
+    if (showEmptySectionsCheckbox) {
+        showEmptySectionsCheckbox.checked = false;
+    }
     
     // Показываем контейнер выбранной овчарни
     showSelectedBarn();
@@ -198,6 +218,7 @@ async function loadSpecificBarn(barnNumber) {
         }
         
         // Отображаем овчарню используя полученную статистику
+        currentBarnStats = barnStats;
         displayBarnFromStatistics(barnStats);
         
     } catch (error) {
@@ -207,6 +228,28 @@ async function loadSpecificBarn(barnNumber) {
 }
 
 // Отображение овчарни на основе статистики
+function getSectionAnimalStats(barnStats, section) {
+    return barnStats.animals_by_section?.[section.id] || {
+        makers: 0,
+        rams: 0,
+        ewes: 0,
+        sheep: 0,
+        total: 0,
+        avg_age_months: null,
+        avg_weight_kg: null,
+        avg_weight_lambs_kg: null,
+        avg_weight_others_kg: null,
+        lambs_count: 0,
+        current_month: null,
+        previous_month: null,
+    };
+}
+
+function isSectionEmpty(barnStats, section) {
+    const stats = getSectionAnimalStats(barnStats, section);
+    return Number(stats.total || 0) <= 0;
+}
+
 function displayBarnFromStatistics(barnStats) {
     const container = document.getElementById('barn-content');
     container.innerHTML = '';
@@ -218,7 +261,20 @@ function displayBarnFromStatistics(barnStats) {
     const table = document.createElement('table');
     table.className = 'barn-table';
     
-    const sections = barnStats.sections;
+    const sections = [...barnStats.sections]
+        .sort((a, b) => Number(a.section_number) - Number(b.section_number))
+        .filter(section => showEmptySections || !isSectionEmpty(barnStats, section));
+
+    if (sections.length === 0) {
+        barnDiv.innerHTML = `
+            <div class="empty-barn">
+                В этой овчарне нет отсеков с животными. Включите «Показать пустые отсеки», чтобы увидеть все отсеки.
+            </div>
+        `;
+        container.appendChild(barnDiv);
+        return;
+    }
+
     const rows = Math.ceil(sections.length / 2);
     
     for (let row = 0; row < rows; row++) {
@@ -228,7 +284,7 @@ function displayBarnFromStatistics(barnStats) {
         const leftIndex = row * 2;
         if (leftIndex < sections.length) {
             const leftSection = sections[leftIndex];
-            const leftCell = createSectionCellFromStats(leftSection, barnStats.animals_by_section[leftSection.id]);
+            const leftCell = createSectionCellFromStats(leftSection, getSectionAnimalStats(barnStats, leftSection));
             tr.appendChild(leftCell);
         }
         
@@ -236,7 +292,7 @@ function displayBarnFromStatistics(barnStats) {
         const rightIndex = row * 2 + 1;
         if (rightIndex < sections.length) {
             const rightSection = sections[rightIndex];
-            const rightCell = createSectionCellFromStats(rightSection, barnStats.animals_by_section[rightSection.id]);
+            const rightCell = createSectionCellFromStats(rightSection, getSectionAnimalStats(barnStats, rightSection));
             tr.appendChild(rightCell);
         } else {
             // Если правого отсека нет, добавляем пустую ячейку для выравнивания

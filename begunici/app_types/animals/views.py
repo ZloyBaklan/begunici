@@ -524,7 +524,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]:
+                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -538,7 +538,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]
+                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -861,7 +861,7 @@ class RamViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]:
+                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -875,7 +875,7 @@ class RamViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]
+                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -1184,7 +1184,7 @@ class EweViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]:
+                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1198,7 +1198,7 @@ class EweViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]
+                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -1504,7 +1504,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]:
+                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1518,7 +1518,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Убыл", "Убой", "Продажа на мясо", "Продажа на племя"]
+                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -2861,8 +2861,8 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             lamb_cutoff_date = timezone.now().date() - timedelta(days=100)
             archive_status_names = [
                 'Убой',
-                'Убыл',
-                'Продажа на мясо',
+                'Выбытие',
+                'Реализация в живом весе',
                 'Продажа на племя',
             ]
 
@@ -4586,7 +4586,7 @@ def dashboard_statistics(request):
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
     # 2. Перенесено в архив за последний месяц
-    archive_statuses = ['Убыл', 'Убой', 'Продажа на мясо', 'Продажа на племя']
+    archive_statuses = ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя']
     
     # Используем StatusHistory для получения даты архивирования
     from begunici.app_types.veterinary.vet_models import StatusHistory
