@@ -5,6 +5,7 @@ let selectedMothers = new Set(); // Для хранения ID выбранны�
 let selectedMothersData = new Map(); // Для хранения полной информации о выбранных матерях
 let selectedFather = null;
 let currentPage = 1;
+let groupsCurrentPage = 1;
 const pageSize = 10;
 let dateFrom = '';
 let dateTo = '';
@@ -12,6 +13,10 @@ let plannedDateFrom = '';
 let plannedDateTo = '';
 let motherTagFilter = '';
 let fatherTagFilter = '';
+let groupDateFrom = '';
+let groupDateTo = '';
+let groupMotherTagFilter = '';
+let groupFatherTagFilter = '';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM загружен, инициализируем страницу управления окотами');
@@ -45,8 +50,25 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('father-tag-filter').value = window.lambingsFatherTagFilter;
         fatherTagFilter = window.lambingsFatherTagFilter;
     }
+    if (window.groupDateFrom) {
+        document.getElementById('group-date-from').value = window.groupDateFrom;
+        groupDateFrom = window.groupDateFrom;
+    }
+    if (window.groupDateTo) {
+        document.getElementById('group-date-to').value = window.groupDateTo;
+        groupDateTo = window.groupDateTo;
+    }
+    if (window.groupMotherTagFilter) {
+        document.getElementById('group-mother-tag-filter').value = window.groupMotherTagFilter;
+        groupMotherTagFilter = window.groupMotherTagFilter;
+    }
+    if (window.groupFatherTagFilter) {
+        document.getElementById('group-father-tag-filter').value = window.groupFatherTagFilter;
+        groupFatherTagFilter = window.groupFatherTagFilter;
+    }
     
-    // Загружаем активные окоты
+    // Загружаем активные группы и случки
+    loadActiveGroups();
     loadActiveLambings();
     
     // Обработчики поиска для модальных окон
@@ -110,16 +132,260 @@ document.addEventListener('DOMContentLoaded', function() {
     // Обработчик изменения количества ягнят
     document.addEventListener('change', function(e) {
         if (e.target && e.target.id === 'lambs-count') {
+            if (isEarlyFailureMode()) {
+                return;
+            }
             const count = parseInt(e.target.value) || 0;
             generateLambForms(count);
+        }
+        if (e.target && e.target.id === 'early-failure-checkbox') {
+            updateCompletionMode();
         }
     });
 });
 
-// Загрузка активных окотов
+// Загрузка активных групп
+async function loadActiveGroups() {
+    try {
+        let url = `/animals/lambing-group/?is_active=true&page=${groupsCurrentPage}&page_size=${pageSize}`;
+
+        if (groupDateFrom) {
+            url += `&placement_date_from=${groupDateFrom}`;
+        }
+        if (groupDateTo) {
+            url += `&placement_date_to=${groupDateTo}`;
+        }
+        if (groupMotherTagFilter) {
+            url += `&mother_tag=${encodeURIComponent(groupMotherTagFilter)}`;
+        }
+        if (groupFatherTagFilter) {
+            url += `&father_tag=${encodeURIComponent(groupFatherTagFilter)}`;
+        }
+
+        const response = await apiRequest(url);
+        const groups = response.results || response;
+        const tableBody = document.getElementById('active-groups-table');
+        tableBody.innerHTML = '';
+
+        if (groups.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Нет активных групп</td></tr>';
+        } else {
+            groups.forEach(group => {
+                tableBody.appendChild(createGroupRow(group));
+            });
+        }
+
+        updateGroupsPagination(response);
+    } catch (error) {
+        console.error('Ошибка загрузки групп:', error);
+        document.getElementById('active-groups-table').innerHTML =
+            '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки групп: ' + error.message + '</td></tr>';
+    }
+}
+
+function createGroupRow(group) {
+    const row = document.createElement('tr');
+    const mothers = Array.isArray(group.mothers) ? group.mothers : [];
+    const motherLinks = mothers.length
+        ? mothers.map(mother => createAnimalLink(mother.tag_number, mother.animal_type, true)).join('<br>')
+        : '-';
+    const fatherTag = group.father_tag || 'Неизвестно';
+    const fatherType = group.father_type || 'Неизвестно';
+    const fatherDisplayName = group.father_display_name || fatherTag;
+    const fatherLink = createAnimalLink(fatherTag, fatherType, true, fatherDisplayName);
+    const placementDate = group.placement_date ? new Date(group.placement_date).toLocaleDateString('ru-RU') : '-';
+    const note = group.note || '';
+
+    row.innerHTML = `
+        <td>${motherLinks}</td>
+        <td>${fatherLink}</td>
+        <td>${placementDate}</td>
+        <td>${note}</td>
+        <td>
+            <button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
+                Снять барана
+            </button>
+        </td>
+    `;
+
+    return row;
+}
+
+function updateGroupsPagination(response) {
+    const paginationList = document.getElementById('groups-pagination-list');
+    const paginationInfo = document.getElementById('groups-pagination-info');
+
+    paginationList.innerHTML = '';
+    paginationInfo.innerHTML = '';
+
+    if (!response.count) {
+        return;
+    }
+
+    const totalPages = Math.ceil(response.count / pageSize);
+    const currentPageNum = groupsCurrentPage;
+
+    if (response.previous) {
+        const prevItem = document.createElement('li');
+        prevItem.className = 'page-item';
+        prevItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changeGroupsPage(${currentPageNum - 1})">‹</a>`;
+        paginationList.appendChild(prevItem);
+    }
+
+    const startPage = Math.max(1, currentPageNum - 2);
+    const endPage = Math.min(totalPages, currentPageNum + 2);
+
+    if (startPage > 1) {
+        const firstItem = document.createElement('li');
+        firstItem.className = 'page-item';
+        firstItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changeGroupsPage(1)">1</a>`;
+        paginationList.appendChild(firstItem);
+        if (startPage > 2) {
+            const dotsItem = document.createElement('li');
+            dotsItem.className = 'page-item disabled';
+            dotsItem.innerHTML = `<span class="page-link">...</span>`;
+            paginationList.appendChild(dotsItem);
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const pageItem = document.createElement('li');
+        pageItem.className = `page-item ${i === currentPageNum ? 'active' : ''}`;
+        pageItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changeGroupsPage(${i})">${i}</a>`;
+        paginationList.appendChild(pageItem);
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            const dotsItem = document.createElement('li');
+            dotsItem.className = 'page-item disabled';
+            dotsItem.innerHTML = `<span class="page-link">...</span>`;
+            paginationList.appendChild(dotsItem);
+        }
+
+        const lastItem = document.createElement('li');
+        lastItem.className = 'page-item';
+        lastItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changeGroupsPage(${totalPages})">${totalPages}</a>`;
+        paginationList.appendChild(lastItem);
+    }
+
+    if (response.next) {
+        const nextItem = document.createElement('li');
+        nextItem.className = 'page-item';
+        nextItem.innerHTML = `<a class="page-link" href="javascript:void(0)" onclick="changeGroupsPage(${currentPageNum + 1})">›</a>`;
+        paginationList.appendChild(nextItem);
+    }
+
+    const startItem = (currentPageNum - 1) * pageSize + 1;
+    const endItem = Math.min(currentPageNum * pageSize, response.count);
+    paginationInfo.innerHTML = `Показано ${startItem}-${endItem} из ${response.count} групп`;
+}
+
+function changeGroupsPage(page) {
+    groupsCurrentPage = page;
+    loadActiveGroups();
+}
+
+function applyGroupFilter() {
+    groupDateFrom = document.getElementById('group-date-from').value;
+    groupDateTo = document.getElementById('group-date-to').value;
+    groupMotherTagFilter = document.getElementById('group-mother-tag-filter').value.trim();
+    groupFatherTagFilter = document.getElementById('group-father-tag-filter').value.trim();
+
+    window.groupDateFrom = groupDateFrom;
+    window.groupDateTo = groupDateTo;
+    window.groupMotherTagFilter = groupMotherTagFilter;
+    window.groupFatherTagFilter = groupFatherTagFilter;
+
+    groupsCurrentPage = 1;
+    loadActiveGroups();
+}
+
+function clearGroupFilter() {
+    document.getElementById('group-date-from').value = '';
+    document.getElementById('group-date-to').value = '';
+    document.getElementById('group-mother-tag-filter').value = '';
+    document.getElementById('group-father-tag-filter').value = '';
+
+    window.groupDateFrom = '';
+    window.groupDateTo = '';
+    window.groupMotherTagFilter = '';
+    window.groupFatherTagFilter = '';
+
+    groupDateFrom = '';
+    groupDateTo = '';
+    groupMotherTagFilter = '';
+    groupFatherTagFilter = '';
+    groupsCurrentPage = 1;
+    loadActiveGroups();
+}
+
+function exportGroupsToExcel() {
+    const params = new URLSearchParams();
+    params.set('is_active', 'true');
+
+    if (groupDateFrom) {
+        params.set('placement_date_from', groupDateFrom);
+    }
+    if (groupDateTo) {
+        params.set('placement_date_to', groupDateTo);
+    }
+    if (groupMotherTagFilter) {
+        params.set('mother_tag', groupMotherTagFilter);
+    }
+    if (groupFatherTagFilter) {
+        params.set('father_tag', groupFatherTagFilter);
+    }
+
+    window.location.href = `/animals/api/lambing-groups/export-excel/?${params.toString()}`;
+}
+
+function showRemoveFatherModal(groupId) {
+    window.currentGroupId = groupId;
+    document.getElementById('removing-group-id').value = groupId;
+    document.getElementById('group-removal-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('group-removal-note').value = '';
+
+    const modal = new bootstrap.Modal(document.getElementById('removeFatherModal'));
+    modal.show();
+}
+
+async function confirmRemoveFather() {
+    const groupId = window.currentGroupId || document.getElementById('removing-group-id').value;
+    const removalDate = document.getElementById('group-removal-date').value;
+    const note = document.getElementById('group-removal-note').value.trim();
+
+    if (!groupId) {
+        alert('Не выбрана группа');
+        return;
+    }
+    if (!removalDate) {
+        alert('Укажите дату снятия барана');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing-group/${groupId}/remove-father/`, 'POST', {
+            removal_date: removalDate,
+            note: note || ''
+        });
+
+        alert(`Баран снят. Создано случек: ${response.created_lambings_count || 0}`);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('removeFatherModal'));
+        modal.hide();
+
+        loadActiveGroups();
+        loadActiveLambings();
+    } catch (error) {
+        console.error('Ошибка снятия барана:', error);
+        alert('Ошибка при снятии барана: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+// Загрузка активных случек
 async function loadActiveLambings() {
     try {
-        console.log('Загружаем активные окоты, страница:', currentPage);
+        console.log('Загружаем активные случки, страница:', currentPage);
         
         // Строим URL с параметрами фильтрации
         let url = `/animals/lambing/?is_active=true&page=${currentPage}&page_size=${pageSize}&ordering=planned_lambing_date`;
@@ -152,7 +418,7 @@ async function loadActiveLambings() {
         tableBody.innerHTML = '';
         
         if (lambings.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Нет активных окотов</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Нет активных случек</td></tr>';
         } else {
             lambings.forEach(lambing => {
                 const row = createLambingRow(lambing);
@@ -164,7 +430,7 @@ async function loadActiveLambings() {
         updatePagination(response);
         
     } catch (error) {
-        console.error('Ошибка загрузки активных окотов:', error);
+        console.error('Ошибка загрузки активных случек:', error);
         document.getElementById('active-lambings-table').innerHTML = 
             '<tr><td colspan="6" class="text-center text-danger">Ошибка загрузки данных: ' + error.message + '</td></tr>';
     }
@@ -330,7 +596,7 @@ function updatePagination(response) {
     // Информация о странице
     const startItem = (currentPageNum - 1) * pageSize + 1;
     const endItem = Math.min(currentPageNum * pageSize, response.count);
-    paginationInfo.innerHTML = `Показано ${startItem}-${endItem} из ${response.count} окотов`;
+    paginationInfo.innerHTML = `Показано ${startItem}-${endItem} из ${response.count} случек`;
 }
 
 // Смена страницы
@@ -753,14 +1019,14 @@ function confirmFatherSelection() {
     checkAutoKinship();
 }
 
-// Создание множественных окотов
+// Постановка выбранных животных в группу
 async function createMultipleLambings() {
-    const startDate = document.getElementById('lambing-start-date').value;
+    const placementDate = document.getElementById('lambing-start-date').value;
     const note = document.getElementById('lambing-note').value.trim();
     
     // Валидация
-    if (!startDate) {
-        alert('Укажите дату начала окота');
+    if (!placementDate) {
+        alert('Укажите дату постановки в группу');
         return;
     }
     
@@ -776,15 +1042,15 @@ async function createMultipleLambings() {
     
     try {
         const data = {
-            start_date: startDate,
+            placement_date: placementDate,
             father_tag_number: selectedFather.tag_number,
             mother_tag_numbers: window.selectedMothersForLambing.map(m => m.tag_number),
             note: note || ''
         };
         
-        const response = await apiRequest('/animals/api/bulk-create-lambings/', 'POST', data);
+        const response = await apiRequest('/animals/lambing-group/', 'POST', data);
         
-        let message = `Успешно создано ${response.created_count} окотов!`;
+        let message = `Группа создана. Матерей в группе: ${response.mothers_count || 0}`;
         if (response.errors && response.errors.length > 0) {
             message += `\n\nОшибки:\n${response.errors.join('\n')}`;
         }
@@ -794,12 +1060,13 @@ async function createMultipleLambings() {
         // Очищаем форму
         resetForm();
         
-        // Перезагружаем таблицу
+        // Перезагружаем таблицы
+        loadActiveGroups();
         loadActiveLambings();
         
     } catch (error) {
-        console.error('Ошибка создания окотов:', error);
-        alert('Ошибка при создании окотов: ' + (error.message || 'Неизвестная ошибка'));
+        console.error('Ошибка создания группы:', error);
+        alert('Ошибка при создании группы: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -837,6 +1104,19 @@ function showCompleteLambingModal(lambingId) {
     if (deadLambsCountInput) {
         deadLambsCountInput.value = '0';
     }
+    const lambsCountInput = document.getElementById('lambs-count');
+    if (lambsCountInput) {
+        lambsCountInput.value = '1';
+    }
+    const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    if (createLambsCheckbox) {
+        createLambsCheckbox.checked = true;
+    }
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.checked = false;
+    }
+    updateCompletionMode();
     
     // Загружаем список статусов
     loadStatusesForMother();
@@ -847,6 +1127,41 @@ function showCompleteLambingModal(lambingId) {
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
     modal.show();
+}
+
+function isEarlyFailureMode() {
+    return Boolean(document.getElementById('early-failure-checkbox')?.checked);
+}
+
+function updateCompletionMode() {
+    const isEarlyFailure = isEarlyFailureMode();
+    const dateLabel = document.getElementById('actual-lambing-date-label');
+    const lambsCountField = document.getElementById('lambs-count-field');
+    const deadLambsCountField = document.getElementById('dead-lambs-count-field');
+    const lambsCreationSection = document.getElementById('lambs-creation-section');
+    const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    const submitButton = document.getElementById('complete-lambing-submit-btn');
+
+    if (dateLabel) {
+        dateLabel.textContent = isEarlyFailure ? 'Дата завершения:' : 'Дата фактических родов:';
+    }
+    if (lambsCountField) {
+        lambsCountField.style.display = isEarlyFailure ? 'none' : '';
+    }
+    if (deadLambsCountField) {
+        deadLambsCountField.style.display = isEarlyFailure ? 'none' : '';
+    }
+    if (lambsCreationSection) {
+        lambsCreationSection.style.display = isEarlyFailure ? 'none' : '';
+    }
+    if (createLambsCheckbox) {
+        createLambsCheckbox.disabled = isEarlyFailure;
+    }
+    if (submitButton) {
+        submitButton.textContent = isEarlyFailure ? 'Завершить досрочно' : 'Завершить окот';
+        submitButton.classList.toggle('btn-success', !isEarlyFailure);
+        submitButton.classList.toggle('btn-warning', isEarlyFailure);
+    }
 }
 
 // Загрузка статусов для матери
@@ -1017,6 +1332,11 @@ function removeLambForm(button) {
 
 // Завершение окота с созданием детей
 async function completeLambingWithChildren() {
+    if (isEarlyFailureMode()) {
+        await completeLambingEarlyFailure();
+        return;
+    }
+
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
@@ -1107,6 +1427,49 @@ async function completeLambingWithChildren() {
     }
 }
 
+async function completeLambingEarlyFailure() {
+    const lambingId = window.currentLambingId;
+    const actualDate = document.getElementById('actual-lambing-date').value;
+    const lambingNote = document.getElementById('lambing-note').value;
+    const newMotherStatusId = document.getElementById('new-mother-status').value;
+
+    if (!lambingId) {
+        alert('Не выбран окот');
+        return;
+    }
+    if (!actualDate) {
+        alert('Пожалуйста, укажите дату досрочного завершения');
+        return;
+    }
+
+    try {
+        await apiRequest(`/animals/lambing/${lambingId}/complete-early-failure/`, 'POST', {
+            actual_lambing_date: actualDate,
+            note: lambingNote || '',
+            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null
+        });
+
+        alert('Окот досрочно завершен.');
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
+        modal.hide();
+
+        loadActiveLambings();
+    } catch (error) {
+        console.error('Ошибка досрочного завершения окота:', error);
+        alert('Ошибка при досрочном завершении: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function submitLambingCompletion() {
+    if (isEarlyFailureMode()) {
+        await completeLambingEarlyFailure();
+        return;
+    }
+
+    await completeLambingWithChildren();
+}
+
 // Экспортируем функции для глобального доступа
 window.showSelectMothersModal = showSelectMothersModal;
 window.showSelectFatherModal = showSelectFatherModal;
@@ -1115,11 +1478,19 @@ window.confirmFatherSelection = confirmFatherSelection;
 window.createMultipleLambings = createMultipleLambings;
 window.showCompleteLambingModal = showCompleteLambingModal;
 window.completeLambingWithChildren = completeLambingWithChildren;
+window.completeLambingEarlyFailure = completeLambingEarlyFailure;
+window.submitLambingCompletion = submitLambingCompletion;
 window.removeLambForm = removeLambForm;
 window.changePage = changePage;
+window.changeGroupsPage = changeGroupsPage;
 window.applyDateFilter = applyDateFilter;
 window.clearDateFilter = clearDateFilter;
+window.applyGroupFilter = applyGroupFilter;
+window.clearGroupFilter = clearGroupFilter;
 window.exportLambingsToExcel = exportLambingsToExcel;
+window.exportGroupsToExcel = exportGroupsToExcel;
+window.showRemoveFatherModal = showRemoveFatherModal;
+window.confirmRemoveFather = confirmRemoveFather;
 
 // Функции для проверки родства
 window.showSelectKinshipFatherModal = showSelectKinshipFatherModal;

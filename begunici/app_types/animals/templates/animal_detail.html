@@ -337,24 +337,31 @@
                         <h5 class="card-title mb-0">Окоты</h5>
                     </div>
                     <div class="card-body">
+                        <div id="active-lambing-groups" class="mb-4">
+                            <h6 class="mb-3">Активные группы</h6>
+                            <div id="active-lambing-groups-list" class="mb-3">
+                                <!-- Активные группы будут загружены через JavaScript -->
+                            </div>
+                        </div>
+
                         <!-- Активные окоты -->
                         <div id="active-lambings" class="mb-4">
-                            <h6 class="mb-3">Активные окоты</h6>
+                            <h6 class="mb-3">Активные случки</h6>
                             <div id="active-lambings-list" class="mb-3">
-                                <!-- Активные окоты будут загружены через JavaScript -->
+                                <!-- Активные случки будут загружены через JavaScript -->
                             </div>
                             
                             <!-- Кнопка создания нового окота -->
-                            <button type="button" class="btn btn-primary" onclick="showCreateLambingForm()">Завести окот</button>
+                            <button type="button" class="btn btn-primary" onclick="showCreateLambingForm()">Поставить в группу</button>
                         </div>
                         
                         <!-- Форма создания окота -->
                         <div id="create-lambing-form" style="display: none;" class="border rounded p-3 mb-4 bg-light">
-                            <h6 class="mb-3">Создать новый окот</h6>
+                            <h6 class="mb-3">Поставить в группу</h6>
                             <form>
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <label for="lambing-start-date" class="form-label">Дата начала (случки):</label>
+                                        <label for="lambing-start-date" class="form-label">Дата постановки в группу:</label>
                                         <input type="date" id="lambing-start-date" required class="form-control">
                                     </div>
                                     <div class="col-md-6">
@@ -366,7 +373,7 @@
                                         <textarea id="lambing-note" rows="2" placeholder="Дополнительная информация" class="form-control"></textarea>
                                     </div>
                                     <div class="col-12">
-                                        <button type="button" onclick="createLambing()" class="btn btn-success me-2">Завести окот</button>
+                                        <button type="button" onclick="createLambing()" class="btn btn-success me-2">Поставить в группу</button>
                                         <button type="button" onclick="hideCreateLambingForm()" class="btn btn-secondary">Отмена</button>
                                     </div>
                                 </div>
@@ -400,6 +407,12 @@
                         <h5 class="card-title mb-0">Окоты</h5>
                     </div>
                     <div class="card-body">
+                        <div id="father-active-lambing-groups" class="mb-4">
+                            <h6 class="mb-3">Активные группы</h6>
+                            <div id="father-active-lambing-groups-list">
+                                <!-- Активные группы как отец будут загружены через JavaScript -->
+                            </div>
+                        </div>
                         <div id="father-lambing-history">
                             <div id="father-lambing-history-list">
                                 <!-- История окотов как отец будет загружена через JavaScript -->
@@ -471,16 +484,23 @@
                 <div id="lambing-completion-form">
                     <h6>Информация об окоте</h6>
                     <div class="mb-3">
-                        <label class="form-label">Дата фактических родов:</label>
+                        <label class="form-label" id="actual-lambing-date-label">Дата фактических родов:</label>
                         <input type="date" id="actual-lambing-date" class="form-control" required>
                     </div>
                     
-                    <div class="mb-3">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="early-failure-checkbox">
+                        <label class="form-check-label" for="early-failure-checkbox">
+                            Завершить досрочно (неудача)
+                        </label>
+                    </div>
+
+                    <div class="mb-3" id="lambs-count-field">
                         <label class="form-label">Количество родившихся (живых) ягнят:</label>
                         <input type="number" id="lambs-count" class="form-control" min="0" max="10" value="1">
                     </div>
 
-                    <div class="mb-3">
+                    <div class="mb-3" id="dead-lambs-count-field">
                         <label class="form-label">Количество мертвых ягнят:</label>
                         <input type="number" id="dead-lambs-count" class="form-control" min="0" max="10" value="0">
                     </div>
@@ -518,7 +538,37 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-success" onclick="completeLambingWithChildren()">Завершить окот</button>
+                <button type="button" class="btn btn-success" id="complete-lambing-submit-btn" onclick="submitLambingCompletion()">Завершить окот</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно снятия барана из группы -->
+<div class="modal fade" id="removeFatherModal" tabindex="-1" aria-labelledby="removeFatherModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="removeFatherModalLabel">Снять барана</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="removing-group-id">
+                <div class="mb-3">
+                    <label for="group-removal-date" class="form-label">Дата снятия барана:</label>
+                    <input type="date" id="group-removal-date" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label for="group-removal-note" class="form-label">Примечание (необязательно):</label>
+                    <textarea id="group-removal-note" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="alert alert-info mb-0">
+                    После снятия барана матерям будет установлен статус «Суягная», отцу — «Ремонт», а для каждой матери появится отдельная случка.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-success" onclick="confirmRemoveFather()">Снять барана</button>
             </div>
         </div>
     </div>

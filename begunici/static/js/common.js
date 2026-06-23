@@ -1,4 +1,4 @@
-import { apiRequest, formatDateToOutput } from "./utils.js";
+﻿import { apiRequest, formatDateToOutput } from "./utils.js";
 
 let selectedAnimals = new Map();
 let currentPage = 1;
@@ -27,8 +27,13 @@ function loadSelectedAnimals() {
         const parsed = JSON.parse(saved);
         selectedAnimals = new Map();
         parsed.forEach((item) => {
-            const key = getSelectionKey(item.animalType, item.tagNumber);
-            selectedAnimals.set(key, item);
+            const animalType = String(item?.animalType || "").trim();
+            const tagNumber = String(item?.tagNumber || "").trim();
+            if (!animalType || !tagNumber || tagNumber === "undefined" || tagNumber === "null") {
+                return;
+            }
+            const key = getSelectionKey(animalType, tagNumber);
+            selectedAnimals.set(key, { ...item, animalType, tagNumber });
         });
     } catch (error) {
         console.error("Ошибка восстановления выделенных животных:", error);
@@ -501,10 +506,10 @@ function openArchiveModal() {
     if (archiveDateInput) archiveDateInput.value = localDate;
     const carcassWeightInput = document.getElementById("archive-carcass-weight");
     if (carcassWeightInput) carcassWeightInput.value = "";
-    const actNumberInput = document.getElementById("archive-act-number");
-    if (actNumberInput) actNumberInput.value = "";
-    const actNumberGroup = document.getElementById("archive-act-number-group");
-    if (actNumberGroup) actNumberGroup.style.display = "none";
+    window.archiveActModal?.reset();
+    window.archiveActModal?.setSelectedAnimals(
+        Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber)
+    );
 
     loadArchiveStatuses();
 }
@@ -515,18 +520,7 @@ function closeArchiveModal() {
 }
 
 function toggleArchiveActNumberField() {
-    const statusSelect = document.getElementById("archive-status-select");
-    const actNumberGroup = document.getElementById("archive-act-number-group");
-    const actNumberInput = document.getElementById("archive-act-number");
-    if (!statusSelect || !actNumberGroup) return;
-
-    const selectedStatusName =
-        statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || "";
-    const shouldShow = selectedStatusName === "Выбытие";
-    actNumberGroup.style.display = shouldShow ? "block" : "none";
-    if (!shouldShow && actNumberInput) {
-        actNumberInput.value = "";
-    }
+    window.archiveActModal?.toggle();
 }
 
 async function loadArchiveStatuses() {
@@ -535,7 +529,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
+            ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("archive-status-select");
@@ -563,7 +557,7 @@ async function loadArchiveStatuses() {
 }
 
 async function applyArchiveStatus() {
-    const selected = Array.from(selectedAnimals.values());
+    const selected = Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber);
 
     if (selected.length === 0) {
         alert("Нет выбранных животных для переноса.");
@@ -574,8 +568,6 @@ async function applyArchiveStatus() {
     const statusId = statusSelect?.value;
     const statusDate = document.getElementById("archive-status-date")?.value;
     const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
-    const selectedStatusName = statusSelect?.options[statusSelect.selectedIndex]?.text?.trim() || "";
-    const actNumberRaw = document.getElementById("archive-act-number")?.value?.trim() || "";
 
     if (!statusId) {
         alert("Выберите статус.");
@@ -595,6 +587,7 @@ async function applyArchiveStatus() {
             return;
         }
     }
+    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
 
     try {
         for (const item of selected) {
@@ -602,8 +595,11 @@ async function applyArchiveStatus() {
                 animal_status_id: statusId,
                 status_date: statusDate,
                 carcass_weight: carcassWeight,
-                act_number: selectedStatusName === "Выбытие" ? actNumberRaw : "",
+                ...archiveActPayload,
             });
+            if (archiveActPayload.archive_act_download) {
+                window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
+            }
         }
 
         selectedAnimals.clear();
@@ -686,4 +682,3 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.saveCommonAnimal = saveCommonAnimal;
-

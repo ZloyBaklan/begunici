@@ -955,6 +955,103 @@ async function loadFatherLambings() {
     }
 }
 
+async function loadLambingGroups() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+
+    if (animalType !== 'sheep' && animalType !== 'ewe') {
+        return;
+    }
+
+    const groupsList = document.getElementById('active-lambing-groups-list');
+    if (!groupsList) {
+        return;
+    }
+
+    try {
+        const groups = await apiRequest(`/animals/lambing-group/by-animal/?animal_type=${animalType}&tag_number=${tagNumber}&is_active=true`, 'GET');
+        displayLambingGroups(groups, groupsList, false);
+    } catch (error) {
+        console.error('Ошибка загрузки активных групп:', error);
+        groupsList.innerHTML = '<div class="no-lambings text-danger">Ошибка загрузки активных групп</div>';
+    }
+}
+
+async function loadFatherLambingGroups() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+
+    if (animalType !== 'maker' && animalType !== 'ram') {
+        return;
+    }
+
+    const groupsList = document.getElementById('father-active-lambing-groups-list');
+    if (!groupsList) {
+        return;
+    }
+
+    try {
+        const groups = await apiRequest(`/animals/lambing-group/by-father/?animal_type=${animalType}&tag_number=${tagNumber}&is_active=true`, 'GET');
+        displayLambingGroups(groups, groupsList, true);
+    } catch (error) {
+        console.error('Ошибка загрузки активных групп как отец:', error);
+        groupsList.innerHTML = '<div class="no-lambings text-danger">Ошибка загрузки активных групп</div>';
+    }
+}
+
+function displayLambingGroups(groups, container, isFatherPage) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+        container.innerHTML = '<div class="no-lambings">Нет активных групп</div>';
+        return;
+    }
+
+    container.innerHTML = groups.map(group => createLambingGroupCard(group, isFatherPage)).join('');
+}
+
+function createLambingGroupCard(group, isFatherPage) {
+    const placementDate = group.placement_date
+        ? new Date(group.placement_date).toLocaleDateString('ru-RU')
+        : '-';
+    const note = group.note || '';
+    const mothers = Array.isArray(group.mothers) ? group.mothers : [];
+    const motherLinks = mothers.length
+        ? mothers.map(mother => {
+            const label = formatAnimalTypeLabel(mother.animal_type);
+            const tagContent = mother.url
+                ? `<a href="${mother.url}">${mother.tag_number}</a>`
+                : mother.tag_number;
+            return `${label} ${tagContent}`;
+        }).join('<br>')
+        : '-';
+
+    const fatherTypeDisplay = formatAnimalTypeLabel(group.father_type);
+    let fatherTagContent = group.father_display_name || group.father_tag || 'Неизвестно';
+    if (group.father_tag) {
+        const fatherUrl = group.father_type === 'Производитель'
+            ? `/animals/maker/${group.father_tag}/info/`
+            : `/animals/ram/${group.father_tag}/info/`;
+        fatherTagContent = `<a href="${fatherUrl}">${fatherTagContent}</a>`;
+    }
+
+    return `
+        <div class="lambing-card active">
+            <div class="lambing-info">
+                <div><strong>Дата постановки в группу:</strong> ${placementDate}</div>
+                <div><strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}</div>
+                <div><strong>Матери:</strong><br>${motherLinks}</div>
+                ${note ? `<div><strong>Примечание:</strong> ${note}</div>` : ''}
+            </div>
+            <div class="lambing-actions">
+                <button type="button" class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
+                    Снять барана
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 // Отображение окотов
 function displayLambings(lambings) {
     const activeLambingsList = document.getElementById('active-lambings-list');
@@ -972,9 +1069,9 @@ function displayLambings(lambings) {
     const activeLambings = lambings.filter(l => l.is_active);
     const completedLambings = lambings.filter(l => !l.is_active);
     
-    // Отображаем активные окоты (без пагинации, их обычно мало)
+    // Отображаем активные случки (без пагинации, их обычно мало)
     if (activeLambings.length === 0) {
-        activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов</div>';
+        activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных случек</div>';
     } else {
         activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
     }
@@ -996,7 +1093,9 @@ function initializeFemaleLambingsYearStats(lambings) {
     }
 
     const completedLambings = (lambings || []).filter(
-        (lambing) => !lambing.is_active && lambing.actual_lambing_date
+        (lambing) => !lambing.is_active
+            && lambing.actual_lambing_date
+            && lambing.completion_type !== 'early_failure'
     );
 
     const lambingsByYear = new Map();
@@ -1157,7 +1256,7 @@ function initializeLambingHistoryPagination(lambings) {
         // Обновляем активные окоты
         const activeLambingsList = document.getElementById('active-lambings-list');
         if (filteredActiveLambings.length === 0) {
-            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов в выбранном диапазоне дат</div>';
+            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных случек в выбранном диапазоне дат</div>';
         } else {
             activeLambingsList.innerHTML = filteredActiveLambings.map(lambing => createLambingCard(lambing, true)).join('');
         }
@@ -1184,7 +1283,7 @@ function initializeLambingHistoryPagination(lambings) {
         // Обновляем активные окоты
         const activeLambingsList = document.getElementById('active-lambings-list');
         if (activeLambings.length === 0) {
-            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных окотов</div>';
+            activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных случек</div>';
         } else {
             activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
         }
@@ -1449,6 +1548,7 @@ function createLambingCard(lambing, isActive) {
     const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
     const actualDate = lambing.actual_lambing_date ? 
         new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
+    const isEarlyFailure = lambing.completion_type === 'early_failure';
     
     // Показываем примечание только если оно не об импорте
     const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
@@ -1463,7 +1563,7 @@ function createLambingCard(lambing, isActive) {
         <div class="lambing-card ${isActive ? 'active' : 'completed'}">
             <div class="lambing-info">
                 <div>
-                    <strong>Дата случки:</strong> ${startDate}
+                    <strong>Дата снятия барана:</strong> ${startDate}
                 </div>
                 <div>
                     <strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}
@@ -1472,8 +1572,13 @@ function createLambingCard(lambing, isActive) {
                     <strong>Планируемые роды:</strong> 
                     <span class="planned-date">${plannedDate}</span>
                 </div>
-                ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
-                ${!isActive ? `
+                ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
+                ${isEarlyFailure ? `
+                    <div style="grid-column: 2;">
+                        <strong>Статус завершения:</strong> Досрочно завершен (неудача)
+                    </div>
+                ` : ''}
+                ${!isActive && !isEarlyFailure ? `
                     <div style="grid-column: 2;">
                         <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
@@ -1498,6 +1603,7 @@ function createFatherLambingCard(lambing) {
     const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
     const actualDate = lambing.actual_lambing_date ? 
         new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
+    const isEarlyFailure = lambing.completion_type === 'early_failure';
     
     // Определяем статус окота
     const statusClass = lambing.is_active ? 'active' : 'completed';
@@ -1530,14 +1636,19 @@ function createFatherLambingCard(lambing) {
                     <strong>Мать:</strong> ${motherInfo}
                 </div>
                 <div>
-                    <strong>Дата случки:</strong> ${startDate}
+                    <strong>Дата снятия барана:</strong> ${startDate}
                 </div>
                 <div>
                     <strong>Планируемые роды:</strong> 
                     <span class="planned-date">${plannedDate}</span>
                 </div>
-                ${actualDate ? `<div><strong>Фактические роды:</strong> ${actualDate}</div>` : ''}
-                ${!lambing.is_active ? `
+                ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
+                ${isEarlyFailure ? `
+                    <div style="grid-column: 2;">
+                        <strong>Статус завершения:</strong> Досрочно завершен (неудача)
+                    </div>
+                ` : ''}
+                ${!lambing.is_active && !isEarlyFailure ? `
                     <div style="grid-column: 2;">
                         <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
@@ -1579,7 +1690,7 @@ function hideCreateLambingForm() {
     }
 }
 
-// Создать новый окот
+// Поставить животное в группу
 async function createLambing() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
@@ -1591,7 +1702,7 @@ async function createLambing() {
     
     // Валидация
     if (!startDate) {
-        alert('Пожалуйста, укажите дату начала окота');
+        alert('Пожалуйста, укажите дату постановки в группу');
         return;
     }
     
@@ -1601,24 +1712,64 @@ async function createLambing() {
     }
     
     try {
-        const lambingData = {
-            mother_tag_number: tagNumber,
+        const groupData = {
+            placement_date: startDate,
             father_tag_number: fatherTag,
-            start_date: startDate,
+            mother_tag_numbers: [tagNumber],
             note: note || null
         };
         
-        await apiRequest('/animals/lambing/', 'POST', lambingData);
+        await apiRequest('/animals/lambing-group/', 'POST', groupData);
         
-        alert('Окот успешно создан!');
+        alert('Группа успешно создана!');
         hideCreateLambingForm();
         
-        // Перезагружаем список окотов
+        // Перезагружаем список групп и случек
+        await loadLambingGroups();
         await loadLambings();
         
     } catch (error) {
-        console.error('Ошибка создания окота:', error);
-        alert('Ошибка при создании окота: ' + (error.message || 'Неизвестная ошибка'));
+        console.error('Ошибка создания группы:', error);
+        alert('Ошибка при создании группы: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+function isEarlyFailureMode() {
+    return Boolean(document.getElementById('early-failure-checkbox')?.checked);
+}
+
+function updateCompletionMode() {
+    const isEarlyFailure = isEarlyFailureMode();
+    const isFatherCompletion = Boolean(window.currentCompletionIsFather);
+    const dateLabel = document.getElementById('actual-lambing-date-label');
+    const lambsCountField = document.getElementById('lambs-count-field');
+    const deadLambsCountField = document.getElementById('dead-lambs-count-field');
+    const lambsCreationSection = document.getElementById('lambs-creation-section');
+    const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    const submitButton = document.getElementById('complete-lambing-submit-btn');
+
+    if (dateLabel) {
+        dateLabel.textContent = isEarlyFailure ? 'Дата завершения:' : 'Дата фактических родов:';
+    }
+    if (lambsCountField) {
+        lambsCountField.style.display = isEarlyFailure ? 'none' : '';
+    }
+    if (deadLambsCountField) {
+        deadLambsCountField.style.display = isEarlyFailure ? 'none' : '';
+    }
+    if (lambsCreationSection) {
+        lambsCreationSection.style.display = isEarlyFailure || isFatherCompletion ? 'none' : '';
+    }
+    if (createLambsCheckbox) {
+        if (isFatherCompletion) {
+            createLambsCheckbox.checked = false;
+        }
+        createLambsCheckbox.disabled = isEarlyFailure || isFatherCompletion;
+    }
+    if (submitButton) {
+        submitButton.textContent = isEarlyFailure ? 'Завершить досрочно' : 'Завершить окот';
+        submitButton.classList.toggle('btn-success', !isEarlyFailure);
+        submitButton.classList.toggle('btn-warning', isEarlyFailure);
     }
 }
 
@@ -1626,6 +1777,7 @@ async function createLambing() {
 async function completeLambing(lambingId) {
     // Сохраняем ID окота для использования в модальном окне
     window.currentLambingId = lambingId;
+    window.currentCompletionIsFather = false;
     
     // Устанавливаем текущую дату как дату фактических родов
     const today = new Date().toISOString().split('T')[0];
@@ -1633,6 +1785,10 @@ async function completeLambing(lambingId) {
     const deadLambsCountInput = document.getElementById('dead-lambs-count');
     if (deadLambsCountInput) {
         deadLambsCountInput.value = '0';
+    }
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.checked = false;
     }
     
     // Загружаем список статусов
@@ -1678,6 +1834,7 @@ async function completeLambing(lambingId) {
     // По умолчанию чекбокс отмечен, показываем формы
     createLambsCheckbox.checked = true;
     lambsFormsContainer.style.display = 'block';
+    updateCompletionMode();
     
     // Генерируем формы для ягнят
     generateLambForms(1);
@@ -1736,13 +1893,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Загружаем окоты для овцематок и ярок
         if (animalType === 'sheep' || animalType === 'ewe') {
-            console.log('4. Загружаем окоты...');
+            console.log('4. Загружаем активные группы и случки...');
+            await loadLambingGroups();
             await loadLambings();
         }
 
         // Загружаем историю окотов для баранов-производителей и баранчиков (как отцы)
         if (animalType === 'maker' || animalType === 'ram') {
-            console.log('4. Загружаем историю окотов как отец...');
+            console.log('4. Загружаем активные группы и историю окотов как отец...');
+            await loadFatherLambingGroups();
             await loadFatherLambings();
         }
 
@@ -1906,6 +2065,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const lambsCountInput = document.getElementById('lambs-count');
     if (lambsCountInput) {
         lambsCountInput.addEventListener('change', (e) => {
+            if (isEarlyFailureMode()) {
+                return;
+            }
             const count = parseInt(e.target.value) || 0;
             if (count >= 0 && count <= 10) {
                 generateLambForms(count);
@@ -1917,6 +2079,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     if (createLambsCheckbox) {
         createLambsCheckbox.addEventListener('change', (e) => {
+            if (isEarlyFailureMode()) {
+                return;
+            }
             const container = document.getElementById('lambs-forms-container');
             const lambsCountInput = document.getElementById('lambs-count');
             
@@ -1930,12 +2095,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.addEventListener('change', updateCompletionMode);
+    }
 });
 
 // Завершить окот (для отцов - баранов-производителей и баранчиков)
 async function completeFatherLambing(lambingId) {
     // Сохраняем ID окота для использования в модальном окне
     window.currentLambingId = lambingId;
+    window.currentCompletionIsFather = true;
     
     // Устанавливаем текущую дату как дату фактических родов
     const today = new Date().toISOString().split('T')[0];
@@ -1943,6 +2114,14 @@ async function completeFatherLambing(lambingId) {
     const deadLambsCountInput = document.getElementById('dead-lambs-count');
     if (deadLambsCountInput) {
         deadLambsCountInput.value = '0';
+    }
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.checked = false;
+    }
+    const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    if (createLambsCheckbox) {
+        createLambsCheckbox.checked = false;
     }
     
     // Загружаем список статусов (но не будем менять статус матери, если её нет в БД)
@@ -1984,6 +2163,7 @@ async function completeFatherLambing(lambingId) {
     if (lambsCreationSection) {
         lambsCreationSection.style.display = 'none';
     }
+    updateCompletionMode();
     
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
@@ -1992,6 +2172,11 @@ async function completeFatherLambing(lambingId) {
 
 // Обновляем функцию завершения окота для работы с отцами
 async function completeLambingWithChildren() {
+    if (isEarlyFailureMode()) {
+        await completeLambingEarlyFailure();
+        return;
+    }
+
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
@@ -2104,9 +2289,111 @@ async function completeLambingWithChildren() {
     }
 }
 
+function showRemoveFatherModal(groupId) {
+    window.currentGroupId = groupId;
+    document.getElementById('removing-group-id').value = groupId;
+    document.getElementById('group-removal-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('group-removal-note').value = '';
+
+    const modal = new bootstrap.Modal(document.getElementById('removeFatherModal'));
+    modal.show();
+}
+
+async function confirmRemoveFather() {
+    const groupId = window.currentGroupId || document.getElementById('removing-group-id').value;
+    const removalDate = document.getElementById('group-removal-date').value;
+    const note = document.getElementById('group-removal-note').value.trim();
+
+    if (!groupId) {
+        alert('Не выбрана группа');
+        return;
+    }
+    if (!removalDate) {
+        alert('Укажите дату снятия барана');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing-group/${groupId}/remove-father/`, 'POST', {
+            removal_date: removalDate,
+            note: note || ''
+        });
+
+        alert(`Баран снят. Создано случек: ${response.created_lambings_count || 0}`);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('removeFatherModal'));
+        modal.hide();
+
+        const animalDetail = document.getElementById('animal-detail');
+        const animalType = animalDetail.dataset.animalType;
+        if (animalType === 'sheep' || animalType === 'ewe') {
+            await loadLambingGroups();
+            await loadLambings();
+        } else if (animalType === 'maker' || animalType === 'ram') {
+            await loadFatherLambingGroups();
+            await loadFatherLambings();
+        }
+    } catch (error) {
+        console.error('Ошибка снятия барана:', error);
+        alert('Ошибка при снятии барана: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function completeLambingEarlyFailure() {
+    const lambingId = window.currentLambingId;
+    const actualDate = document.getElementById('actual-lambing-date').value;
+    const lambingNote = document.getElementById('lambing-note').value;
+    const newMotherStatusId = document.getElementById('new-mother-status').value;
+
+    if (!lambingId) {
+        alert('Не выбран окот');
+        return;
+    }
+    if (!actualDate) {
+        alert('Пожалуйста, укажите дату досрочного завершения');
+        return;
+    }
+
+    try {
+        await apiRequest(`/animals/lambing/${lambingId}/complete-early-failure/`, 'POST', {
+            actual_lambing_date: actualDate,
+            note: lambingNote || '',
+            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null
+        });
+
+        alert('Окот досрочно завершен.');
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
+        modal.hide();
+
+        const animalDetail = document.getElementById('animal-detail');
+        const animalType = animalDetail.dataset.animalType;
+        if (animalType === 'sheep' || animalType === 'ewe') {
+            await loadLambings();
+        } else if (animalType === 'maker' || animalType === 'ram') {
+            await loadFatherLambings();
+        }
+    } catch (error) {
+        console.error('Ошибка досрочного завершения окота:', error);
+        alert('Ошибка при досрочном завершении: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function submitLambingCompletion() {
+    if (isEarlyFailureMode()) {
+        await completeLambingEarlyFailure();
+        return;
+    }
+
+    await completeLambingWithChildren();
+}
+
 // Экспортируем новые функции для глобального доступа
 window.completeLambingWithChildren = completeLambingWithChildren;
+window.completeLambingEarlyFailure = completeLambingEarlyFailure;
+window.submitLambingCompletion = submitLambingCompletion;
 window.removeLambForm = removeLambForm;
+window.showRemoveFatherModal = showRemoveFatherModal;
+window.confirmRemoveFather = confirmRemoveFather;
 window.openAnimalExportModal = openAnimalExportModal;
 window.exportAnimalToExcel = exportAnimalToExcel;
 

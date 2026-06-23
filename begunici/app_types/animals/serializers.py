@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.db import models
 from django.urls import reverse
 from decimal import Decimal
-from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote
+from .models import Maker, Ram, Ewe, Sheep, Lambing, LambingGroup, AnimalBase, CalendarNote, ArchiveAct
 from begunici.app_types.veterinary.vet_models import (
     Place,
     PlaceMovement,
@@ -72,13 +72,26 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для даты присвоения статуса
     status_date = serializers.DateField(write_only=True, required=False)
-    # Поле для номера акта при архивировании со статусом "Выбытие"
+    # Поле для номера акта при архивировании со статусом "Падеж"
     act_number = serializers.CharField(
         write_only=True,
         required=False,
         allow_blank=True,
         max_length=255,
     )
+    archive_act_date = serializers.DateField(write_only=True, required=False, allow_null=True)
+    archive_act_live_weight = serializers.DecimalField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+        max_digits=7,
+        decimal_places=1,
+        min_value=Decimal("0"),
+    )
+    archive_act_fatness = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=20)
+    archive_act_diagnosis = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    archive_act_worker_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=255)
+    archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
@@ -200,11 +213,30 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         # Извлекаем дату статуса если она передана
         status_date = validated_data.pop("status_date", None)
-        # Извлекаем номер акта (для статуса "Выбытие")
+        archive_act_field_names = {
+            "act_number",
+            "archive_act_date",
+            "archive_act_live_weight",
+            "archive_act_fatness",
+            "archive_act_diagnosis",
+            "archive_act_worker_name",
+            "archive_act_download",
+        }
+        archive_act_fields_submitted = any(
+            field_name in getattr(self, "initial_data", {})
+            for field_name in archive_act_field_names
+        )
+        # Извлекаем номер акта (для статуса "Падеж")
         act_number = (validated_data.pop("act_number", "") or "").strip()
+        archive_act_date = validated_data.pop("archive_act_date", None)
+        archive_act_live_weight = validated_data.pop("archive_act_live_weight", None)
+        archive_act_fatness = (validated_data.pop("archive_act_fatness", "") or "").strip()
+        archive_act_diagnosis = (validated_data.pop("archive_act_diagnosis", "") or "").strip()
+        archive_act_worker_name = (validated_data.pop("archive_act_worker_name", "") or "").strip()
+        archive_act_download = bool(validated_data.pop("archive_act_download", False))
 
         selected_status = validated_data.get("animal_status")
-        if selected_status and selected_status.status_type == "Выбытие" and act_number:
+        if selected_status and selected_status.status_type == "Падеж" and act_number:
             prefix = f"Номер акта: {act_number}"
             existing_note = validated_data.get("note")
             if existing_note is None:
@@ -225,7 +257,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             new_status_name = validated_data['animal_status'].status_type
             
             # Проверяем, является ли новый статус архивным
-            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой']
+            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']
             if new_status_name in archive_statuses:
                 # Это архивирование
                 changes.append(f"{old_status_name} → {new_status_name}")
@@ -335,6 +367,28 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 new_status=instance.animal_status,
                 change_date=status_datetime_moscow
             )
+
+        archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']
+        if (
+            instance.animal_status
+            and instance.animal_status.status_type in archive_statuses
+            and (status_will_change or archive_act_fields_submitted)
+        ):
+            ArchiveAct.objects.update_or_create(
+                tag=instance.tag,
+                defaults={
+                    "animal_type": instance.get_animal_type(),
+                    "status_name": instance.animal_status.status_type,
+                    "status_date": status_date,
+                    "act_number": act_number,
+                    "act_date": archive_act_date,
+                    "live_weight": archive_act_live_weight,
+                    "fatness": archive_act_fatness,
+                    "diagnosis": archive_act_diagnosis,
+                    "worker_name": archive_act_worker_name,
+                    "download_on_archive": archive_act_download,
+                },
+            )
         
         # Если изменилось место, создаем запись в PlaceMovement
         if place_will_change:
@@ -372,9 +426,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 # Определяем тип действия
                 action_type = "Редактирование животного"
                 new_status = validated_data.get('animal_status')
-                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой']:
+                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']:
                     action_type = "Архивирование животного"
-                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Выбытие', 'Убой'] and new_status:
+                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка'] and new_status:
                     action_type = "Восстановление из архива"
                 
                 changes_text = "; ".join(changes)
@@ -516,7 +570,7 @@ class UniversalChildSerializer(serializers.Serializer):
         # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
         from begunici.app_types.veterinary.vet_models import StatusHistory
         
-        archive_statuses = ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя']
+        archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя']
         if obj.animal_status.status_type in archive_statuses:
             status_history = StatusHistory.objects.filter(
                 tag=obj.tag,
@@ -643,6 +697,7 @@ class LambingSerializer(serializers.ModelSerializer):
     mother_type = serializers.SerializerMethodField()
     father_type = serializers.SerializerMethodField()
     mother_found = serializers.SerializerMethodField()  # Новое поле
+    completion_type_display = serializers.SerializerMethodField()
     
     # Поля для записи
     mother_tag_number = serializers.CharField(write_only=True, required=False)
@@ -652,12 +707,13 @@ class LambingSerializer(serializers.ModelSerializer):
         model = Lambing
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
-            'number_of_lambs', 'dead_lambs_count', 'note', 'is_active', 'created_at',
+            'number_of_lambs', 'dead_lambs_count', 'note', 'completion_type',
+            'completion_type_display', 'is_active', 'created_at',
             'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
-            'mother_tag_text', 'mother_type_text'  # Добавляем новые поля
+            'mother_tag_text', 'mother_type_text', 'source_group'  # Добавляем новые поля
         ]
-        read_only_fields = ['id', 'planned_lambing_date', 'created_at']
+        read_only_fields = ['id', 'planned_lambing_date', 'created_at', 'source_group']
     
     def get_mother_tag(self, obj):
         try:
@@ -702,6 +758,12 @@ class LambingSerializer(serializers.ModelSerializer):
     def get_mother_found(self, obj):
         """Возвращает True если мать найдена в БД, False если только текстовые данные"""
         return bool(obj.sheep or obj.ewe)
+
+    def get_completion_type_display(self, obj):
+        try:
+            return obj.get_completion_type_display()
+        except Exception:
+            return None
     
     def validate(self, data):
         mother_tag_number = data.get('mother_tag_number')
@@ -777,6 +839,72 @@ class LambingSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class LambingGroupSerializer(serializers.ModelSerializer):
+    father_tag = serializers.SerializerMethodField()
+    father_display_name = serializers.SerializerMethodField()
+    father_type = serializers.SerializerMethodField()
+    mothers = serializers.SerializerMethodField()
+    mother_tags = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LambingGroup
+        fields = [
+            "id",
+            "placement_date",
+            "removal_date",
+            "note",
+            "is_active",
+            "created_at",
+            "father_tag",
+            "father_display_name",
+            "father_type",
+            "mothers",
+            "mother_tags",
+        ]
+        read_only_fields = fields
+
+    def get_father_tag(self, obj):
+        return obj.get_father_tag()
+
+    def get_father_display_name(self, obj):
+        father = obj.get_father()
+        if not father or not father.tag:
+            return None
+        if hasattr(father, "get_display_name"):
+            return father.get_display_name()
+        return father.tag.tag_number
+
+    def get_father_type(self, obj):
+        return obj.get_father_type()
+
+    def get_mothers(self, obj):
+        mothers = []
+        for mother in obj.get_mothers():
+            if not mother.tag:
+                continue
+
+            animal_type = mother.get_animal_type()
+            url_map = {
+                "Ewe": "animals:ewe-detail",
+                "Sheep": "animals:sheep-detail",
+            }
+            url_name = url_map.get(animal_type)
+            mothers.append(
+                {
+                    "tag_number": mother.tag.tag_number,
+                    "animal_type": "Ярка" if animal_type == "Ewe" else "Овцематка",
+                    "type_code": "ewe" if animal_type == "Ewe" else "sheep",
+                    "url": reverse(url_name, kwargs={"tag_number": mother.tag.tag_number})
+                    if url_name
+                    else None,
+                }
+            )
+        return mothers
+
+    def get_mother_tags(self, obj):
+        return [mother["tag_number"] for mother in self.get_mothers(obj)]
+
+
 class ArchiveAnimalSerializer(serializers.Serializer):
     """
     Polymorphic serializer for archive animal lists.
@@ -824,6 +952,12 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         if Sheep.objects.filter(tag__tag_number=mother_tag).exists():
             return reverse("animals:sheep-detail", kwargs={"tag_number": mother_tag})
         return None
+
+    @staticmethod
+    def _can_download_archive_act(status_type):
+        from .archive_acts import get_archive_act_template_config
+
+        return bool(get_archive_act_template_config(status_type))
 
     @staticmethod
     def _format_age_at_date(birth_date, reference_date):
@@ -910,6 +1044,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                 "carcass_weight": self._format_weight(instance.get("carcass_weight")),
                 "mother_tag": mother_tag,
                 "mother_url": self._build_mother_url(mother_tag),
+                "can_download_act": self._can_download_archive_act(status_type),
             }
 
         tag_number = instance.tag.tag_number if instance.tag else "Нет данных"
@@ -946,6 +1081,9 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             "carcass_weight": self._format_weight(instance.carcass_weight),
             "mother_tag": mother_tag,
             "mother_url": self._build_mother_url(mother_tag),
+            "can_download_act": self._can_download_archive_act(
+                instance.animal_status.status_type if instance.animal_status else ""
+            ),
         }
 
     def get_age(self, obj):
@@ -1045,5 +1183,3 @@ class CalendarNoteSerializer(serializers.ModelSerializer):
                 )
         
         return instance
-
-

@@ -47,6 +47,7 @@ class Command(BaseCommand):
                 '--no-password',
                 '--verbose',
                 '--clean',
+                '--if-exists',
                 '--no-owner',
                 '--no-privileges',
                 db_name

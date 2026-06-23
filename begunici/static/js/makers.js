@@ -1,4 +1,4 @@
-import { apiRequest, formatDateToOutput } from "./utils.js";
+﻿import { apiRequest, formatDateToOutput } from "./utils.js";
 
 // Глобальное хранение выбранных элементов с сохранением в sessionStorage
 let selectedMakers = new Set();
@@ -11,7 +11,11 @@ function saveSelectedMakers() {
 function loadSelectedMakers() {
     const saved = sessionStorage.getItem('selectedMakers');
     if (saved) {
-        selectedMakers = new Set(JSON.parse(saved));
+        selectedMakers = new Set(
+            JSON.parse(saved)
+                .map(tag => String(tag || '').trim())
+                .filter(tag => tag && tag !== 'undefined' && tag !== 'null')
+        );
     }
 }
 
@@ -381,7 +385,7 @@ function getColorForStatus(status) {
     if (!status) return 'black';
     switch (status.status_type) {
         case 'Ветобработка': return 'green';
-        case 'Убой': return 'red';
+        case 'Вынужденная прирезка': return 'red';
         default: return 'black';
     }
 }
@@ -656,14 +660,12 @@ function openArchiveModal() {
     if (carcassWeightInput) {
         carcassWeightInput.value = '';
     }
-    const actNumberInput = document.getElementById('archive-act-number');
-    if (actNumberInput) {
-        actNumberInput.value = '';
-    }
-    const actNumberGroup = document.getElementById('archive-act-number-group');
-    if (actNumberGroup) {
-        actNumberGroup.style.display = 'none';
-    }
+    window.archiveActModal?.reset();
+    window.archiveActModal?.setSelectedAnimals(
+        Array.from(selectedMakers)
+            .filter(tag => tag && String(tag).trim())
+            .map(tag => ({ animalType: 'maker', tagNumber: String(tag).trim() }))
+    );
 
     loadArchiveStatuses();
 }
@@ -677,17 +679,7 @@ function closeArchiveModal() {
 }
 
 function toggleArchiveActNumberField() {
-    const statusSelect = document.getElementById('archive-status-select');
-    const actNumberGroup = document.getElementById('archive-act-number-group');
-    const actNumberInput = document.getElementById('archive-act-number');
-    if (!statusSelect || !actNumberGroup) return;
-
-    const selectedStatusName = statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || '';
-    const shouldShow = selectedStatusName === 'Выбытие';
-    actNumberGroup.style.display = shouldShow ? 'block' : 'none';
-    if (!shouldShow && actNumberInput) {
-        actNumberInput.value = '';
-    }
+    window.archiveActModal?.toggle();
 }
 
 // Экспортируем функцию для глобального доступа
@@ -698,7 +690,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = ''; // Очистка существующих опций
@@ -722,7 +714,7 @@ async function loadArchiveStatuses() {
     }
 }
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedMakers);
+    const selectedTags = Array.from(selectedMakers).filter(tag => tag && String(tag).trim()).map(tag => String(tag).trim());
 
     if (selectedTags.length === 0) {
         alert('Нет выбранных записей для переноса.');
@@ -743,8 +735,6 @@ async function applyArchiveStatus() {
     }
 
     const carcassWeightRaw = document.getElementById('archive-carcass-weight')?.value?.trim();
-    const selectedStatusName = statusSelect.options[statusSelect.selectedIndex]?.text?.trim() || '';
-    const actNumberRaw = document.getElementById('archive-act-number')?.value?.trim() || '';
     let carcassWeight = null;
     if (carcassWeightRaw) {
         carcassWeight = parseFloat(carcassWeightRaw);
@@ -753,6 +743,7 @@ async function applyArchiveStatus() {
             return;
         }
     }
+    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
 
     try {
         for (const tag of selectedTags) {
@@ -760,8 +751,11 @@ async function applyArchiveStatus() {
                 animal_status_id: statusId,
                 status_date: statusDate,
                 carcass_weight: carcassWeight,
-                act_number: selectedStatusName === 'Выбытие' ? actNumberRaw : ''
+                ...archiveActPayload
             });
+            if (archiveActPayload.archive_act_download) {
+                window.archiveActModal?.downloadArchiveAct('maker', tag);
+            }
         }
         alert('Выбранные записи успешно перенесены в архив.');
         

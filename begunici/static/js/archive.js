@@ -1,4 +1,4 @@
-import { apiRequest, formatDateToOutput } from "./utils.js";
+﻿import { apiRequest, formatDateToOutput } from "./utils.js";
 
 const pageSize = 10;
 let currentPage = 1;
@@ -89,15 +89,27 @@ function buildActionsCell(animal, animalTypeCode, tagNumber) {
         return "<span class=\"text-muted\">-</span>";
     }
 
-    if (!permissions.can_restore_from_archive) {
-        return "<span class=\"text-muted\">Нет прав</span>";
+    const buttons = [];
+
+    if (permissions.can_restore_from_archive) {
+        buttons.push(`
+            <button class="btn btn-outline-success btn-sm" onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">
+                Восстановить
+            </button>
+        `);
+    } else {
+        buttons.push("<span class=\"text-muted\">Нет прав</span>");
     }
 
-    return `
-        <button class="btn btn-outline-success btn-sm" onclick="restoreAnimal('${animalTypeCode}', '${tagNumber}')">
-            Восстановить
-        </button>
-    `;
+    if (animal.can_download_act) {
+        buttons.push(`
+            <button class="btn btn-outline-primary btn-sm" onclick="downloadArchiveActFromArchive('${animalTypeCode}', '${tagNumber}')">
+                Скачать акт
+            </button>
+        `);
+    }
+
+    return `<div class="d-flex flex-wrap gap-2">${buttons.join("")}</div>`;
 }
 
 function displayArchive(data) {
@@ -198,7 +210,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Убой", "Выбытие", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
+            ["Вынужденная прирезка", "Падеж", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("status-filter");
@@ -324,7 +336,7 @@ async function loadRestoreStatuses() {
         const statuses = response.results || response;
 
         const activeStatuses = statuses.filter((status) =>
-            !["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
+            !["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("restore-status-select");
@@ -405,6 +417,18 @@ function restoreAnimal(animalType, tagNumber) {
     openRestoreModal(animalType, tagNumber);
 }
 
+function downloadArchiveActFromArchive(animalType, tagNumber) {
+    if (!animalType || !tagNumber) return;
+
+    const link = document.createElement("a");
+    link.href = `/animals/api/archive/act/${encodeURIComponent(animalType)}/${encodeURIComponent(tagNumber)}/`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
 function hydrateFiltersFromUrl() {
     const params = getUrlParams();
 
@@ -457,5 +481,5 @@ window.filterArchiveData = performArchiveSearch;
 window.performArchiveSearch = performArchiveSearch;
 window.exportArchiveToExcel = exportArchiveToExcel;
 window.restoreAnimal = restoreAnimal;
+window.downloadArchiveActFromArchive = downloadArchiveActFromArchive;
 window.closeRestoreModal = closeRestoreModal;
-

@@ -3,6 +3,7 @@ import subprocess
 from datetime import datetime
 from django.core.management.base import BaseCommand
 from django.conf import settings
+from django.db import connections
 
 
 class Command(BaseCommand):
@@ -263,6 +264,7 @@ class Command(BaseCommand):
             f'--username={db_user}',
             '--no-password',
             '--clean',
+            '--if-exists',
             '--no-owner',
             '--no-privileges',
             db_name
@@ -298,6 +300,39 @@ class Command(BaseCommand):
         db_port = db_settings['PORT']
 
         # Команда psql для восстановления
+        # Restore into an empty schema so tables from newer code cannot survive
+        # when the selected backup was created before those tables existed.
+        connections.close_all()
+        quoted_db_user = '"' + str(db_user).replace('"', '""') + '"'
+        reset_sql = (
+            "DROP SCHEMA IF EXISTS public CASCADE;\n"
+            "CREATE SCHEMA public;\n"
+            f"ALTER SCHEMA public OWNER TO {quoted_db_user};\n"
+            "GRANT ALL ON SCHEMA public TO public;\n"
+        )
+        reset_cmd = [
+            'psql',
+            f'--host={db_host}',
+            f'--port={db_port}',
+            f'--username={db_user}',
+            '--no-password',
+            '--set=ON_ERROR_STOP=on',
+            '--dbname=' + db_name,
+            '--command=' + reset_sql,
+        ]
+        reset_env = os.environ.copy()
+        reset_env['PGPASSWORD'] = db_password
+        self.stdout.write("Clearing current public schema before restore...")
+        reset_result = subprocess.run(
+            reset_cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            env=reset_env,
+            text=True,
+        )
+        if reset_result.returncode != 0:
+            raise Exception(f"Failed to clear public schema before restore: {reset_result.stderr}")
+
         cmd = [
             'psql',
             f'--host={db_host}',

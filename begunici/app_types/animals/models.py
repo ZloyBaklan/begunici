@@ -1,4 +1,4 @@
-from django.db import models, transaction
+﻿from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -347,8 +347,8 @@ class AnimalBase(models.Model):
 
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in [
-            "Выбытие",
-            "Убой", 
+            "Падеж",
+            "Вынужденная прирезка",
             "Реализация в живом весе",
             "Продажа на племя",
         ]:
@@ -385,6 +385,64 @@ class AnimalBase(models.Model):
             StatusHistory.objects.create(
                 tag=self.tag, old_status=old_status, new_status=self.animal_status
             )
+
+
+class ArchiveAct(models.Model):
+    """Данные для формирования индивидуального акта архивирования животного."""
+
+    FATNESS_CHOICES = [
+        ("ср", "ср"),
+        ("н/ср", "н/ср"),
+        ("выс", "выс"),
+    ]
+
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="archive_acts",
+        verbose_name="Бирка",
+        db_index=True,
+    )
+    animal_type = models.CharField(max_length=30, verbose_name="Тип животного")
+    status_name = models.CharField(max_length=100, verbose_name="Архивный статус", db_index=True)
+    status_date = models.DateField(null=True, blank=True, verbose_name="Дата присвоения статуса")
+    act_number = models.CharField(max_length=255, blank=True, default="", verbose_name="Номер акта")
+    act_date = models.DateField(null=True, blank=True, verbose_name="Дата акта")
+    live_weight = models.DecimalField(
+        max_digits=7,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Живая масса (кг)",
+    )
+    fatness = models.CharField(
+        max_length=20,
+        choices=FATNESS_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="Упитанность",
+    )
+    diagnosis = models.TextField(blank=True, default="", verbose_name="Диагноз / основание")
+    worker_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="ФИО закрепленного работника",
+    )
+    download_on_archive = models.BooleanField(default=False, verbose_name="Скачивать при архивировании")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Акт архивирования"
+        verbose_name_plural = "Акты архивирования"
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["tag", "status_name"], name="archive_act_tag_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"Акт {self.act_number or 'без номера'}: {self.tag.tag_number}"
 
 
 class Maker(AnimalBase):
@@ -449,7 +507,98 @@ class Maker(AnimalBase):
         return children
 
 
+class LambingGroup(models.Model):
+    """Группа матерей, к которым поставлен один баран до снятия из группы."""
+
+    sheep = models.ManyToManyField(
+        "Sheep",
+        verbose_name="Овцематки",
+        blank=True,
+        related_name="lambing_groups",
+    )
+    ewes = models.ManyToManyField(
+        "Ewe",
+        verbose_name="Ярки",
+        blank=True,
+        related_name="lambing_groups",
+    )
+    maker = models.ForeignKey(
+        "Maker",
+        on_delete=models.CASCADE,
+        verbose_name="Баран-Производитель",
+        null=True,
+        blank=True,
+        related_name="lambing_groups_as_father",
+    )
+    ram = models.ForeignKey(
+        "Ram",
+        on_delete=models.CASCADE,
+        verbose_name="Баранчик",
+        null=True,
+        blank=True,
+        related_name="lambing_groups_as_father",
+    )
+    placement_date = models.DateField(
+        verbose_name="Дата постановки в группу",
+        default=timezone.now,
+        db_index=True,
+    )
+    removal_date = models.DateField(
+        verbose_name="Дата снятия барана",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    note = models.TextField(verbose_name="Примечание", null=True, blank=True)
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активная группа",
+        db_index=True,
+    )
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Дата создания",
+    )
+
+    class Meta:
+        verbose_name = "Группа случки"
+        verbose_name_plural = "Группы случек"
+        ordering = ["-is_active", "-placement_date", "-id"]
+
+    def __str__(self):
+        father_tag = self.get_father_tag() or "без отца"
+        return f"Группа {father_tag} от {self.placement_date}"
+
+    def get_father(self):
+        return self.maker or self.ram
+
+    def get_father_tag(self):
+        father = self.get_father()
+        if father and father.tag:
+            return father.tag.tag_number
+        return None
+
+    def get_father_type(self):
+        if self.maker:
+            return "Производитель"
+        if self.ram:
+            return "Баран"
+        return None
+
+    def get_mothers(self):
+        mothers = list(self.sheep.all()) + list(self.ewes.all())
+        mothers.sort(key=lambda animal: animal.tag.tag_number if animal.tag else "")
+        return mothers
+
+
 class Lambing(models.Model):
+    COMPLETION_NORMAL = "normal"
+    COMPLETION_EARLY_FAILURE = "early_failure"
+    COMPLETION_CHOICES = [
+        (COMPLETION_NORMAL, "Обычное завершение"),
+        (COMPLETION_EARLY_FAILURE, "Досрочно завершен"),
+    ]
+
     # Мать может быть либо овцой, либо яркой
     sheep = models.ForeignKey(
         "Sheep", on_delete=models.CASCADE, verbose_name="Овца (Мать)", 
@@ -479,6 +628,14 @@ class Lambing(models.Model):
         "Ram", on_delete=models.CASCADE, verbose_name="Баран (Отец)",
         null=True, blank=True, related_name="lambings_as_father"
     )
+    source_group = models.ForeignKey(
+        "LambingGroup",
+        on_delete=models.SET_NULL,
+        verbose_name="Группа случки",
+        null=True,
+        blank=True,
+        related_name="lambings",
+    )
     
     start_date = models.DateField(verbose_name="Дата начала окота (случки)", default=timezone.now)
     planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота", default=timezone.now)
@@ -495,6 +652,13 @@ class Lambing(models.Model):
     )
     note = models.TextField(
         verbose_name="Примечание", null=True, blank=True
+    )
+    completion_type = models.CharField(
+        max_length=30,
+        choices=COMPLETION_CHOICES,
+        default=COMPLETION_NORMAL,
+        verbose_name="Тип завершения",
+        db_index=True,
     )
     is_active = models.BooleanField(default=True, verbose_name="Активный окот")
     created_at = models.DateTimeField(default=timezone.now, verbose_name="Дата создания")
@@ -631,7 +795,10 @@ class Lambing(models.Model):
         if not is_new:
             was_active = Lambing.objects.filter(pk=self.pk, is_active=True).exists()
 
-        if is_new and self.is_active:
+        skip_parent_status_on_create = getattr(self, "_skip_parent_status_on_create", False)
+        skip_father_status_on_complete = getattr(self, "_skip_father_status_on_complete", False)
+
+        if is_new and self.is_active and not skip_parent_status_on_create:
             try:
                 sluchka_status = Status.objects.filter(status_type__iexact="Случка").first()
                 if sluchka_status:
@@ -654,7 +821,7 @@ class Lambing(models.Model):
         super(Lambing, self).save(*args, **kwargs)
 
         just_completed = not is_new and was_active and not self.is_active
-        if just_completed:
+        if just_completed and not skip_father_status_on_complete and not self.source_group_id:
             father = self.get_father()
             if father:
                 has_other_active_lambings = False
@@ -759,6 +926,7 @@ class Ram(AnimalBase):
 
             # Переносим все окоты, где отец был бараном.
             Lambing.objects.filter(ram=self).update(maker=maker, ram=None)
+            LambingGroup.objects.filter(ram=self).update(maker=maker, ram=None)
 
             # Удаляем исходного барана.
             self.delete()
@@ -830,6 +998,10 @@ class Ewe(AnimalBase):
             lambing.sheep = sheep
             lambing.ewe = None
             lambing.save()
+
+        for group in list(self.lambing_groups.all()):
+            group.sheep.add(sheep)
+            group.ewes.remove(self)
         
         # Удаляем ярку
         self.delete()

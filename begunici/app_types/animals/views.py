@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+﻿from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -6,6 +6,7 @@ from django.shortcuts import render, redirect
 from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
+from django.db import transaction
 from django.db.models import Q
 from django.core.paginator import Paginator
 from decimal import Decimal
@@ -15,7 +16,7 @@ from datetime import datetime
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import Maker, Ram, Ewe, Sheep, Lambing, AnimalBase, CalendarNote, ShiftTransferNote
+from .models import Maker, Ram, Ewe, Sheep, Lambing, LambingGroup, AnimalBase, CalendarNote, ShiftTransferNote
 from .serializers import (
     MakerSerializer,
     MakerChildSerializer,
@@ -26,11 +27,18 @@ from .serializers import (
     SheepSerializer,
     SheepChildSerializer,
     LambingSerializer,
+    LambingGroupSerializer,
     ArchiveAnimalSerializer,
     UniversalChildSerializer,
     CalendarNoteSerializer,
 )
 from .backup_utils import backup_manager
+from .archive_acts import (
+    archive_act_response,
+    build_archive_act_preview_item,
+    find_animal as find_archive_act_animal,
+    get_archive_act_template_config,
+)
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -524,7 +532,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -538,7 +546,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -861,7 +869,7 @@ class RamViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -875,7 +883,7 @@ class RamViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -1184,7 +1192,7 @@ class EweViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1198,7 +1206,7 @@ class EweViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -1504,7 +1512,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1518,7 +1526,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Выбытие", "Убой", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
                     ).first()
                 
                 if active_status:
@@ -1560,6 +1568,446 @@ class SheepViewSet(AnimalBaseViewSet):
         sheep = self.get_object()
         serializer = self.get_serializer(sheep)
         return Response(serializer.data)
+
+
+def _get_status_by_name(status_name):
+    return Status.objects.filter(status_type__iexact=status_name).first()
+
+
+def _set_animal_status(animal, status_obj):
+    if animal and status_obj:
+        animal.animal_status = status_obj
+        animal.save()
+
+
+def _parse_iso_date(value, field_label):
+    if not value:
+        raise ValueError(f"Необходимо указать {field_label}")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"Неверный формат поля «{field_label}». Используйте YYYY-MM-DD") from exc
+
+
+def _find_mother_by_tag(tag_number):
+    try:
+        return Sheep.objects.get(tag__tag_number=tag_number), "sheep"
+    except Sheep.DoesNotExist:
+        try:
+            return Ewe.objects.get(tag__tag_number=tag_number), "ewe"
+        except Ewe.DoesNotExist:
+            return None, None
+
+
+def _find_father_by_tag(tag_number):
+    try:
+        return Maker.objects.get(tag__tag_number=tag_number), "maker"
+    except Maker.DoesNotExist:
+        try:
+            return Ram.objects.get(tag__tag_number=tag_number), "ram"
+        except Ram.DoesNotExist:
+            return None, None
+
+
+def _active_group_father_filter(father, father_type):
+    if father_type == "maker":
+        return Q(maker=father)
+    return Q(ram=father)
+
+
+def _active_group_mother_filter(mother, mother_type):
+    if mother_type == "sheep":
+        return Q(sheep=mother)
+    return Q(ewes=mother)
+
+
+def _active_lambing_mother_filter(mother, mother_type):
+    if mother_type == "sheep":
+        return Q(sheep=mother)
+    return Q(ewe=mother)
+
+
+def _get_group_statuses():
+    required = {
+        "mother_in_group": "Случка",
+        "father_in_group": "В группе",
+        "mother_after_removal": "Суягная",
+        "father_after_removal": "Ремонт",
+    }
+    found = {key: _get_status_by_name(name) for key, name in required.items()}
+    missing = [name for key, name in required.items() if not found[key]]
+    return found, missing
+
+
+class LambingGroupViewSet(viewsets.ModelViewSet):
+    queryset = (
+        LambingGroup.objects.all()
+        .select_related("maker__tag", "ram__tag")
+        .prefetch_related("sheep__tag", "ewes__tag")
+        .order_by("-is_active", "-placement_date", "-id")
+    )
+    serializer_class = LambingGroupSerializer
+    permission_classes = [AllowAny]
+    pagination_class = PaginationSetting
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        is_active = self.request.query_params.get("is_active")
+        placement_date_from = self.request.query_params.get("placement_date_from")
+        placement_date_to = self.request.query_params.get("placement_date_to")
+        mother_tag = self.request.query_params.get("mother_tag", "").strip()
+        father_tag = self.request.query_params.get("father_tag", "").strip()
+
+        if is_active is not None:
+            if is_active.lower() == "true":
+                queryset = queryset.filter(is_active=True)
+            elif is_active.lower() == "false":
+                queryset = queryset.filter(is_active=False)
+
+        if placement_date_from:
+            try:
+                queryset = queryset.filter(
+                    placement_date__gte=datetime.strptime(placement_date_from, "%Y-%m-%d").date()
+                )
+            except ValueError:
+                pass
+
+        if placement_date_to:
+            try:
+                queryset = queryset.filter(
+                    placement_date__lte=datetime.strptime(placement_date_to, "%Y-%m-%d").date()
+                )
+            except ValueError:
+                pass
+
+        if mother_tag:
+            queryset = queryset.filter(
+                _build_case_variants_filter("sheep__tag__tag_number", mother_tag)
+                | _build_case_variants_filter("ewes__tag__tag_number", mother_tag)
+            )
+
+        if father_tag:
+            queryset = queryset.filter(
+                _build_case_variants_filter("maker__tag__tag_number", father_tag)
+                | _build_case_variants_filter("ram__tag__tag_number", father_tag)
+            )
+
+        return queryset.distinct()
+
+    def create(self, request, *args, **kwargs):
+        try:
+            placement_date = _parse_iso_date(
+                request.data.get("placement_date") or request.data.get("start_date"),
+                "дату постановки в группу",
+            )
+            father_tag_number = (request.data.get("father_tag_number") or "").strip()
+            mother_tag_numbers = request.data.get("mother_tag_numbers") or []
+            note = (request.data.get("note") or "").strip()
+
+            if not father_tag_number:
+                return Response(
+                    {"error": "Необходимо указать бирку отца"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not isinstance(mother_tag_numbers, list):
+                return Response(
+                    {"error": "Список матерей должен быть массивом"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mother_tag_numbers = [
+                str(tag).strip()
+                for tag in mother_tag_numbers
+                if str(tag).strip()
+            ]
+            if not mother_tag_numbers:
+                return Response(
+                    {"error": "Необходимо выбрать хотя бы одну мать"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            father, father_type = _find_father_by_tag(father_tag_number)
+            if not father:
+                return Response(
+                    {"error": f"Отец с биркой {father_tag_number} не найден"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            statuses, missing_statuses = _get_group_statuses()
+            if missing_statuses:
+                return Response(
+                    {"error": "Не найдены статусы: " + ", ".join(missing_statuses)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if LambingGroup.objects.filter(is_active=True).filter(
+                _active_group_father_filter(father, father_type)
+            ).exists():
+                return Response(
+                    {"error": f"Баран {father_tag_number} уже находится в группе"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mothers = []
+            errors = []
+            seen_mothers = set()
+            for mother_tag_number in mother_tag_numbers:
+                normalized_tag = mother_tag_number.lower()
+                if normalized_tag in seen_mothers:
+                    continue
+                seen_mothers.add(normalized_tag)
+
+                mother, mother_type = _find_mother_by_tag(mother_tag_number)
+                if not mother:
+                    errors.append(f"Мать с биркой {mother_tag_number} не найдена")
+                    continue
+
+                if LambingGroup.objects.filter(is_active=True).filter(
+                    _active_group_mother_filter(mother, mother_type)
+                ).exists():
+                    errors.append(f"Мать {mother_tag_number} уже находится в группе")
+                    continue
+
+                if Lambing.objects.filter(is_active=True).filter(
+                    _active_lambing_mother_filter(mother, mother_type)
+                ).exists():
+                    errors.append(f"У матери {mother_tag_number} уже есть активная случка")
+                    continue
+
+                mothers.append((mother, mother_type))
+
+            if errors:
+                return Response(
+                    {"error": "\n".join(errors), "errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            with transaction.atomic():
+                group_data = {
+                    "placement_date": placement_date,
+                    "note": note,
+                }
+                if father_type == "maker":
+                    group_data["maker"] = father
+                else:
+                    group_data["ram"] = father
+
+                group = LambingGroup.objects.create(**group_data)
+                group.sheep.set([mother for mother, mother_type in mothers if mother_type == "sheep"])
+                group.ewes.set([mother for mother, mother_type in mothers if mother_type == "ewe"])
+
+                for mother, _ in mothers:
+                    _set_animal_status(mother, statuses["mother_in_group"])
+                _set_animal_status(father, statuses["father_in_group"])
+
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+
+                if not isinstance(request.user, AnonymousUser):
+                    mother_tags = [
+                        mother.tag.tag_number
+                        for mother, _ in mothers
+                        if mother.tag
+                    ]
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Постановка в группу",
+                        object_type="Группа случки",
+                        object_id=str(group.id),
+                        description=(
+                            f"Поставлена группа: отец {father_tag_number}; "
+                            f"матери: {', '.join(mother_tags)}; "
+                            f"дата: {placement_date.strftime('%d.%m.%Y')}"
+                        ),
+                    )
+            except Exception as log_error:
+                print(f"Ошибка логирования постановки в группу: {log_error}")
+
+            return Response(
+                {
+                    "success": "Группа создана",
+                    "created_count": 1,
+                    "mothers_count": len(mothers),
+                    "group": self.get_serializer(group).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="remove-father")
+    def remove_father(self, request, pk=None):
+        try:
+            group = self.get_object()
+            if not group.is_active:
+                return Response(
+                    {"error": "Эта группа уже снята"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            removal_date = _parse_iso_date(
+                request.data.get("removal_date"),
+                "дату снятия барана",
+            )
+            removal_note = (request.data.get("note") or "").strip()
+
+            statuses, missing_statuses = _get_group_statuses()
+            if missing_statuses:
+                return Response(
+                    {"error": "Не найдены статусы: " + ", ".join(missing_statuses)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            father = group.get_father()
+            if not father:
+                return Response(
+                    {"error": "У группы не найден отец"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mothers = []
+            for mother in group.sheep.all():
+                mothers.append((mother, "sheep"))
+            for mother in group.ewes.all():
+                mothers.append((mother, "ewe"))
+
+            if not mothers:
+                return Response(
+                    {"error": "В группе нет матерей"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            created_lambings = []
+            with transaction.atomic():
+                group.removal_date = removal_date
+                group.is_active = False
+                if removal_note:
+                    group.note = f"{group.note}\n{removal_note}" if group.note else removal_note
+                group.save(update_fields=["removal_date", "is_active", "note"])
+
+                for mother, mother_type in mothers:
+                    lambing_data = {
+                        "start_date": removal_date,
+                        "planned_lambing_date": removal_date + timedelta(days=150),
+                        "source_group": group,
+                        "note": group.note or "",
+                        "is_active": True,
+                    }
+                    if mother_type == "sheep":
+                        lambing_data["sheep"] = mother
+                    else:
+                        lambing_data["ewe"] = mother
+
+                    if group.maker_id:
+                        lambing_data["maker"] = group.maker
+                    else:
+                        lambing_data["ram"] = group.ram
+
+                    lambing = Lambing(**lambing_data)
+                    lambing._skip_parent_status_on_create = True
+                    lambing.save()
+                    created_lambings.append(lambing)
+                    _set_animal_status(mother, statuses["mother_after_removal"])
+
+                _set_animal_status(father, statuses["father_after_removal"])
+
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+
+                if not isinstance(request.user, AnonymousUser):
+                    mother_tags = [
+                        mother.tag.tag_number
+                        for mother, _ in mothers
+                        if mother.tag
+                    ]
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Снятие барана из группы",
+                        object_type="Группа случки",
+                        object_id=str(group.id),
+                        description=(
+                            f"Снят баран {group.get_father_tag() or '-'}; "
+                            f"матери: {', '.join(mother_tags)}; "
+                            f"дата снятия: {removal_date.strftime('%d.%m.%Y')}; "
+                            f"создано случек: {len(created_lambings)}"
+                        ),
+                    )
+            except Exception as log_error:
+                print(f"Ошибка логирования снятия барана из группы: {log_error}")
+
+            return Response(
+                {
+                    "success": "Баран снят из группы",
+                    "created_lambings_count": len(created_lambings),
+                    "group": self.get_serializer(group).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["get"], url_path="by-animal")
+    def by_animal(self, request):
+        animal_type = request.query_params.get("animal_type")
+        tag_number = request.query_params.get("tag_number")
+        if not animal_type or not tag_number:
+            return Response(
+                {"error": "Необходимо указать animal_type и tag_number"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            if animal_type == "sheep":
+                animal = Sheep.objects.get(tag__tag_number=tag_number)
+                groups = self.get_queryset().filter(sheep=animal)
+            elif animal_type == "ewe":
+                animal = Ewe.objects.get(tag__tag_number=tag_number)
+                groups = self.get_queryset().filter(ewes=animal)
+            else:
+                return Response(
+                    {"error": "Неподдерживаемый тип животного"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            serializer = self.get_serializer(groups.distinct(), many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except (Sheep.DoesNotExist, Ewe.DoesNotExist):
+            return Response({"error": "Животное не найдено"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=["get"], url_path="by-father")
+    def by_father(self, request):
+        animal_type = request.query_params.get("animal_type")
+        tag_number = request.query_params.get("tag_number")
+        if not animal_type or not tag_number:
+            return Response(
+                {"error": "Необходимо указать animal_type и tag_number"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            if animal_type == "maker":
+                animal = Maker.objects.get(tag__tag_number=tag_number)
+                groups = self.get_queryset().filter(maker=animal)
+            elif animal_type == "ram":
+                animal = Ram.objects.get(tag__tag_number=tag_number)
+                groups = self.get_queryset().filter(ram=animal)
+            else:
+                return Response(
+                    {"error": "Неподдерживаемый тип животного для роли отца"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            serializer = self.get_serializer(groups.distinct(), many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except (Maker.DoesNotExist, Ram.DoesNotExist):
+            return Response({"error": "Животное не найдено"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class LambingViewSet(viewsets.ModelViewSet):
@@ -1737,6 +2185,7 @@ class LambingViewSet(viewsets.ModelViewSet):
             lambing.actual_lambing_date = actual_date
             lambing.number_of_lambs = number_of_lambs
             lambing.dead_lambs_count = dead_lambs_count
+            lambing.completion_type = Lambing.COMPLETION_NORMAL
             if note:
                 lambing.note = note
             lambing.is_active = False
@@ -1901,6 +2350,85 @@ class LambingViewSet(viewsets.ModelViewSet):
                 {"error": str(e)}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=True, methods=['post'], url_path='complete-early-failure')
+    def complete_early_failure(self, request, pk=None):
+        """Досрочно завершить случку/окот без создания детей и без преобразования ярки."""
+        try:
+            lambing = self.get_object()
+            if not lambing.is_active:
+                return Response(
+                    {"error": "Окот уже завершен"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            actual_date = _parse_iso_date(
+                request.data.get('actual_lambing_date'),
+                "дату досрочного завершения",
+            )
+            note = (request.data.get('note') or '').strip()
+            new_mother_status_id = request.data.get('new_mother_status_id')
+
+            mother = lambing.get_mother()
+            if mother and new_mother_status_id:
+                try:
+                    new_status = Status.objects.get(id=new_mother_status_id)
+                    mother.animal_status = new_status
+                    mother.save()
+                except Status.DoesNotExist:
+                    return Response(
+                        {"error": "Указанный статус не найден"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            note_parts = ["Досрочно завершен (неудача)"]
+            if note:
+                note_parts.append(note)
+            old_note = (lambing.note or '').strip()
+            if old_note and old_note not in note_parts:
+                note_parts.append(old_note)
+
+            lambing.actual_lambing_date = actual_date
+            lambing.number_of_lambs = 0
+            lambing.dead_lambs_count = 0
+            lambing.completion_type = Lambing.COMPLETION_EARLY_FAILURE
+            lambing.note = "\n".join(note_parts)
+            lambing.is_active = False
+            lambing._skip_father_status_on_complete = True
+            lambing.save()
+
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+
+                if not isinstance(request.user, AnonymousUser):
+                    mother_tag = lambing.get_mother_tag() or 'Неизвестно'
+                    father = lambing.get_father()
+                    father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Досрочное завершение окота",
+                        object_type="Окот",
+                        object_id=f"{mother_tag}, {father_tag}",
+                        description=(
+                            f"Досрочно завершен окот: дата {actual_date.strftime('%d.%m.%Y')}; "
+                            f"дети не создавались"
+                        ),
+                    )
+            except Exception as log_error:
+                print(f"Ошибка логирования досрочного завершения окота: {log_error}")
+
+            return Response(
+                {
+                    "success": "Окот досрочно завершен",
+                    "lambing": LambingSerializer(lambing).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'], url_path='calendar')
     def calendar_data(self, request):
@@ -2094,7 +2622,10 @@ class LambingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            completed_qs = base_qs.filter(is_active=False, actual_lambing_date__isnull=False)
+            completed_qs = base_qs.filter(
+                is_active=False,
+                actual_lambing_date__isnull=False,
+            ).exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
             available_years = sorted(
                 {year for year in completed_qs.values_list('actual_lambing_date__year', flat=True) if year},
                 reverse=True,
@@ -2147,6 +2678,8 @@ class LambingViewSet(viewsets.ModelViewSet):
                     mother_filter,
                     is_active=False,
                     actual_lambing_date__isnull=False,
+                ).exclude(
+                    completion_type=Lambing.COMPLETION_EARLY_FAILURE
                 ).order_by('actual_lambing_date', 'id')
 
                 first_lambing_id_by_mother = {}
@@ -2860,8 +3393,8 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             # - независимо от архивных животных
             lamb_cutoff_date = timezone.now().date() - timedelta(days=100)
             archive_status_names = [
-                'Убой',
-                'Выбытие',
+                'Вынужденная прирезка',
+                'Падеж',
                 'Реализация в живом весе',
                 'Продажа на племя',
             ]
@@ -3425,6 +3958,7 @@ def _parse_checkbox_param(raw_value):
 def _build_last_completed_lambings_map():
     completed_lambings = (
         Lambing.objects.filter(is_active=False, actual_lambing_date__isnull=False)
+        .exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
         .select_related("sheep__tag", "ewe__tag")
         .order_by("-actual_lambing_date", "-id")
     )
@@ -3564,6 +4098,8 @@ def journal_progeny(request):
     base_queryset = Lambing.objects.filter(
         is_active=False,
         actual_lambing_date__isnull=False,
+    ).exclude(
+        completion_type=Lambing.COMPLETION_EARLY_FAILURE
     ).select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
 
     years = _get_year_options_from_queryset(base_queryset, "actual_lambing_date")
@@ -3827,6 +4363,8 @@ def journal_insemination(request):
     base_queryset = Lambing.objects.filter(
         is_active=False,
         actual_lambing_date__isnull=False,
+    ).exclude(
+        completion_type=Lambing.COMPLETION_EARLY_FAILURE
     ).select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
 
     years = _get_year_options_from_queryset(base_queryset, "actual_lambing_date")
@@ -4586,7 +5124,7 @@ def dashboard_statistics(request):
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
     # 2. Перенесено в архив за последний месяц
-    archive_statuses = ['Выбытие', 'Убой', 'Реализация в живом весе', 'Продажа на племя']
+    archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя']
     
     # Используем StatusHistory для получения даты архивирования
     from begunici.app_types.veterinary.vet_models import StatusHistory
@@ -5090,6 +5628,8 @@ def get_inactive_mothers(request):
             is_archived=False
         ).exclude(
             lambings__is_active=True
+        ).exclude(
+            lambing_groups__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
         # Получаем всех ярок без активных окотов
@@ -5097,6 +5637,8 @@ def get_inactive_mothers(request):
             is_archived=False
         ).exclude(
             lambings__is_active=True
+        ).exclude(
+            lambing_groups__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
         # Формируем единый список
@@ -5155,11 +5697,15 @@ def get_all_fathers(request):
         # Получаем всех баранов-производителей
         makers_query = Maker.objects.filter(
             is_archived=False
+        ).exclude(
+            lambing_groups_as_father__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
         # Получаем всех баранчиков
         rams_query = Ram.objects.filter(
             is_archived=False
+        ).exclude(
+            lambing_groups_as_father__is_active=True
         ).select_related('tag', 'animal_status', 'place')
         
         # Формируем единый список
@@ -5487,7 +6033,7 @@ def lambings_export_excel(request):
             '№',
             'Бирка матери',
             'Бирка отца',
-            'Дата случки',
+            'Дата снятия барана',
             'Планируемые роды',
             'Фактические роды',
             'Примечание',
@@ -5495,6 +6041,89 @@ def lambings_export_excel(request):
         ],
         rows=rows,
         summary_lines=[f'Итого записей: {len(rows)}'],
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def lambing_groups_export_excel(request):
+    queryset = (
+        LambingGroup.objects.all()
+        .select_related('maker__tag', 'ram__tag')
+        .prefetch_related('sheep__tag', 'ewes__tag')
+        .order_by('-is_active', '-placement_date', '-id')
+    )
+
+    is_active = request.GET.get('is_active', None)
+    placement_date_from = _parse_filter_date(request.GET.get('placement_date_from', None))
+    placement_date_to = _parse_filter_date(request.GET.get('placement_date_to', None))
+    mother_tag = request.GET.get('mother_tag', '').strip()
+    father_tag = request.GET.get('father_tag', '').strip()
+
+    if is_active is not None:
+        if str(is_active).lower() == 'true':
+            queryset = queryset.filter(is_active=True)
+        elif str(is_active).lower() == 'false':
+            queryset = queryset.filter(is_active=False)
+
+    if placement_date_from:
+        queryset = queryset.filter(placement_date__gte=placement_date_from)
+    if placement_date_to:
+        queryset = queryset.filter(placement_date__lte=placement_date_to)
+
+    if mother_tag:
+        queryset = queryset.filter(
+            _build_case_variants_q('sheep__tag__tag_number', mother_tag)
+            | _build_case_variants_q('ewes__tag__tag_number', mother_tag)
+        )
+
+    if father_tag:
+        queryset = queryset.filter(
+            _build_case_variants_q('maker__tag__tag_number', father_tag)
+            | _build_case_variants_q('ram__tag__tag_number', father_tag)
+        )
+
+    rows = []
+    for idx, group in enumerate(queryset.distinct(), start=1):
+        mother_tags = []
+        for mother in group.get_mothers():
+            if mother.tag:
+                mother_tags.append(mother.tag.tag_number)
+
+        father_value = '-'
+        father = group.get_father()
+        if father and father.tag:
+            if hasattr(father, 'get_display_name'):
+                father_value = father.get_display_name()
+            else:
+                father_value = father.tag.tag_number
+
+        rows.append(
+            [
+                idx,
+                '; '.join(mother_tags) if mother_tags else '-',
+                father_value,
+                _format_date_for_excel(group.placement_date),
+                _format_date_for_excel(group.removal_date),
+                group.note or '-',
+                'Активная' if group.is_active else 'Снята',
+            ]
+        )
+
+    return _build_excel_response(
+        filename_prefix='lambing_groups',
+        sheet_title='Группы',
+        headers=[
+            '№',
+            'Матери',
+            'Отец',
+            'Дата постановки в группу',
+            'Дата снятия барана',
+            'Примечание',
+            'Статус',
+        ],
+        rows=rows,
+        summary_lines=[f'Итого групп: {len(rows)}'],
     )
 
 
@@ -5668,6 +6297,69 @@ def archive_export_excel(request):
         rows=rows,
         summary_lines=[f"Итого записей: {len(rows)}"],
     )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def archive_act_preview(request):
+    """Возвращает автозаполняемые поля акта для выбранных животных."""
+    selected_animals = request.data.get("animals", [])
+    status_name = (request.data.get("status_name") or "").strip()
+
+    if not isinstance(selected_animals, list):
+        return Response(
+            {"error": "Некорректный список животных"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    results = []
+    errors = []
+    for item in selected_animals:
+        if not isinstance(item, dict):
+            errors.append("Некорректный элемент списка животных")
+            continue
+
+        animal_type = str(item.get("animal_type") or item.get("animalType") or "").strip()
+        tag_number = str(item.get("tag_number") or item.get("tagNumber") or "").strip()
+
+        if not animal_type or not tag_number:
+            errors.append("Не передан тип животного или бирка")
+            continue
+
+        animal = find_archive_act_animal(animal_type, tag_number)
+        if not animal:
+            errors.append(f"Животное {tag_number} не найдено")
+            continue
+
+        results.append(build_archive_act_preview_item(animal, status_name))
+
+    return Response(
+        {
+            "results": results,
+            "errors": errors,
+            "has_template": bool(get_archive_act_template_config(status_name)),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def archive_act_download(request, animal_type, tag_number):
+    """Скачивает индивидуальный акт архивирования для животного."""
+    animal = find_archive_act_animal(animal_type, tag_number)
+    if not animal:
+        return Response(
+            {"error": "Животное не найдено"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    response = archive_act_response(animal)
+    if response is None:
+        return Response(
+            {"error": "Для архивного статуса этого животного нет шаблона акта"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return response
 
 
 def vet_list_api(request):

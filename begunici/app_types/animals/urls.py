@@ -13,6 +13,7 @@ from .views import (
     EweViewSet,
     SheepViewSet,
     LambingViewSet,
+    LambingGroupViewSet,
     CalendarNoteViewSet,
     animals,
     create_animal,
@@ -44,7 +45,10 @@ from .views import (
     vet_list_export_excel,
     vet_filter_options,
     lambings_export_excel,
+    lambing_groups_export_excel,
     archive_export_excel,
+    archive_act_preview,
+    archive_act_download,
     check_kinship,
     kinship_pairs_export_excel,
     get_animals_without_otbivka,
@@ -64,6 +68,7 @@ router.register(r"ram", RamViewSet)  # Маршрут для баранов
 router.register(r"ewe", EweViewSet)  # Маршрут для ярок
 router.register(r"sheep", SheepViewSet)  # Маршрут для овец
 router.register(r"lambing", LambingViewSet)  # Маршрут для окотов
+router.register(r"lambing-group", LambingGroupViewSet)  # Маршрут для групп случек
 router.register(r"notes", CalendarNoteViewSet)  # Маршрут для заметок календаря
 router.register(r"archive", ArchiveViewSet, basename="archive")  # Архив животных
 router.register(r"actions", AnimalActionsViewSet, basename="actions")  # Действия с животными
@@ -259,7 +264,10 @@ urlpatterns = [
     path("api/vet-list/export-excel/", vet_list_export_excel, name="vet-list-export-excel"),  # API экспорта ветобработок
     path("api/vet-filter-options/", vet_filter_options, name="vet-filter-options"),  # API для опций фильтров ветобработок
     path("api/lambings/export-excel/", lambings_export_excel, name="lambings-export-excel"),  # API экспорта окотов
+    path("api/lambing-groups/export-excel/", lambing_groups_export_excel, name="lambing-groups-export-excel"),  # API экспорта групп
     path("api/archive/export-excel/", archive_export_excel, name="archive-export-excel"),  # API экспорта архива
+    path("api/archive/act-preview/", archive_act_preview, name="archive-act-preview"),
+    path("api/archive/act/<str:animal_type>/<str:tag_number>/", archive_act_download, name="archive-act-download"),
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"
