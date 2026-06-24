@@ -85,9 +85,6 @@ class StatusHistory(models.Model):
 
 class Place(models.Model):
     sheepfold = models.CharField(max_length=200, unique=True, verbose_name="Овчарня-Отсек", db_index=True)
-    date_of_transfer = models.DateTimeField(
-        verbose_name="Дата и время перевода", default=timezone.now
-    )  # Дата и время перевода по умолчанию
 
     def __str__(self):
         return self.sheepfold
@@ -126,21 +123,14 @@ class PlaceMovement(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        # Убираем проверку на существование записи - разрешаем повторные перемещения
-        
-        # Если указано новое место, обновляем его дату перевода
-        if self.new_place:
-            self.new_place.date_of_transfer = timezone.now()
-            self.new_place.save()
-
         super(PlaceMovement, self).save(*args, **kwargs)
 
     @property
     def date_of_transfer(self):
         """
-        Дата перевода берется из created_at или из связанного нового места.
+        Дата перевода берется из записи конкретного перемещения.
         """
-        return self.created_at if self.created_at else (self.new_place.date_of_transfer if self.new_place else None)
+        return self.created_at
 
     def __str__(self):
         return f"{self.tag.tag_number}: {self.old_place} -> {self.new_place} ({self.date_of_transfer})"

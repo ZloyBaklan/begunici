@@ -285,7 +285,7 @@ function formatLastVetTreatment(veterinaryHistory) {
 // Функция загрузки статусов
 async function loadStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/?page_size=100');
+        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         const select = document.getElementById('animal_status');

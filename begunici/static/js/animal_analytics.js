@@ -348,8 +348,8 @@ async function loadPlaceHistory(animalType, tagNumber, page = 1) {
             response.results.forEach(record => {
                 // Форматируем дату для перемещения
                 let formattedDateTime = '-';
-                if (record.new_place?.date_of_transfer) {
-                    const dateTime = new Date(record.new_place.date_of_transfer);
+                if (record.created_at) {
+                    const dateTime = new Date(record.created_at);
                     formattedDateTime = dateTime.toLocaleDateString('ru-RU', {
                         year: 'numeric',
                         month: '2-digit',

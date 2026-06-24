@@ -3,6 +3,11 @@ import json
 from django.contrib.auth.models import AnonymousUser
 from django.utils.deprecation import MiddlewareMixin
 
+from .log_utils import (
+    resolve_log_action,
+    resolve_log_object_id,
+    resolve_log_object_type,
+)
 from .models_user_log import UserActionLog
 
 
@@ -13,6 +18,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
     IGNORED_PREFIXES = ("/static/", "/admin/", "/login/")
     TECHNICAL_PATH_PARTS = (
         "/backup/check-auto/",
+        "/api/archive/act-preview/",
         "/api/health/",
         "/favicon.ico",
         "/robots.txt",
@@ -22,7 +28,10 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if not self._should_log_request(request):
             return response
 
-        action = self.determine_action(request)
+        if response.status_code < 400 and self._is_successfully_logged_elsewhere(request):
+            return response
+
+        action = self.determine_action(request, response=response)
         if not action:
             return response
 
@@ -87,7 +96,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
             "/animals/api/otbivka/export-excel/",
             "/animals/api/vet-list/export-excel/",
             "/animals/api/lambings/export-excel/",
+            "/animals/api/lambing-groups/export-excel/",
             "/animals/api/archive/export-excel/",
+            "/animals/api/archive/act/",
             "/animals/api/kinship-pairs/export-excel/",
         )
         return any(export_path in path for export_path in export_paths)
@@ -157,6 +168,28 @@ class UserActionLogMiddleware(MiddlewareMixin):
 
         return False
 
+    def _is_successfully_logged_elsewhere(self, request):
+        method = request.method.upper()
+        path = request.path
+
+        if method == "POST" and "/animals/lambing-group/" in path:
+            if path.rstrip("/") == "/animals/lambing-group":
+                return True
+            if "/remove-father/" in path:
+                return True
+
+        if method == "POST" and "/animals/lambing/" in path:
+            return any(
+                lambing_path in path
+                for lambing_path in [
+                    "/complete/",
+                    "/complete-with-children/",
+                    "/complete-early-failure/",
+                ]
+            )
+
+        return False
+
     @staticmethod
     def _truncate(value, max_length):
         if value is None:
@@ -166,197 +199,26 @@ class UserActionLogMiddleware(MiddlewareMixin):
             return value_str
         return value_str[:max_length]
 
-    def determine_action(self, request):
-        path = request.path
-        method = request.method.upper()
+    def determine_action(self, request, response=None):
+        params = dict(request.GET)
+        if (
+            "/animals/journals/shift-transfer/" in request.path
+            and request.method.upper() == "POST"
+        ):
+            params["action"] = request.POST.get("action")
 
-        # Backups
-        if "/backup/" in path:
-            if method == "POST" and "/create/" in path:
-                return "Создание резервной копии"
-            if method == "POST" and "/restore/" in path:
-                return "Восстановление из резервной копии"
-            if method == "DELETE":
-                return "Удаление резервной копии"
-
-        # Calendar notes
-        if "/animals/notes/" in path:
-            if method == "POST":
-                return "Создание заметки календаря"
-            if method in {"PUT", "PATCH"}:
-                return "Редактирование заметки календаря"
-            if method == "DELETE":
-                return "Удаление заметки календаря"
-
-        # Shift transfer journal page actions (POST form)
-        if "/animals/journals/shift-transfer/" in path and method == "POST":
-            post_action = request.POST.get("action")
-            if post_action == "create":
-                return "Создание заметки передачи смены"
-            if post_action == "update":
-                return "Редактирование заметки передачи смены"
-            return "Изменение заметки передачи смены"
-
-        # Animals module actions
-        if "/animals/" in path:
-            if method == "GET" and "/api/otbivka/export-excel/" in path:
-                return "Экспорт отбивки в Excel"
-            if method == "GET" and "/api/vet-list/export-excel/" in path:
-                return "Экспорт ветобработок в Excel"
-            if method == "GET" and "/api/lambings/export-excel/" in path:
-                return "Экспорт окотов в Excel"
-            if method == "GET" and "/api/archive/export-excel/" in path:
-                return "Экспорт архива в Excel"
-            if method == "GET" and "/api/export-excel/" in path:
-                return "Экспорт списка животных в Excel"
-            if method == "POST" and "/api/check-kinship/" in path:
-                return "Проверка родства"
-            if method == "POST" and "/api/kinship-pairs/export-excel/" in path:
-                return "Экспорт подбора пар в Excel"
-            if method == "POST" and "/api/export-excel/" in path:
-                return "Экспорт списка животных в Excel"
-            if method == "POST" and "/api/otbivka/export-excel/" in path:
-                return "Экспорт отбивки в Excel"
-            if method == "POST" and "/api/vet-list/export-excel/" in path:
-                return "Экспорт ветобработок в Excel"
-            if method == "POST" and "/api/lambings/export-excel/" in path:
-                return "Экспорт окотов в Excel"
-            if method == "POST" and "/api/archive/export-excel/" in path:
-                return "Экспорт архива в Excel"
-            if method == "POST" and "/api/bulk-otbivka/" in path:
-                return "Массовая отбивка"
-            if method == "POST" and "/api/bulk-vaccination/" in path:
-                return "Ковровая ветобработка"
-            if method == "POST" and "/to_maker/" in path:
-                return "Преобразование баранчика в барана-производителя"
-            if method == "POST" and "/to_sheep/" in path:
-                return "Преобразование ярки в овцематку"
-            if method == "POST" and "/hide_vet_treatment/" in path:
-                return "Скрытие ветобработки"
-            if method == "POST" and "/add_place_movement/" in path:
-                return "Добавление перемещения"
-            if method == "POST" and "/update_working_condition/" in path:
-                return "Обновление рабочего состояния"
-            if method == "POST" and "/add_weight/" in path:
-                return "Добавление записи о весе"
-            if method == "POST" and "/add_vet_care/" in path:
-                return "Добавление ветобработки"
-            if method == "POST" and "/add_lambing/" in path:
-                return "Создание окота"
-            if method == "POST" and "/lambing/" in path:
-                return "Создание окота"
-            if method in {"PUT", "PATCH"} and "/lambing/" in path:
-                return "Редактирование окота"
-            if method == "DELETE" and "/lambing/" in path:
-                return "Удаление окота"
-            if method in {"PUT", "PATCH"}:
-                if "/archive/" in path:
-                    return "Перенос в архив"
-                if "/restore/" in path:
-                    return "Восстановление из архива"
-                if "/move/" in path:
-                    return "Перемещение животного"
-                if "/update/" in path:
-                    return "Редактирование животного"
-                return "Обновление данных"
-            if method == "DELETE":
-                return "Удаление животного"
-            if method == "GET" and request.GET.get("export") == "1":
-                if "/journals/progeny/" in path:
-                    return "Экспорт журнала Приплод"
-                if "/journals/insemination/" in path:
-                    return "Экспорт журнала Осеменение"
-                if "/journals/three/" in path:
-                    return "Экспорт Журнала 3"
-                if "/journals/shift-transfer/" in path:
-                    return "Экспорт журнала Передача смены"
-                return "Экспорт данных"
-            if method == "GET" and "/export-detail-excel/" in path:
-                return "Экспорт карточки животного в Excel"
-
-        # Veterinary module
-        if "/veterinary/" in path:
-            if method == "POST" and "/api/care/" in path:
-                return "Создание ветобработки"
-            if method == "POST" and "/api/place/" in path:
-                return "Создание овчарни"
-            if method == "POST" and "/api/status/" in path:
-                return "Создание статуса"
-            if method in {"PUT", "PATCH"} and "/api/care/" in path:
-                return "Редактирование ветобработки"
-            if method in {"PUT", "PATCH"} and "/api/place/" in path:
-                return "Редактирование овчарни"
-            if method in {"PUT", "PATCH"} and "/api/status/" in path:
-                return "Редактирование статуса"
-            if method == "DELETE" and "/api/care/" in path:
-                return "Удаление ветобработки"
-            if method == "DELETE" and "/api/place/" in path:
-                return "Удаление овчарни"
-            if method == "DELETE" and "/api/status/" in path:
-                return "Удаление статуса"
-            if method == "GET" and "/api/export-cares/" in path:
-                return "Экспорт ветобработок в Excel"
-
-        return f"{method} запрос к {path}"
+        return resolve_log_action(
+            request.method,
+            request.path,
+            params=params,
+            status_code=getattr(response, "status_code", None),
+        )
 
     def get_object_type(self, request):
-        path = request.path
-
-        if "/backup/" in path:
-            return "Резервная копия"
-        if "/animals/notes/" in path:
-            return "Заметка календаря"
-        if "/animals/journals/shift-transfer/" in path:
-            return "Передача смены"
-        if "/api/check-kinship/" in path or "/api/kinship-pairs/" in path:
-            return "Подбор пар"
-        if "/api/bulk-otbivka/" in path:
-            return "Отбивка"
-        if "/api/bulk-vaccination/" in path:
-            return "Ветобработка"
-        if "/api/lambings/" in path or "/lambing/" in path:
-            return "Окот"
-        if "/api/archive/" in path or "/main_archive/" in path:
-            return "Архив"
-        if "/api/export-excel/" in path:
-            return "Список животных"
-        if "/api/otbivka/" in path or "/otbivka/" in path:
-            return "Отбивка"
-        if "/api/vet-list/" in path or "/vet-list/" in path:
-            return "Ветобработка"
-        if "/maker/" in path:
-            return "Баран-Производитель"
-        if "/ram/" in path:
-            return "Баранчик"
-        if "/ewe/" in path:
-            return "Ярка"
-        if "/sheep/" in path:
-            return "Овцематка"
-        if "/veterinary/api/care/" in path or "/veterinary/cares/" in path:
-            return "Ветобработка"
-        if "/veterinary/api/place/" in path or "/veterinary/places/" in path:
-            return "Овчарня"
-        if "/veterinary/api/status/" in path or "/veterinary/statuses/" in path:
-            return "Статус"
-        return "Неизвестно"
+        return resolve_log_object_type(request.method, request.path)
 
     def get_object_id(self, request):
-        path = request.path
-        path_parts = path.strip("/").split("/")
-
-        if "/animals/" in path and "/notes/" not in path:
-            for i, part in enumerate(path_parts):
-                if part in {"maker", "ram", "ewe", "sheep"} and i + 1 < len(path_parts):
-                    return path_parts[i + 1]
-
-        if "/animals/notes/" in path or "/veterinary/" in path:
-            return ""
-
-        for part in path_parts:
-            if part.isdigit():
-                return part
-
-        return ""
+        return resolve_log_object_id(request.method, request.path)
 
     def get_request_details(self, request, response, action):
         details = {

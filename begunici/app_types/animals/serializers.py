@@ -153,6 +153,19 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_download",
         ):
             validated_data.pop(service_field, None)
+
+        archive_statuses = {
+            "Падеж",
+            "Вынужденная прирезка",
+            "Реализация в живом весе",
+            "Продажа на племя",
+        }
+        selected_status = validated_data.get("animal_status")
+        if selected_status and selected_status.status_type in archive_statuses:
+            raise serializers.ValidationError({
+                "animal_status_id": "Нельзя создать животное сразу с архивным статусом. Используйте отдельное действие архивирования."
+            })
+
         # tag_data содержит строку номера бирки из поля tag_number
         tag_number = tag_data if isinstance(tag_data, str) else str(tag_data)
 
@@ -247,6 +260,22 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         archive_act_download = bool(validated_data.pop("archive_act_download", False))
 
         selected_status = validated_data.get("animal_status")
+        archive_status_names = {
+            "Падеж",
+            "Вынужденная прирезка",
+            "Реализация в живом весе",
+            "Продажа на племя",
+        }
+        if (
+            selected_status
+            and selected_status != old_status
+            and selected_status.status_type in archive_status_names
+            and not status_date
+        ):
+            raise serializers.ValidationError({
+                "animal_status_id": "Архивный статус можно установить только через отдельное действие архивирования."
+            })
+
         if selected_status and selected_status.status_type == "Падеж" and act_number:
             prefix = f"Номер акта: {act_number}"
             existing_note = validated_data.get("note")

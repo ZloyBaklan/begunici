@@ -870,15 +870,15 @@ class Ram(AnimalBase):
 
     def is_older_than_two_years(self):
         """
-        Проверка, что барану 2 года и больше.
+        Проверка, что барану 1 год и больше.
         """
         if self.birth_date:
             delta = relativedelta(timezone.now().date(), self.birth_date)
-            return delta.years >= 2
+            return delta.years >= 1
 
         if self.age is not None:
             try:
-                return float(self.age) >= 24
+                return float(self.age) >= 12
             except (TypeError, ValueError):
                 return False
 
@@ -889,7 +889,7 @@ class Ram(AnimalBase):
         Преобразование барана в производителя с переносом всех данных.
         """
         if not self.is_older_than_two_years():
-            raise ValueError("Преобразование доступно только для баранов старше 2 лет")
+            raise ValueError("Преобразование доступно только для баранов старше 1 года")
 
         plemstatus = (plemstatus or "").strip()
         working_condition = (working_condition or "").strip()
@@ -964,47 +964,42 @@ class Ewe(AnimalBase):
 
     # Метод для преобразования Ярки в Овцу после случки
     def to_sheep(self):
-        # Создаем новую овцу с ВСЕМИ данными из AnimalBase
-        sheep = Sheep.objects.create(
-            tag=self.tag,
-            animal_status=self.animal_status,
-            birth_date=self.birth_date,
-            age=self.age,  # ДОБАВЛЕНО: возраст
-            note=self.note,
-            rshn_tag=self.rshn_tag,  # ДОБАВЛЕНО: бирка РСХН
-            date_otbivka=self.date_otbivka,  # ДОБАВЛЕНО: дата отбивки
-            is_archived=self.is_archived,  # ДОБАВЛЕНО: статус архива
-            carcass_weight=self.carcass_weight,  # ДОБАВЛЕНО: вес туши
-            mother=self.mother,
-            father=self.father,
-            place=self.place,
-        )
-        
-        # Переносим ManyToMany связи
-        from begunici.app_types.veterinary.vet_models import WeightRecord, Veterinary
-        
-        # Переносим записи о весе через ManyToMany связь
-        for weight_record in self.weight_records.all():
-            sheep.weight_records.add(weight_record)
-        
-        # Переносим ветеринарную историю через ManyToMany связь
-        for vet_record in self.veterinary_history.all():
-            sheep.veterinary_history.add(vet_record)
-        
-        # ВАЖНО: Переносим ВСЕ окоты ярки на новую овцу
-        from begunici.app_types.animals.models import Lambing
-        all_ewe_lambings = Lambing.objects.filter(ewe=self)
-        for lambing in all_ewe_lambings:
-            lambing.sheep = sheep
-            lambing.ewe = None
-            lambing.save()
+        with transaction.atomic():
+            # Создаем новую овцематку с данными из AnimalBase.
+            sheep = Sheep.objects.create(
+                tag=self.tag,
+                animal_status=self.animal_status,
+                birth_date=self.birth_date,
+                age=self.age,
+                note=self.note,
+                rshn_tag=self.rshn_tag,
+                date_otbivka=self.date_otbivka,
+                dorper_percentage=self.dorper_percentage,
+                is_manual_dorper=self.is_manual_dorper,
+                is_archived=self.is_archived,
+                carcass_weight=self.carcass_weight,
+                mother=self.mother,
+                father=self.father,
+                place=self.place,
+            )
 
-        for group in list(self.lambing_groups.all()):
-            group.sheep.add(sheep)
-            group.ewes.remove(self)
-        
-        # Удаляем ярку
-        self.delete()
+            # Переносим ManyToMany связи.
+            sheep.weight_records.set(self.weight_records.all())
+            sheep.veterinary_history.set(self.veterinary_history.all())
+
+            sheep.tag.animal_type = "Sheep"
+            sheep.tag.save(update_fields=["animal_type"])
+
+            # Переносим все окоты ярки на новую овцематку.
+            Lambing.objects.filter(ewe=self).update(sheep=sheep, ewe=None)
+
+            for group in list(self.lambing_groups.all()):
+                group.sheep.add(sheep)
+                group.ewes.remove(self)
+
+            # Удаляем ярку.
+            self.delete()
+
         return sheep
 
 

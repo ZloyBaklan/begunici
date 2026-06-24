@@ -261,11 +261,6 @@
                                     <label for="place" class="form-label">Овчарня:</label>
                                     <select id="place" class="form-select"></select>
                                 </div>
-                                <div class="col-12">
-                                    <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
-                                    <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Введите процент кровности по основной породе">
-                                    <div class="form-text">Оставьте пустым для автоматического расчета на основе родителей.</div>
-                                </div>
                                 {% if animal_type == 'maker' %}
                                 <div class="col-md-6">
                                     <label for="plemstatus" class="form-label">Племенной статус:</label>
@@ -296,9 +291,30 @@
                                 </div>
                                 <div class="col-12">
                                     <button type="button" onclick="saveMakerDetails()" class="btn btn-primary">Сохранить</button>
+                                    {% if not animal.is_archived %}
+                                    <button type="button" onclick="openArchiveModal()" class="btn btn-outline-warning ms-2">Архивировать</button>
+                                    {% endif %}
                                 </div>
                             </div>
                         </form>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Кровность по основной породе</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
+                                <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Оставьте пустым для автоматического расчета">
+                                <div class="form-text">Если поле пустое, кровность будет рассчитываться автоматически на основе родителей.</div>
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="saveDorperPercentage()" class="btn btn-primary">Сохранить кровность</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -369,8 +385,8 @@
                                         <input type="text" id="lambing-father-tag" placeholder="Введите бирку отца" required class="form-control">
                                     </div>
                                     <div class="col-12">
-                                        <label for="lambing-note" class="form-label">Примечание (необязательно):</label>
-                                        <textarea id="lambing-note" rows="2" placeholder="Дополнительная информация" class="form-control"></textarea>
+                                        <label for="group-lambing-note" class="form-label">Примечание (необязательно):</label>
+                                        <textarea id="group-lambing-note" rows="2" placeholder="Дополнительная информация" class="form-control"></textarea>
                                     </div>
                                     <div class="col-12">
                                         <button type="button" onclick="createLambing()" class="btn btn-success me-2">Поставить в группу</button>
@@ -506,8 +522,8 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Примечание к окоту:</label>
-                        <textarea id="lambing-note" class="form-control" rows="2"></textarea>
+                        <label for="completion-lambing-note" class="form-label">Примечание к окоту:</label>
+                        <textarea id="completion-lambing-note" class="form-control" rows="2"></textarea>
                     </div>
                     
                     <div class="mb-3">
@@ -563,7 +579,7 @@
                     <textarea id="group-removal-note" class="form-control" rows="2"></textarea>
                 </div>
                 <div class="alert alert-info mb-0">
-                    После снятия барана матерям будет установлен статус «Суягная», отцу — «Ремонт», а для каждой матери появится отдельная случка.
+                    После снятия барана статус матерей - "Суягная", статус отца — "Ремонт".
                 </div>
             </div>
             <div class="modal-footer">
@@ -655,6 +671,8 @@
 }
 </style>
 
+{% include 'includes/archive_modal.html' %}
+
+<script src="{% static 'js/archive_act_modal.js' %}"></script>
 <script src="{% static 'js/animal_detail.js' %}"></script>
 {% endblock %}
-

@@ -1,4 +1,4 @@
-import { apiRequest, formatDateToOutput, formatDateToInput } from "./utils.js";
+import { apiRequest } from "./utils.js";
 
 // Переменные для пагинации
 let currentPage = 1;
@@ -61,7 +61,6 @@ window.cancelEdit = cancelEdit; // Делаем функцию глобальн�
 async function createPlace() {
     const barnNumber = document.getElementById('place-sheepfold-barn').value;
     const sectionNumber = document.getElementById('place-sheepfold-section').value;
-    const dateOfTransfer = document.getElementById('place-date').value;
 
     if (!barnNumber || !sectionNumber) {
         alert('Пожалуйста, введите номер овчарни и отсека');
@@ -72,8 +71,7 @@ async function createPlace() {
     const placeSheepfold = `Овчарня ${barnNumber} Отсек ${sectionNumber}`;
 
     const data = {
-        sheepfold: placeSheepfold,
-        date_of_transfer: dateOfTransfer || null
+        sheepfold: placeSheepfold
     };
 
     console.log('Creating place with data:', data);
@@ -85,7 +83,6 @@ async function createPlace() {
         // Очищаем поля формы
         document.getElementById('place-sheepfold-barn').value = '';
         document.getElementById('place-sheepfold-section').value = '';
-        document.getElementById('place-date').value = '';
         
         fetchPlaces(currentPage);  // Обновляем текущую страницу
         resetButton();  // Сбрасываем состояние кнопки на "Создать"
@@ -178,7 +175,6 @@ async function fetchPlaces(page = 1, searchBarn = '', searchSection = '') {
                 row.innerHTML = `
                     <td>${recordNumber}</td>
                     <td>${place.sheepfold}</td>
-                    <td>${formatDateToOutput(place.date_of_transfer) || 'Нет даты'}</td>
                     <td>${actionsHtml}</td>
                 `;
                 
@@ -193,7 +189,7 @@ async function fetchPlaces(page = 1, searchBarn = '', searchSection = '') {
                 placeTable.appendChild(row);
             });
         } else {
-            placeTable.innerHTML = '<tr><td colspan="4" class="text-center">Овчарни не найдены</td></tr>';
+            placeTable.innerHTML = '<tr><td colspan="3" class="text-center">Овчарни не найдены</td></tr>';
         }
         
         // Обновляем пагинацию для отфильтрованных данных
@@ -202,7 +198,7 @@ async function fetchPlaces(page = 1, searchBarn = '', searchSection = '') {
     } catch (error) {
         console.error('Ошибка при загрузке овчарен:', error);
         const placeTable = document.getElementById('place-list');
-        placeTable.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
+        placeTable.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
     }
 }
 
@@ -238,8 +234,6 @@ async function editPlace(placeId) {
             alert('Неизвестный формат названия овчарни. Введите номера заново.');
         }
         
-        document.getElementById('place-date').value = formatDateToInput(place.date_of_transfer);
-
         const createPlaceButton = document.getElementById('add-place-button');
         createPlaceButton.innerText = 'Сохранить изменения';
         createPlaceButton.setAttribute('data-id', placeId);
@@ -256,7 +250,6 @@ async function editPlace(placeId) {
 async function updatePlace(placeId) {
     const barnNumber = document.getElementById('place-sheepfold-barn').value;
     const sectionNumber = document.getElementById('place-sheepfold-section').value;
-    const dateOfTransfer = document.getElementById('place-date').value;
 
     if (!barnNumber || !sectionNumber) {
         alert('Пожалуйста, введите номер овчарни и отсека');
@@ -267,8 +260,7 @@ async function updatePlace(placeId) {
     const placeSheepfold = `Овчарня ${barnNumber} Отсек ${sectionNumber}`;
 
     const data = {
-        sheepfold: placeSheepfold,
-        date_of_transfer: dateOfTransfer ? dateOfTransfer : null
+        sheepfold: placeSheepfold
     };
 
     try {
@@ -401,7 +393,6 @@ function resetButton() {
     // Очищаем поля формы
     document.getElementById('place-sheepfold-barn').value = '';
     document.getElementById('place-sheepfold-section').value = '';
-    document.getElementById('place-date').value = '';
 }
 
 // Функция для отображения сообщений

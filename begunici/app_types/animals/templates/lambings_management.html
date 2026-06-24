@@ -6,6 +6,28 @@
 <div class="container mt-4">
     <h1>Управление окотами</h1>
 
+    <div class="lambing-management-selector barns-selector">
+        <div class="barns-list lambing-management-buttons">
+            <button
+                type="button"
+                id="groups-management-button"
+                class="barn-selector-card lambing-management-card active"
+                onclick="switchLambingManagementView('groups')"
+            >
+                Управление группами
+            </button>
+            <button
+                type="button"
+                id="lambings-management-button"
+                class="barn-selector-card lambing-management-card"
+                onclick="switchLambingManagementView('lambings')"
+            >
+                Управление случками
+            </button>
+        </div>
+    </div>
+
+    <div id="groups-management-section" class="lambing-management-section">
     <div class="row">
         <!-- Левая колонка - постановка в группу -->
         <div class="col-md-4">
@@ -41,8 +63,8 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label for="lambing-note" class="form-label">Примечание (необязательно)</label>
-                            <textarea class="form-control" id="lambing-note" rows="3"></textarea>
+                            <label for="group-lambing-note" class="form-label">Примечание (необязательно)</label>
+                            <textarea class="form-control" id="group-lambing-note" rows="3"></textarea>
                         </div>
                         
                         <!-- Блок для отображения результата автоматической проверки родства -->
@@ -104,7 +126,7 @@
             </div>
         </div>
 
-        <!-- Правая колонка - группы и активные случки -->
+        <!-- Правая колонка - группы -->
         <div class="col-md-8">
             <div class="card mb-3">
                 <div class="card-header">
@@ -165,8 +187,12 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+    </div>
 
-            <div class="card">
+    <div id="lambings-management-section" class="lambing-management-section" style="display: none;">
+        <div class="card">
                 <div class="card-header">
                     <h5>Список случек</h5>
                     <!-- Фильтр по диапазону дат -->
@@ -247,7 +273,6 @@
                     </div>
                 </div>
             </div>
-        </div>
     </div>
 </div>
 
@@ -343,8 +368,8 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Примечание к окоту:</label>
-                        <textarea id="lambing-note" class="form-control" rows="2"></textarea>
+                        <label for="completion-lambing-note" class="form-label">Примечание к окоту:</label>
+                        <textarea id="completion-lambing-note" class="form-control" rows="2"></textarea>
                     </div>
                     
                     <div class="mb-3">
@@ -537,6 +562,44 @@
 .lambing-filter-actions .btn {
     margin-right: 0 !important;
     white-space: nowrap;
+}
+
+.lambing-management-selector {
+    margin: 16px 0 20px;
+}
+
+.lambing-management-buttons {
+    justify-content: flex-start;
+    gap: 12px;
+    margin-bottom: 0;
+    padding: 0;
+}
+
+.lambing-management-card {
+    color: #0d1b2a;
+    font: inherit;
+    min-width: 190px;
+    max-width: none;
+    padding: 10px 18px;
+    font-weight: 600;
+}
+
+.lambing-management-card.active {
+    background-color: #007bff;
+    color: #fff;
+    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+@media (max-width: 767.98px) {
+    .lambing-management-buttons {
+        gap: 8px;
+    }
+
+    .lambing-management-card {
+        width: 100%;
+        max-width: none;
+    }
 }
 
 .form-group label {

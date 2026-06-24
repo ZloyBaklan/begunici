@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone  # Не забудь импортировать timezone
+from django.db import transaction
 
 from .vet_models import (
     Veterinary,
@@ -128,23 +129,16 @@ class PlaceSerializer(serializers.ModelSerializer):
         # Создаем подробный лог создания
         from begunici.app_types.animals.models_user_log import UserActionLog
         from django.contrib.auth.models import AnonymousUser
-        import pytz
         
         # Получаем текущий запрос из контекста (если доступен)
         request = self.context.get('request')
         if request and not isinstance(request.user, AnonymousUser):
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            
-            # Преобразуем дату в московское время
-            date_moscow = place.date_of_transfer.astimezone(moscow_tz)
-            date_str = date_moscow.strftime('%d.%m.%Y')
-            
             UserActionLog.objects.create(
                 user=request.user,
                 action_type="Создание овчарни",
                 object_type="Овчарня",
                 object_id=place.sheepfold,  # Используем название овчарни как ID
-                description=f"Создана овчарня '{place.sheepfold}', дата: {date_str}"
+                description=f"Создана овчарня '{place.sheepfold}'"
             )
         
         return place
@@ -159,31 +153,8 @@ class PlaceSerializer(serializers.ModelSerializer):
         if old_sheepfold != new_sheepfold:
             changes.append(f"Название: {old_sheepfold} → {new_sheepfold}")
         
-        old_date = instance.date_of_transfer
-        new_date = validated_data.get("date_of_transfer", None)
-        if new_date and old_date != new_date:
-            import pytz
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            
-            # Преобразуем даты в московское время
-            old_date_moscow = old_date.astimezone(moscow_tz)
-            new_date_moscow = new_date.astimezone(moscow_tz)
-            
-            old_date_str = old_date_moscow.strftime('%d.%m.%Y')
-            new_date_str = new_date_moscow.strftime('%d.%m.%Y')
-            changes.append(f"Дата перевода: {old_date_str} → {new_date_str}")
-        elif new_date is None:
-            # Если дата не указана, обновляем на текущую
-            new_date = timezone.now()
-            import pytz
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            new_date_moscow = new_date.astimezone(moscow_tz)
-            new_date_str = new_date_moscow.strftime('%d.%m.%Y')
-            changes.append(f"Дата перевода обновлена на текущую: {new_date_str}")
-        
         # Обновляем поля
         instance.sheepfold = new_sheepfold
-        instance.date_of_transfer = new_date
         instance.save()
         
         # Создаем подробный лог изменений
@@ -207,11 +178,6 @@ class PlaceSerializer(serializers.ModelSerializer):
                 )
         
         return instance
-
-    def validate_date_of_transfer(self, value):
-        if value and value > timezone.now():
-            raise serializers.ValidationError("Дата и время перемещения не может быть в будущем.")
-        return value
 
     def validate_sheepfold(self, value):
         """Проверяем, что овчарня с таким названием уникальна."""
@@ -482,10 +448,31 @@ class WeightRecordSerializer(serializers.ModelSerializer):
         fields = ['id', 'tag', 'weight', 'weight_date', 'tag_write']
 
     def create(self, validated_data):
-        # Создаем запись о весе
-        weight_record = WeightRecord.objects.create(**validated_data)
+        # Создаем или обновляем запись о весе за выбранную дату.
+        tag = validated_data["tag"]
+        weight_date = validated_data["weight_date"]
+        new_weight = validated_data["weight"]
+
+        with transaction.atomic():
+            same_day_records = (
+                WeightRecord.objects
+                .select_for_update()
+                .filter(tag=tag, weight_date=weight_date)
+                .order_by("-id")
+            )
+            weight_record = same_day_records.first()
+            was_updated = weight_record is not None
+
+            if weight_record:
+                old_weight = weight_record.weight
+                weight_record.weight = new_weight
+                weight_record.save(update_fields=["weight"])
+                same_day_records.exclude(pk=weight_record.pk).delete()
+            else:
+                old_weight = None
+                weight_record = WeightRecord.objects.create(**validated_data)
         
-        # Создаем подробный лог создания
+        # Создаем подробный лог создания или обновления.
         from begunici.app_types.animals.models_user_log import UserActionLog
         from django.contrib.auth.models import AnonymousUser
         import pytz
@@ -497,13 +484,25 @@ class WeightRecordSerializer(serializers.ModelSerializer):
             
             # Преобразуем дату в московское время
             date_str = weight_record.weight_date.strftime('%d.%m.%Y')
+            if was_updated:
+                action_type = "Обновление записи о весе"
+                description = (
+                    f"Обновлен вес {old_weight} кг -> {weight_record.weight} кг; "
+                    f"Дата: {date_str}; Бирка: {weight_record.tag.tag_number}"
+                )
+            else:
+                action_type = "Добавление записи о весе"
+                description = (
+                    f"Добавлен вес {weight_record.weight} кг; "
+                    f"Дата: {date_str}; Бирка: {weight_record.tag.tag_number}"
+                )
             
             UserActionLog.objects.create(
                 user=request.user,
-                action_type="Добавление записи о весе",
+                action_type=action_type,
                 object_type="Запись о весе",
                 object_id=weight_record.tag.tag_number,
-                description=f"Добавлен вес {weight_record.weight} кг; Дата: {date_str}; Бирка: {weight_record.tag.tag_number}"
+                description=description
             )
         
         return weight_record

@@ -167,13 +167,25 @@ async function loadSelectOptions(selectId, apiEndpoint, selectedId = null) {
             return;
         }
 
+        let selectedOptionFound = false;
         items.forEach(item => {
             const option = document.createElement('option');
             option.value = item.id;
             option.textContent = item.status_type || item.sheepfold;
-            if (item.id === selectedId) option.selected = true;
+            if (item.id === selectedId) {
+                option.selected = true;
+                selectedOptionFound = true;
+            }
             select.appendChild(option);
         });
+
+        if (selectId === 'animal_status' && selectedId && !selectedOptionFound) {
+            const keepCurrentOption = document.createElement('option');
+            keepCurrentOption.value = '';
+            keepCurrentOption.textContent = 'Оставить текущий статус';
+            keepCurrentOption.selected = true;
+            select.insertBefore(keepCurrentOption, select.firstChild);
+        }
     } catch (error) {
         console.error(`Ошибка загрузки ${selectId}:`, error);
     }
@@ -258,7 +270,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
 
         console.log('Загружаем дополнительные данные (статусы, места, вес, ветобработки)...');
         await Promise.all([
-            loadSelectOptions('animal_status', '/veterinary/api/status/', animal.animal_status?.id),
+            loadSelectOptions('animal_status', '/veterinary/api/status/?exclude_archive=1', animal.animal_status?.id),
             loadSelectOptions('place', '/veterinary/api/place/', animal.place?.id),
             loadLastWeight(animalType, tagNumber),
             loadCurrentVetTreatments()
@@ -417,19 +429,18 @@ async function saveAnimalDetails() {
 
     const animalStatusValue = document.getElementById('animal_status').value;
     const placeValue = document.getElementById('place').value;
-    const dorperValue = document.getElementById('dorper_percentage').value;
-    
     const data = {
-        tag_number: document.getElementById('tag').value,
-        animal_status_id: animalStatusValue ? parseInt(animalStatusValue) : null,
+        tag_number: document.getElementById('tag').value.trim(),
         birth_date: document.getElementById('birth_date').value,
         note: document.getElementById('note').value,
         place_id: placeValue ? parseInt(placeValue) : null,
         rshn_tag: document.getElementById('rshn_tag').value || null,
         date_otbivka: document.getElementById('date_otbivka').value || null,
-        dorper_percentage: dorperValue ? parseFloat(dorperValue) : null,
-        is_manual_dorper: dorperValue ? true : false,
     };
+
+    if (animalStatusValue) {
+        data.animal_status_id = parseInt(animalStatusValue);
+    }
 
     // Добавляем специфичные поля для Maker
     if (animalType === 'maker') {
@@ -439,7 +450,18 @@ async function saveAnimalDetails() {
     }
 
     try {
-        await apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', data);
+        const updatedAnimal = await apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', data);
+        const updatedTagNumber = String(
+            updatedAnimal?.tag?.tag_number
+            || updatedAnimal?.tag_number
+            || data.tag_number
+            || tagNumber
+        ).trim();
+
+        if (updatedTagNumber && updatedTagNumber !== tagNumber) {
+            window.location.href = `/animals/${animalType}/${encodeURIComponent(updatedTagNumber)}/info/`;
+            return;
+        }
         alert('Данные успешно сохранены');
         // Перезагружаем страницу для отображения обновлённых данных
         location.reload();
@@ -450,6 +472,189 @@ async function saveAnimalDetails() {
 }
 
 // Создаём алиас для обратной совместимости
+function getCurrentAnimalForArchive() {
+    const animalDetail = document.getElementById('animal-detail');
+    if (!animalDetail) return null;
+
+    const animalType = animalDetail.dataset.animalType;
+    const tagNumber = animalDetail.dataset.tagNumber;
+    if (!animalType || !tagNumber) return null;
+
+    return { animalType, tagNumber };
+}
+
+function getTodayInputValue() {
+    const now = new Date();
+    const offset = now.getTimezoneOffset();
+    return new Date(now.getTime() - offset * 60000).toISOString().split('T')[0];
+}
+
+function openArchiveModal() {
+    const animal = getCurrentAnimalForArchive();
+    if (!animal) {
+        alert('Не удалось определить животное для архивирования.');
+        return;
+    }
+
+    const modal = document.getElementById('archive-modal');
+    if (!modal) {
+        alert('Модальное окно архивирования не найдено.');
+        return;
+    }
+
+    const archiveDateInput = document.getElementById('archive-status-date');
+    if (archiveDateInput) archiveDateInput.value = getTodayInputValue();
+
+    const carcassWeightInput = document.getElementById('archive-carcass-weight');
+    if (carcassWeightInput) carcassWeightInput.value = '';
+
+    window.archiveActModal?.reset();
+    window.archiveActModal?.setSelectedAnimals([animal]);
+
+    modal.style.display = 'block';
+    loadArchiveStatuses();
+}
+
+function closeArchiveModal() {
+    const modal = document.getElementById('archive-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function toggleArchiveActNumberField() {
+    window.archiveActModal?.toggle();
+}
+
+async function loadArchiveStatuses() {
+    try {
+        const response = await apiRequest('/veterinary/api/status/?page_size=100', 'GET');
+        const statuses = response.results || response;
+        const archiveStatuses = statuses.filter((status) =>
+            ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type)
+        );
+
+        const statusSelect = document.getElementById('archive-status-select');
+        if (!statusSelect) return;
+
+        statusSelect.innerHTML = '';
+
+        if (archiveStatuses.length === 0) {
+            alert('Нет статусов для переноса в архив. Создайте необходимые статусы.');
+            closeArchiveModal();
+            return;
+        }
+
+        archiveStatuses.forEach((status) => {
+            const option = document.createElement('option');
+            option.value = status.id;
+            option.textContent = status.status_type;
+            statusSelect.appendChild(option);
+        });
+
+        statusSelect.onchange = toggleArchiveActNumberField;
+        toggleArchiveActNumberField();
+    } catch (error) {
+        console.error('Ошибка загрузки архивных статусов:', error);
+        alert('Ошибка загрузки архивных статусов.');
+    }
+}
+
+async function applyArchiveStatus() {
+    const animal = getCurrentAnimalForArchive();
+    if (!animal) {
+        alert('Не удалось определить животное для архивирования.');
+        return;
+    }
+
+    const statusId = document.getElementById('archive-status-select')?.value;
+    const statusDate = document.getElementById('archive-status-date')?.value;
+    const carcassWeightRaw = document.getElementById('archive-carcass-weight')?.value?.trim();
+
+    if (!statusId) {
+        alert('Выберите статус.');
+        return;
+    }
+
+    if (!statusDate) {
+        alert('Укажите дату присвоения статуса.');
+        return;
+    }
+
+    let carcassWeight = null;
+    if (carcassWeightRaw) {
+        carcassWeight = parseFloat(carcassWeightRaw);
+        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
+            alert('Вес туши должен быть числом не меньше 0.');
+            return;
+        }
+    }
+
+    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
+
+    try {
+        await apiRequest(`/animals/${animal.animalType}/${animal.tagNumber}/`, 'PATCH', {
+            animal_status_id: parseInt(statusId),
+            status_date: statusDate,
+            carcass_weight: carcassWeight,
+            ...archiveActPayload,
+        });
+
+        if (archiveActPayload.archive_act_download) {
+            window.archiveActModal?.downloadArchiveAct(animal.animalType, animal.tagNumber);
+        }
+
+        closeArchiveModal();
+        alert('Животное успешно перенесено в архив.');
+        window.location.href = '/animals/main_archive/';
+    } catch (error) {
+        console.error('Ошибка переноса в архив:', error);
+        alert('Ошибка при переносе животного в архив: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function saveDorperPercentage() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+    const dorperInput = document.getElementById('dorper_percentage');
+    const dorperValue = dorperInput?.value?.trim() || '';
+
+    let data;
+    if (dorperValue) {
+        const parsedDorper = parseFloat(dorperValue);
+        if (Number.isNaN(parsedDorper) || parsedDorper < 0 || parsedDorper > 100) {
+            alert('Кровность по основной породе должна быть числом от 0 до 100.');
+            return;
+        }
+
+        data = {
+            dorper_percentage: parsedDorper,
+            is_manual_dorper: true,
+        };
+    } else {
+        data = {
+            dorper_percentage: null,
+            is_manual_dorper: false,
+        };
+    }
+
+    try {
+        const updatedAnimal = await apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', data);
+        if (dorperInput) {
+            dorperInput.value = dorperValue ? (updatedAnimal?.dorper_percentage || '') : '';
+        }
+
+        const dorperDisplay = document.getElementById('dorper-display');
+        if (dorperDisplay) {
+            dorperDisplay.textContent = updatedAnimal?.dorper_display || '-';
+        }
+
+        alert('Кровность успешно сохранена');
+    } catch (error) {
+        console.error('Ошибка сохранения кровности:', error);
+        alert('Ошибка при сохранении кровности: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
 window.saveMakerDetails = saveAnimalDetails;
 
 
@@ -515,6 +720,8 @@ async function addWeightRecord() {
         
         await apiRequest('/veterinary/api/weight-record/', 'POST', data);
         alert('Вес добавлен!');
+        document.getElementById('edit-weight-value').value = '';
+        document.getElementById('edit-weight-date').value = '';
         await loadLastWeight(animalType, tagNumber);
     } catch (error) {
         console.error('[v3] Ошибка при добавлении веса:', error);
@@ -1686,7 +1893,7 @@ function hideCreateLambingForm() {
         // Очищаем форму
         document.getElementById('lambing-start-date').value = '';
         document.getElementById('lambing-father-tag').value = '';
-        document.getElementById('lambing-note').value = '';
+        document.getElementById('group-lambing-note').value = '';
     }
 }
 
@@ -1698,7 +1905,7 @@ async function createLambing() {
     
     const startDate = document.getElementById('lambing-start-date').value;
     const fatherTag = document.getElementById('lambing-father-tag').value.trim();
-    const note = document.getElementById('lambing-note').value.trim();
+    const note = document.getElementById('group-lambing-note').value.trim();
     
     // Валидация
     if (!startDate) {
@@ -1786,6 +1993,10 @@ async function completeLambing(lambingId) {
     if (deadLambsCountInput) {
         deadLambsCountInput.value = '0';
     }
+    const completionNoteInput = document.getElementById('completion-lambing-note');
+    if (completionNoteInput) {
+        completionNoteInput.value = '';
+    }
     const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
     if (earlyFailureCheckbox) {
         earlyFailureCheckbox.checked = false;
@@ -1793,7 +2004,7 @@ async function completeLambing(lambingId) {
     
     // Загружаем список статусов
     try {
-        const response = await fetch('/animals/api/all-statuses/');
+        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
         const data = await response.json();
         
         // Обрабатываем пагинированный ответ
@@ -2000,7 +2211,7 @@ function createLambForm(index) {
 // Загрузка статусов для формы ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const response = await apiRequest('/veterinary/api/status/?page_size=100');
+        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         
@@ -2115,6 +2326,10 @@ async function completeFatherLambing(lambingId) {
     if (deadLambsCountInput) {
         deadLambsCountInput.value = '0';
     }
+    const completionNoteInput = document.getElementById('completion-lambing-note');
+    if (completionNoteInput) {
+        completionNoteInput.value = '';
+    }
     const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
     if (earlyFailureCheckbox) {
         earlyFailureCheckbox.checked = false;
@@ -2126,7 +2341,7 @@ async function completeFatherLambing(lambingId) {
     
     // Загружаем список статусов (но не будем менять статус матери, если её нет в БД)
     try {
-        const response = await fetch('/animals/api/all-statuses/');
+        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
         const data = await response.json();
         
         const statuses = data.results || data;
@@ -2181,7 +2396,7 @@ async function completeLambingWithChildren() {
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
-    const lambingNote = document.getElementById('lambing-note').value;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox') ? document.getElementById('create-lambs-checkbox').checked : false;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
     
@@ -2341,7 +2556,7 @@ async function confirmRemoveFather() {
 async function completeLambingEarlyFailure() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
-    const lambingNote = document.getElementById('lambing-note').value;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
 
     if (!lambingId) {
@@ -2396,4 +2611,8 @@ window.showRemoveFatherModal = showRemoveFatherModal;
 window.confirmRemoveFather = confirmRemoveFather;
 window.openAnimalExportModal = openAnimalExportModal;
 window.exportAnimalToExcel = exportAnimalToExcel;
+window.openArchiveModal = openArchiveModal;
+window.closeArchiveModal = closeArchiveModal;
+window.applyArchiveStatus = applyArchiveStatus;
+window.toggleArchiveActNumberField = toggleArchiveActNumberField;
 

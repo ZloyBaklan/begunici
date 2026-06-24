@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import viewsets, status, filters
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
@@ -33,6 +35,13 @@ from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+
+
+def place_natural_sort_key(place):
+    numbers = [int(value) for value in re.findall(r"\d+", place.sheepfold or "")]
+    barn_number = numbers[0] if len(numbers) >= 1 else 10**9
+    section_number = numbers[1] if len(numbers) >= 2 else 10**9
+    return (barn_number, section_number, (place.sheepfold or "").lower())
 
 
 def places_map(request):
@@ -371,6 +380,20 @@ class StatusViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["status_type"]
 
+    archive_statuses = {
+        "Падеж",
+        "Вынужденная прирезка",
+        "Реализация в живом весе",
+        "Продажа на племя",
+    }
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        exclude_archive = str(self.request.query_params.get("exclude_archive", "")).lower()
+        if exclude_archive in {"1", "true", "yes"}:
+            queryset = queryset.exclude(status_type__in=self.archive_statuses)
+        return queryset
+
 
 class PlaceViewSet(viewsets.ModelViewSet):
     queryset = Place.objects.all().order_by("-id")  # Сортировка по ID (новые вначале)
@@ -380,10 +403,22 @@ class PlaceViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["sheepfold"]
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        sorted_places = sorted(queryset, key=place_natural_sort_key)
+
+        page = self.paginate_queryset(sorted_places)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(sorted_places, many=True)
+        return Response(serializer.data)
+
 
 class PlaceMovementViewSet(viewsets.ModelViewSet):
     queryset = PlaceMovement.objects.select_related("new_place", "old_place").order_by(
-        "-new_place__date_of_transfer"
+        "-created_at"
     )
     serializer_class = PlaceMovementSerializer
     permission_classes = [AllowAny]
@@ -466,7 +501,7 @@ def get_all_places(request):
     """
     Возвращает все места без пагинации для select элементов
     """
-    places = Place.objects.all().order_by('sheepfold')
+    places = sorted(Place.objects.all(), key=place_natural_sort_key)
     serializer = PlaceSerializer(places, many=True)
     return Response(serializer.data)
 

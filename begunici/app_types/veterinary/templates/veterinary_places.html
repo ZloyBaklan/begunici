@@ -39,11 +39,6 @@
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="place-date" class="form-label">Дата перевода:</label>
-                            <input type="date" id="place-date" name="place-date" class="form-control">
-                        </div>
-
                         <div class="d-grid gap-2">
                             <button type="button" id="add-place-button" class="btn btn-primary" onclick="handleCreateOrUpdatePlace()">
                                 Создать овчарню
@@ -92,9 +87,8 @@
                             <thead class="table-light">
                                 <tr>
                                     <th width="10%">№</th>
-                                    <th width="30%">Овчарня-Отсек</th>
-                                    <th width="30%">Дата перевода</th>
-                                    <th width="30%">Действия</th>
+                                    <th width="50%">Овчарня-Отсек</th>
+                                    <th width="40%">Действия</th>
                                 </tr>
                             </thead>
                             <tbody id="place-list">

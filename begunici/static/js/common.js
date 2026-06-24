@@ -148,7 +148,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 async function loadStatuses() {
     try {
-        const response = await apiRequest("/veterinary/api/status/?page_size=100");
+        const response = await apiRequest("/veterinary/api/status/?exclude_archive=1&page_size=100");
         const statuses = response.results || response;
         const select = document.getElementById("animal_status");
         if (!select) return;

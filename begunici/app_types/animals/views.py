@@ -4058,20 +4058,39 @@ def _attach_live_lamb_links(lambings, serialized_rows):
 
 
 def _build_first_weight_map(children):
-    tag_ids = {child.tag_id for child in children if child.tag_id}
-    if not tag_ids:
+    weight_windows = {}
+    for child in children:
+        if not child.tag_id or not child.birth_date:
+            continue
+        weight_windows[child.tag_id] = (
+            child.birth_date,
+            child.birth_date + relativedelta(months=1),
+        )
+
+    if not weight_windows:
         return {}
 
+    first_date = min(window[0] for window in weight_windows.values())
+    last_date = max(window[1] for window in weight_windows.values())
+
     records = (
-        WeightRecord.objects.filter(tag_id__in=tag_ids)
+        WeightRecord.objects.filter(
+            tag_id__in=weight_windows.keys(),
+            weight_date__gte=first_date,
+            weight_date__lte=last_date,
+        )
         .order_by("tag_id", "weight_date", "id")
-        .values("tag_id", "weight")
+        .values("tag_id", "weight", "weight_date")
     )
 
     weights_map = {}
     for record in records:
         tag_id = record["tag_id"]
-        if tag_id not in weights_map:
+        start_date, end_date = weight_windows[tag_id]
+        if (
+            tag_id not in weights_map
+            and start_date <= record["weight_date"] <= end_date
+        ):
             weights_map[tag_id] = record["weight"]
 
     return weights_map
@@ -4322,7 +4341,7 @@ def journal_progeny(request):
             "Родилось всего",
             "Бирки ярок",
             "Бирки баранчиков",
-            "Мертвые",
+            "Мертворожденные",
         ]
         return _build_excel_response(
             filename_prefix="journal_progeny",
@@ -6319,8 +6338,8 @@ def archive_act_preview(request):
             errors.append("Некорректный элемент списка животных")
             continue
 
-        animal_type = str(item.get("animal_type") or item.get("animalType") or "").strip()
-        tag_number = str(item.get("tag_number") or item.get("tagNumber") or "").strip()
+        animal_type = (item.get("animal_type") or "").strip()
+        tag_number = (item.get("tag_number") or "").strip()
 
         if not animal_type or not tag_number:
             errors.append("Не передан тип животного или бирка")

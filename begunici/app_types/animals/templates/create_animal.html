@@ -244,7 +244,7 @@ function testAPI() {
 }
 
 function loadStatuses() {
-    fetch('/veterinary/api/status/')
+    fetch('/veterinary/api/status/?exclude_archive=1&page_size=100')
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);

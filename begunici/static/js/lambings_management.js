@@ -17,9 +17,52 @@ let groupDateFrom = '';
 let groupDateTo = '';
 let groupMotherTagFilter = '';
 let groupFatherTagFilter = '';
+const managementViewStorageKey = 'lambingsManagementView';
+
+function getSavedManagementView() {
+    try {
+        return localStorage.getItem(managementViewStorageKey) || 'groups';
+    } catch (error) {
+        return 'groups';
+    }
+}
+
+function saveManagementView(view) {
+    try {
+        localStorage.setItem(managementViewStorageKey, view);
+    } catch (error) {
+        // Если localStorage недоступен, переключение все равно должно работать.
+    }
+}
+
+function switchLambingManagementView(view) {
+    const selectedView = view === 'lambings' ? 'lambings' : 'groups';
+    const groupsSection = document.getElementById('groups-management-section');
+    const lambingsSection = document.getElementById('lambings-management-section');
+    const groupsButton = document.getElementById('groups-management-button');
+    const lambingsButton = document.getElementById('lambings-management-button');
+
+    if (groupsSection) {
+        groupsSection.style.display = selectedView === 'groups' ? 'block' : 'none';
+    }
+    if (lambingsSection) {
+        lambingsSection.style.display = selectedView === 'lambings' ? 'block' : 'none';
+    }
+    if (groupsButton) {
+        groupsButton.classList.toggle('active', selectedView === 'groups');
+        groupsButton.setAttribute('aria-pressed', selectedView === 'groups' ? 'true' : 'false');
+    }
+    if (lambingsButton) {
+        lambingsButton.classList.toggle('active', selectedView === 'lambings');
+        lambingsButton.setAttribute('aria-pressed', selectedView === 'lambings' ? 'true' : 'false');
+    }
+
+    saveManagementView(selectedView);
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM загружен, инициализируем страницу управления окотами');
+    switchLambingManagementView(getSavedManagementView());
     
     // Устанавливаем текущую дату как дату начала окота
     const today = new Date().toISOString().split('T')[0];
@@ -1022,7 +1065,7 @@ function confirmFatherSelection() {
 // Постановка выбранных животных в группу
 async function createMultipleLambings() {
     const placementDate = document.getElementById('lambing-start-date').value;
-    const note = document.getElementById('lambing-note').value.trim();
+    const note = document.getElementById('group-lambing-note').value.trim();
     
     // Валидация
     if (!placementDate) {
@@ -1074,7 +1117,7 @@ async function createMultipleLambings() {
 function resetForm() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('lambing-start-date').value = today;
-    document.getElementById('lambing-note').value = '';
+    document.getElementById('group-lambing-note').value = '';
     
     selectedMothers.clear();
     selectedMothersData.clear();
@@ -1107,6 +1150,10 @@ function showCompleteLambingModal(lambingId) {
     const lambsCountInput = document.getElementById('lambs-count');
     if (lambsCountInput) {
         lambsCountInput.value = '1';
+    }
+    const completionNoteInput = document.getElementById('completion-lambing-note');
+    if (completionNoteInput) {
+        completionNoteInput.value = '';
     }
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     if (createLambsCheckbox) {
@@ -1167,7 +1214,7 @@ function updateCompletionMode() {
 // Загрузка статусов для матери
 async function loadStatusesForMother() {
     try {
-        const response = await fetch('/animals/api/all-statuses/');
+        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
         const statuses = await response.json();
         
         const statusSelect = document.getElementById('new-mother-status');
@@ -1270,7 +1317,7 @@ function createLambForm(index) {
 // Загрузка статусов для ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const response = await apiRequest('/veterinary/api/status/?page_size=100');
+        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         const select = formElement.querySelector('.lamb-status');
@@ -1341,7 +1388,7 @@ async function completeLambingWithChildren() {
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambsCount = parseInt(document.getElementById('lambs-count').value) || 0;
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
-    const lambingNote = document.getElementById('lambing-note').value;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox').checked;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
     
@@ -1430,7 +1477,7 @@ async function completeLambingWithChildren() {
 async function completeLambingEarlyFailure() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
-    const lambingNote = document.getElementById('lambing-note').value;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
     const newMotherStatusId = document.getElementById('new-mother-status').value;
 
     if (!lambingId) {
@@ -1489,6 +1536,7 @@ window.applyGroupFilter = applyGroupFilter;
 window.clearGroupFilter = clearGroupFilter;
 window.exportLambingsToExcel = exportLambingsToExcel;
 window.exportGroupsToExcel = exportGroupsToExcel;
+window.switchLambingManagementView = switchLambingManagementView;
 window.showRemoveFatherModal = showRemoveFatherModal;
 window.confirmRemoveFather = confirmRemoveFather;
 
