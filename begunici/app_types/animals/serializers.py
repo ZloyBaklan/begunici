@@ -142,6 +142,17 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
     def create(self, validated_data):
         tag_data = validated_data.pop('tag')
+        for service_field in (
+            "status_date",
+            "act_number",
+            "archive_act_date",
+            "archive_act_live_weight",
+            "archive_act_fatness",
+            "archive_act_diagnosis",
+            "archive_act_worker_name",
+            "archive_act_download",
+        ):
+            validated_data.pop(service_field, None)
         # tag_data содержит строку номера бирки из поля tag_number
         tag_number = tag_data if isinstance(tag_data, str) else str(tag_data)
 
