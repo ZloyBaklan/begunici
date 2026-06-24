@@ -118,6 +118,27 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             
         return formatted
 
+    @staticmethod
+    def _format_dorper_log_value(value, is_manual):
+        if value is None:
+            return "Автоматически"
+
+        value = Decimal(value)
+        formatted = f"{value.normalize():f}".rstrip("0").rstrip(".")
+        if not formatted:
+            formatted = "0"
+
+        source = "вручную" if is_manual else "автоматически"
+        return f"{formatted}% ({source})"
+
+    @staticmethod
+    def _format_log_value(value):
+        if value in (None, ""):
+            return "Не указано"
+        if hasattr(value, "strftime"):
+            return value.strftime("%d.%m.%Y")
+        return str(value)
+
     def validate_birth_date(self, value):
         if value > timezone.now().date():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
@@ -316,6 +337,22 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             old_place_name = old_place.sheepfold if old_place else 'Нет места'
             new_place_name = validated_data['place'].sheepfold
             changes.append(f"Место: {old_place_name} → {new_place_name}")
+
+        if (
+            "dorper_percentage" in validated_data
+            or "is_manual_dorper" in validated_data
+        ):
+            old_dorper = instance.dorper_percentage
+            old_is_manual = instance.is_manual_dorper
+            new_dorper = validated_data.get("dorper_percentage", old_dorper)
+            new_is_manual = validated_data.get("is_manual_dorper", old_is_manual)
+
+            if old_dorper != new_dorper or old_is_manual != new_is_manual:
+                changes.append(
+                    "Кровность по основной породе: "
+                    f"{self._format_dorper_log_value(old_dorper, old_is_manual)} → "
+                    f"{self._format_dorper_log_value(new_dorper, new_is_manual)}"
+                )
         
         # Проверяем изменение бирки
         new_tag = validated_data.get("tag", None)
@@ -325,9 +362,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         # Проверяем другие важные поля
         field_names = {
             'birth_date': 'Дата рождения',
+            'date_otbivka': 'Дата отбивки',
+            'name': 'Имя',
             'note': 'Примечание',
+            'rshn_tag': 'Бирка РСХН',
             'plemstatus': 'Племенной статус',
             'working_condition': 'Рабочее состояние',
+            'working_condition_date': 'Дата рабочего состояния',
             'carcass_weight': 'Вес туши (кг)',
         }
         
@@ -343,6 +384,40 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     if len(new_str) > 30:
                         new_str = new_str[:30] + '...'
                     changes.append(f"{display_name}: {old_str} → {new_str}")
+
+        if archive_act_fields_submitted:
+            initial_data = getattr(self, "initial_data", {})
+            archive_act_details = []
+            if "act_number" in initial_data:
+                archive_act_details.append(f"Номер акта: {act_number or 'Не указано'}")
+            if "archive_act_date" in initial_data:
+                archive_act_details.append(
+                    f"Дата акта: {self._format_log_value(archive_act_date)}"
+                )
+            if "archive_act_live_weight" in initial_data:
+                archive_act_details.append(
+                    f"Живой вес в акте: {self._format_log_value(archive_act_live_weight)} кг"
+                )
+            if "archive_act_fatness" in initial_data:
+                archive_act_details.append(
+                    f"Упитанность: {archive_act_fatness or 'Не указано'}"
+                )
+            if "archive_act_diagnosis" in initial_data:
+                diagnosis = archive_act_diagnosis or "Не указано"
+                if len(diagnosis) > 60:
+                    diagnosis = diagnosis[:60] + "..."
+                archive_act_details.append(f"Диагноз/основание: {diagnosis}")
+            if "archive_act_worker_name" in initial_data:
+                archive_act_details.append(
+                    f"Закрепленный работник: {archive_act_worker_name or 'Не указано'}"
+                )
+            if "archive_act_download" in initial_data:
+                archive_act_details.append(
+                    f"Скачать акт после архивирования: {'да' if archive_act_download else 'нет'}"
+                )
+
+            if archive_act_details:
+                changes.append("Акт архивации: " + "; ".join(archive_act_details))
         
         # Проверяем изменения родителей
         if 'mother' in validated_data:
