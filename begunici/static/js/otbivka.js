@@ -226,9 +226,6 @@ window.performBulkOtbivka = performBulkOtbivka;
 
 // Показать модальное окно выбора животных
 async function showSelectAnimalsModal() {
-    // Очищаем выбранных животных и поле поиска
-    selectedAnimals.clear();
-    selectedAnimalsData.clear();
     document.getElementById('animalsSearch').value = '';
     document.getElementById('animals-list').innerHTML = `
         <div class="text-muted text-center py-3">

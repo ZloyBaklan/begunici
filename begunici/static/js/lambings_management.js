@@ -724,9 +724,6 @@ function exportLambingsToExcel() {
 
 // Показать модальное окно выбора матерей
 async function showSelectMothersModal() {
-    // Очищаем выбранных матерей и поле поиска
-    selectedMothers.clear();
-    selectedMothersData.clear();
     document.getElementById('mothersSearch').value = '';
     document.getElementById('mothers-list').innerHTML = `
         <div class="text-muted text-center py-3">

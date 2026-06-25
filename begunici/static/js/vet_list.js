@@ -362,8 +362,6 @@ async function loadVaccinationCares() {
 
 // Показать модальное окно выбора животных для вакцинации
 function showSelectAnimalsForVaccinationModal() {
-    selectedAnimalsForVaccination.clear();
-    selectedAnimalsForVaccinationData.clear();
     document.getElementById('animalsVaccinationSearch').value = '';
     const placeFilter = document.getElementById('vaccination-place-filter');
     if (placeFilter) {
@@ -591,6 +589,7 @@ window.exportVetListToExcel = exportVetListToExcel;
 function resetBulkVaccinationForm() {
     selectedAnimalsForVaccination.clear();
     selectedAnimalsForVaccinationData.clear();
+    window.selectedAnimalsForVaccinationArray = [];
     
     const today = getCurrentLocalDateString();
     document.getElementById('vaccination-date').value = today;
