@@ -19,6 +19,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
     TECHNICAL_PATH_PARTS = (
         "/backup/check-auto/",
         "/api/archive/act-preview/",
+        "/api/check-kinship/",
         "/api/health/",
         "/favicon.ico",
         "/robots.txt",

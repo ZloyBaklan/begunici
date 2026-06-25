@@ -16,17 +16,20 @@ def _has_admin_panel_access(user):
 
 
 def _hide_technical_and_duplicate_logs(logs):
-    hidden_preview_logs = (
+    hidden_readonly_logs = (
         Q(action_type__icontains="Предпросмотр акта")
         | Q(description__icontains="/animals/api/archive/act-preview/")
         | Q(additional_data__path="/animals/api/archive/act-preview/")
+        | Q(action_type__iexact="Проверка родства")
+        | Q(description__icontains="/animals/api/check-kinship/")
+        | Q(additional_data__path="/animals/api/check-kinship/")
     )
     successful_middleware_duplicates = Q(additional_data__status_code__lt=400) & (
         Q(additional_data__path="/animals/lambing-group/")
         | Q(additional_data__path__regex=r"^/animals/lambing-group/[0-9]+/remove-father/$")
         | Q(additional_data__path__regex=r"^/animals/lambing/[0-9]+/(complete|complete-with-children|complete-early-failure)/$")
     )
-    return logs.exclude(hidden_preview_logs | successful_middleware_duplicates)
+    return logs.exclude(hidden_readonly_logs | successful_middleware_duplicates)
 
 
 @login_required
