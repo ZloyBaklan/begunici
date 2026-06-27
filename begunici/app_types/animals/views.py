@@ -455,7 +455,7 @@ class MakerViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number is not None:  # Проверяем на None, пустая строка тоже валидна
+        if "mother_tag_number" in request.data:
             # Очищаем от пробелов
             mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
             
@@ -474,7 +474,7 @@ class MakerViewSet(AnimalBaseViewSet):
             maker.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number is not None:  # Проверяем на None, пустая строка тоже валидна
+        if "father_tag_number" in request.data:
             # Очищаем от пробелов
             father_tag_number = father_tag_number.strip() if father_tag_number else ""
             
@@ -682,7 +682,7 @@ class RamViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number is not None:
+        if "mother_tag_number" in request.data:
             mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
             
             if mother_tag_number and ' ' in mother_tag_number:
@@ -699,7 +699,7 @@ class RamViewSet(AnimalBaseViewSet):
             ram.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number is not None:
+        if "father_tag_number" in request.data:
             father_tag_number = father_tag_number.strip() if father_tag_number else ""
             
             if father_tag_number and ' ' in father_tag_number:
@@ -1005,7 +1005,7 @@ class EweViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number is not None:
+        if "mother_tag_number" in request.data:
             mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
             
             if mother_tag_number and ' ' in mother_tag_number:
@@ -1022,7 +1022,7 @@ class EweViewSet(AnimalBaseViewSet):
             ewe.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number is not None:
+        if "father_tag_number" in request.data:
             father_tag_number = father_tag_number.strip() if father_tag_number else ""
             
             if father_tag_number and ' ' in father_tag_number:
@@ -1325,7 +1325,7 @@ class SheepViewSet(AnimalBaseViewSet):
         changes = []
 
         # Обработка мамы
-        if mother_tag_number is not None:
+        if "mother_tag_number" in request.data:
             mother_tag_number = mother_tag_number.strip() if mother_tag_number else ""
             
             if mother_tag_number and ' ' in mother_tag_number:
@@ -1342,7 +1342,7 @@ class SheepViewSet(AnimalBaseViewSet):
             sheep.mother = mother_tag_number if mother_tag_number else None
 
         # Обработка папы
-        if father_tag_number is not None:
+        if "father_tag_number" in request.data:
             father_tag_number = father_tag_number.strip() if father_tag_number else ""
             
             if father_tag_number and ' ' in father_tag_number:
