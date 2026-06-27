@@ -78,6 +78,10 @@
                             <label class="form-check-label" for="has_dead_only">Есть мертвые ягнята</label>
                         </div>
                         <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="barren_only" name="barren_only" value="1" {% if selected_barren_only %}checked{% endif %}>
+                            <label class="form-check-label" for="barren_only">Яловая</label>
+                        </div>
+                        <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="last_lambing_only" name="last_lambing_only" value="1" {% if selected_last_lambing_only %}checked{% endif %}>
                             <label class="form-check-label" for="last_lambing_only">Только последние окоты матерей</label>
                         </div>

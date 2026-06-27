@@ -16,7 +16,7 @@
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end">
                 <div class="col-md-2">
-                    <label for="month" class="form-label">Месяц</label>
+                    <label for="month" class="form-label">Месяц постановки</label>
                     <select class="form-select" id="month" name="month">
                         <option value="">Все</option>
                         {% for month_value, month_label in months %}
@@ -25,7 +25,7 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label for="month_from" class="form-label">Месяц с</label>
+                    <label for="month_from" class="form-label">Месяц постановки с</label>
                     <select class="form-select" id="month_from" name="month_from">
                         <option value="">Любой</option>
                         {% for month_value, month_label in months %}
@@ -34,7 +34,7 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label for="month_to" class="form-label">Месяц по</label>
+                    <label for="month_to" class="form-label">Месяц постановки по</label>
                     <select class="form-select" id="month_to" name="month_to">
                         <option value="">Любой</option>
                         {% for month_value, month_label in months %}
@@ -43,7 +43,7 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label for="year" class="form-label">Год</label>
+                    <label for="year" class="form-label">Год постановки</label>
                     <select class="form-select" id="year" name="year">
                         <option value="">Все</option>
                         {% for year_option in years %}
@@ -58,6 +58,21 @@
                 <div class="col-md-2">
                     <label for="father_tag" class="form-label">Бирка отца</label>
                     <input type="text" class="form-control" id="father_tag" name="father_tag" value="{{ selected_father_tag }}">
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check mt-md-4">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            value="1"
+                            id="show_actual_lambing_date"
+                            name="show_actual_lambing_date"
+                            {% if show_actual_lambing_date %}checked{% endif %}
+                        >
+                        <label class="form-check-label" for="show_actual_lambing_date">
+                            Показать дату фактического окота
+                        </label>
+                    </div>
                 </div>
                 <div class="col-12 d-flex gap-2">
                     <button type="submit" class="btn btn-primary">Применить</button>
@@ -84,7 +99,9 @@
                             <th>Инв. номер овцематки</th>
                             <th>Инв. номер баранчика, барана-производителя</th>
                             <th>Дата постановки в группу баранчика/барана-производителя</th>
-                            <th>Дата фактического окота</th>
+                            {% if show_actual_lambing_date %}
+                                <th>Дата фактического окота</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -105,12 +122,20 @@
                                         {{ row.father_tag }}
                                     {% endif %}
                                 </td>
-                                <td>{{ row.start_date|date:"d.m.Y" }}</td>
-                                <td>{{ row.actual_lambing_date|date:"d.m.Y" }}</td>
+                                <td>{{ row.placement_date|date:"d.m.Y" }}</td>
+                                {% if show_actual_lambing_date %}
+                                    <td>
+                                        {% if row.actual_lambing_date %}
+                                            {{ row.actual_lambing_date|date:"d.m.Y" }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                {% endif %}
                             </tr>
                         {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center text-muted">Записей нет</td>
+                                <td colspan="{{ table_colspan }}" class="text-center text-muted">Записей нет</td>
                             </tr>
                         {% endfor %}
                     </tbody>

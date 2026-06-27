@@ -2366,6 +2366,8 @@ class LambingViewSet(viewsets.ModelViewSet):
                 request.data.get('actual_lambing_date'),
                 "дату досрочного завершения",
             )
+            if lambing.planned_lambing_date and actual_date > lambing.planned_lambing_date:
+                actual_date = lambing.planned_lambing_date
             note = (request.data.get('note') or '').strip()
             new_mother_status_id = request.data.get('new_mother_status_id')
 
@@ -4034,6 +4036,14 @@ def _build_lambing_children_map(lambings):
     return children_map
 
 
+def _get_lambing_grouped_children(lambing, children_map):
+    key = (
+        lambing.actual_lambing_date,
+        _get_lambing_mother_key(lambing),
+    )
+    return children_map.get(key, {"ewes": [], "rams": []})
+
+
 def _attach_live_lamb_links(lambings, serialized_rows):
     if not lambings or not serialized_rows:
         return
@@ -4113,6 +4123,7 @@ def journal_progeny(request):
     has_dead_only = _parse_checkbox_param(request.GET.get("has_dead_only"))
     last_lambing_only = _parse_checkbox_param(request.GET.get("last_lambing_only"))
     bad_mother_only = _parse_checkbox_param(request.GET.get("bad_mother_only"))
+    barren_only = _parse_checkbox_param(request.GET.get("barren_only"))
 
     base_queryset = Lambing.objects.filter(
         is_active=False,
@@ -4190,8 +4201,21 @@ def journal_progeny(request):
         ]
 
     children_map = _build_lambing_children_map(lambings)
+    if barren_only:
+        lambings = [
+            lambing
+            for lambing in lambings
+            if (
+                (lambing.number_of_lambs or 0) == 0
+                and (lambing.dead_lambs_count or 0) == 0
+                and not _get_lambing_grouped_children(lambing, children_map)["ewes"]
+                and not _get_lambing_grouped_children(lambing, children_map)["rams"]
+            )
+        ]
+
     all_children = []
-    for grouped_children in children_map.values():
+    for lambing in lambings:
+        grouped_children = _get_lambing_grouped_children(lambing, children_map)
         all_children.extend(grouped_children["ewes"])
         all_children.extend(grouped_children["rams"])
     first_weight_map = _build_first_weight_map(all_children)
@@ -4205,11 +4229,7 @@ def journal_progeny(request):
 
     for lambing in lambings:
         mother_tag, mother_url = _get_mother_link_data(lambing)
-        key = (
-            lambing.actual_lambing_date,
-            _get_lambing_mother_key(lambing),
-        )
-        grouped_children = children_map.get(key, {"ewes": [], "rams": []})
+        grouped_children = _get_lambing_grouped_children(lambing, children_map)
         ewe_tag_links = []
         for child in grouped_children["ewes"]:
             child_data = _get_lamb_child_link_data(child)
@@ -4368,89 +4388,232 @@ def journal_progeny(request):
         "selected_has_dead_only": has_dead_only,
         "selected_last_lambing_only": last_lambing_only,
         "selected_bad_mother_only": bad_mother_only,
+        "selected_barren_only": barren_only,
         "base_query": _build_base_query(request),
         "totals": totals,
     }
     return render(request, "journal_progeny.html", context)
 
 
-def journal_insemination(request):
-    month, year, month_from, month_to = _get_month_year_filters(request)
-    mother_tag_search = request.GET.get("mother_tag", "").strip()
-    father_tag_search = request.GET.get("father_tag", "").strip()
+def _get_lambing_placement_date(lambing):
+    source_group = getattr(lambing, "source_group", None)
+    if source_group and source_group.placement_date:
+        return source_group.placement_date
+    if lambing.start_date:
+        return lambing.start_date - timedelta(days=60)
+    return None
 
-    base_queryset = Lambing.objects.filter(
-        is_active=False,
-        actual_lambing_date__isnull=False,
-    ).exclude(
-        completion_type=Lambing.COMPLETION_EARLY_FAILURE
-    ).select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
 
-    years = _get_year_options_from_queryset(base_queryset, "actual_lambing_date")
-    filtered_queryset = _apply_month_year_filter(
-        base_queryset,
-        "actual_lambing_date",
-        month,
-        year,
-        month_from,
-        month_to,
+def _date_matches_month_year_filters(value, month=None, year=None, month_from=None, month_to=None):
+    if not any([month, year, month_from, month_to]):
+        return True
+    if not value:
+        return False
+
+    if year and value.year != year:
+        return False
+
+    if month:
+        return value.month == month
+
+    if month_from and month_to and month_from > month_to:
+        month_from, month_to = month_to, month_from
+
+    if month_from and value.month < month_from:
+        return False
+    if month_to and value.month > month_to:
+        return False
+    return True
+
+
+def _get_animal_link_data(animal):
+    if not animal or not getattr(animal, "tag", None):
+        return "-", None
+
+    tag_number = animal.tag.tag_number
+    if isinstance(animal, Sheep):
+        return tag_number, reverse("animals:sheep-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Ewe):
+        return tag_number, reverse("animals:ewe-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Maker):
+        return tag_number, reverse("animals:maker-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Ram):
+        return tag_number, reverse("animals:ram-detail", kwargs={"tag_number": tag_number})
+    return tag_number, None
+
+
+def _get_visible_actual_lambing_date(lambing):
+    if not lambing or lambing.completion_type == Lambing.COMPLETION_EARLY_FAILURE:
+        return None
+    return lambing.actual_lambing_date
+
+
+def _build_group_lambing_actual_date_map(groups):
+    group_ids = [group.id for group in groups]
+    if not group_ids:
+        return {}
+
+    lambings = (
+        Lambing.objects.filter(source_group_id__in=group_ids)
+        .select_related("sheep__tag", "ewe__tag")
+        .order_by("-actual_lambing_date", "-id")
     )
-
-    if mother_tag_search:
-        mother_filter = (
-            _build_case_variants_q("sheep__tag__tag_number", mother_tag_search)
-            | _build_case_variants_q("ewe__tag__tag_number", mother_tag_search)
-            | _build_case_variants_q("mother_tag_text", mother_tag_search)
-        )
-        filtered_queryset = filtered_queryset.filter(mother_filter)
-
-    if father_tag_search:
-        father_filter = (
-            _build_case_variants_q("maker__tag__tag_number", father_tag_search)
-            | _build_case_variants_q("ram__tag__tag_number", father_tag_search)
-        )
-        filtered_queryset = filtered_queryset.filter(father_filter)
-
-    lambings = list(filtered_queryset.order_by("-actual_lambing_date", "-id"))
-    rows = []
+    actual_date_map = {}
     for lambing in lambings:
+        if lambing.sheep_id:
+            key = (lambing.source_group_id, "sheep", lambing.sheep_id)
+        elif lambing.ewe_id:
+            key = (lambing.source_group_id, "ewe", lambing.ewe_id)
+        else:
+            continue
+
+        actual_date = _get_visible_actual_lambing_date(lambing)
+        if key not in actual_date_map or (not actual_date_map[key] and actual_date):
+            actual_date_map[key] = actual_date
+
+    return actual_date_map
+
+
+def _passes_insemination_tag_filters(mother_tag, father_tag, mother_tag_search, father_tag_search):
+    if mother_tag_search and not _matches_multi_search(mother_tag, mother_tag_search):
+        return False
+    if father_tag_search and not _matches_multi_search(father_tag, father_tag_search):
+        return False
+    return True
+
+
+def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
+    groups = list(
+        LambingGroup.objects.all()
+        .select_related("maker__tag", "ram__tag")
+        .prefetch_related("sheep__tag", "ewes__tag")
+        .order_by("-placement_date", "-id")
+    )
+    actual_date_map = _build_group_lambing_actual_date_map(groups)
+
+    rows = []
+    for group in groups:
+        father_tag, father_url = _get_animal_link_data(group.get_father())
+        mothers = [(mother, "sheep") for mother in group.sheep.all()]
+        mothers.extend((mother, "ewe") for mother in group.ewes.all())
+
+        for mother, mother_type in mothers:
+            mother_tag, mother_url = _get_animal_link_data(mother)
+            if not _passes_insemination_tag_filters(
+                mother_tag,
+                father_tag,
+                mother_tag_search,
+                father_tag_search,
+            ):
+                continue
+
+            rows.append(
+                {
+                    "mother_tag": mother_tag,
+                    "mother_url": mother_url,
+                    "father_tag": father_tag,
+                    "father_url": father_url,
+                    "placement_date": group.placement_date,
+                    "actual_lambing_date": actual_date_map.get(
+                        (group.id, mother_type, mother.id)
+                    ),
+                    "sort_id": group.id,
+                }
+            )
+
+    fallback_lambings = (
+        Lambing.objects.filter(source_group__isnull=True)
+        .select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
+        .order_by("-start_date", "-id")
+    )
+    for lambing in fallback_lambings:
+        placement_date = _get_lambing_placement_date(lambing)
         mother_tag, mother_url = _get_mother_link_data(lambing)
         father_tag, father_url = _get_father_link_data(lambing)
+        if not _passes_insemination_tag_filters(
+            mother_tag,
+            father_tag,
+            mother_tag_search,
+            father_tag_search,
+        ):
+            continue
+
         rows.append(
             {
                 "mother_tag": mother_tag,
                 "mother_url": mother_url,
                 "father_tag": father_tag,
                 "father_url": father_url,
-                "start_date": lambing.start_date,
-                "actual_lambing_date": lambing.actual_lambing_date,
+                "placement_date": placement_date,
+                "actual_lambing_date": _get_visible_actual_lambing_date(lambing),
+                "sort_id": lambing.id,
             }
         )
+
+    rows.sort(
+        key=lambda row: (
+            row["placement_date"] or datetime.min.date(),
+            row["sort_id"],
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def journal_insemination(request):
+    month, year, month_from, month_to = _get_month_year_filters(request)
+    mother_tag_search = request.GET.get("mother_tag", "").strip()
+    father_tag_search = request.GET.get("father_tag", "").strip()
+    show_actual_lambing_date = request.GET.get("show_actual_lambing_date") == "1"
+
+    all_rows = _build_insemination_rows(mother_tag_search, father_tag_search)
+    years = sorted(
+        {
+            row["placement_date"].year
+            for row in all_rows
+            if row["placement_date"]
+        },
+        reverse=True,
+    )
+    rows = [
+        row
+        for row in all_rows
+        if _date_matches_month_year_filters(
+            row["placement_date"],
+            month=month,
+            year=year,
+            month_from=month_from,
+            month_to=month_to,
+        )
+    ]
 
     totals = {"records_count": len(rows)}
 
     if request.GET.get("export") == "1":
         export_rows = []
         for idx, row in enumerate(rows, start=1):
-            export_rows.append(
-                [
-                    idx,
-                    row["mother_tag"],
-                    row["father_tag"],
-                    row["start_date"].strftime("%d.%m.%Y") if row["start_date"] else "-",
+            export_row = [
+                idx,
+                row["mother_tag"],
+                row["father_tag"],
+                row["placement_date"].strftime("%d.%m.%Y") if row["placement_date"] else "-",
+            ]
+            if show_actual_lambing_date:
+                export_row.append(
                     row["actual_lambing_date"].strftime("%d.%m.%Y")
                     if row["actual_lambing_date"]
-                    else "-",
-                ]
-            )
+                    else "-"
+                )
+            export_rows.append(export_row)
 
         headers = [
             "№",
             "Бирка матери",
             "Бирка отца",
-            "Дата случки",
-            "Дата фактических родов",
+            "Дата постановки в группу",
         ]
+        if show_actual_lambing_date:
+            headers.append("Дата фактических родов")
         summary_lines = [f"Итого записей: {totals['records_count']}"]
         return _build_excel_response(
             filename_prefix="journal_insemination",
@@ -4474,6 +4637,8 @@ def journal_insemination(request):
         "selected_month_to": month_to,
         "selected_mother_tag": mother_tag_search,
         "selected_father_tag": father_tag_search,
+        "show_actual_lambing_date": show_actual_lambing_date,
+        "table_colspan": 5 if show_actual_lambing_date else 4,
         "base_query": _build_base_query(request),
         "totals": totals,
     }
