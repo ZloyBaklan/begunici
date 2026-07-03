@@ -152,6 +152,10 @@ def resolve_log_action(method, path, params=None, status_code=None):
             action = "Массовое создание окотов"
         elif method == "POST" and "/actions/bulk_archive/" in path:
             action = "Массовый перенос в архив"
+        elif method == "POST" and "/lambing-group/" in path and "/add-mothers/" in path:
+            action = "Добавление матерей в группу"
+        elif method == "POST" and "/lambing-group/" in path and "/remove-mothers/" in path:
+            action = "Удаление матерей из группы"
         elif method == "POST" and "/lambing-group/" in path and "/remove-father/" in path:
             action = "Снятие барана из группы"
         elif method == "POST" and path.rstrip("/") == "/animals/lambing-group":

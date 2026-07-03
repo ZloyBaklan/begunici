@@ -438,6 +438,59 @@
     </div>
 </div>
 
+<!-- Модальное окно добавления ярок/овцематок в группу -->
+<div class="modal fade" id="addMothersToGroupModal" tabindex="-1" aria-labelledby="addMothersToGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addMothersToGroupModalLabel">Добавить ярку/овцематку в группу</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="adding-mothers-group-id">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="groupAddMothersSearch" placeholder="Введите номер бирки для поиска...">
+                        <button class="btn btn-primary" type="button" id="searchGroupAddMothersBtn">Поиск</button>
+                    </div>
+                    <div id="selected-group-add-mothers-display" class="mt-2 text-muted">Не выбрано</div>
+                </div>
+                <div id="group-add-mothers-list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">
+                        Введите номер бирки и нажмите "Поиск" для отображения доступных ярок/овцематок
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="confirmAddMothersToGroup()">Добавить в группу</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно удаления ярок/овцематок из группы -->
+<div class="modal fade" id="removeMothersFromGroupModal" tabindex="-1" aria-labelledby="removeMothersFromGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="removeMothersFromGroupModalLabel">Убрать ярку/овцематку из группы</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="removing-mothers-group-id">
+                <div id="group-remove-mothers-list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">Загрузка...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" onclick="confirmRemoveMothersFromGroup()">Убрать из группы</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Модальные окна для проверки родства -->
 <!-- Модальное окно выбора барана-производителя/баранчика для проверки родства -->
 <div class="modal fade" id="selectKinshipFatherModal" tabindex="-1">

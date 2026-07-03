@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Молодняк{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Молодняк</h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center g-2">
+                        <div class="col-lg-3">
+                            <h5 class="card-title mb-0">Список молодняка</h5>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="input-group">
+                                <input type="text" id="young-stock-search" class="form-control" placeholder="Поиск по бирке...">
+                                <button class="btn btn-outline-primary" type="button" onclick="performYoungStockSearch()">Поиск</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleYoungStockAdditionalFilters()">Доп. фильтры</button>
+                            </div>
+                            <div id="young-stock-advanced-filters" class="mt-2" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label for="young-stock-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                        <input type="date" id="young-stock-birth-date-from" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="young-stock-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                        <input type="date" id="young-stock-birth-date-to" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="young-stock-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                        <input type="number" id="young-stock-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="young-stock-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                        <input type="number" id="young-stock-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-4">
+                                        <label for="young-stock-father-tag-filter" class="form-label small mb-1">Бирка отца</label>
+                                        <input type="text" id="young-stock-father-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="young-stock-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
+                                        <input type="text" id="young-stock-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="young-stock-animal-type-filter" class="form-label small mb-1">Тип животного</label>
+                                        <select id="young-stock-animal-type-filter" class="form-select form-select-sm">
+                                            <option value="">Все типы</option>
+                                            <option value="maker">Бараны-Производители</option>
+                                            <option value="ram">Баранчики</option>
+                                            <option value="ewe">Ярки</option>
+                                            <option value="sheep">Овцематки</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2">
+                            <button class="btn btn-outline-success w-100" type="button" onclick="exportYoungStock()">Экспорт</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="3%"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                                    <th width="5%">№</th>
+                                    <th width="16%">Номер молодняка (бирка)</th>
+                                    <th width="10%">Тип рождения</th>
+                                    <th width="12%">Дата рождения</th>
+                                    <th width="13%">Вес при рождении</th>
+                                    <th width="14%">Отбивка</th>
+                                    <th width="14%">Номер матери (бирка)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="young-stock-list"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="selected-actions" class="mt-3" style="display: none;">
+                        <div class="d-flex gap-2">
+                            {% if user_permissions.can_delete_animals %}
+                            <button id="delete-selected-button" class="btn btn-outline-danger btn-sm" onclick="deleteSelectedYoungStock()">Удалить выбранные</button>
+                            {% endif %}
+                            <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">Перенести в архив</button>
+                        </div>
+                    </div>
+
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="delete-modal" class="modal" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Подтверждение удаления</h5></div>
+            <div class="modal-body"><p id="delete-modal-message"></p></div>
+            <div class="modal-footer">
+                <button id="delete-confirm-button" class="btn btn-danger">Да</button>
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">Нет</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'includes/archive_modal.html' %}
+
+<style>
+.table th { border-top: none; font-weight: 600; }
+.table td { vertical-align: middle; }
+
+.modal {
+    background-color: rgba(0,0,0,0.5);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dialog { max-width: 500px; width: 90%; }
+
+@media (max-width: 768px) {
+    .table-responsive { font-size: 0.875rem; }
+}
+</style>
+
+<script src="{% static 'js/archive_act_modal.js' %}"></script>
+<script type="module" src="{% static 'js/young_stock.js' %}"></script>
+<script>
+    function performYoungStockSearch() {
+        if (window.fetchYoungStock) {
+            window.fetchYoungStock(1, window.getYoungStockFiltersFromInputs());
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('young-stock-search');
+        if (searchInput) {
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performYoungStockSearch();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

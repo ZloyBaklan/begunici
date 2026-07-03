@@ -244,15 +244,14 @@ function renderSheeps(sheeps, startIndex = null) {
             </td>
             <td>${recordNumber}</td>
             <td><a href="/animals/sheep/${sheep.tag.tag_number}/info/">${sheep.tag.tag_number}</a></td>
+            <td>${sheep.birth_date || '-'}</td>
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${sheep.age || 'Не указан'}</td>
             <td>${sheep.place ? sheep.place.sheepfold : 'Не указано'}</td>
-            <td>${sheep.dorper_display || '-'}</td>
-            <td>${sheep.weight_records && sheep.weight_records.length > 0 
-                ? `${sheep.weight_records[0].weight_date}: ${sheep.weight_records[0].weight} кг` 
-                : 'Нет записей'}</td>
+            <td>${sheep.last_weight_display || '-'}</td>
+            <td>${formatLastInsemination(sheep.last_insemination)}</td>
+            <td>${formatLastLambingSummary(sheep.last_lambing_summary)}</td>
             <td>${formatLastVetTreatment(sheep.veterinary_history)}</td>
             <td>${sheep.rshn_tag || '-'}</td>
             <td>${sheep.note || ''}</td>
@@ -275,6 +274,46 @@ function renderSheeps(sheeps, startIndex = null) {
     
     // Обновляем кнопки действий
     toggleDeleteButton();
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function formatLinkedTag(tagNumber, url) {
+    const safeTag = escapeHtml(tagNumber || '-');
+    return url ? `<a href="${escapeHtml(url)}">${safeTag}</a>` : safeTag;
+}
+
+function formatLastInsemination(insemination) {
+    if (!insemination || !insemination.date || !insemination.father_tag) {
+        return '-';
+    }
+
+    return `${escapeHtml(insemination.date)}: ${formatLinkedTag(insemination.father_tag, insemination.father_url)}`;
+}
+
+function formatLastLambingSummary(summary) {
+    if (!summary || !summary.date) {
+        return '-';
+    }
+
+    if (summary.is_early_failure) {
+        return `${escapeHtml(summary.date)}: Досрочно завершен`;
+    }
+
+    const children = Array.isArray(summary.children) ? summary.children : [];
+    const childrenText = children.length
+        ? children.map(child => `${formatLinkedTag(child.tag_number, child.url)} (${escapeHtml(child.birth_weight || '-')})`).join(', ')
+        : 'детей: 0';
+    const deadCount = Number.isFinite(Number(summary.dead_lambs_count)) ? Number(summary.dead_lambs_count) : 0;
+
+    return `${escapeHtml(summary.date)}: ${childrenText}; м/р: ${deadCount}`;
 }
 
 function formatLastVetTreatment(veterinaryHistory) {
@@ -587,7 +626,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = '';
@@ -641,10 +680,13 @@ async function applyArchiveStatus() {
             return;
         }
     }
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
         for (const tag of selectedTags) {
+            const archiveActPayload = window.archiveActModal?.collectPayload?.({ animalType: 'sheep', tagNumber: tag }) || {};
+            if (archiveActPayload.__archiveActError) {
+                alert(archiveActPayload.__archiveActError);
+                return;
+            }
             await apiRequest(`/animals/sheep/${tag}/`, 'PATCH', { 
                 animal_status_id: statusId,
                 status_date: statusDate,
@@ -749,4 +791,5 @@ window.fetchSheeps = fetchSheeps;
 window.searchSheeps = searchSheeps;
 window.performSheepSearch = performSheepSearch;
 window.toggleSheepAdditionalFilters = toggleSheepAdditionalFilters;
+
 

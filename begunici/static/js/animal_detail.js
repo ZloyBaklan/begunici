@@ -1,4 +1,4 @@
-// ! UTILS.sj cannot be importted due to injection html
+﻿// ! UTILS.sj cannot be importted due to injection html
 // TODO Resolve that
 function getCSRFToken() {
     const cookies = document.cookie.split(";").map(c => c.trim());
@@ -529,7 +529,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100', 'GET');
         const statuses = response.results || response;
         const archiveStatuses = statuses.filter((status) =>
-            ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type)
+            ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо'].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById('archive-status-select');
@@ -588,9 +588,12 @@ async function applyArchiveStatus() {
         }
     }
 
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
+        const archiveActPayload = window.archiveActModal?.collectPayload?.(animal) || {};
+        if (archiveActPayload.__archiveActError) {
+            alert(archiveActPayload.__archiveActError);
+            return;
+        }
         await apiRequest(`/animals/${animal.animalType}/${animal.tagNumber}/`, 'PATCH', {
             animal_status_id: parseInt(statusId),
             status_date: statusDate,
@@ -2615,4 +2618,5 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.toggleArchiveActNumberField = toggleArchiveActNumberField;
+
 

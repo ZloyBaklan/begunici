@@ -491,7 +491,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = '';
@@ -545,10 +545,13 @@ async function applyArchiveStatus() {
             return;
         }
     }
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
         for (const tag of selectedTags) {
+            const archiveActPayload = window.archiveActModal?.collectPayload?.({ animalType: 'ram', tagNumber: tag }) || {};
+            if (archiveActPayload.__archiveActError) {
+                alert(archiveActPayload.__archiveActError);
+                return;
+            }
             await apiRequest(`/animals/ram/${tag}/`, 'PATCH', { 
                 animal_status_id: statusId,
                 status_date: statusDate,
@@ -740,4 +743,5 @@ window.fetchRams = fetchRams;
 window.searchRams = searchRams;
 window.performRamSearch = performRamSearch;
 window.toggleRamAdditionalFilters = toggleRamAdditionalFilters;
+
 

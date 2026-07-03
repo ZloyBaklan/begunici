@@ -386,6 +386,7 @@ function getColorForStatus(status) {
     switch (status.status_type) {
         case 'Ветобработка': return 'green';
         case 'Вынужденная прирезка': return 'red';
+        case 'Убой на мясо': return 'red';
         default: return 'black';
     }
 }
@@ -690,7 +691,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = ''; // Очистка существующих опций
@@ -743,10 +744,13 @@ async function applyArchiveStatus() {
             return;
         }
     }
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
         for (const tag of selectedTags) {
+            const archiveActPayload = window.archiveActModal?.collectPayload?.({ animalType: 'maker', tagNumber: tag }) || {};
+            if (archiveActPayload.__archiveActError) {
+                alert(archiveActPayload.__archiveActError);
+                return;
+            }
             await apiRequest(`/animals/maker/${tag}/`, 'PATCH', { 
                 animal_status_id: statusId,
                 status_date: statusDate,
@@ -849,4 +853,5 @@ function clearFilters() {
 }
 
 window.clearFilters = clearFilters;
+
 

@@ -351,6 +351,7 @@ class AnimalBase(models.Model):
             "Вынужденная прирезка",
             "Реализация в живом весе",
             "Продажа на племя",
+            "Убой на мясо",
         ]:
             self.is_archived = True
         else:

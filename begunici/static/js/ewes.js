@@ -234,15 +234,15 @@ function renderEwes(ewes) {
             </td>
             <td>${recordNumber}</td>
             <td><a href="/animals/ewe/${ewe.tag.tag_number}/info/">${ewe.tag.tag_number}</a></td>
+            <td>${ewe.birth_date || '-'}</td>
+            <td>${ewe.birth_type_display || '-'}</td>
+            <td>${ewe.birth_weight_display || '-'}</td>
             <td style="background-color:${ewe.animal_status ? ewe.animal_status.color : '#FFFFFF'}">
                 ${ewe.animal_status ? ewe.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${ewe.age || 'Не указан'}</td>
             <td>${ewe.place ? ewe.place.sheepfold : 'Не указано'}</td>
-            <td>${ewe.dorper_display || '-'}</td>
-            <td>${ewe.weight_records && ewe.weight_records.length > 0 
-                ? `${ewe.weight_records[0].weight_date}: ${ewe.weight_records[0].weight} кг` 
-                : 'Нет записей'}</td>
+            <td>${ewe.last_weight_display || '-'}</td>
+            <td>${ewe.weaning_display || '-'}</td>
             <td>${formatLastVetTreatment(ewe.veterinary_history)}</td>
             <td>${ewe.rshn_tag || '-'}</td>
             <td>${ewe.note || ''}</td>
@@ -490,7 +490,7 @@ async function loadArchiveStatuses() {
         const response = await apiRequest('/veterinary/api/status/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
-        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя'].includes(status.status_type));
+        const archiveStatuses = statuses.filter(status => ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо'].includes(status.status_type));
 
         const statusSelect = document.getElementById('archive-status-select');
         statusSelect.innerHTML = '';
@@ -544,10 +544,13 @@ async function applyArchiveStatus() {
             return;
         }
     }
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
         for (const tag of selectedTags) {
+            const archiveActPayload = window.archiveActModal?.collectPayload?.({ animalType: 'ewe', tagNumber: tag }) || {};
+            if (archiveActPayload.__archiveActError) {
+                alert(archiveActPayload.__archiveActError);
+                return;
+            }
             await apiRequest(`/animals/ewe/${tag}/`, 'PATCH', { 
                 animal_status_id: statusId,
                 status_date: statusDate,
@@ -739,3 +742,4 @@ window.fetchEwes = fetchEwes;
 window.searchEwes = searchEwes;
 window.performSearch = performSearch;
 window.toggleEweAdditionalFilters = toggleEweAdditionalFilters;
+

@@ -529,7 +529,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"].includes(status.status_type)
+            ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("archive-status-select");
@@ -587,10 +587,13 @@ async function applyArchiveStatus() {
             return;
         }
     }
-    const archiveActPayload = window.archiveActModal?.collectPayload?.() || {};
-
     try {
         for (const item of selected) {
+            const archiveActPayload = window.archiveActModal?.collectPayload?.(item) || {};
+            if (archiveActPayload.__archiveActError) {
+                alert(archiveActPayload.__archiveActError);
+                return;
+            }
             await apiRequest(`/animals/${item.animalType}/${item.tagNumber}/`, "PATCH", {
                 animal_status_id: statusId,
                 status_date: statusDate,
@@ -682,3 +685,4 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.saveCommonAnimal = saveCommonAnimal;
+

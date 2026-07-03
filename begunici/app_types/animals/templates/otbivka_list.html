@@ -47,26 +47,26 @@
                 <div class="card-header">
                     <h5 class="card-title mb-0">Животные с отбивкой</h5>
                     <!-- Фильтр по диапазону дат -->
-                    <div class="row mt-3">
-                        <div class="col-md-3">
+                    <div class="row mt-3 g-3 align-items-end">
+                        <div class="col-xl-2 col-lg-6">
                             <label for="otbivka-date-from" class="form-label">Дата отбивки с:</label>
                             <input type="date" id="otbivka-date-from" class="form-control">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-xl-2 col-lg-6">
                             <label for="otbivka-date-to" class="form-label">Дата отбивки по:</label>
                             <input type="date" id="otbivka-date-to" class="form-control">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-xl-4 col-lg-6">
                             <label for="otbivka-search" class="form-label">Поиск по бирке:</label>
                             <input type="text" id="otbivka-search" class="form-control" 
                                    placeholder="Введите номер бирки...">
                         </div>
-                        <div class="col-md-2 d-flex align-items-end">
+                        <div class="col-xl-2 col-lg-3 d-flex align-items-end">
                             <button type="button" class="btn btn-primary w-100" onclick="performOtbivkaSearch()">
                                 Применить
                             </button>
                         </div>
-                        <div class="col-md-2 d-flex align-items-end">
+                        <div class="col-xl-2 col-lg-3 d-flex align-items-end">
                             <button type="button" class="btn btn-success w-100" onclick="exportOtbivkaToExcel()">
                                 Экспорт
                             </button>
@@ -78,9 +78,10 @@
                         <table class="table table-striped table-hover">
                             <thead class="table-light">
                                 <tr>
-                                    <th width="25%">Дата отбивки</th>
-                                    <th width="35%">Бирка</th>
-                                    <th width="40%">Возраст на момент отбивки</th>
+                                    <th width="20%">Дата отбивки</th>
+                                    <th width="30%">Бирка</th>
+                                    <th width="25%">Возраст на момент отбивки</th>
+                                    <th width="25%">Вес при отбивке</th>
                                 </tr>
                             </thead>
                             <tbody id="otbivka-list">

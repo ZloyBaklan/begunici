@@ -1,5 +1,11 @@
 (function () {
-    const ACT_STATUSES = new Set(["Падеж", "Вынужденная прирезка", "Реализация в живом весе"]);
+    const ACT_STATUSES = new Set([
+        "Падеж",
+        "Вынужденная прирезка",
+        "Убой на мясо",
+        "Реализация в живом весе",
+        "Продажа на племя",
+    ]);
     let selectedAnimals = [];
 
     function getCookie(name) {
@@ -25,6 +31,16 @@
         return statusSelect?.options[statusSelect.selectedIndex]?.text?.trim() || "";
     }
 
+    function getAnimalKey(animal) {
+        const normalized = normalizeSelectedAnimal(animal);
+        if (!normalized) return "";
+        return `${normalized.animal_type}::${normalized.tag_number}`;
+    }
+
+    function buildValidationError(message) {
+        return { __archiveActError: message };
+    }
+
     function hasTemplate(statusName) {
         return ACT_STATUSES.has(statusName);
     }
@@ -36,12 +52,16 @@
             "archive-act-number",
             "archive-act-date",
             "archive-act-diagnosis",
-            "archive-act-worker-name",
+            "archive-act-weight-date",
+            "archive-act-live-weight",
         ];
         fields.forEach((id) => {
             const input = document.getElementById(id);
             if (input) input.value = "";
         });
+
+        const deathReason = document.getElementById("archive-act-death-reason");
+        if (deathReason) deathReason.value = "Травма";
 
         const fatness = document.getElementById("archive-act-fatness");
         if (fatness) fatness.value = "ср";
@@ -53,6 +73,12 @@
         if (preview) {
             preview.classList.add("text-muted");
             preview.innerHTML = "Выберите статус и животных, чтобы увидеть данные.";
+        }
+
+        const latestWeightSummary = document.getElementById("archive-latest-weight-summary");
+        if (latestWeightSummary) {
+            latestWeightSummary.style.display = "none";
+            latestWeightSummary.innerHTML = "Последняя запись о весе: -";
         }
 
         toggle();
@@ -85,6 +111,15 @@
         loadPreview();
     }
 
+    function updateStatusSpecificFields() {
+        const statusName = getSelectedStatusName();
+        const diagnosisGroup = document.getElementById("archive-act-diagnosis-group");
+        const deathReasonGroup = document.getElementById("archive-act-death-reason-group");
+
+        if (diagnosisGroup) diagnosisGroup.style.display = "block";
+        if (deathReasonGroup) deathReasonGroup.style.display = statusName === "Падеж" ? "block" : "none";
+    }
+
     function toggle() {
         const statusName = getSelectedStatusName();
         const isAvailable = hasTemplate(statusName);
@@ -97,6 +132,8 @@
 
         const download = document.getElementById("archive-act-download");
         if (download) download.disabled = !isAvailable;
+
+        updateStatusSpecificFields();
 
         if (isAvailable) {
             loadPreview();
@@ -111,6 +148,7 @@
         if (!selectedAnimals.length) {
             preview.classList.add("text-muted");
             preview.innerHTML = "Животные не выбраны.";
+            renderLatestWeightSummary([]);
             return;
         }
 
@@ -137,11 +175,38 @@
 
             const data = await response.json();
             renderPreview(data.results || [], data.errors || []);
+            renderLatestWeightSummary(data.results || []);
         } catch (error) {
             console.error("Ошибка предпросмотра акта:", error);
             preview.classList.add("text-muted");
             preview.innerHTML = "Не удалось загрузить данные для акта.";
+            renderLatestWeightSummary([]);
         }
+    }
+
+    function renderLatestWeightSummary(items) {
+        const summary = document.getElementById("archive-latest-weight-summary");
+        if (!summary) return;
+
+        if (!items.length) {
+            summary.style.display = "none";
+            summary.innerHTML = "Последняя запись о весе: -";
+            return;
+        }
+
+        summary.style.display = "block";
+        if (items.length === 1) {
+            summary.innerHTML = `Последняя запись о весе: ${escapeHtml(items[0].latest_weight_display || "-")}`;
+            return;
+        }
+
+        const rows = items.map((item) => `
+            <div>
+                <strong>${escapeHtml(item.display_name || item.tag_number)}:</strong>
+                ${escapeHtml(item.latest_weight_display || "-")}
+            </div>
+        `).join("");
+        summary.innerHTML = `<div class="mb-1">Последние записи о весе:</div>${rows}`;
     }
 
     function renderPreview(items, errors) {
@@ -155,16 +220,13 @@
         }
 
         const rows = items.map((item) => {
-            const liveWeight = item.live_weight !== null && item.live_weight !== undefined && item.live_weight !== ""
-                ? `${escapeHtml(item.live_weight)} кг`
-                : "-";
             return `
                 <tr>
                     <td>${escapeHtml(item.display_name || item.tag_number)}</td>
                     <td>${escapeHtml(item.animal_type_label)}</td>
                     <td>${escapeHtml(item.sex)}</td>
                     <td>${escapeHtml(item.age)}</td>
-                    <td>${liveWeight}</td>
+                    <td>${escapeHtml(item.latest_weight_display || "-")}</td>
                     <td>${escapeHtml(item.reason)}</td>
                 </tr>
             `;
@@ -177,15 +239,15 @@
         preview.classList.remove("text-muted");
         preview.innerHTML = `
             ${errorHtml}
-            <table class="table table-sm table-bordered mb-0">
+            <table class="table table-sm table-bordered mb-0 align-middle">
                 <thead>
                     <tr>
                         <th>Бирка</th>
                         <th>Тип</th>
                         <th>Пол</th>
                         <th>Возраст</th>
-                        <th>Живая масса</th>
-                        <th>Причина</th>
+                        <th>Последняя запись о весе</th>
+                        <th>Причина выбытия</th>
                     </tr>
                 </thead>
                 <tbody>${rows || '<tr><td colspan="6" class="text-muted text-center">Нет данных</td></tr>'}</tbody>
@@ -193,25 +255,59 @@
         `;
     }
 
-    function collectPayload() {
+    function collectPayload(animal) {
         const statusName = getSelectedStatusName();
         if (!hasTemplate(statusName)) {
             return {
                 act_number: "",
                 archive_act_date: null,
+                archive_act_live_weight: null,
+                archive_act_weight_date: null,
                 archive_act_fatness: "",
                 archive_act_diagnosis: "",
-                archive_act_worker_name: "",
+                archive_act_death_reason: "",
+                archive_act_add_weight_record: false,
                 archive_act_download: false,
             };
         }
 
+        const actNumber = document.getElementById("archive-act-number")?.value?.trim() || "";
+        const actDate = document.getElementById("archive-act-date")?.value || "";
+        const fatness = document.getElementById("archive-act-fatness")?.value || "";
+        const diagnosis = document.getElementById("archive-act-diagnosis")?.value?.trim() || "";
+        const deathReason = statusName === "Падеж"
+            ? (document.getElementById("archive-act-death-reason")?.value || "")
+            : "";
+
+        if (!actNumber) return buildValidationError("Укажите номер акта.");
+        if (!actDate) return buildValidationError("Укажите дату акта.");
+        if (!fatness) return buildValidationError("Укажите упитанность.");
+        if (statusName === "Падеж" && !deathReason) return buildValidationError("Укажите причину падежа.");
+        if (!diagnosis) return buildValidationError("Укажите диагноз / основание.");
+
+        const weightRaw = document.getElementById("archive-act-live-weight")?.value?.trim() || "";
+        const weightDate = document.getElementById("archive-act-weight-date")?.value || "";
+
+        if ((weightRaw && !weightDate) || (!weightRaw && weightDate)) {
+            return buildValidationError("Для дополнительной записи о весе укажите и дату, и вес.");
+        }
+
+        if (weightRaw) {
+            const parsedWeight = parseFloat(weightRaw);
+            if (Number.isNaN(parsedWeight) || parsedWeight < 0) {
+                return buildValidationError("Дополнительный вес должен быть числом не меньше 0.");
+            }
+        }
+
         return {
-            act_number: document.getElementById("archive-act-number")?.value?.trim() || "",
-            archive_act_date: document.getElementById("archive-act-date")?.value || null,
-            archive_act_fatness: document.getElementById("archive-act-fatness")?.value || "",
-            archive_act_diagnosis: document.getElementById("archive-act-diagnosis")?.value?.trim() || "",
-            archive_act_worker_name: document.getElementById("archive-act-worker-name")?.value?.trim() || "",
+            act_number: actNumber,
+            archive_act_date: actDate,
+            archive_act_live_weight: weightRaw || null,
+            archive_act_weight_date: weightDate || null,
+            archive_act_fatness: fatness,
+            archive_act_diagnosis: diagnosis,
+            archive_act_death_reason: deathReason,
+            archive_act_add_weight_record: Boolean(weightRaw && weightDate),
             archive_act_download: Boolean(document.getElementById("archive-act-download")?.checked),
         };
     }

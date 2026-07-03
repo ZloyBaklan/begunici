@@ -31,6 +31,10 @@ from .serializers import (
     ArchiveAnimalSerializer,
     UniversalChildSerializer,
     CalendarNoteSerializer,
+    build_sheep_last_insemination_data,
+    build_sheep_last_lambing_summary,
+    format_sheep_last_insemination_text,
+    format_sheep_last_lambing_text,
 )
 from .backup_utils import backup_manager
 from .archive_acts import (
@@ -39,6 +43,7 @@ from .archive_acts import (
     find_animal as find_archive_act_animal,
     get_archive_act_template_config,
 )
+from .transfer_acts import get_transfer_acts_page, transfer_act_response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -532,7 +537,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -546,7 +551,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]
                     ).first()
                 
                 if active_status:
@@ -869,7 +874,7 @@ class RamViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -883,7 +888,7 @@ class RamViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]
                     ).first()
                 
                 if active_status:
@@ -1192,7 +1197,7 @@ class EweViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1206,7 +1211,7 @@ class EweViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]
                     ).first()
                 
                 if active_status:
@@ -1512,7 +1517,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
                 # Проверяем, что это не архивный статус
-                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]:
+                if selected_status.status_type in ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]:
                     return Response(
                         {"error": "Нельзя восстановить животное с архивным статусом"}, 
                         status=status.HTTP_400_BAD_REQUEST
@@ -1526,7 +1531,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 if not active_status:
                     # Если нет подходящего статуса, берем любой неархивный
                     active_status = Status.objects.exclude(
-                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя"]
+                        status_type__in=["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"]
                     ).first()
                 
                 if active_status:
@@ -1836,6 +1841,208 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _get_mother_tag_numbers_from_request(self, request):
+        mother_tag_numbers = request.data.get("mother_tag_numbers") or []
+        if not isinstance(mother_tag_numbers, list):
+            return None, Response(
+                {"error": "Список матерей должен быть массивом"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cleaned_tags = []
+        seen_tags = set()
+        for tag_number in mother_tag_numbers:
+            cleaned_tag = str(tag_number).strip()
+            normalized_tag = cleaned_tag.lower()
+            if not cleaned_tag or normalized_tag in seen_tags:
+                continue
+            seen_tags.add(normalized_tag)
+            cleaned_tags.append(cleaned_tag)
+
+        if not cleaned_tags:
+            return None, Response(
+                {"error": "Необходимо выбрать хотя бы одну мать"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return cleaned_tags, None
+
+    def _resolve_mothers_for_group_edit(self, mother_tag_numbers):
+        mothers = []
+        errors = []
+        for mother_tag_number in mother_tag_numbers:
+            mother, mother_type = _find_mother_by_tag(mother_tag_number)
+            if not mother:
+                errors.append(f"Мать с биркой {mother_tag_number} не найдена")
+                continue
+            mothers.append((mother, mother_type))
+        return mothers, errors
+
+    def _group_contains_mother(self, group, mother, mother_type):
+        if mother_type == "sheep":
+            return group.sheep.filter(pk=mother.pk).exists()
+        return group.ewes.filter(pk=mother.pk).exists()
+
+    def _log_group_mothers_change(self, request, action_type, group, mother_tags, extra_description=""):
+        try:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+
+            if isinstance(request.user, AnonymousUser):
+                return
+
+            description = (
+                f"{action_type}: отец {group.get_father_tag() or '-'}; "
+                f"матери: {', '.join(mother_tags)}; "
+                f"дата постановки: {group.placement_date.strftime('%d.%m.%Y')}"
+            )
+            if extra_description:
+                description = f"{description}; {extra_description}"
+
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type=action_type,
+                object_type="Группа случки",
+                object_id=str(group.id),
+                description=description,
+            )
+        except Exception as log_error:
+            print(f"Ошибка логирования изменения состава группы: {log_error}")
+
+    @action(detail=True, methods=["post"], url_path="add-mothers")
+    def add_mothers(self, request, pk=None):
+        try:
+            group = self.get_object()
+            if not group.is_active:
+                return Response(
+                    {"error": "Нельзя добавлять матерей в уже снятую группу"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mother_tag_numbers, error_response = self._get_mother_tag_numbers_from_request(request)
+            if error_response:
+                return error_response
+
+            statuses, missing_statuses = _get_group_statuses()
+            if missing_statuses:
+                return Response(
+                    {"error": "Не найдены статусы: " + ", ".join(missing_statuses)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mothers, errors = self._resolve_mothers_for_group_edit(mother_tag_numbers)
+            for mother, mother_type in mothers:
+                mother_tag = mother.tag.tag_number if mother.tag else "-"
+                if self._group_contains_mother(group, mother, mother_type):
+                    errors.append(f"Мать {mother_tag} уже находится в этой группе")
+                    continue
+
+                if LambingGroup.objects.filter(is_active=True).exclude(pk=group.pk).filter(
+                    _active_group_mother_filter(mother, mother_type)
+                ).exists():
+                    errors.append(f"Мать {mother_tag} уже находится в другой активной группе")
+                    continue
+
+                if Lambing.objects.filter(is_active=True).filter(
+                    _active_lambing_mother_filter(mother, mother_type)
+                ).exists():
+                    errors.append(f"У матери {mother_tag} уже есть активная случка")
+                    continue
+
+            if errors:
+                return Response(
+                    {"error": "\n".join(errors), "errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            with transaction.atomic():
+                for mother, mother_type in mothers:
+                    if mother_type == "sheep":
+                        group.sheep.add(mother)
+                    else:
+                        group.ewes.add(mother)
+                    _set_animal_status(mother, statuses["mother_in_group"])
+
+            mother_tags = [mother.tag.tag_number for mother, _ in mothers if mother.tag]
+            self._log_group_mothers_change(
+                request,
+                "Добавление матерей в группу",
+                group,
+                mother_tags,
+                "дата постановки для добавленных матерей совпадает с датой группы",
+            )
+
+            return Response(
+                {
+                    "success": "Матери добавлены в группу",
+                    "added_count": len(mothers),
+                    "group": self.get_serializer(group).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="remove-mothers")
+    def remove_mothers(self, request, pk=None):
+        try:
+            group = self.get_object()
+            if not group.is_active:
+                return Response(
+                    {"error": "Нельзя убирать матерей из уже снятой группы"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mother_tag_numbers, error_response = self._get_mother_tag_numbers_from_request(request)
+            if error_response:
+                return error_response
+
+            mothers, errors = self._resolve_mothers_for_group_edit(mother_tag_numbers)
+            for mother, mother_type in mothers:
+                mother_tag = mother.tag.tag_number if mother.tag else "-"
+                if not self._group_contains_mother(group, mother, mother_type):
+                    errors.append(f"Мать {mother_tag} не находится в этой группе")
+
+            if errors:
+                return Response(
+                    {"error": "\n".join(errors), "errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            current_mothers_count = group.sheep.count() + group.ewes.count()
+            if current_mothers_count - len(mothers) < 1:
+                return Response(
+                    {"error": "В группе должна остаться хотя бы одна мать"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            with transaction.atomic():
+                for mother, mother_type in mothers:
+                    if mother_type == "sheep":
+                        group.sheep.remove(mother)
+                    else:
+                        group.ewes.remove(mother)
+
+            mother_tags = [mother.tag.tag_number for mother, _ in mothers if mother.tag]
+            self._log_group_mothers_change(
+                request,
+                "Удаление матерей из группы",
+                group,
+                mother_tags,
+                "записи случек не создавались",
+            )
+
+            return Response(
+                {
+                    "success": "Матери убраны из группы",
+                    "removed_count": len(mothers),
+                    "group": self.get_serializer(group).data,
+                },
+                status=status.HTTP_200_OK,
+            )
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3163,7 +3370,7 @@ class AnimalAnalyticsView(TemplateView):
                 many=True
             ).data,
             "place_movements": PlaceMovementSerializer(
-                PlaceMovement.objects.filter(tag=animal.tag).order_by("-new_place__date_of_transfer"),
+                PlaceMovement.objects.filter(tag=animal.tag).order_by("-created_at"),
                 many=True
             ).data,
             "veterinary_history": VeterinarySerializer(
@@ -3399,6 +3606,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
                 'Падеж',
                 'Реализация в живом весе',
                 'Продажа на племя',
+                'Убой на мясо',
             ]
 
             ewes_qs = Ewe.objects.filter(
@@ -3721,6 +3929,240 @@ def common_animals(request):
     return render(request, "common.html")
 
 
+def young_stock(request):
+    return render(request, "young_stock.html")
+
+
+def _get_young_stock_cutoff_date():
+    return timezone.now().date() - relativedelta(months=7)
+
+
+def _get_animal_url_by_type(animal_type, tag_number):
+    route_map = {
+        "maker": "animals:maker-detail",
+        "ram": "animals:ram-detail",
+        "ewe": "animals:ewe-detail",
+        "sheep": "animals:sheep-detail",
+    }
+    route_name = route_map.get(animal_type)
+    if not route_name or not tag_number:
+        return None
+    return reverse(route_name, kwargs={"tag_number": tag_number})
+
+
+def _get_mother_link_by_tag(mother_tag):
+    mother_tag = (mother_tag or "").strip()
+    if not mother_tag:
+        return "-", None
+
+    for model, route_name in ((Sheep, "animals:sheep-detail"), (Ewe, "animals:ewe-detail")):
+        mother = model.objects.select_related("tag").filter(
+            _build_case_variants_filter("tag__tag_number", mother_tag)
+        ).first()
+        if mother and mother.tag:
+            tag_number = mother.tag.tag_number
+            return tag_number, reverse(route_name, kwargs={"tag_number": tag_number})
+
+    return mother_tag, None
+
+
+def _parse_date_filter(raw_value):
+    raw_value = (raw_value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _parse_decimal_filter(raw_value):
+    raw_value = (raw_value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return Decimal(raw_value.replace(",", "."))
+    except Exception:
+        return None
+
+
+def _get_young_stock_filtered_items(query_params):
+    search = query_params.get("search", "").strip()
+    birth_date_from = _parse_date_filter(query_params.get("birth_date_from"))
+    birth_date_to = _parse_date_filter(query_params.get("birth_date_to"))
+    age_min = _parse_decimal_filter(query_params.get("age_min"))
+    age_max = _parse_decimal_filter(query_params.get("age_max"))
+    father_tag = query_params.get("father_tag", "").strip()
+    mother_tag = query_params.get("mother_tag", "").strip()
+    animal_type_filter = query_params.get("animal_type", "").strip().lower()
+    cutoff_date = _get_young_stock_cutoff_date()
+
+    if animal_type_filter:
+        selected_types = [animal_type_filter] if animal_type_filter in COMMON_ANIMAL_TYPE_MAP else []
+    else:
+        selected_types = list(COMMON_ANIMAL_TYPE_MAP.keys())
+
+    items = []
+    for animal_type, type_data in COMMON_ANIMAL_TYPE_MAP.items():
+        if animal_type not in selected_types:
+            continue
+
+        model, type_label = type_data
+        queryset = model.objects.filter(
+            is_archived=False,
+            birth_date__isnull=False,
+            birth_date__gt=cutoff_date,
+        ).select_related("tag", "animal_status", "place")
+
+        if search:
+            search_filter = _build_case_variants_filter("tag__tag_number", search)
+            if animal_type == "maker":
+                search_filter |= Q(name__icontains=search)
+            queryset = queryset.filter(search_filter)
+
+        if birth_date_from:
+            queryset = queryset.filter(birth_date__gte=birth_date_from)
+        if birth_date_to:
+            queryset = queryset.filter(birth_date__lte=birth_date_to)
+        if age_min is not None:
+            queryset = queryset.filter(age__gte=age_min)
+        if age_max is not None:
+            queryset = queryset.filter(age__lte=age_max)
+        if father_tag:
+            queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
+        if mother_tag:
+            queryset = queryset.filter(_build_case_variants_filter("mother", mother_tag))
+
+        for animal in queryset:
+            items.append((animal_type, type_label, animal))
+
+    items.sort(key=lambda item: (item[2].birth_date or datetime.min.date(), item[2].tag_id), reverse=True)
+    return items
+
+
+def _build_young_stock_row(animal_type, type_label, animal):
+    tag_number = animal.tag.tag_number if animal.tag else "-"
+    mother_tag, mother_url = _get_mother_link_by_tag(animal.mother)
+
+    return {
+        "id": animal.id,
+        "tag_id": animal.tag_id,
+        "animal_type": animal_type,
+        "animal_type_label": type_label,
+        "tag_number": tag_number,
+        "tag_url": _get_animal_url_by_type(animal_type, tag_number),
+        "birth_type": "-",
+        "birth_date": animal.birth_date.strftime("%Y-%m-%d") if animal.birth_date else "-",
+        "birth_weight": _format_ewe_birth_weight(animal),
+        "weaning": _format_ewe_weaning(animal),
+        "mother_tag": mother_tag,
+        "mother_url": mother_url,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def young_stock_api(request):
+    page_raw = request.query_params.get("page", "1")
+    page_size_raw = request.query_params.get("page_size", "10")
+
+    try:
+        page_number = max(int(page_raw), 1)
+    except (TypeError, ValueError):
+        page_number = 1
+
+    try:
+        page_size = int(page_size_raw)
+    except (TypeError, ValueError):
+        page_size = 10
+    page_size = min(max(page_size, 1), 100)
+
+    items = _get_young_stock_filtered_items(request.query_params)
+    paginator = Paginator(items, page_size)
+    page_obj = paginator.get_page(page_number)
+    results = [
+        _build_young_stock_row(animal_type, type_label, animal)
+        for animal_type, type_label, animal in page_obj.object_list
+    ]
+
+    def build_page_url(page_value):
+        query_params = request.query_params.copy()
+        query_params["page"] = page_value
+        return request.build_absolute_uri(f"{request.path}?{query_params.urlencode()}")
+
+    return Response(
+        {
+            "count": paginator.count,
+            "next": build_page_url(page_obj.next_page_number()) if page_obj.has_next() else None,
+            "previous": build_page_url(page_obj.previous_page_number()) if page_obj.has_previous() else None,
+            "results": results,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+def _filter_young_stock_selected_items(items, selected_raw):
+    selected_terms = _split_multi_search_terms(selected_raw)
+    if not selected_terms:
+        return items
+
+    selected_keys = set()
+    for term in selected_terms:
+        if ":" not in term:
+            continue
+        animal_type, tag_number = term.split(":", 1)
+        animal_type = animal_type.strip().lower()
+        tag_number = tag_number.strip().lower()
+        if animal_type and tag_number:
+            selected_keys.add((animal_type, tag_number))
+
+    if not selected_keys:
+        return items
+
+    return [
+        item
+        for item in items
+        if (item[0], item[2].tag.tag_number.lower() if item[2].tag else "") in selected_keys
+    ]
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def young_stock_export_excel(request):
+    items = _get_young_stock_filtered_items(request.query_params)
+    items = _filter_young_stock_selected_items(items, request.GET.get("selected", ""))
+
+    rows = []
+    for idx, (animal_type, type_label, animal) in enumerate(items, start=1):
+        row = _build_young_stock_row(animal_type, type_label, animal)
+        rows.append(
+            [
+                idx,
+                row["tag_number"],
+                row["birth_type"],
+                row["birth_date"],
+                row["birth_weight"],
+                row["weaning"],
+                row["mother_tag"],
+            ]
+        )
+
+    return _build_excel_response(
+        filename_prefix="young_stock",
+        sheet_title="Молодняк",
+        headers=[
+            "№",
+            "Номер молодняка (бирка)",
+            "Тип рождения",
+            "Дата рождения",
+            "Вес при рождении",
+            "Отбивка",
+            "Номер матери (бирка)",
+        ],
+        rows=rows,
+    )
+
+
 JOURNAL_MONTHS = [
     (1, "Январь"),
     (2, "Февраль"),
@@ -3840,6 +4282,66 @@ def _format_weight_value(value):
     except Exception:
         return "-"
     return f"{dec:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_weight_kg_fixed(value):
+    if value is None:
+        return "-"
+    try:
+        return f"{Decimal(value):.2f} кг"
+    except Exception:
+        return "-"
+
+
+def _format_weight_record_with_date(record):
+    if not record:
+        return "-"
+    return f"{record.weight_date.strftime('%Y-%m-%d')}: {_format_weight_kg_fixed(record.weight)}"
+
+
+def _get_weight_record_near_date(tag, target_date, delta_days=5):
+    if not tag or not target_date:
+        return None
+
+    start_date = target_date - timedelta(days=delta_days)
+    end_date = target_date + timedelta(days=delta_days)
+    records = WeightRecord.objects.filter(
+        tag=tag,
+        weight_date__gte=start_date,
+        weight_date__lte=end_date,
+    ).order_by("weight_date", "id")
+
+    return min(
+        records,
+        key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, record.id),
+        default=None,
+    )
+
+
+def _format_ewe_birth_weight(animal):
+    weight_record = _get_weight_record_near_date(animal.tag, animal.birth_date)
+    return _format_weight_kg_fixed(weight_record.weight) if weight_record else "-"
+
+
+def _format_ewe_weaning(animal):
+    weight_record = _get_weight_record_near_date(animal.tag, animal.date_otbivka)
+    return _format_weight_record_with_date(weight_record)
+
+
+def _format_last_vet(animal):
+    vet_record = (
+        Veterinary.objects.filter(tag=animal.tag)
+        .select_related("veterinary_care")
+        .order_by("-date_of_care", "-id")
+        .first()
+    )
+    if not vet_record or not vet_record.veterinary_care:
+        return "-"
+
+    care = vet_record.veterinary_care
+    care_type = care.care_name or "-"
+    medication = care.medication or "без препарата"
+    return f"{vet_record.date_of_care.strftime('%d.%m.%Y')}: {care_type} ({medication})"
 
 
 def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None):
@@ -4847,84 +5349,151 @@ def export_to_excel(request):
                 })
 
         print(f"Найдено {len(animals_list)} животных для экспорта")
-        headers = ['№', 'Бирка', 'Статус', 'Возраст (мес)', 'Овчарня', 'Живой вес (кг)', 'Дата взвешивания']
-        if animal_type == 'common':
-            headers.insert(1, 'Тип животного')
-        
-        if animal_type == 'maker':
-            headers.extend(['Племенной статус', 'Рабочее состояние'])
-        elif animal_type == 'common':
-            headers.append('Рабочее состояние')
-        
-        headers.append('Примечание')
-        
-        if include_details:
-            headers.extend(['Мать', 'Отец', 'Дети', 'История веса', 'История ветобработок'])
-        
-        # Подготавливаем данные для экспорта
-        export_data = []
-        for idx, item in enumerate(animals_list, start=1):
-            animal = item['animal']
-            row_data = [
-                idx,  # №
-                animal.tag.tag_number,
-                animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
-                animal.age if animal.age else '-',
-                animal.place.sheepfold if animal.place else 'Нет данных',
-                item['last_weight'] if item['last_weight'] else '-',
-                item['last_weight_date'].strftime('%Y-%m-%d') if item['last_weight_date'] else '-'
+        if animal_type == 'ewe':
+            headers = [
+                '№',
+                'Индивидуальный номер (бирка)',
+                'Дата рождения',
+                'Тип рождения',
+                'Вес при рождении',
+                'Статус',
+                'Овчарня',
+                'Последнее взвешивание',
+                'Отбивка',
+                'Последняя ветобработка',
+                'Бирка РСХН',
+                'Примечание',
             ]
-
+            export_data = []
+            for idx, item in enumerate(animals_list, start=1):
+                animal = item['animal']
+                export_data.append([
+                    idx,
+                    animal.tag.tag_number,
+                    animal.birth_date.strftime('%Y-%m-%d') if animal.birth_date else '-',
+                    '-',
+                    _format_ewe_birth_weight(animal),
+                    animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
+                    animal.place.sheepfold if animal.place else 'Нет данных',
+                    _format_weight_record_with_date(
+                        WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date', '-id').first()
+                    ),
+                    _format_ewe_weaning(animal),
+                    _format_last_vet(animal),
+                    animal.rshn_tag or '-',
+                    animal.note or '',
+                ])
+        elif animal_type == 'sheep':
+            headers = [
+                '№',
+                'Индивидуальный номер (бирка)',
+                'Дата рождения',
+                'Статус',
+                'Овчарня',
+                'Последнее взвешивание',
+                'Последнее осеменение',
+                'Последняя дата окота',
+                'Последняя ветобработка',
+                'Бирка РСХН',
+                'Примечание',
+            ]
+            export_data = []
+            for idx, item in enumerate(animals_list, start=1):
+                animal = item['animal']
+                export_data.append([
+                    idx,
+                    animal.tag.tag_number,
+                    animal.birth_date.strftime('%Y-%m-%d') if animal.birth_date else '-',
+                    animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
+                    animal.place.sheepfold if animal.place else 'Нет данных',
+                    _format_weight_record_with_date(
+                        WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date', '-id').first()
+                    ),
+                    format_sheep_last_insemination_text(build_sheep_last_insemination_data(animal)),
+                    format_sheep_last_lambing_text(build_sheep_last_lambing_summary(animal)),
+                    _format_last_vet(animal),
+                    animal.rshn_tag or '-',
+                    animal.note or '',
+                ])
+        else:
+            headers = ['№', 'Бирка', 'Статус', 'Возраст (мес)', 'Овчарня', 'Живой вес (кг)', 'Дата взвешивания']
             if animal_type == 'common':
-                type_labels = {
-                    'maker': 'Баран-Производитель',
-                    'ram': 'Баранчик',
-                    'ewe': 'Ярка',
-                    'sheep': 'Овцематка'
-                }
-                row_data.insert(1, type_labels.get(item.get('animal_type'), item.get('animal_type', '-')))
+                headers.insert(1, 'Тип животного')
             
             if animal_type == 'maker':
-                row_data.extend([
-                    animal.plemstatus if hasattr(animal, 'plemstatus') else '-',
-                    animal.working_condition if hasattr(animal, 'working_condition') else '-'
-                ])
+                headers.extend(['Племенной статус', 'Рабочее состояние'])
             elif animal_type == 'common':
-                row_data.append(animal.working_condition if hasattr(animal, 'working_condition') and animal.working_condition else '-')
+                headers.append('Рабочее состояние')
             
-            row_data.append(animal.note if animal.note else '')
+            headers.append('Примечание')
             
             if include_details:
-                # Родители
-                mother = animal.mother if animal.mother else 'Нет данных'
-                father = animal.father if animal.father else 'Нет данных'
-                
-                # Дети
-                children = animal.get_children()
-                # Словарь переводов типов животных
-                type_translations = {
-                    'Maker': 'Баран-Производитель',
-                    'Ram': 'Баранчик',
-                    'Ewe': 'Ярка',
-                    'Sheep': 'Овцематка'
-                }
-                children_str = '; '.join([
-                    f"{child.tag.tag_number} ({type_translations.get(child.get_animal_type(), child.get_animal_type())}" + 
-                    (f", {child.age}мес" if child.age else "") + ")"
-                    for child in children[:10]  # Ограничиваем до 10 детей для читаемости
-                ]) if children else 'Нет данных'
-                
-                # История веса
-                weight_history = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date')[:5]
-                weight_str = '; '.join([f"{w.weight_date}: {w.weight}кг" for w in weight_history])
-                
-                # История ветобработок
-                vet_history = Veterinary.objects.filter(tag=animal.tag).select_related('veterinary_care').order_by('-date_of_care')[:5]
-                vet_str = '; '.join([f"{v.date_of_care}: {v.veterinary_care.care_name}" for v in vet_history])
-                
-                row_data.extend([mother, father, children_str, weight_str or 'Нет данных', vet_str or 'Нет данных'])
+                headers.extend(['Мать', 'Отец', 'Дети', 'История веса', 'История ветобработок'])
             
-            export_data.append(row_data)
+            # Подготавливаем данные для экспорта
+            export_data = []
+            for idx, item in enumerate(animals_list, start=1):
+                animal = item['animal']
+                row_data = [
+                    idx,  # №
+                    animal.tag.tag_number,
+                    animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
+                    animal.age if animal.age else '-',
+                    animal.place.sheepfold if animal.place else 'Нет данных',
+                    item['last_weight'] if item['last_weight'] else '-',
+                    item['last_weight_date'].strftime('%Y-%m-%d') if item['last_weight_date'] else '-'
+                ]
+
+                if animal_type == 'common':
+                    type_labels = {
+                        'maker': 'Баран-Производитель',
+                        'ram': 'Баранчик',
+                        'ewe': 'Ярка',
+                        'sheep': 'Овцематка'
+                    }
+                    row_data.insert(1, type_labels.get(item.get('animal_type'), item.get('animal_type', '-')))
+                
+                if animal_type == 'maker':
+                    row_data.extend([
+                        animal.plemstatus if hasattr(animal, 'plemstatus') else '-',
+                        animal.working_condition if hasattr(animal, 'working_condition') else '-'
+                    ])
+                elif animal_type == 'common':
+                    row_data.append(animal.working_condition if hasattr(animal, 'working_condition') and animal.working_condition else '-')
+                
+                row_data.append(animal.note if animal.note else '')
+                
+                if include_details:
+                    # Родители
+                    mother = animal.mother if animal.mother else 'Нет данных'
+                    father = animal.father if animal.father else 'Нет данных'
+                    
+                    # Дети
+                    children = animal.get_children()
+                    # Словарь переводов типов животных
+                    type_translations = {
+                        'Maker': 'Баран-Производитель',
+                        'Ram': 'Баранчик',
+                        'Ewe': 'Ярка',
+                        'Sheep': 'Овцематка'
+                    }
+                    children_str = '; '.join([
+                        f"{child.tag.tag_number} ({type_translations.get(child.get_animal_type(), child.get_animal_type())}" + 
+                        (f", {child.age}мес" if child.age else "") + ")"
+                        for child in children[:10]  # Ограничиваем до 10 детей для читаемости
+                    ]) if children else 'Нет данных'
+                    
+                    # История веса
+                    weight_history = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date')[:5]
+                    weight_str = '; '.join([f"{w.weight_date}: {w.weight}кг" for w in weight_history])
+                    
+                    # История ветобработок
+                    vet_history = Veterinary.objects.filter(tag=animal.tag).select_related('veterinary_care').order_by('-date_of_care')[:5]
+                    vet_str = '; '.join([f"{v.date_of_care}: {v.veterinary_care.care_name}" for v in vet_history])
+                    
+                    row_data.extend([mother, father, children_str, weight_str or 'Нет данных', vet_str or 'Нет данных'])
+                
+                export_data.append(row_data)
         
         # Создаем файл в зависимости от доступности openpyxl
         if use_excel:
@@ -5308,7 +5877,7 @@ def dashboard_statistics(request):
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
     # 2. Перенесено в архив за последний месяц
-    archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя']
+    archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо']
     
     # Используем StatusHistory для получения даты архивирования
     from begunici.app_types.veterinary.vet_models import StatusHistory
@@ -6537,11 +7106,50 @@ def archive_act_download(request, animal_type, tag_number):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    response = archive_act_response(animal)
+    response = archive_act_response(animal, user=request.user)
     if response is None:
         return Response(
             {"error": "Для архивного статуса этого животного нет шаблона акта"},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def transfer_acts_api(request):
+    """Возвращает список актов перевода, собранных из истории перемещений."""
+    page_number = request.GET.get("page", 1)
+    page_size = request.GET.get("page_size", 10)
+    transfer_date = request.GET.get("transfer_date", "")
+    month = request.GET.get("month", "")
+    year = request.GET.get("year", "")
+
+    try:
+        page_size = max(1, min(int(page_size), 100))
+    except (TypeError, ValueError):
+        page_size = 10
+
+    return Response(
+        get_transfer_acts_page(
+            page_number=page_number,
+            page_size=page_size,
+            transfer_date=transfer_date,
+            month=month,
+            year=year,
+        )
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def transfer_act_download(request, act_number):
+    """Скачивает акт перевода по автоматически рассчитанному номеру."""
+    response = transfer_act_response(act_number, user=request.user)
+    if response is None:
+        return Response(
+            {"error": "Акт перевода не найден"},
+            status=status.HTTP_404_NOT_FOUND,
         )
     return response
 
@@ -6769,6 +7377,42 @@ def vet_filter_options(request):
         }, status=500)
 
 
+def _calculate_age_days_at_date(birth_date, target_date):
+    if not birth_date or not target_date:
+        return None
+
+    try:
+        days = (target_date - birth_date).days
+    except (ValueError, TypeError):
+        return None
+
+    if days < 0:
+        return None
+    return f"{days} сут."
+
+
+def _format_otbivka_weight(animal):
+    weight_record = _get_weight_record_near_date(animal.tag, animal.date_otbivka, delta_days=5)
+    return _format_weight_kg_fixed(weight_record.weight) if weight_record else "-"
+
+
+def _get_weight_value_near_date(tag, target_date, delta_days=5):
+    weight_record = _get_weight_record_near_date(tag, target_date, delta_days=delta_days)
+    return weight_record.weight if weight_record else None
+
+
+def _calculate_age_days_number(birth_date, target_date):
+    if not birth_date or not target_date:
+        return None
+
+    try:
+        days = (target_date - birth_date).days
+    except (ValueError, TypeError):
+        return None
+
+    return days if days >= 0 else None
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def otbivka_api(request):
@@ -6823,7 +7467,8 @@ def otbivka_api(request):
             'display_name': display_name,  # Добавляем поле для отображения
             'animal_type': 'maker',
             'birth_date': maker.birth_date,
-            'age_at_otbivka': calculate_age_at_date(maker.birth_date, maker.date_otbivka) if maker.birth_date else None
+            'age_at_otbivka': _calculate_age_days_at_date(maker.birth_date, maker.date_otbivka),
+            'weaning_weight': _format_otbivka_weight(maker),
         })
     
     # Rams
@@ -6840,7 +7485,8 @@ def otbivka_api(request):
             'display_name': ram.tag.tag_number,  # Для баранчиков просто бирка
             'animal_type': 'ram',
             'birth_date': ram.birth_date,
-            'age_at_otbivka': calculate_age_at_date(ram.birth_date, ram.date_otbivka) if ram.birth_date else None
+            'age_at_otbivka': _calculate_age_days_at_date(ram.birth_date, ram.date_otbivka),
+            'weaning_weight': _format_otbivka_weight(ram),
         })
     
     # Ewes
@@ -6857,7 +7503,8 @@ def otbivka_api(request):
             'display_name': ewe.tag.tag_number,  # Для ярок просто бирка
             'animal_type': 'ewe',
             'birth_date': ewe.birth_date,
-            'age_at_otbivka': calculate_age_at_date(ewe.birth_date, ewe.date_otbivka) if ewe.birth_date else None
+            'age_at_otbivka': _calculate_age_days_at_date(ewe.birth_date, ewe.date_otbivka),
+            'weaning_weight': _format_otbivka_weight(ewe),
         })
     
     # Sheeps
@@ -6874,7 +7521,8 @@ def otbivka_api(request):
             'display_name': sheep.tag.tag_number,  # Для овцематок просто бирка
             'animal_type': 'sheep',
             'birth_date': sheep.birth_date,
-            'age_at_otbivka': calculate_age_at_date(sheep.birth_date, sheep.date_otbivka) if sheep.birth_date else None
+            'age_at_otbivka': _calculate_age_days_at_date(sheep.birth_date, sheep.date_otbivka),
+            'weaning_weight': _format_otbivka_weight(sheep),
         })
     
     # Фильтрация по поиску (по номеру бирки)
@@ -6899,7 +7547,8 @@ def otbivka_api(request):
             'tag_number': animal['tag_number'],
             'display_name': animal['display_name'],  # Добавляем display_name
             'animal_type': animal['animal_type'],
-            'age_at_otbivka': animal['age_at_otbivka']
+            'age_at_otbivka': animal['age_at_otbivka'],
+            'weaning_weight': animal['weaning_weight'],
         })
     
     return JsonResponse({
@@ -6915,124 +7564,179 @@ def otbivka_api(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def otbivka_export_excel(request):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return Response(
+            {'error': 'Библиотека openpyxl не установлена. Экспорт XLSX недоступен.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
     search_query = request.GET.get('search', '').strip()
     date_from_obj = _parse_filter_date(request.GET.get('date_from', '').strip())
     date_to_obj = _parse_filter_date(request.GET.get('date_to', '').strip())
 
-    animals = []
+    def apply_date_filters(queryset):
+        if date_from_obj:
+            queryset = queryset.filter(date_otbivka__gte=date_from_obj)
+        if date_to_obj:
+            queryset = queryset.filter(date_otbivka__lte=date_to_obj)
+        return queryset
 
-    makers_qs = Maker.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    if date_from_obj:
-        makers_qs = makers_qs.filter(date_otbivka__gte=date_from_obj)
-    if date_to_obj:
-        makers_qs = makers_qs.filter(date_otbivka__lte=date_to_obj)
-
-    for maker in makers_qs:
-        display_name = maker.tag.tag_number
-        if maker.name:
-            display_name = f"{maker.name}({maker.tag.tag_number})"
-
-        animals.append(
-            {
-                'date_otbivka': maker.date_otbivka,
-                'tag_number': maker.tag.tag_number,
-                'display_name': display_name,
-                'animal_type': 'maker',
-                'age_at_otbivka': calculate_age_at_date(maker.birth_date, maker.date_otbivka) if maker.birth_date else None,
-            }
+    def add_animals(model, export_status, sheet_key):
+        queryset = apply_date_filters(
+            model.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
         )
+        rows = []
+        for animal in queryset:
+            tag_number = animal.tag.tag_number if animal.tag else ''
+            if search_query and not _matches_multi_search(tag_number, search_query):
+                continue
 
-    rams_qs = Ram.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    if date_from_obj:
-        rams_qs = rams_qs.filter(date_otbivka__gte=date_from_obj)
-    if date_to_obj:
-        rams_qs = rams_qs.filter(date_otbivka__lte=date_to_obj)
+            rows.append(
+                {
+                    'sheet_key': sheet_key,
+                    'status': export_status,
+                    'tag_number': tag_number,
+                    'birth_date': animal.birth_date,
+                    'date_otbivka': animal.date_otbivka,
+                    'age_days': _calculate_age_days_number(animal.birth_date, animal.date_otbivka),
+                    'birth_weight': _get_weight_value_near_date(animal.tag, animal.birth_date, delta_days=5),
+                    'weaning_weight': _get_weight_value_near_date(animal.tag, animal.date_otbivka, delta_days=5),
+                    'father_tag': (animal.father or '').strip(),
+                }
+            )
+        return rows
 
-    for ram in rams_qs:
-        animals.append(
-            {
-                'date_otbivka': ram.date_otbivka,
-                'tag_number': ram.tag.tag_number,
-                'display_name': ram.tag.tag_number,
-                'animal_type': 'ram',
-                'age_at_otbivka': calculate_age_at_date(ram.birth_date, ram.date_otbivka) if ram.birth_date else None,
-            }
-        )
-
-    ewes_qs = Ewe.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    if date_from_obj:
-        ewes_qs = ewes_qs.filter(date_otbivka__gte=date_from_obj)
-    if date_to_obj:
-        ewes_qs = ewes_qs.filter(date_otbivka__lte=date_to_obj)
-
-    for ewe in ewes_qs:
-        animals.append(
-            {
-                'date_otbivka': ewe.date_otbivka,
-                'tag_number': ewe.tag.tag_number,
-                'display_name': ewe.tag.tag_number,
-                'animal_type': 'ewe',
-                'age_at_otbivka': calculate_age_at_date(ewe.birth_date, ewe.date_otbivka) if ewe.birth_date else None,
-            }
-        )
-
-    sheeps_qs = Sheep.objects.filter(date_otbivka__isnull=False).select_related('tag', 'animal_status')
-    if date_from_obj:
-        sheeps_qs = sheeps_qs.filter(date_otbivka__gte=date_from_obj)
-    if date_to_obj:
-        sheeps_qs = sheeps_qs.filter(date_otbivka__lte=date_to_obj)
-
-    for sheep in sheeps_qs:
-        animals.append(
-            {
-                'date_otbivka': sheep.date_otbivka,
-                'tag_number': sheep.tag.tag_number,
-                'display_name': sheep.tag.tag_number,
-                'animal_type': 'sheep',
-                'age_at_otbivka': calculate_age_at_date(sheep.birth_date, sheep.date_otbivka) if sheep.birth_date else None,
-            }
-        )
-
-    if search_query:
-        animals = [
-            animal for animal in animals
-            if _matches_multi_search(animal['tag_number'], search_query)
-        ]
-
-    animals.sort(key=lambda item: item['date_otbivka'], reverse=True)
-    type_labels = {
-        'maker': 'Баран-Производитель',
-        'ram': 'Баранчик',
-        'ewe': 'Ярка',
-        'sheep': 'Овцематка',
-    }
-
-    rows = []
-    for idx, animal in enumerate(animals, start=1):
-        rows.append(
-            [
-                idx,
-                _format_date_for_excel(animal['date_otbivka']),
-                animal['display_name'],
-                type_labels.get(animal['animal_type'], animal['animal_type']),
-                animal['age_at_otbivka'] or '-',
-            ]
-        )
-
-    return _build_excel_response(
-        filename_prefix='otbivka',
-        sheet_title='Отбивка',
-        headers=[
-            '№',
-            'Дата отбивки',
-            'Бирка',
-            'Тип животного',
-            'Возраст на момент отбивки',
-        ],
-        rows=rows,
-        summary_lines=[f'Итого записей: {len(rows)}'],
+    animals = (
+        add_animals(Ram, 'Баранчик', 'male') +
+        add_animals(Maker, 'Баранчик', 'male') +
+        add_animals(Ewe, 'Ярка', 'female') +
+        add_animals(Sheep, 'Ярка', 'female')
     )
+    animals.sort(key=lambda item: (item['date_otbivka'], item['tag_number']), reverse=True)
 
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    headers = [
+        'Статус',
+        'Инв. номер на правом ухе',
+        'Инв. номер на левом ухе',
+        'Порода',
+        'Поколение',
+        'Дата рождения',
+        'Дата отбивки',
+        'Возр. при отбивке, дней',
+        'Живая масса при рожд.',
+        'Живая масса при отбивке',
+        'Инв.№ на правом ухе предка - M',
+    ]
+    column_widths = [14, 24, 24, 16, 18, 14, 14, 20, 20, 23, 28]
+    thin_side = Side(style='thin', color='000000')
+    cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    header_font = Font(bold=True)
+    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    def normalize_number(value):
+        if value is None:
+            return None
+        try:
+            decimal_value = Decimal(value)
+        except Exception:
+            return None
+        if decimal_value == decimal_value.to_integral_value():
+            return int(decimal_value)
+        return float(decimal_value)
+
+    def sum_or_blank(values):
+        clean_values = [value for value in values if value is not None]
+        if not clean_values:
+            return None
+        return sum(clean_values)
+
+    def write_sheet(sheet_title, sheet_key):
+        worksheet = workbook.create_sheet(sheet_title)
+        worksheet.append(headers)
+        for column_index, width in enumerate(column_widths, start=1):
+            worksheet.column_dimensions[get_column_letter(column_index)].width = width
+
+        for cell in worksheet[1]:
+            cell.font = header_font
+            cell.alignment = center_alignment
+            cell.border = cell_border
+
+        sheet_animals = [animal for animal in animals if animal['sheet_key'] == sheet_key]
+        for animal in sheet_animals:
+            worksheet.append([
+                animal['status'],
+                animal['tag_number'],
+                '',
+                '',
+                '',
+                animal['birth_date'],
+                animal['date_otbivka'],
+                animal['age_days'],
+                normalize_number(animal['birth_weight']),
+                normalize_number(animal['weaning_weight']),
+                animal['father_tag'],
+            ])
+
+        last_data_row = worksheet.max_row
+        worksheet.append([''] * len(headers))
+        total_row = worksheet.max_row + 1
+        worksheet.cell(row=total_row, column=7, value=len(sheet_animals))
+        worksheet.cell(
+            row=total_row,
+            column=8,
+            value=sum_or_blank(animal['age_days'] for animal in sheet_animals),
+        )
+        worksheet.cell(
+            row=total_row,
+            column=9,
+            value=sum_or_blank(normalize_number(animal['birth_weight']) for animal in sheet_animals),
+        )
+        worksheet.cell(
+            row=total_row,
+            column=10,
+            value=sum_or_blank(normalize_number(animal['weaning_weight']) for animal in sheet_animals),
+        )
+        worksheet.append([''] * len(headers))
+        daily_gain_row = worksheet.max_row + 1
+        worksheet.cell(row=daily_gain_row, column=7, value='с/сут')
+
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, max_col=len(headers)):
+            for cell in row:
+                cell.alignment = center_alignment
+                cell.border = cell_border
+
+        for row in range(2, last_data_row + 1):
+            worksheet.cell(row=row, column=6).number_format = 'dd.mm.yyyy'
+            worksheet.cell(row=row, column=7).number_format = 'dd.mm.yyyy'
+            worksheet.cell(row=row, column=9).number_format = '0.0'
+            worksheet.cell(row=row, column=10).number_format = '0.0'
+
+        worksheet.freeze_panes = 'A2'
+
+    write_sheet('баранчики', 'male')
+    write_sheet('ярки', 'female')
+
+    import io
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = (
+        f'attachment; filename="otbivka_{datetime.now().strftime("%Y-%m-%d")}.xlsx"'
+    )
+    return response
 
 def calculate_age_at_date(birth_date, target_date):
     """

@@ -4,6 +4,9 @@ import { apiRequest, getCSRFToken } from "./utils.js";
 let selectedMothers = new Set(); // Для хранения ID выбранных матерей
 let selectedMothersData = new Map(); // Для хранения полной информации о выбранных матерях
 let selectedFather = null;
+let activeGroupsById = new Map();
+let selectedGroupAddMothers = new Set();
+let selectedGroupAddMothersData = new Map();
 let currentPage = 1;
 let groupsCurrentPage = 1;
 const pageSize = 10;
@@ -128,6 +131,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    const searchGroupAddMothersBtn = document.getElementById('searchGroupAddMothersBtn');
+    if (searchGroupAddMothersBtn) {
+        searchGroupAddMothersBtn.addEventListener('click', searchGroupAddMothers);
+    }
+
+    const groupAddMothersSearchInput = document.getElementById('groupAddMothersSearch');
+    if (groupAddMothersSearchInput) {
+        groupAddMothersSearchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchGroupAddMothers();
+            }
+        });
+    }
     
     const searchFathersBtn = document.getElementById('searchFathersBtn');
     if (searchFathersBtn) {
@@ -209,6 +226,10 @@ async function loadActiveGroups() {
         const groups = response.results || response;
         const tableBody = document.getElementById('active-groups-table');
         tableBody.innerHTML = '';
+        activeGroupsById = new Map();
+        groups.forEach(group => {
+            activeGroupsById.set(Number(group.id), group);
+        });
 
         if (groups.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Нет активных групп</td></tr>';
@@ -245,9 +266,17 @@ function createGroupRow(group) {
         <td>${placementDate}</td>
         <td>${note}</td>
         <td>
-            <button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
-                Снять барана
-            </button>
+            <div class="d-flex flex-column gap-1">
+                <button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
+                    Снять барана
+                </button>
+                <button class="btn btn-outline-primary btn-sm" onclick="showAddMothersToGroupModal(${group.id})">
+                    Добавить ярку/овцематку
+                </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="showRemoveMothersFromGroupModal(${group.id})">
+                    Убрать ярку/овцематку
+                </button>
+            </div>
         </td>
     `;
 
@@ -422,6 +451,260 @@ async function confirmRemoveFather() {
     } catch (error) {
         console.error('Ошибка снятия барана:', error);
         alert('Ошибка при снятии барана: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+function resetGroupAddMothersSelection() {
+    selectedGroupAddMothers.clear();
+    selectedGroupAddMothersData.clear();
+    updateGroupAddMothersDisplay();
+}
+
+function updateGroupAddMothersDisplay() {
+    const display = document.getElementById('selected-group-add-mothers-display');
+    if (!display) {
+        return;
+    }
+
+    const selectedMothersArray = Array.from(selectedGroupAddMothersData.values());
+    if (selectedMothersArray.length === 0) {
+        display.textContent = 'Не выбрано';
+        display.className = 'mt-2 text-muted';
+    } else {
+        display.textContent = `Выбрано: ${selectedMothersArray.length} (${selectedMothersArray.map(m => m.tag).join(', ')})`;
+        display.className = 'mt-2 text-success';
+    }
+}
+
+function saveSelectedGroupAddMothers() {
+    const checkboxes = document.querySelectorAll('.group-add-mother-checkbox');
+    checkboxes.forEach(checkbox => {
+        const tagNumber = checkbox.value;
+        if (checkbox.checked) {
+            selectedGroupAddMothers.add(tagNumber);
+            selectedGroupAddMothersData.set(tagNumber, {
+                tag_number: tagNumber,
+                type: checkbox.dataset.type,
+                tag: checkbox.dataset.tag
+            });
+        } else {
+            selectedGroupAddMothers.delete(tagNumber);
+            selectedGroupAddMothersData.delete(tagNumber);
+        }
+    });
+    updateGroupAddMothersDisplay();
+}
+
+function restoreSelectedGroupAddMothers() {
+    const checkboxes = document.querySelectorAll('.group-add-mother-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectedGroupAddMothers.has(checkbox.value);
+    });
+}
+
+function createGroupAddMotherItem(animal) {
+    const item = document.createElement('div');
+    item.className = 'form-check mb-2';
+
+    item.innerHTML = `
+        <input class="form-check-input group-add-mother-checkbox" type="checkbox"
+               value="${animal.tag_number}" data-type="${animal.type_code}" data-tag="${animal.tag_number}">
+        <label class="form-check-label">
+            ${animal.tag_number} (${animal.animal_type}) - ${animal.status}
+        </label>
+    `;
+
+    return item;
+}
+
+function showAddMothersToGroupModal(groupId) {
+    window.currentEditGroupId = groupId;
+    resetGroupAddMothersSelection();
+    document.getElementById('adding-mothers-group-id').value = groupId;
+    document.getElementById('groupAddMothersSearch').value = '';
+    document.getElementById('group-add-mothers-list').innerHTML = `
+        <div class="text-muted text-center py-3">
+            Введите номер бирки и нажмите "Поиск" для отображения доступных ярок/овцематок
+        </div>
+    `;
+
+    const modal = new bootstrap.Modal(document.getElementById('addMothersToGroupModal'));
+    modal.show();
+}
+
+async function searchGroupAddMothers() {
+    const search = document.getElementById('groupAddMothersSearch').value.trim();
+
+    if (!search) {
+        document.getElementById('group-add-mothers-list').innerHTML = `
+            <div class="text-muted text-center py-3">
+                Введите номер бирки для поиска
+            </div>
+        `;
+        return;
+    }
+
+    saveSelectedGroupAddMothers();
+    document.getElementById('group-add-mothers-list').innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Поиск...</span>
+            </div>
+            <div class="mt-2">Поиск доступных ярок/овцематок...</div>
+        </div>
+    `;
+
+    try {
+        const response = await apiRequest(`/animals/api/inactive-mothers/?search=${encodeURIComponent(search)}`);
+        const mothers = response || [];
+        const mothersList = document.getElementById('group-add-mothers-list');
+        mothersList.innerHTML = '';
+
+        const limitedMothers = mothers.slice(0, 50);
+        if (limitedMothers.length === 0) {
+            mothersList.innerHTML = '<div class="text-center text-muted">Доступные ярки/овцематки не найдены</div>';
+            return;
+        }
+
+        const ewes = limitedMothers.filter(m => m.type_code === 'ewe');
+        const sheep = limitedMothers.filter(m => m.type_code === 'sheep');
+
+        if (ewes.length > 0) {
+            const eweHeader = document.createElement('h6');
+            eweHeader.textContent = 'Ярки';
+            eweHeader.className = 'mt-3 mb-2 text-primary';
+            mothersList.appendChild(eweHeader);
+
+            ewes.forEach(ewe => {
+                mothersList.appendChild(createGroupAddMotherItem(ewe));
+            });
+        }
+
+        if (sheep.length > 0) {
+            const sheepHeader = document.createElement('h6');
+            sheepHeader.textContent = 'Овцематки';
+            sheepHeader.className = 'mt-3 mb-2 text-primary';
+            mothersList.appendChild(sheepHeader);
+
+            sheep.forEach(sheepAnimal => {
+                mothersList.appendChild(createGroupAddMotherItem(sheepAnimal));
+            });
+        }
+
+        if (mothers.length > 50) {
+            const info = document.createElement('div');
+            info.className = 'text-muted text-center mt-2 small';
+            info.textContent = `Показано первых 50 из ${mothers.length} результатов`;
+            mothersList.appendChild(info);
+        }
+
+        restoreSelectedGroupAddMothers();
+    } catch (error) {
+        console.error('Ошибка поиска матерей для добавления в группу:', error);
+        document.getElementById('group-add-mothers-list').innerHTML = `
+            <div class="text-danger text-center py-3">
+                Ошибка поиска
+            </div>
+        `;
+    }
+}
+
+async function confirmAddMothersToGroup() {
+    const groupId = window.currentEditGroupId || document.getElementById('adding-mothers-group-id').value;
+    saveSelectedGroupAddMothers();
+    const selectedMothersArray = Array.from(selectedGroupAddMothersData.values());
+
+    if (!groupId) {
+        alert('Не выбрана группа');
+        return;
+    }
+
+    if (selectedMothersArray.length === 0) {
+        alert('Выберите хотя бы одну ярку/овцематку');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing-group/${groupId}/add-mothers/`, 'POST', {
+            mother_tag_numbers: selectedMothersArray.map(m => m.tag_number)
+        });
+
+        alert(`Матери добавлены в группу: ${response.added_count || 0}`);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addMothersToGroupModal'));
+        modal.hide();
+        resetGroupAddMothersSelection();
+
+        loadActiveGroups();
+    } catch (error) {
+        console.error('Ошибка добавления матерей в группу:', error);
+        alert('Ошибка при добавлении матерей в группу: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+function createRemoveGroupMotherItem(mother) {
+    const item = document.createElement('div');
+    item.className = 'form-check mb-2';
+
+    item.innerHTML = `
+        <input class="form-check-input group-remove-mother-checkbox" type="checkbox"
+               value="${mother.tag_number}" data-type="${mother.type_code}">
+        <label class="form-check-label">
+            ${mother.tag_number} (${mother.animal_type})
+        </label>
+    `;
+
+    return item;
+}
+
+function showRemoveMothersFromGroupModal(groupId) {
+    window.currentEditGroupId = groupId;
+    document.getElementById('removing-mothers-group-id').value = groupId;
+
+    const group = activeGroupsById.get(Number(groupId));
+    const mothers = group && Array.isArray(group.mothers) ? group.mothers : [];
+    const list = document.getElementById('group-remove-mothers-list');
+    list.innerHTML = '';
+
+    if (mothers.length === 0) {
+        list.innerHTML = '<div class="text-center text-muted">В группе нет матерей</div>';
+    } else {
+        mothers.forEach(mother => {
+            list.appendChild(createRemoveGroupMotherItem(mother));
+        });
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('removeMothersFromGroupModal'));
+    modal.show();
+}
+
+async function confirmRemoveMothersFromGroup() {
+    const groupId = window.currentEditGroupId || document.getElementById('removing-mothers-group-id').value;
+    const selectedTags = Array.from(document.querySelectorAll('.group-remove-mother-checkbox:checked'))
+        .map(checkbox => checkbox.value);
+
+    if (!groupId) {
+        alert('Не выбрана группа');
+        return;
+    }
+
+    if (selectedTags.length === 0) {
+        alert('Выберите хотя бы одну ярку/овцематку');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing-group/${groupId}/remove-mothers/`, 'POST', {
+            mother_tag_numbers: selectedTags
+        });
+
+        alert(`Матери убраны из группы: ${response.removed_count || 0}`);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('removeMothersFromGroupModal'));
+        modal.hide();
+
+        loadActiveGroups();
+    } catch (error) {
+        console.error('Ошибка удаления матерей из группы:', error);
+        alert('Ошибка при удалении матерей из группы: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -1536,6 +1819,10 @@ window.exportGroupsToExcel = exportGroupsToExcel;
 window.switchLambingManagementView = switchLambingManagementView;
 window.showRemoveFatherModal = showRemoveFatherModal;
 window.confirmRemoveFather = confirmRemoveFather;
+window.showAddMothersToGroupModal = showAddMothersToGroupModal;
+window.confirmAddMothersToGroup = confirmAddMothersToGroup;
+window.showRemoveMothersFromGroupModal = showRemoveMothersFromGroupModal;
+window.confirmRemoveMothersFromGroup = confirmRemoveMothersFromGroup;
 
 // Функции для проверки родства
 window.showSelectKinshipFatherModal = showSelectKinshipFatherModal;

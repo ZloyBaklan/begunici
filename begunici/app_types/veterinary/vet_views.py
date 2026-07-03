@@ -385,6 +385,7 @@ class StatusViewSet(viewsets.ModelViewSet):
         "Вынужденная прирезка",
         "Реализация в живом весе",
         "Продажа на племя",
+        "Убой на мясо",
     }
 
     def get_queryset(self):

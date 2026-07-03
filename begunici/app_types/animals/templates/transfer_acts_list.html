@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Акты перевода{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Акты перевода</h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-3">Переводы животных</h5>
+                    <div class="row align-items-end g-3">
+                        <div class="col-md-3">
+                            <label for="transfer-date-filter" class="form-label">Дата перевода:</label>
+                            <input type="date" id="transfer-date-filter" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="transfer-month-filter" class="form-label">Месяц:</label>
+                            <select id="transfer-month-filter" class="form-select">
+                                <option value="">Все месяцы</option>
+                                <option value="1">Январь</option>
+                                <option value="2">Февраль</option>
+                                <option value="3">Март</option>
+                                <option value="4">Апрель</option>
+                                <option value="5">Май</option>
+                                <option value="6">Июнь</option>
+                                <option value="7">Июль</option>
+                                <option value="8">Август</option>
+                                <option value="9">Сентябрь</option>
+                                <option value="10">Октябрь</option>
+                                <option value="11">Ноябрь</option>
+                                <option value="12">Декабрь</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="transfer-year-filter" class="form-label">Год:</label>
+                            <select id="transfer-year-filter" class="form-select">
+                                <option value="">Все годы</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-primary w-100" onclick="applyTransferActFilters()">
+                                Применить
+                            </button>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-secondary w-100" onclick="resetTransferActFilters()">
+                                Сбросить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="10%">№ Акта</th>
+                                    <th width="16%">Дата перевода</th>
+                                    <th width="23%">Из овчарни</th>
+                                    <th width="23%">В овчарню</th>
+                                    <th width="14%">Количество переведенных животных</th>
+                                    <th width="14%">Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transfer-acts-list"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+#pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+</style>
+
+<script type="module" src="{% static 'js/transfer_acts.js' %}"></script>
+{% endblock %}

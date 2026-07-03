@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}Акты{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Акты</h1>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Выберите тип акта</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:acts-archive' %}" class="btn btn-outline-primary w-100 py-3">
+                        Акты выбытия
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:acts-transfer' %}" class="btn btn-outline-primary w-100 py-3">
+                        Акты перевода
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

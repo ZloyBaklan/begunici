@@ -19,6 +19,9 @@ from .views import (
     create_animal,
     common_animals,
     common_animals_api,
+    young_stock,
+    young_stock_api,
+    young_stock_export_excel,
     ArchiveViewSet,
     ArchiveView,
     AnimalActionsViewSet,
@@ -49,6 +52,8 @@ from .views import (
     archive_export_excel,
     archive_act_preview,
     archive_act_download,
+    transfer_acts_api,
+    transfer_act_download,
     check_kinship,
     kinship_pairs_export_excel,
     get_animals_without_otbivka,
@@ -251,8 +256,12 @@ urlpatterns = [
     ),
     path("main/", animals, name="animals"),  # Главная страница
     path("common/", common_animals, name="common"),  # Общая страница животных
+    path("young-stock/", young_stock, name="young-stock"),
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
     path("vet-list/", vet_list, name="vet-list"),  # Страница списка ветобработок
+    path("acts/", TemplateView.as_view(template_name="acts_menu.html"), name="acts"),
+    path("acts/archive/", TemplateView.as_view(template_name="archive_acts_list.html"), name="acts-archive"),
+    path("acts/transfer/", TemplateView.as_view(template_name="transfer_acts_list.html"), name="acts-transfer"),
     path("journals/", journals_menu, name="journals"),  # Меню журналов
     path("journals/progeny/", journal_progeny, name="journal-progeny"),  # Журнал приплода
     path("journals/insemination/", journal_insemination, name="journal-insemination"),  # Журнал осеменения
@@ -266,8 +275,12 @@ urlpatterns = [
     path("api/lambings/export-excel/", lambings_export_excel, name="lambings-export-excel"),  # API экспорта окотов
     path("api/lambing-groups/export-excel/", lambing_groups_export_excel, name="lambing-groups-export-excel"),  # API экспорта групп
     path("api/archive/export-excel/", archive_export_excel, name="archive-export-excel"),  # API экспорта архива
+    path("api/young-stock/", young_stock_api, name="young-stock-api"),
+    path("api/young-stock/export-excel/", young_stock_export_excel, name="young-stock-export-excel"),
     path("api/archive/act-preview/", archive_act_preview, name="archive-act-preview"),
     path("api/archive/act/<str:animal_type>/<str:tag_number>/", archive_act_download, name="archive-act-download"),
+    path("api/acts/transfer/", transfer_acts_api, name="transfer-acts-api"),
+    path("api/acts/transfer/<int:act_number>/", transfer_act_download, name="transfer-act-download"),
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"

@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.db import models
 from django.urls import reverse
 from decimal import Decimal
+from datetime import timedelta
 from .models import Maker, Ram, Ewe, Sheep, Lambing, LambingGroup, AnimalBase, CalendarNote, ArchiveAct
 from begunici.app_types.veterinary.vet_models import (
     Place,
@@ -22,6 +23,185 @@ from begunici.app_types.veterinary.vet_serializers import (
     PlaceMovementSerializer,
     StatusHistorySerializer,
 )
+
+
+def _format_weight_kg(value):
+    if value is None:
+        return "-"
+    try:
+        return f"{Decimal(value):.2f} кг"
+    except Exception:
+        return "-"
+
+
+def _format_weight_record_with_date(record):
+    if not record:
+        return "-"
+    return f"{record.weight_date.strftime('%Y-%m-%d')}: {_format_weight_kg(record.weight)}"
+
+
+def _get_weight_record_near_date(tag, target_date, delta_days=5):
+    if not tag or not target_date:
+        return None
+
+    start_date = target_date - timedelta(days=delta_days)
+    end_date = target_date + timedelta(days=delta_days)
+    records = WeightRecord.objects.filter(
+        tag=tag,
+        weight_date__gte=start_date,
+        weight_date__lte=end_date,
+    ).order_by("weight_date", "id")
+
+    return min(
+        records,
+        key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, record.id),
+        default=None,
+    )
+
+
+def _get_animal_detail_url(animal):
+    if not animal or not getattr(animal, "tag", None):
+        return None
+
+    tag_number = animal.tag.tag_number
+    if isinstance(animal, Sheep):
+        return reverse("animals:sheep-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Ewe):
+        return reverse("animals:ewe-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Maker):
+        return reverse("animals:maker-detail", kwargs={"tag_number": tag_number})
+    if isinstance(animal, Ram):
+        return reverse("animals:ram-detail", kwargs={"tag_number": tag_number})
+    return None
+
+
+def _get_lambing_placement_date(lambing):
+    if not lambing:
+        return None
+    source_group = getattr(lambing, "source_group", None)
+    if source_group and source_group.placement_date:
+        return source_group.placement_date
+    if lambing.start_date:
+        return lambing.start_date - timedelta(days=60)
+    return None
+
+
+def build_sheep_last_insemination_data(sheep):
+    if not sheep:
+        return None
+
+    candidates = []
+    group = (
+        sheep.lambing_groups.select_related("maker__tag", "ram__tag")
+        .order_by("-placement_date", "-id")
+        .first()
+    )
+    if group and group.placement_date:
+        candidates.append((group.placement_date, group.id, group.get_father()))
+
+    lambing = (
+        Lambing.objects.filter(sheep=sheep, source_group__isnull=True)
+        .select_related("maker__tag", "ram__tag", "source_group")
+        .order_by("-start_date", "-id")
+        .first()
+    )
+    placement_date = _get_lambing_placement_date(lambing)
+    if lambing and placement_date:
+        candidates.append((placement_date, lambing.id, lambing.get_father()))
+
+    if not candidates:
+        return None
+
+    placement_date, _, father = max(candidates, key=lambda item: (item[0], item[1]))
+    if not father or not getattr(father, "tag", None):
+        return None
+
+    return {
+        "date": placement_date.strftime("%Y-%m-%d"),
+        "father_tag": father.tag.tag_number,
+        "father_url": _get_animal_detail_url(father),
+    }
+
+
+def _get_lambing_children_for_sheep(lambing, sheep):
+    if not lambing or not sheep or not sheep.tag or not lambing.actual_lambing_date:
+        return []
+
+    mother_tag = sheep.tag.tag_number
+    children = []
+    for model_class in (Ewe, Sheep, Ram, Maker):
+        children.extend(
+            list(
+                model_class.objects.select_related("tag").filter(
+                    birth_date=lambing.actual_lambing_date,
+                    mother__iexact=mother_tag,
+                )
+            )
+        )
+
+    children.sort(key=lambda child: child.tag.tag_number if child.tag else "")
+    result = []
+    for child in children:
+        if not child.tag:
+            continue
+        weight_record = _get_weight_record_near_date(child.tag, child.birth_date)
+        result.append(
+            {
+                "tag_number": child.tag.tag_number,
+                "url": _get_animal_detail_url(child),
+                "birth_weight": _format_weight_kg(weight_record.weight) if weight_record else "-",
+            }
+        )
+    return result
+
+
+def build_sheep_last_lambing_summary(sheep):
+    if not sheep:
+        return None
+
+    lambing = (
+        Lambing.objects.filter(
+            sheep=sheep,
+            is_active=False,
+            actual_lambing_date__isnull=False,
+        )
+        .select_related("source_group")
+        .order_by("-actual_lambing_date", "-id")
+        .first()
+    )
+    if not lambing:
+        return None
+
+    is_early_failure = lambing.completion_type == Lambing.COMPLETION_EARLY_FAILURE
+    return {
+        "date": lambing.actual_lambing_date.strftime("%Y-%m-%d"),
+        "is_early_failure": is_early_failure,
+        "children": [] if is_early_failure else _get_lambing_children_for_sheep(lambing, sheep),
+        "dead_lambs_count": lambing.dead_lambs_count or 0,
+    }
+
+
+def format_sheep_last_insemination_text(data):
+    if not data:
+        return "-"
+    father_tag = data.get("father_tag") or "-"
+    return f"{data.get('date', '-')}: {father_tag}"
+
+
+def format_sheep_last_lambing_text(summary):
+    if not summary:
+        return "-"
+
+    date = summary.get("date") or "-"
+    if summary.get("is_early_failure"):
+        return f"{date}: Досрочно завершен"
+
+    children = summary.get("children") or []
+    children_text = ", ".join(
+        f"{child.get('tag_number', '-')} ({child.get('birth_weight') or '-'})"
+        for child in children
+    ) or "детей: 0"
+    return f"{date}: {children_text}; м/р: {summary.get('dead_lambs_count', 0)}"
 
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
@@ -91,6 +271,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_fatness = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=20)
     archive_act_diagnosis = serializers.CharField(write_only=True, required=False, allow_blank=True)
     archive_act_worker_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=255)
+    archive_act_weight_date = serializers.DateField(write_only=True, required=False, allow_null=True)
+    archive_act_death_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=50)
+    archive_act_add_weight_record = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
     
     # Поле для отображения кровности по основной породе с форматированием
@@ -171,6 +354,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_fatness",
             "archive_act_diagnosis",
             "archive_act_worker_name",
+            "archive_act_weight_date",
+            "archive_act_death_reason",
+            "archive_act_add_weight_record",
             "archive_act_download",
         ):
             validated_data.pop(service_field, None)
@@ -180,6 +366,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "Вынужденная прирезка",
             "Реализация в живом весе",
             "Продажа на племя",
+            "Убой на мясо",
         }
         selected_status = validated_data.get("animal_status")
         if selected_status and selected_status.status_type in archive_statuses:
@@ -265,6 +452,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_fatness",
             "archive_act_diagnosis",
             "archive_act_worker_name",
+            "archive_act_weight_date",
+            "archive_act_death_reason",
+            "archive_act_add_weight_record",
             "archive_act_download",
         }
         archive_act_fields_submitted = any(
@@ -278,14 +468,19 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         archive_act_fatness = (validated_data.pop("archive_act_fatness", "") or "").strip()
         archive_act_diagnosis = (validated_data.pop("archive_act_diagnosis", "") or "").strip()
         archive_act_worker_name = (validated_data.pop("archive_act_worker_name", "") or "").strip()
+        archive_act_weight_date = validated_data.pop("archive_act_weight_date", None)
+        archive_act_death_reason = (validated_data.pop("archive_act_death_reason", "") or "").strip()
+        archive_act_add_weight_record = bool(validated_data.pop("archive_act_add_weight_record", False))
         archive_act_download = bool(validated_data.pop("archive_act_download", False))
 
         selected_status = validated_data.get("animal_status")
+        selected_status_name = selected_status.status_type if selected_status else ""
         archive_status_names = {
             "Падеж",
             "Вынужденная прирезка",
             "Реализация в живом весе",
             "Продажа на племя",
+            "Убой на мясо",
         }
         if (
             selected_status
@@ -296,6 +491,53 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             raise serializers.ValidationError({
                 "animal_status_id": "Архивный статус можно установить только через отдельное действие архивирования."
             })
+
+        if selected_status and selected_status != old_status:
+            from .archive_acts import get_archive_act_template_config
+
+            if get_archive_act_template_config(selected_status_name):
+                required_errors = {}
+                if not act_number:
+                    required_errors["act_number"] = "Укажите номер акта."
+                if not archive_act_date:
+                    required_errors["archive_act_date"] = "Укажите дату акта."
+                if not archive_act_fatness:
+                    required_errors["archive_act_fatness"] = "Укажите упитанность."
+                if selected_status_name == "Падеж" and not archive_act_death_reason:
+                    required_errors["archive_act_death_reason"] = "Укажите причину падежа."
+                if not archive_act_diagnosis:
+                    required_errors["archive_act_diagnosis"] = "Укажите диагноз / основание."
+                if (archive_act_live_weight is None) != (archive_act_weight_date is None):
+                    required_errors["archive_act_live_weight"] = (
+                        "Для дополнительной записи о весе укажите и дату, и вес."
+                    )
+
+                if required_errors:
+                    raise serializers.ValidationError(required_errors)
+
+        archive_weight_serializer = None
+        if archive_act_add_weight_record:
+            if archive_act_live_weight is None:
+                raise serializers.ValidationError({
+                    "archive_act_live_weight": "Чтобы добавить запись о весе, укажите живой вес."
+                })
+            if not archive_act_weight_date:
+                raise serializers.ValidationError({
+                    "archive_act_weight_date": "Чтобы добавить запись о весе, укажите дату взвешивания."
+                })
+            archive_weight_serializer = WeightRecordSerializer(
+                data={
+                    "tag_write": instance.tag.tag_number,
+                    "weight": archive_act_live_weight,
+                    "weight_date": archive_act_weight_date,
+                },
+                context=self.context,
+            )
+            archive_weight_serializer.is_valid(raise_exception=True)
+
+        archive_act_stored_diagnosis = archive_act_diagnosis
+        if selected_status_name == "Падеж" and archive_act_death_reason:
+            archive_act_stored_diagnosis = f"{archive_act_death_reason}: {archive_act_diagnosis}"
 
         if selected_status and selected_status.status_type == "Падеж" and act_number:
             prefix = f"Номер акта: {act_number}"
@@ -318,7 +560,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             new_status_name = validated_data['animal_status'].status_type
             
             # Проверяем, является ли новый статус архивным
-            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']
+            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']
             if new_status_name in archive_statuses:
                 # Это архивирование
                 changes.append(f"{old_status_name} → {new_status_name}")
@@ -398,18 +640,30 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 archive_act_details.append(
                     f"Живой вес в акте: {self._format_log_value(archive_act_live_weight)} кг"
                 )
+            if "archive_act_weight_date" in initial_data:
+                archive_act_details.append(
+                    f"Дата дополнительного веса: {self._format_log_value(archive_act_weight_date)}"
+                )
             if "archive_act_fatness" in initial_data:
                 archive_act_details.append(
                     f"Упитанность: {archive_act_fatness or 'Не указано'}"
                 )
+            if "archive_act_death_reason" in initial_data:
+                archive_act_details.append(
+                    f"Причина падежа: {archive_act_death_reason or 'Не указано'}"
+                )
             if "archive_act_diagnosis" in initial_data:
-                diagnosis = archive_act_diagnosis or "Не указано"
+                diagnosis = archive_act_stored_diagnosis or "Не указано"
                 if len(diagnosis) > 60:
                     diagnosis = diagnosis[:60] + "..."
                 archive_act_details.append(f"Диагноз/основание: {diagnosis}")
             if "archive_act_worker_name" in initial_data:
                 archive_act_details.append(
                     f"Закрепленный работник: {archive_act_worker_name or 'Не указано'}"
+                )
+            if "archive_act_add_weight_record" in initial_data:
+                archive_act_details.append(
+                    f"Добавить/обновить запись веса: {'да' if archive_act_add_weight_record else 'нет'}"
                 )
             if "archive_act_download" in initial_data:
                 archive_act_details.append(
@@ -483,7 +737,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 change_date=status_datetime_moscow
             )
 
-        archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']
+        archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']
         if (
             instance.animal_status
             and instance.animal_status.status_type in archive_statuses
@@ -499,11 +753,14 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     "act_date": archive_act_date,
                     "live_weight": archive_act_live_weight,
                     "fatness": archive_act_fatness,
-                    "diagnosis": archive_act_diagnosis,
+                    "diagnosis": archive_act_stored_diagnosis,
                     "worker_name": archive_act_worker_name,
                     "download_on_archive": archive_act_download,
                 },
             )
+
+        if archive_weight_serializer is not None:
+            archive_weight_serializer.save()
         
         # Если изменилось место, создаем запись в PlaceMovement
         if place_will_change:
@@ -541,9 +798,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 # Определяем тип действия
                 action_type = "Редактирование животного"
                 new_status = validated_data.get('animal_status')
-                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка']:
+                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']:
                     action_type = "Архивирование животного"
-                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Падеж', 'Вынужденная прирезка'] and new_status:
+                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка'] and new_status:
                     action_type = "Восстановление из архива"
                 
                 changes_text = "; ".join(changes)
@@ -685,7 +942,7 @@ class UniversalChildSerializer(serializers.Serializer):
         # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
         from begunici.app_types.veterinary.vet_models import StatusHistory
         
-        archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя']
+        archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо']
         if obj.animal_status.status_type in archive_statuses:
             status_history = StatusHistory.objects.filter(
                 tag=obj.tag,
@@ -757,6 +1014,10 @@ class RamSerializer(AnimalBaseSerializer):
 
 class EweSerializer(AnimalBaseSerializer):
     active_lambings = serializers.SerializerMethodField()
+    birth_type_display = serializers.SerializerMethodField()
+    birth_weight_display = serializers.SerializerMethodField()
+    last_weight_display = serializers.SerializerMethodField()
+    weaning_display = serializers.SerializerMethodField()
     
     class Meta(AnimalBaseSerializer.Meta):
         model = Ewe
@@ -775,10 +1036,28 @@ class EweSerializer(AnimalBaseSerializer):
             # В случае ошибки возвращаем пустой список
             return []
 
+    def get_birth_type_display(self, obj):
+        return "-"
+
+    def get_birth_weight_display(self, obj):
+        weight_record = _get_weight_record_near_date(obj.tag, obj.birth_date)
+        return _format_weight_kg(weight_record.weight) if weight_record else "-"
+
+    def get_last_weight_display(self, obj):
+        weight_record = WeightRecord.objects.filter(tag=obj.tag).order_by("-weight_date", "-id").first()
+        return _format_weight_record_with_date(weight_record)
+
+    def get_weaning_display(self, obj):
+        weight_record = _get_weight_record_near_date(obj.tag, obj.date_otbivka)
+        return _format_weight_record_with_date(weight_record)
+
 
 class SheepSerializer(AnimalBaseSerializer):
     lambing_history = serializers.SerializerMethodField()
     active_lambings = serializers.SerializerMethodField()
+    last_weight_display = serializers.SerializerMethodField()
+    last_insemination = serializers.SerializerMethodField()
+    last_lambing_summary = serializers.SerializerMethodField()
 
     class Meta(AnimalBaseSerializer.Meta):
         model = Sheep
@@ -802,6 +1081,16 @@ class SheepSerializer(AnimalBaseSerializer):
         # Используем метод get_children из модели Sheep
         children = obj.get_children()
         return UniversalChildSerializer(children, many=True).data
+
+    def get_last_weight_display(self, obj):
+        weight_record = WeightRecord.objects.filter(tag=obj.tag).order_by("-weight_date", "-id").first()
+        return _format_weight_record_with_date(weight_record)
+
+    def get_last_insemination(self, obj):
+        return build_sheep_last_insemination_data(obj)
+
+    def get_last_lambing_summary(self, obj):
+        return build_sheep_last_lambing_summary(obj)
 
 
 class LambingSerializer(serializers.ModelSerializer):

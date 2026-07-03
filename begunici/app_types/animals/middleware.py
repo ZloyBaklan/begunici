@@ -176,7 +176,10 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if method == "POST" and "/animals/lambing-group/" in path:
             if path.rstrip("/") == "/animals/lambing-group":
                 return True
-            if "/remove-father/" in path:
+            if any(
+                group_action in path
+                for group_action in ["/remove-father/", "/add-mothers/", "/remove-mothers/"]
+            ):
                 return True
 
         if method == "POST" and "/animals/lambing/" in path:

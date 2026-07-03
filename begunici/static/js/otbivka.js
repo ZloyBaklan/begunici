@@ -81,7 +81,7 @@ function renderOtbivka(animals) {
     if (animals.length === 0) {
         otbivkaTable.innerHTML = `
             <tr>
-                <td colspan="3" class="text-center py-4">
+                <td colspan="4" class="text-center py-4">
                     <p class="text-muted">Нет животных с датой отбивки.</p>
                 </td>
             </tr>
@@ -100,6 +100,9 @@ function renderOtbivka(animals) {
             </td>
             <td>
                 ${animal.age_at_otbivka || '-'}
+            </td>
+            <td>
+                ${animal.weaning_weight || '-'}
             </td>
         </tr>`;
         otbivkaTable.innerHTML += row;
@@ -207,7 +210,7 @@ function showError(message) {
     const otbivkaTable = document.getElementById('otbivka-list');
     otbivkaTable.innerHTML = `
         <tr>
-            <td colspan="3" class="text-center py-4">
+            <td colspan="4" class="text-center py-4">
                 <p class="text-danger">${message}</p>
             </td>
         </tr>

@@ -40,6 +40,11 @@
                                 Овцематки
                             </a>
                         </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'animals:young-stock' %}" class="btn btn-secondary w-100 mb-2">
+                                Молодняк
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -106,8 +111,11 @@
                     <a href="{% url 'animals:vet-list' %}" class="btn btn-primary btn-lg me-3">
                         Ветобработки
                     </a>
-                    <a href="{% url 'animals:journals' %}" class="btn btn-primary btn-lg">
+                    <a href="{% url 'animals:journals' %}" class="btn btn-primary btn-lg me-3">
                         Журналы
+                    </a>
+                    <a href="{% url 'animals:acts' %}" class="btn btn-primary btn-lg">
+                        Акты
                     </a>
                 </div>
             </div>
