@@ -131,12 +131,6 @@ function displayLogs(logs) {
     logs.forEach(log => {
         const row = document.createElement('tr');
         
-        // Обрезаем длинные детали
-        let details = log.details || '';
-        if (details.length > 100) {
-            details = details.substring(0, 100) + '...';
-        }
-        
         // Создаем ссылку на животное если есть бирка и это животное
         let objectIdCell = log.object_id || '-';
         if (log.object_id && log.animal_link_info) {
@@ -179,11 +173,58 @@ function displayLogs(logs) {
             <td>${log.action}</td>
             <td>${log.object_type || '-'}</td>
             <td>${objectIdCell}</td>
-            <td><small>${details}</small></td>
+            <td>${renderExpandableDetails(log.details || '', log.id)}</td>
         `;
         
         tbody.appendChild(row);
     });
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderExpandableDetails(details, logId) {
+    const text = String(details || '');
+    const limit = 120;
+
+    if (text.length <= limit) {
+        return `<small>${escapeHtml(text)}</small>`;
+    }
+
+    const shortText = `${text.substring(0, limit)}...`;
+    return `
+        <small>
+            <span id="log-details-short-${logId}">${escapeHtml(shortText)}</span>
+            <span id="log-details-full-${logId}" class="d-none">${escapeHtml(text)}</span>
+            <button type="button"
+                    class="btn btn-link btn-sm p-0 align-baseline"
+                    id="log-details-toggle-${logId}"
+                    onclick="toggleLogDetails(${logId})">
+                показать полностью
+            </button>
+        </small>
+    `;
+}
+
+function toggleLogDetails(logId) {
+    const shortNode = document.getElementById(`log-details-short-${logId}`);
+    const fullNode = document.getElementById(`log-details-full-${logId}`);
+    const toggleButton = document.getElementById(`log-details-toggle-${logId}`);
+
+    if (!shortNode || !fullNode || !toggleButton) {
+        return;
+    }
+
+    const isExpanded = !fullNode.classList.contains('d-none');
+    shortNode.classList.toggle('d-none', !isExpanded);
+    fullNode.classList.toggle('d-none', isExpanded);
+    toggleButton.textContent = isExpanded ? 'показать полностью' : 'скрыть';
 }
 
 function updatePagination(data) {

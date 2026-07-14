@@ -192,6 +192,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
                 ]
             )
 
+        if method == "POST" and "/animals/api/bulk-vaccination/" in path:
+            return True
+
         return False
 
     @staticmethod

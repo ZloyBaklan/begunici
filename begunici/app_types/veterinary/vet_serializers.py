@@ -278,6 +278,8 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
         changes = []
         
         # Проверяем изменения полей
+        synced_vet_records = 0
+
         old_care_type = instance.care_type
         new_care_type = validated_data.get("care_type", instance.care_type)
         if old_care_type != new_care_type:
@@ -312,9 +314,16 @@ class VeterinaryCareSerializer(serializers.ModelSerializer):
             changes.append(f"Срок: {old_duration_str} → {new_duration_str}")
         
         # Обновляем поля
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save(sync_related_durations=False)
+
+            if old_duration != instance.default_duration_days:
+                synced_vet_records = instance.sync_related_durations()
+
+        if synced_vet_records:
+            changes.append(f"Синхронизировано применений: {synced_vet_records}")
         
         # Создаем подробный лог изменений
         if changes:
@@ -374,6 +383,9 @@ class VeterinarySerializer(serializers.ModelSerializer):
     # Поля для чтения (read-only)
     tag = TagSerializer(read_only=True)
     veterinary_care = VeterinaryCareSerializer(read_only=True)
+    duration_days = serializers.IntegerField(read_only=True)
+    care_date = serializers.SerializerMethodField()
+    expiry_date = serializers.SerializerMethodField()
 
     # Поля для записи (write-only)
     tag_write = serializers.SlugRelatedField(
@@ -391,17 +403,36 @@ class VeterinarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Veterinary
         fields = [
-            'id', 'tag', 'veterinary_care', 'date_of_care', 'duration_days', 'comments',
+            'id', 'tag', 'veterinary_care', 'date_of_care', 'care_date', 'duration_days', 'expiry_date', 'comments',
             'tag_write', 'veterinary_care_write'
         ]
+
+    def get_care_date(self, obj):
+        care_date = obj.get_care_date()
+        return care_date.isoformat() if care_date else None
+
+    def get_expiry_date(self, obj):
+        expiry_date = obj.get_expiry_date()
+        return expiry_date.isoformat() if expiry_date else None
 
     def validate_date_of_care(self, value):
         if value > timezone.now():
             raise serializers.ValidationError("Дата и время обработки не может быть в будущем.")
         return value
 
+    def _set_duration_from_care(self, validated_data, instance=None):
+        care = validated_data.get("veterinary_care")
+        if care is None and instance is not None:
+            care = instance.veterinary_care
+
+        if care is not None:
+            validated_data["duration_days"] = care.default_duration_days
+
+        return validated_data
+
     def create(self, validated_data):
         # Создаем ветеринарную обработку
+        validated_data = self._set_duration_from_care(validated_data)
         veterinary = Veterinary.objects.create(**validated_data)
         
         # Создаем подробный лог создания
@@ -431,6 +462,10 @@ class VeterinarySerializer(serializers.ModelSerializer):
             )
         
         return veterinary
+
+    def update(self, instance, validated_data):
+        validated_data = self._set_duration_from_care(validated_data, instance)
+        return super().update(instance, validated_data)
 
 
 class WeightRecordSerializer(serializers.ModelSerializer):

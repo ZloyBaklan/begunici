@@ -23,6 +23,7 @@ TAG_LINK_OBJECT_TYPES = ANIMAL_OBJECT_TYPES | {
     "Ветеринарная обработка",
     "Запись о весе",
     "Окот",
+    "Архив",
 }
 
 
@@ -172,8 +173,6 @@ def resolve_log_action(method, path, params=None, status_code=None):
             action = "Обновление рабочего состояния"
         elif method == "POST" and "/add_weight/" in path:
             action = "Добавление записи о весе"
-        elif method == "POST" and "/add_vet_care/" in path:
-            action = "Добавление ветобработки"
         elif method == "POST" and "/add_lambing/" in path:
             action = "Создание окота"
         elif method == "POST" and "/complete-early-failure/" in path:

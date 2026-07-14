@@ -306,22 +306,6 @@ class MakerViewSet(AnimalBaseViewSet):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"], url_path="add_vet_care")
-    def add_vet_care(self, request, pk=None):
-        maker = self.get_object()
-        vet_data = {
-            "tag_number": maker,
-            "care_type": request.data.get("care_type"),
-            "care_name": request.data.get("care_name"),
-            "medication": request.data.get("medication"),
-            "purpose": request.data.get("purpose"),
-            "date_of_care": request.data.get("date_of_care"),
-        }
-        serializer = VeterinarySerializer(data=vet_data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
     @action(detail=True, methods=["get"], url_path="weight_history")
     def weight_history(self, request, pk=None):
         maker = self.get_object()
@@ -3126,13 +3110,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 vet_queryset = vet_queryset.filter(date_of_care__month=int(month))
             
             for vet in vet_queryset:
-                # Получаем дату в московском времени
-                if hasattr(vet.date_of_care, 'astimezone'):
-                    moscow_tz = timezone.get_current_timezone()
-                    care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
-                    care_date = care_datetime_moscow.date()
-                else:
-                    care_date = vet.date_of_care.date()
+                care_date = vet.get_care_date()
+                if not care_date:
+                    continue
                     
                 care_date_str = care_date.strftime('%Y-%m-%d')
                 
@@ -3175,13 +3155,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                             if 'vet_expiring' not in calendar_data[expiry_date_str]:
                                 calendar_data[expiry_date_str]['vet_expiring'] = []
                             
-                            # Получаем дату обработки в московском времени
-                            if hasattr(vet.date_of_care, 'astimezone'):
-                                moscow_tz = timezone.get_current_timezone()
-                                care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
-                                care_date = care_datetime_moscow.date()
-                            else:
-                                care_date = vet.date_of_care.date()
+                            care_date = vet.get_care_date()
+                            if not care_date:
+                                continue
                             
                             calendar_data[expiry_date_str]['vet_expiring'].append({
                                 'id': vet.id,
@@ -3206,13 +3182,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                             if 'vet_expiring' not in calendar_data[expiry_date_str]:
                                 calendar_data[expiry_date_str]['vet_expiring'] = []
                             
-                            # Получаем дату обработки в московском времени
-                            if hasattr(vet.date_of_care, 'astimezone'):
-                                moscow_tz = timezone.get_current_timezone()
-                                care_datetime_moscow = vet.date_of_care.astimezone(moscow_tz)
-                                care_date = care_datetime_moscow.date()
-                            else:
-                                care_date = vet.date_of_care.date()
+                            care_date = vet.get_care_date()
+                            if not care_date:
+                                continue
                             
                             calendar_data[expiry_date_str]['vet_expiring'].append({
                                 'id': vet.id,
@@ -3918,6 +3890,7 @@ def common_animals_api(request):
             .order_by("-date_of_care")
             .first()
         )
+        last_vet_care_date = last_vet.get_care_date() if last_vet else None
 
         results.append(
             {
@@ -3940,7 +3913,7 @@ def common_animals_api(request):
                 "dorper_display": _format_dorper_display(animal),
                 "last_weight": float(last_weight.weight) if last_weight else None,
                 "last_weight_date": last_weight.weight_date.strftime("%Y-%m-%d") if last_weight else None,
-                "last_vet_date": last_vet.date_of_care.isoformat() if last_vet and last_vet.date_of_care else None,
+                "last_vet_date": last_vet_care_date.isoformat() if last_vet_care_date else None,
                 "last_vet_name": (
                     last_vet.veterinary_care.care_name
                     if last_vet and last_vet.veterinary_care
@@ -4397,7 +4370,9 @@ def _format_last_vet(animal):
     care = vet_record.veterinary_care
     care_type = care.care_name or "-"
     medication = care.medication or "без препарата"
-    return f"{vet_record.date_of_care.strftime('%d.%m.%Y')}: {care_type} ({medication})"
+    care_date = vet_record.get_care_date()
+    care_date_text = care_date.strftime('%d.%m.%Y') if care_date else "-"
+    return f"{care_date_text}: {care_type} ({medication})"
 
 
 def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None):
@@ -5545,7 +5520,12 @@ def export_to_excel(request):
                     
                     # История ветобработок
                     vet_history = Veterinary.objects.filter(tag=animal.tag).select_related('veterinary_care').order_by('-date_of_care')[:5]
-                    vet_str = '; '.join([f"{v.date_of_care}: {v.veterinary_care.care_name}" for v in vet_history])
+                    vet_items = []
+                    for v in vet_history:
+                        care_date = v.get_care_date()
+                        care_date_text = care_date.strftime('%d.%m.%Y') if care_date else '-'
+                        vet_items.append(f"{care_date_text}: {v.veterinary_care.care_name}")
+                    vet_str = '; '.join(vet_items)
                     
                     row_data.extend([mother, father, children_str, weight_str or 'Нет данных', vet_str or 'Нет данных'])
                 
@@ -6971,15 +6951,7 @@ def vet_list_export_excel(request):
             if maker:
                 display_name = maker.get_display_name()
 
-        care_date = vet.date_of_care
-        if hasattr(care_date, 'astimezone') and timezone.is_aware(care_date):
-            care_date = timezone.localtime(care_date)
-
-        if hasattr(care_date, 'date'):
-            care_date_value = care_date.date()
-        else:
-            care_date_value = care_date
-
+        care_date_value = vet.get_care_date()
         expiry_date = vet.get_expiry_date()
         duration_text = 'Бессрочно' if vet.duration_days == 0 else f'{vet.duration_days} дней'
 
@@ -7439,15 +7411,8 @@ def vet_list_api(request):
             expiry_date = vet.get_expiry_date()
             expiry_date_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
             
-            # Получаем дату обработки
-            care_date = vet.date_of_care
-            if hasattr(care_date, 'astimezone') and timezone.is_aware(care_date):
-                care_date = timezone.localtime(care_date)
-
-            if hasattr(care_date, 'date'):
-                care_date_str = care_date.date().strftime('%Y-%m-%d')
-            else:
-                care_date_str = care_date.strftime('%Y-%m-%d')
+            care_date = vet.get_care_date()
+            care_date_str = care_date.strftime('%Y-%m-%d') if care_date else None
             
             results.append({
                 'id': vet.id,
@@ -8514,6 +8479,7 @@ def bulk_vaccination(request):
         
         updated_count = 0
         errors = []
+        successful_tags = []
         
         for tag_number in animal_tags:
             try:
@@ -8540,9 +8506,49 @@ def bulk_vaccination(request):
                 animal.veterinary_history.add(veterinary_record)
                 
                 updated_count += 1
+                successful_tags.append(str(tag_number))
                 
             except Exception as e:
                 errors.append(f'Ошибка обработки животного {tag_number}: {str(e)}')
+
+        if getattr(request, "user", None) and request.user.is_authenticated:
+            from .models_user_log import UserActionLog
+
+            object_id = ", ".join(successful_tags[:8])
+            if len(successful_tags) > 8:
+                object_id = f"{object_id}, ... (+{len(successful_tags) - 8})"
+            object_id = object_id[:100]
+
+            care_label = (
+                veterinary_care.medication
+                or f"{veterinary_care.care_type} - {veterinary_care.care_name}"
+            )
+            details_parts = [
+                f"Ковровая ветобработка: {care_label}",
+                f"Дата: {vaccination_date_obj.strftime('%d.%m.%Y')}",
+                f"Срок: {'Бессрочно' if duration_days == 0 else f'{duration_days} дней'}",
+                f"Животных обработано: {updated_count} из {len(animal_tags)}",
+            ]
+            if successful_tags:
+                details_parts.append(f"Бирки: {', '.join(successful_tags)}")
+            if errors:
+                details_parts.append(f"Ошибки: {'; '.join(errors)}")
+
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type="Ковровая ветобработка",
+                object_type="Ветобработка",
+                object_id=object_id,
+                description="; ".join(details_parts),
+                additional_data={
+                    "method": request.method,
+                    "path": request.path,
+                    "status_code": 200,
+                    "animal_tags": successful_tags,
+                    "errors": errors,
+                    "veterinary_care_id": veterinary_care.id,
+                },
+            )
         
         return Response({
             'success': True,

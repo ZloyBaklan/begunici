@@ -227,6 +227,39 @@ class VeterinaryCare(models.Model):
     def __str__(self):
         return f"{self.care_type}: {self.care_name}"
 
+    def sync_related_durations(self):
+        return self.veterinary_set.exclude(
+            duration_days=self.default_duration_days
+        ).update(duration_days=self.default_duration_days)
+
+    def save(self, *args, **kwargs):
+        sync_related_durations = kwargs.pop("sync_related_durations", True)
+        update_fields = kwargs.get("update_fields")
+        should_sync_duration = (
+            sync_related_durations
+            and (
+                update_fields is None
+                or "default_duration_days" in update_fields
+            )
+        )
+        old_duration = None
+        if self.pk and should_sync_duration:
+            old_duration = (
+                type(self).objects
+                .filter(pk=self.pk)
+                .values_list("default_duration_days", flat=True)
+                .first()
+            )
+
+        super().save(*args, **kwargs)
+
+        if (
+            should_sync_duration
+            and old_duration is not None
+            and old_duration != self.default_duration_days
+        ):
+            self.sync_related_durations()
+
     @classmethod
     def is_valid_type_class(cls, care_type, care_name):
         if care_type == cls.TYPE_VACCINATION:
@@ -258,7 +291,7 @@ class Veterinary(models.Model):
         verbose_name="Дата и время обработки", default=timezone.now
     )
     duration_days = models.PositiveIntegerField(
-        verbose_name="Срок действия (дней)", 
+        verbose_name="Срок действия (дней)",
         default=0,
         help_text="0 = бессрочно"
     )
@@ -273,44 +306,53 @@ class Veterinary(models.Model):
 
     def __str__(self):
         return f"Ветобработка {self.veterinary_care} для {self.tag.tag_number}"
-    
+
+    def get_care_date(self):
+        if not self.date_of_care:
+            return None
+
+        if hasattr(self.date_of_care, 'date'):
+            if timezone.is_aware(self.date_of_care):
+                return timezone.localtime(self.date_of_care).date()
+            return self.date_of_care.date()
+
+        return self.date_of_care
+
     def get_expiry_date(self):
         """Возвращает дату окончания действия ветобработки"""
         if self.duration_days == 0:
             return None  # Бессрочно
         from datetime import timedelta
-        
-        # Получаем дату из date_of_care (может быть datetime или date)
-        if hasattr(self.date_of_care, 'date'):
-            care_date = self.date_of_care.date()
-        else:
-            care_date = self.date_of_care
-            
+
+        care_date = self.get_care_date()
+        if not care_date:
+            return None
+
         return care_date + timedelta(days=self.duration_days)
-    
+
     def get_days_remaining(self):
         """Возвращает количество оставшихся дней действия"""
         if self.duration_days == 0:
             return None  # Бессрочно
-        
+
         expiry_date = self.get_expiry_date()
         if expiry_date:
             from datetime import date
             from django.utils import timezone
-            
+
             # Получаем текущую дату в московском времени
             moscow_now = timezone.localtime(timezone.now())
             today = moscow_now.date()
-            
+
             remaining = (expiry_date - today).days
             return remaining
         return None
-    
+
     def is_expired(self):
         """Проверяет, истек ли срок действия"""
         remaining = self.get_days_remaining()
         return remaining is not None and remaining < 0
-    
+
     def is_expiring_today(self):
         """Проверяет, истекает ли срок сегодня"""
         remaining = self.get_days_remaining()
@@ -320,7 +362,7 @@ class Veterinary(models.Model):
         # Убираем ограничение unique_together, чтобы разрешить несколько одинаковых обработок в день
         # unique_together = (
         #     "tag",
-        #     "veterinary_care", 
+        #     "veterinary_care",
         #     "date_of_care",
         # )
         pass

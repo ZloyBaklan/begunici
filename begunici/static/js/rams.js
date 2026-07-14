@@ -277,7 +277,8 @@ function formatLastVetTreatment(veterinaryHistory) {
     const care = lastVet?.veterinary_care;
     const careType = care?.care_name || 'Не указан тип';
     const medication = care?.medication || 'без препарата';
-    const careDate = lastVet?.date_of_care ? formatDateToOutput(lastVet.date_of_care) : '-';
+    const careDateValue = lastVet?.care_date || lastVet?.date_of_care;
+    const careDate = careDateValue ? formatDateToOutput(careDateValue) : '-';
 
     return `${careDate}: ${careType} (${medication})`;
 }

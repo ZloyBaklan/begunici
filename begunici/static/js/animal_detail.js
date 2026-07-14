@@ -214,6 +214,15 @@ function formatDateToShortOutput(dateString) {
     return date.toLocaleDateString('ru-RU');
 }
 
+function parseDateOnlyToLocal(dateString) {
+    if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        return null;
+    }
+
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+}
+
 function updateCarcassWeightDisplay(animal) {
     const carcassRow = document.getElementById('carcass-weight-row');
     const carcassDisplay = document.getElementById('carcass-weight-display');
@@ -342,8 +351,8 @@ function createVetTreatmentRow(treatment) {
     const row = document.createElement('tr');
     
     // Вычисляем дату окончания и оставшиеся дни
-    const careDate = new Date(treatment.date_of_care);
-    const expiryDate = new Date(careDate.getTime() + (treatment.duration_days * 24 * 60 * 60 * 1000));
+    const careDate = parseDateOnlyToLocal(treatment.care_date) || new Date(treatment.date_of_care);
+    const expiryDate = parseDateOnlyToLocal(treatment.expiry_date) || new Date(careDate.getTime() + (treatment.duration_days * 24 * 60 * 60 * 1000));
     
     // Получаем текущую дату в московском времени (только дата, без времени)
     const now = new Date();
@@ -745,15 +754,10 @@ async function addVetRecord() {
         return;
     }
 
-    // Получаем выбранную опцию для извлечения срока действия
-    const select = document.getElementById('vet-treatment-select');
-    const selectedOption = select.options[select.selectedIndex];
-
     const data = {
         tag_write: tagNumber,
         veterinary_care_write: parseInt(treatmentId),
         date_of_care: careDate,
-        duration_days: selectedOption.dataset.defaultDuration ? parseInt(selectedOption.dataset.defaultDuration) : 0,
         comments: document.getElementById('vet-treatment-comments').value || ''
     };
 
