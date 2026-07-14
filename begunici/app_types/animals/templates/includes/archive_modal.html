@@ -5,6 +5,7 @@
                 <h5 class="modal-title">Перенос в архив</h5>
             </div>
             <div class="modal-body">
+                <div id="archive-current-animal" class="alert alert-info py-2 mb-3" style="display: none;"></div>
                 <p>Выберите статус, который будет установлен для выбранных животных:</p>
                 <select id="archive-status-select" class="form-select mb-3"></select>
 
@@ -82,7 +83,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-primary" onclick="applyArchiveStatus()">Применить</button>
+                <button id="archive-apply-button" class="btn btn-primary" onclick="applyArchiveStatus()">Применить</button>
                 <button class="btn btn-secondary" onclick="closeArchiveModal()">Отмена</button>
             </div>
         </div>

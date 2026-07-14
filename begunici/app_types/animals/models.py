@@ -593,6 +593,13 @@ class LambingGroup(models.Model):
 
 
 class Lambing(models.Model):
+    MOTHER_CATEGORY_SHEEP = "sheep"
+    MOTHER_CATEGORY_EWE = "ewe"
+    MOTHER_CATEGORY_CHOICES = [
+        (MOTHER_CATEGORY_SHEEP, "Овцематка"),
+        (MOTHER_CATEGORY_EWE, "Ярка"),
+    ]
+
     COMPLETION_NORMAL = "normal"
     COMPLETION_EARLY_FAILURE = "early_failure"
     COMPLETION_CHOICES = [
@@ -636,6 +643,18 @@ class Lambing(models.Model):
         null=True,
         blank=True,
         related_name="lambings",
+    )
+    mother_category_at_start = models.CharField(
+        max_length=10,
+        choices=MOTHER_CATEGORY_CHOICES,
+        verbose_name="Категория матери на начало случки",
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Фиксируется для новых окотов. Старые пустые записи "
+            "считаются по старой логике."
+        ),
     )
     
     start_date = models.DateField(verbose_name="Дата начала окота (случки)", default=timezone.now)
@@ -691,6 +710,22 @@ class Lambing(models.Model):
             return "Ярка"
         elif self.mother_type_text:
             return self.mother_type_text
+        return None
+
+    def infer_mother_category_at_start(self):
+        """Определяет категорию матери для новых исторических записей случки/окота."""
+        if self.ewe_id:
+            return self.MOTHER_CATEGORY_EWE
+        if self.sheep_id:
+            return self.MOTHER_CATEGORY_SHEEP
+
+        mother_type_text = (self.mother_type_text or "").strip().lower()
+        if mother_type_text:
+            if "яр" in mother_type_text:
+                return self.MOTHER_CATEGORY_EWE
+            if "овц" in mother_type_text or "матк" in mother_type_text:
+                return self.MOTHER_CATEGORY_SHEEP
+
         return None
     
     def get_mother_tag(self):
@@ -798,6 +833,9 @@ class Lambing(models.Model):
 
         skip_parent_status_on_create = getattr(self, "_skip_parent_status_on_create", False)
         skip_father_status_on_complete = getattr(self, "_skip_father_status_on_complete", False)
+
+        if is_new and not self.mother_category_at_start:
+            self.mother_category_at_start = self.infer_mother_category_at_start()
 
         if is_new and self.is_active and not skip_parent_status_on_create:
             try:

@@ -58,10 +58,18 @@
             <div class="stat-card">
                 <h4>Статистика по годам</h4>
                 <div class="year-selector">
-                    <label for="year-select">Год:</label>
-                    <select id="year-select">
-                        <!-- Годы будут добавлены через JavaScript -->
-                    </select>
+                    <div class="year-period-field">
+                        <label for="year-select">Год:</label>
+                        <select id="year-select">
+                            <!-- Годы будут добавлены через JavaScript -->
+                        </select>
+                    </div>
+                    <div class="year-period-field">
+                        <label for="month-select">Месяц:</label>
+                        <select id="month-select">
+                            <option value="">Все месяцы</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="yearly-stats" id="yearly-stats">
                     <div class="yearly-stat-section">
@@ -114,7 +122,7 @@
 <script>
 // Загрузка статистики при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
-    // Инициализация селектора годов
+    // Инициализация селекторов периода
     initYearSelector();
     
     try {
@@ -180,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Загружаем годовую статистику для текущего года
-    loadYearlyStatistics(new Date().getFullYear());
+    loadYearlyStatistics(new Date().getFullYear(), getSelectedStatisticsMonth());
     
     // Проверяем нужность автобэкапа
     try {
@@ -205,7 +213,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Инициализация селектора годов
 function initYearSelector() {
     const yearSelect = document.getElementById('year-select');
+    const monthSelect = document.getElementById('month-select');
+    if (!yearSelect || !monthSelect) {
+        return;
+    }
+
     const currentYear = new Date().getFullYear();
+    const monthNames = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ];
     
     // Добавляем годы от 2020 до текущего года
     for (let year = 2020; year <= currentYear; year++) {
@@ -217,15 +234,34 @@ function initYearSelector() {
         }
         yearSelect.appendChild(option);
     }
-    
-    // Обработчик изменения года
-    yearSelect.addEventListener('change', (e) => {
-        loadYearlyStatistics(parseInt(e.target.value));
+
+    monthNames.forEach((monthName, index) => {
+        const option = document.createElement('option');
+        option.value = String(index + 1);
+        option.textContent = monthName;
+        monthSelect.appendChild(option);
     });
+    
+    const reloadStatistics = () => {
+        loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
+    };
+
+    yearSelect.addEventListener('change', reloadStatistics);
+    monthSelect.addEventListener('change', reloadStatistics);
+}
+
+function getSelectedStatisticsYear() {
+    const yearSelect = document.getElementById('year-select');
+    return parseInt(yearSelect?.value || new Date().getFullYear(), 10);
+}
+
+function getSelectedStatisticsMonth() {
+    const monthSelect = document.getElementById('month-select');
+    return monthSelect?.value || '';
 }
 
 // Загрузка годовой статистики
-async function loadYearlyStatistics(year) {
+async function loadYearlyStatistics(year, month = '') {
     // Показываем индикатор загрузки
     const containers = ['avg-weight-gain', 'vet-treatments', 'animals-by-status', 'births-stats'];
     containers.forEach(id => {
@@ -236,7 +272,12 @@ async function loadYearlyStatistics(year) {
     });
     
     try {
-        const response = await fetch(`/animals/api/yearly-statistics/?year=${year}`, {
+        const params = new URLSearchParams({ year: String(year) });
+        if (month) {
+            params.set('month', month);
+        }
+
+        const response = await fetch(`/animals/api/yearly-statistics/?${params.toString()}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -261,7 +302,7 @@ async function loadYearlyStatistics(year) {
         }
         
         // Средний прирост веса
-        displayWeightGain(data.monthly_weight_gain);
+        displayWeightGain(data.monthly_weight_gain, data.month);
         
         // Ветобработки
         displayVetTreatments(data.veterinary_treatments);
@@ -284,7 +325,7 @@ async function loadYearlyStatistics(year) {
 }
 
 // Отображение среднего прироста веса
-function displayWeightGain(monthlyData) {
+function displayWeightGain(monthlyData, selectedMonth = null) {
     const container = document.getElementById('avg-weight-gain');
     
     if (!monthlyData || Object.keys(monthlyData).length === 0) {
@@ -300,7 +341,10 @@ function displayWeightGain(monthlyData) {
     let html = '';
     let hasData = false;
     
-    for (let i = 1; i <= 12; i++) {
+    const selectedMonthNumber = parseInt(selectedMonth, 10);
+    const monthsToShow = selectedMonthNumber ? [selectedMonthNumber] : Array.from({ length: 12 }, (_, index) => index + 1);
+
+    for (const i of monthsToShow) {
         const monthKey = `month_${i}`;
         const monthName = monthNames[i - 1];
         
@@ -420,12 +464,14 @@ function displayBirths(birthsData) {
     const total = birthsData.total ?? 0;
     const boys = birthsData.boys ?? 0;
     const girls = birthsData.girls ?? 0;
+    const deadborn = birthsData.deadborn ?? 0;
     const youngStockTotal = birthsData.young_stock_total ?? 0;
 
     container.innerHTML = `
         <div><strong>Всего: ${total}</strong></div>
         <div>Мальчики: ${boys}</div>
         <div>Девочки: ${girls}</div>
+        <div>Мертворожденные: ${deadborn}</div>
         <div class="young-stock-row">Молодняк: всего ${youngStockTotal}</div>
     `;
 }

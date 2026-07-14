@@ -294,7 +294,12 @@ function openArchiveModal() {
     if (carcassWeightInput) carcassWeightInput.value = "";
 
     window.archiveActModal?.reset();
-    window.archiveActModal?.setSelectedAnimals(Array.from(selectedYoungStock.values()));
+    const archiveAnimals = Array.from(selectedYoungStock.values());
+    if (archiveAnimals.length > 1) {
+        window.archiveActModal?.startSequentialArchive(archiveAnimals);
+    } else {
+        window.archiveActModal?.setSelectedAnimals(archiveAnimals);
+    }
     loadArchiveStatuses();
 }
 
@@ -345,42 +350,25 @@ async function applyArchiveStatus() {
         return;
     }
 
-    const statusId = document.getElementById("archive-status-select")?.value;
-    const statusDate = document.getElementById("archive-status-date")?.value;
-    const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
-
-    if (!statusId) {
-        alert("Выберите статус.");
+    const archiveStep = window.archiveActModal?.collectEntriesForSelected?.(selected);
+    if (archiveStep?.error) {
+        alert(archiveStep.error);
         return;
     }
-    if (!statusDate) {
-        alert("Укажите дату присвоения статуса.");
+    if (!archiveStep?.complete) {
         return;
-    }
-
-    let carcassWeight = null;
-    if (carcassWeightRaw) {
-        carcassWeight = parseFloat(carcassWeightRaw);
-        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
-            alert("Вес туши должен быть числом не меньше 0.");
-            return;
-        }
     }
 
     try {
-        for (const item of selected) {
-            const archiveActPayload = window.archiveActModal?.collectPayload?.(item) || {};
-            if (archiveActPayload.__archiveActError) {
-                alert(archiveActPayload.__archiveActError);
-                return;
-            }
+        for (const entry of archiveStep.entries) {
+            const item = entry.animal;
             await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, "PATCH", {
-                animal_status_id: statusId,
-                status_date: statusDate,
-                carcass_weight: carcassWeight,
-                ...archiveActPayload,
+                animal_status_id: entry.statusId,
+                status_date: entry.statusDate,
+                carcass_weight: entry.carcassWeight,
+                ...entry.archiveActPayload,
             });
-            if (archiveActPayload.archive_act_download) {
+            if (entry.archiveActPayload.archive_act_download) {
                 window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
             }
         }

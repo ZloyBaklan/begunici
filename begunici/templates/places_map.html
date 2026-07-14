@@ -4,16 +4,171 @@
 
 {% block content %}
     <h1>Карта овчарен</h1>
-    
-    <!-- Список овчарен для выбора -->
+
     <div id="barns-selector" class="barns-selector">
         <h2>Выберите овчарню:</h2>
+        <div class="barns-actions">
+            <a href="{% url 'veterinary:feed_plan_excel' %}" class="btn btn-success">
+                Скачать кормовой план
+            </a>
+            <button
+                type="button"
+                id="housing-standards-toggle"
+                class="btn btn-primary"
+                onclick="toggleHousingStandardsCard()"
+                aria-expanded="false"
+            >
+                Нормы содержания
+            </button>
+        </div>
+
+        <div id="housing-standards-card" class="housing-standards-card" style="display: none;">
+            <div class="housing-standards-card-top">
+                <span>Нормативы площади для содержания овец</span>
+            </div>
+
+            <div class="housing-standards-header">
+                <div class="housing-standards-label">ГОСТ:</div>
+                <h2>НТП-АПК 1.10.03.001-00</h2>
+                <h3>НОРМЫ ТЕХНОЛОГИЧЕСКОГО ПРОЕКТИРОВАНИЯ</h3>
+                <h3>ОВЦЕВОДЧЕСКИХ ПРЕДПРИЯТИЙ</h3>
+                <div class="housing-standards-date">Дата введения 2000-10-01</div>
+            </div>
+
+            <h3 class="housing-standards-table-title">Таблица норм площади</h3>
+            <div class="housing-standards-table-wrapper">
+                <table class="housing-standards-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Половозрастная группа</th>
+                            <th colspan="3">Норма площади в групповых секциях на 1 голову по направлениям продуктивности (м<sup>2</sup>)</th>
+                        </tr>
+                        <tr>
+                            <th>Тонкорунное, полутонкорунное</th>
+                            <th>Шубное и мясо-шерстно-молочное</th>
+                            <th>Каракульское и мясо-сальное</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="housing-group-row">
+                            <td colspan="4">1. Бараны</td>
+                        </tr>
+                        <tr>
+                            <td>а) производители</td>
+                            <td>2,0</td>
+                            <td>2,0</td>
+                            <td>2,0</td>
+                        </tr>
+                        <tr>
+                            <td>б) пробники</td>
+                            <td>1,8</td>
+                            <td>1,8</td>
+                            <td>1,8</td>
+                        </tr>
+
+                        <tr class="housing-group-row">
+                            <td colspan="4">2. Матки</td>
+                        </tr>
+                        <tr>
+                            <td>а) холостые</td>
+                            <td>1,0</td>
+                            <td>1,0</td>
+                            <td>0,7</td>
+                        </tr>
+                        <tr>
+                            <td>б) суягные</td>
+                            <td>1,4 - 1,5</td>
+                            <td>1,7</td>
+                            <td>1,0</td>
+                        </tr>
+                        <tr>
+                            <td>в) подсосные с ягнятами в возрасте до 10 дней (в тепляке)</td>
+                            <td>1,8 - 2,0</td>
+                            <td>2,2 (2,5)</td>
+                            <td>1,2</td>
+                        </tr>
+                        <tr>
+                            <td>г) подсосные с ягнятами в возрасте старше 10 дней (при зимнем ягнении)</td>
+                            <td>1,5 - 2,2</td>
+                            <td>2,0 (2,2)</td>
+                            <td>1,2</td>
+                        </tr>
+                        <tr>
+                            <td>д) подсосные с ягнятами в возрасте старше 10 дней (при весеннем ягнении)</td>
+                            <td>1,2</td>
+                            <td>1,4</td>
+                            <td>1,0</td>
+                        </tr>
+
+                        <tr>
+                            <td>3. Ремонтный молодняк</td>
+                            <td>0,7</td>
+                            <td>0,8 (1,9)</td>
+                            <td>0,7</td>
+                        </tr>
+
+                        <tr class="housing-group-row">
+                            <td colspan="4">4. Ягнята при раздельно-контактном и искусственном способе выращивания</td>
+                        </tr>
+                        <tr>
+                            <td>а) в возрасте до 45 дней</td>
+                            <td>0,3</td>
+                            <td>0,3 (0,4)</td>
+                            <td>0,3</td>
+                        </tr>
+                        <tr>
+                            <td>б) в возрасте старше 45 дней до 4 месяцев</td>
+                            <td>0,4</td>
+                            <td>0,4</td>
+                            <td>0,4</td>
+                        </tr>
+
+                        <tr class="housing-group-row">
+                            <td colspan="4">5. Откормочное поголовье</td>
+                        </tr>
+                        <tr>
+                            <td>а) взрослое</td>
+                            <td>0,5</td>
+                            <td>0,5 (1,0)</td>
+                            <td>0,5</td>
+                        </tr>
+                        <tr>
+                            <td>б) молодняк</td>
+                            <td>0,4</td>
+                            <td>0,4 (0,8)</td>
+                            <td>0,4</td>
+                        </tr>
+
+                        <tr>
+                            <td>6. Валухи</td>
+                            <td>0,5</td>
+                            <td>-</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="housing-standards-notes">
+                <h3>Примечания</h3>
+                <ol>
+                    <li>Для племенных животных норма площади увеличивается до 20%.</li>
+                    <li>В индивидуальных клетках норму площади принимать: для баранов-производителей - 3 м<sup>2</sup>, для маток с ягнятами - 1,8 - 2,25 м<sup>2</sup>.</li>
+                    <li>Для подсосных маток при раздельно-контактном способе выращивания ягнят нормы площади принимать по п. 2 "а", а контактную площадку из расчета 20% от общего поголовья маток с нормой площади 1,2 м<sup>2</sup> на голову.</li>
+                    <li>При групповом ягнении маток норма площади принимается по п. 2 "в".</li>
+                    <li>Нормы площади в групповых секциях учитывают размещение в них кормушек и поилок.</li>
+                    <li>Для малых предприятий нормы площади не регламентируются и устанавливаются заданием на проектирование.</li>
+                    <li>Норма площади на выгульно-кормовых площадках для овец всех направлений продуктивности (без учета площади для проездов) принимается на одну голову: для баранов-производителей, баранов-пробников и маток - 3 м<sup>2</sup>, для ремонтного молодняка - 2 м<sup>2</sup>, для откормочного поголовья и валухов - 1 м<sup>2</sup>.</li>
+                    <li>Размеры в скобках в графе 3 даны для романовской породы овец.</li>
+                </ol>
+            </div>
+        </div>
+
         <div id="barns-list" class="barns-list">
             <!-- Здесь будут кнопки овчарен -->
         </div>
     </div>
-    
-    <!-- Контейнер для отображения выбранной овчарни -->
+
     <div id="selected-barn-container" class="selected-barn-container" style="display: none;">
         <div class="barn-header">
             <button id="back-to-list" class="btn btn-secondary">← Назад к списку овчарен</button>
@@ -28,13 +183,11 @@
         </div>
     </div>
 
-    <!-- Модальное окно для списка животных -->
     <div id="animals-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <span class="close" onclick="closeAnimalsModal()">&times;</span>
             <h2 id="modal-title">Животные в отсеке</h2>
 
-            <!-- Кнопка перемещения (скрыта по умолчанию) -->
             <div id="move-animals-container" style="display: none; margin-bottom: 12px;">
                 <button type="button" class="btn btn-primary" onclick="showMoveAnimalsDialog()">
                     Переместить выбранных животных
@@ -54,33 +207,38 @@
                     <button type="button" id="animals-modal-search-button" class="btn btn-primary">Поиск</button>
                 </div>
             </div>
-             
-            <!-- Чекбокс "Выбрать всех" -->
+
             <div class="select-all-container">
                 <label>
                     <input type="checkbox" id="select-all-animals"> Выбрать всех
                 </label>
             </div>
-            
+
             <div id="animals-list">
                 <!-- Список животных будет загружен сюда -->
             </div>
         </div>
     </div>
 
-    <!-- Модальное окно для выбора места перемещения -->
     <div id="move-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <span class="close" onclick="closeMoveModal()">&times;</span>
             <h2>Выберите место для перемещения</h2>
-            
+
             <div class="form-group">
                 <label for="destination-place">Место назначения:</label>
                 <select id="destination-place" class="form-control">
                     <option value="">Выберите место...</option>
                 </select>
             </div>
-            
+
+            <div class="form-check" style="margin-top: 12px;">
+                <input type="checkbox" id="download-transfer-act" class="form-check-input" checked>
+                <label for="download-transfer-act" class="form-check-label">
+                    Скачать акт о перемещении
+                </label>
+            </div>
+
             <div class="modal-actions" style="margin-top: 20px;">
                 <button type="button" class="btn btn-success" onclick="moveSelectedAnimals()">
                     Переместить

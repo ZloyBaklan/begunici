@@ -507,9 +507,12 @@ function openArchiveModal() {
     const carcassWeightInput = document.getElementById("archive-carcass-weight");
     if (carcassWeightInput) carcassWeightInput.value = "";
     window.archiveActModal?.reset();
-    window.archiveActModal?.setSelectedAnimals(
-        Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber)
-    );
+    const archiveAnimals = Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber);
+    if (archiveAnimals.length > 1) {
+        window.archiveActModal?.startSequentialArchive(archiveAnimals);
+    } else {
+        window.archiveActModal?.setSelectedAnimals(archiveAnimals);
+    }
 
     loadArchiveStatuses();
 }
@@ -564,43 +567,25 @@ async function applyArchiveStatus() {
         return;
     }
 
-    const statusSelect = document.getElementById("archive-status-select");
-    const statusId = statusSelect?.value;
-    const statusDate = document.getElementById("archive-status-date")?.value;
-    const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
-
-    if (!statusId) {
-        alert("Выберите статус.");
+    const archiveStep = window.archiveActModal?.collectEntriesForSelected?.(selected);
+    if (archiveStep?.error) {
+        alert(archiveStep.error);
+        return;
+    }
+    if (!archiveStep?.complete) {
         return;
     }
 
-    if (!statusDate) {
-        alert("Укажите дату присвоения статуса.");
-        return;
-    }
-
-    let carcassWeight = null;
-    if (carcassWeightRaw) {
-        carcassWeight = parseFloat(carcassWeightRaw);
-        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
-            alert("Вес туши должен быть числом не меньше 0.");
-            return;
-        }
-    }
     try {
-        for (const item of selected) {
-            const archiveActPayload = window.archiveActModal?.collectPayload?.(item) || {};
-            if (archiveActPayload.__archiveActError) {
-                alert(archiveActPayload.__archiveActError);
-                return;
-            }
-            await apiRequest(`/animals/${item.animalType}/${item.tagNumber}/`, "PATCH", {
-                animal_status_id: statusId,
-                status_date: statusDate,
-                carcass_weight: carcassWeight,
-                ...archiveActPayload,
+        for (const entry of archiveStep.entries) {
+            const item = entry.animal;
+            await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, "PATCH", {
+                animal_status_id: entry.statusId,
+                status_date: entry.statusDate,
+                carcass_weight: entry.carcassWeight,
+                ...entry.archiveActPayload,
             });
-            if (archiveActPayload.archive_act_download) {
+            if (entry.archiveActPayload.archive_act_download) {
                 window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
             }
         }

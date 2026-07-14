@@ -54,6 +54,10 @@ from .views import (
     archive_act_download,
     transfer_acts_api,
     transfer_act_download,
+    manual_transfer_act_download,
+    monthly_breeding_act_download,
+    non_auto_act_templates_api,
+    non_auto_act_template_download,
     check_kinship,
     kinship_pairs_export_excel,
     get_animals_without_otbivka,
@@ -281,6 +285,10 @@ urlpatterns = [
     path("api/archive/act/<str:animal_type>/<str:tag_number>/", archive_act_download, name="archive-act-download"),
     path("api/acts/transfer/", transfer_acts_api, name="transfer-acts-api"),
     path("api/acts/transfer/<int:act_number>/", transfer_act_download, name="transfer-act-download"),
+    path("api/acts/transfer/manual/", manual_transfer_act_download, name="manual-transfer-act-download"),
+    path("api/acts/monthly-breeding/", monthly_breeding_act_download, name="monthly-breeding-act-download"),
+    path("api/acts/templates/", non_auto_act_templates_api, name="act-templates-api"),
+    path("api/acts/templates/download/", non_auto_act_template_download, name="act-template-download"),
     path("calendar/notes/", TemplateView.as_view(template_name="calendar_notes.html"), name="calendar-notes"),  # Страница заметок календаря
     path(
         "create/", create_animal, name="create_animal"

@@ -17,6 +17,7 @@ from .vet_views import (
     get_all_statuses,
     get_all_places,
     get_all_veterinary_cares,
+    export_feed_plan_excel,
     export_veterinary_cares_excel,
 )
 
@@ -41,6 +42,7 @@ urlpatterns = [
     path("api/all-places/", get_all_places, name="all_places"),
     path("api/all-cares/", get_all_veterinary_cares, name="all_cares"),
     path("api/export-cares/", export_veterinary_cares_excel, name="export_veterinary_cares_excel"),
+    path("api/feed-plan/", export_feed_plan_excel, name="feed_plan_excel"),
     path(
         "management/", VeterinaryManagementView.as_view(), name="veterinary-management"
     ),  # Страница управления технической информацией

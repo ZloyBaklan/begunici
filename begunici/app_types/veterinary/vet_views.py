@@ -51,6 +51,18 @@ def places_map(request):
     return render(request, "places_map.html")
 
 
+@api_view(["GET"])
+def export_feed_plan_excel(request):
+    try:
+        from begunici.app_types.animals.feed_plan import feed_plan_response
+
+        return feed_plan_response()
+    except FileNotFoundError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except RuntimeError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 def get_animals_by_place(request, place_id):
     """

@@ -7,6 +7,10 @@
         "Продажа на племя",
     ]);
     let selectedAnimals = [];
+    let sequentialMode = false;
+    let sequentialAnimals = [];
+    let sequentialEntries = [];
+    let sequentialIndex = 0;
 
     function getCookie(name) {
         const value = `; ${document.cookie}`;
@@ -45,20 +49,39 @@
         return ACT_STATUSES.has(statusName);
     }
 
-    function reset() {
-        selectedAnimals = [];
+    function getTodayInputValue() {
+        const now = new Date();
+        const offset = now.getTimezoneOffset();
+        return new Date(now.getTime() - offset * 60000).toISOString().split("T")[0];
+    }
 
+    function getAnimalLabel(animal) {
+        const typeLabels = {
+            maker: "Баран-производитель",
+            ram: "Баранчик",
+            ewe: "Ярка",
+            sheep: "Овцематка",
+        };
+        const typeLabel = typeLabels[animal?.animal_type] || "Животное";
+        return `${typeLabel}: ${animal?.tag_number || "-"}`;
+    }
+
+    function resetPerAnimalFields() {
         const fields = [
             "archive-act-number",
             "archive-act-date",
             "archive-act-diagnosis",
             "archive-act-weight-date",
             "archive-act-live-weight",
+            "archive-carcass-weight",
         ];
         fields.forEach((id) => {
             const input = document.getElementById(id);
             if (input) input.value = "";
         });
+
+        const statusDate = document.getElementById("archive-status-date");
+        if (statusDate) statusDate.value = getTodayInputValue();
 
         const deathReason = document.getElementById("archive-act-death-reason");
         if (deathReason) deathReason.value = "Травма";
@@ -68,6 +91,46 @@
 
         const download = document.getElementById("archive-act-download");
         if (download) download.checked = true;
+    }
+
+    function updateSequentialUi() {
+        const currentAnimal = sequentialMode ? sequentialAnimals[sequentialIndex] : selectedAnimals[0];
+        const currentAnimalBlock = document.getElementById("archive-current-animal");
+        if (currentAnimalBlock) {
+            if (currentAnimal) {
+                const progress = sequentialMode
+                    ? `Животное ${sequentialIndex + 1} из ${sequentialAnimals.length}`
+                    : "Животное";
+                currentAnimalBlock.style.display = "block";
+                currentAnimalBlock.innerHTML = `
+                    <div class="fw-semibold">${escapeHtml(progress)}</div>
+                    <div>${escapeHtml(getAnimalLabel(currentAnimal))}</div>
+                `;
+            } else {
+                currentAnimalBlock.style.display = "none";
+                currentAnimalBlock.innerHTML = "";
+            }
+        }
+
+        const applyButton = document.getElementById("archive-apply-button");
+        if (applyButton) {
+            if (sequentialMode && sequentialIndex < sequentialAnimals.length - 1) {
+                applyButton.textContent = "Сохранить и далее";
+            } else if (sequentialMode) {
+                applyButton.textContent = "Завершить архивирование";
+            } else {
+                applyButton.textContent = "Применить";
+            }
+        }
+    }
+
+    function reset() {
+        selectedAnimals = [];
+        sequentialMode = false;
+        sequentialAnimals = [];
+        sequentialEntries = [];
+        sequentialIndex = 0;
+        resetPerAnimalFields();
 
         const preview = document.getElementById("archive-act-preview");
         if (preview) {
@@ -81,6 +144,7 @@
             latestWeightSummary.innerHTML = "Последняя запись о весе: -";
         }
 
+        updateSequentialUi();
         toggle();
     }
 
@@ -108,6 +172,26 @@
         selectedAnimals = Array.isArray(animals)
             ? animals.map(normalizeSelectedAnimal).filter(Boolean)
             : [];
+        sequentialMode = false;
+        sequentialAnimals = [];
+        sequentialEntries = [];
+        sequentialIndex = 0;
+        updateSequentialUi();
+        loadPreview();
+    }
+
+    function startSequentialArchive(animals) {
+        sequentialAnimals = Array.isArray(animals)
+            ? animals.map(normalizeSelectedAnimal).filter(Boolean)
+            : [];
+        sequentialEntries = [];
+        sequentialIndex = 0;
+        sequentialMode = sequentialAnimals.length > 1;
+        selectedAnimals = sequentialMode
+            ? [sequentialAnimals[0]]
+            : sequentialAnimals.slice();
+        resetPerAnimalFields();
+        updateSequentialUi();
         loadPreview();
     }
 
@@ -312,6 +396,89 @@
         };
     }
 
+    function collectArchiveFormEntry(animal) {
+        const normalizedAnimal = normalizeSelectedAnimal(animal);
+        if (!normalizedAnimal) {
+            return buildValidationError("Не удалось определить животное для архивирования.");
+        }
+
+        const statusSelect = document.getElementById("archive-status-select");
+        const statusId = statusSelect?.value;
+        const statusDate = document.getElementById("archive-status-date")?.value;
+        const carcassWeightRaw = document.getElementById("archive-carcass-weight")?.value?.trim();
+
+        if (!statusId) {
+            return buildValidationError("Выберите статус.");
+        }
+
+        if (!statusDate) {
+            return buildValidationError("Укажите дату присвоения статуса.");
+        }
+
+        let carcassWeight = null;
+        if (carcassWeightRaw) {
+            carcassWeight = parseFloat(carcassWeightRaw);
+            if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
+                return buildValidationError("Вес туши должен быть числом не меньше 0.");
+            }
+        }
+
+        const archiveActPayload = collectPayload(normalizedAnimal);
+        if (archiveActPayload.__archiveActError) {
+            return archiveActPayload;
+        }
+
+        return {
+            animal: normalizedAnimal,
+            statusId,
+            statusDate,
+            carcassWeight,
+            archiveActPayload,
+        };
+    }
+
+    function collectEntriesForSelected(animals) {
+        if (sequentialMode) {
+            const currentAnimal = sequentialAnimals[sequentialIndex];
+            const currentEntry = collectArchiveFormEntry(currentAnimal);
+            if (currentEntry.__archiveActError) {
+                return { error: currentEntry.__archiveActError };
+            }
+
+            sequentialEntries[sequentialIndex] = currentEntry;
+
+            if (sequentialIndex < sequentialAnimals.length - 1) {
+                sequentialIndex += 1;
+                selectedAnimals = [sequentialAnimals[sequentialIndex]];
+                resetPerAnimalFields();
+                updateSequentialUi();
+                toggle();
+                loadPreview();
+                return { complete: false };
+            }
+
+            return {
+                complete: true,
+                entries: sequentialEntries.filter(Boolean),
+            };
+        }
+
+        const entries = [];
+        const normalizedAnimals = Array.isArray(animals)
+            ? animals.map(normalizeSelectedAnimal).filter(Boolean)
+            : [];
+
+        for (const animal of normalizedAnimals) {
+            const entry = collectArchiveFormEntry(animal);
+            if (entry.__archiveActError) {
+                return { error: entry.__archiveActError };
+            }
+            entries.push(entry);
+        }
+
+        return { complete: true, entries };
+    }
+
     function downloadArchiveAct(animalType, tagNumber) {
         if (!animalType || !tagNumber) return;
         const link = document.createElement("a");
@@ -332,8 +499,10 @@
     window.archiveActModal = {
         reset,
         setSelectedAnimals,
+        startSequentialArchive,
         toggle,
         collectPayload,
+        collectEntriesForSelected,
         downloadArchiveAct,
         hasTemplate,
     };

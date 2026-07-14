@@ -2,6 +2,7 @@ from copy import copy
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 from django.conf import settings
@@ -9,7 +10,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.utils import timezone
 
-from begunici.app_types.veterinary.vet_models import PlaceMovement, StatusHistory, WeightRecord
+from begunici.app_types.veterinary.vet_models import Place, PlaceMovement, StatusHistory, Tag, WeightRecord
 
 from .models import Ewe, Maker, Ram, Sheep
 
@@ -19,6 +20,13 @@ ANIMAL_TYPE_MODELS = {
     "Ram": Ram,
     "Ewe": Ewe,
     "Sheep": Sheep,
+}
+
+ROUTE_ANIMAL_TYPES = {
+    "maker": "Maker",
+    "ram": "Ram",
+    "ewe": "Ewe",
+    "sheep": "Sheep",
 }
 
 ANIMAL_TYPE_LABELS = {
@@ -37,7 +45,6 @@ TOTAL_ROW_BASE = 20
 FOOTER_DATE_BASE_ROW = 27
 RESPONSIBLE_PERSON_BY_USERNAME = {
     "main": "Гришин А.Е.",
-    "vet": "Макарова Е.Н.",
 }
 
 
@@ -296,6 +303,52 @@ def get_transfer_act_group(act_number):
     return None
 
 
+def build_manual_transfer_act_group(animals, old_place_id, new_place_id):
+    old_place = Place.objects.filter(id=old_place_id).first()
+    new_place = Place.objects.filter(id=new_place_id).first()
+
+    if not old_place or not new_place:
+        raise ValueError("Не удалось определить место перевода.")
+
+    movements = []
+    for animal in animals or []:
+        route_type = str(animal.get("animal_type") or "").strip()
+        tag_number = str(animal.get("tag_number") or "").strip()
+        model_type = ROUTE_ANIMAL_TYPES.get(route_type)
+
+        if not model_type or not tag_number:
+            continue
+
+        tag = Tag.objects.filter(tag_number=tag_number, animal_type=model_type).first()
+        if not tag:
+            tag = Tag.objects.filter(tag_number=tag_number).first()
+        if not tag:
+            continue
+
+        movements.append(
+            SimpleNamespace(
+                tag=tag,
+                old_place=old_place,
+                new_place=new_place,
+            )
+        )
+
+    if not movements:
+        raise ValueError("Не найдены животные для акта перевода.")
+
+    transfer_date = timezone.localdate()
+    return {
+        "act_number": "",
+        "transfer_date": transfer_date,
+        "old_place": get_place_name(old_place),
+        "new_place": get_place_name(new_place),
+        "first_created_at": timezone.localtime(),
+        "last_created_at": timezone.localtime(),
+        "first_movement_id": None,
+        "movements": movements,
+    }
+
+
 def range_to_coordinates(cell_range):
     return (
         cell_range.min_row,
@@ -459,6 +512,28 @@ def generate_transfer_act_workbook(act_number, user=None):
     return output, group
 
 
+def generate_manual_transfer_act_workbook(animals, old_place_id, new_place_id, user=None):
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise RuntimeError("Библиотека openpyxl не установлена") from exc
+
+    group = build_manual_transfer_act_group(animals, old_place_id, new_place_id)
+
+    template_path = get_template_path()
+    if not template_path.exists():
+        raise FileNotFoundError(f"Шаблон акта перевода не найден: {template_path}")
+
+    workbook = load_workbook(template_path)
+    sheet = workbook.active
+    fill_transfer_act_sheet(sheet, group, user=user)
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output, group
+
+
 def transfer_act_response(act_number, user=None):
     output, group = generate_transfer_act_workbook(act_number, user=user)
     if output is None:
@@ -466,6 +541,24 @@ def transfer_act_response(act_number, user=None):
 
     filename = (
         f"akt_perevoda_{group['act_number']}_{group['transfer_date'].strftime('%Y-%m-%d')}.xlsx"
+    )
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return response
+
+
+def manual_transfer_act_response(animals, old_place_id, new_place_id, user=None):
+    output, group = generate_manual_transfer_act_workbook(
+        animals,
+        old_place_id,
+        new_place_id,
+        user=user,
+    )
+    filename = (
+        f"akt_perevoda_{group['transfer_date'].strftime('%Y-%m-%d')}_bez_nomera.xlsx"
     )
     response = HttpResponse(
         output.getvalue(),

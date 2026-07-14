@@ -4,7 +4,17 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h1 class="mb-4">Акты</h1>
+    <div class="d-flex align-items-center gap-3 flex-wrap mb-4">
+        <h1 class="mb-0">Акты</h1>
+        <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-bs-toggle="modal"
+            data-bs-target="#nonAutoActTemplatesModal"
+        >
+            Шаблоны актов
+        </button>
+    </div>
 
     <div class="card">
         <div class="card-header">
@@ -14,16 +24,159 @@
             <div class="row g-3">
                 <div class="col-md-6 col-lg-3">
                     <a href="{% url 'animals:acts-archive' %}" class="btn btn-outline-primary w-100 py-3">
-                        Акты выбытия
+                        Акты выбытия (СП-54)
                     </a>
                 </div>
                 <div class="col-md-6 col-lg-3">
                     <a href="{% url 'animals:acts-transfer' %}" class="btn btn-outline-primary w-100 py-3">
-                        Акты перевода
+                        Акты перевода (СП-47)
                     </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary w-100 py-3"
+                        data-bs-toggle="modal"
+                        data-bs-target="#monthlyBreedingActModal"
+                    >
+                        Акт осеменения и окотов по месяцам
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="nonAutoActTemplatesModal" tabindex="-1" aria-labelledby="nonAutoActTemplatesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="nonAutoActTemplatesModalLabel">Шаблоны актов для ручного заполнения</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div id="non-auto-act-templates-loading" class="text-muted">
+                    Загружаю список шаблонов...
+                </div>
+                <div id="non-auto-act-templates-error" class="alert alert-danger" style="display: none;"></div>
+                <div id="non-auto-act-templates-list" class="list-group"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="monthlyBreedingActModal" tabindex="-1" aria-labelledby="monthlyBreedingActModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="monthly-breeding-act-form">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="monthlyBreedingActModalLabel">Акт осеменения и окотов по месяцам</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <label for="monthly-breeding-act-year" class="form-label">Год</label>
+                    <input
+                        type="number"
+                        class="form-control"
+                        id="monthly-breeding-act-year"
+                        min="1900"
+                        max="2200"
+                        step="1"
+                        value="{% now "Y" %}"
+                        required
+                    >
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-success">Скачать</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("monthly-breeding-act-form");
+    const yearInput = document.getElementById("monthly-breeding-act-year");
+    if (form && yearInput) {
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const year = yearInput.value.trim();
+            if (!year) return;
+            window.location.href = `/animals/api/acts/monthly-breeding/?year=${encodeURIComponent(year)}`;
+        });
+    }
+
+    const templatesModal = document.getElementById("nonAutoActTemplatesModal");
+    const templatesLoading = document.getElementById("non-auto-act-templates-loading");
+    const templatesError = document.getElementById("non-auto-act-templates-error");
+    const templatesList = document.getElementById("non-auto-act-templates-list");
+
+    async function loadNonAutoActTemplates() {
+        if (!templatesLoading || !templatesError || !templatesList) return;
+
+        templatesLoading.style.display = "block";
+        templatesError.style.display = "none";
+        templatesError.textContent = "";
+        templatesList.textContent = "";
+
+        try {
+            const response = await fetch("/animals/api/acts/templates/");
+            if (!response.ok) {
+                throw new Error("Не удалось загрузить список шаблонов");
+            }
+
+            const data = await response.json();
+            const templates = data.results || [];
+
+            templatesLoading.style.display = "none";
+            if (!templates.length) {
+                const emptyMessage = document.createElement("div");
+                emptyMessage.className = "text-muted";
+                emptyMessage.textContent = "В папке non_auto пока нет шаблонов.";
+                templatesList.appendChild(emptyMessage);
+                return;
+            }
+
+            templates.forEach((template) => {
+                const item = document.createElement("div");
+                item.className = "list-group-item act-template-item";
+
+                const textBlock = document.createElement("div");
+                textBlock.className = "act-template-text";
+
+                const title = document.createElement("div");
+                title.className = "act-template-title fw-semibold";
+                title.textContent = `${template.title} - ${template.purpose}`;
+
+                const downloadLink = document.createElement("a");
+                downloadLink.className = "btn btn-sm btn-success";
+                downloadLink.href = `/animals/api/acts/templates/download/?filename=${encodeURIComponent(template.filename)}`;
+                downloadLink.textContent = "Скачать";
+
+                const actionBlock = document.createElement("div");
+                actionBlock.className = "act-template-action";
+
+                textBlock.appendChild(title);
+                item.appendChild(textBlock);
+                actionBlock.appendChild(downloadLink);
+                item.appendChild(actionBlock);
+                templatesList.appendChild(item);
+            });
+        } catch (error) {
+            templatesLoading.style.display = "none";
+            templatesError.style.display = "block";
+            templatesError.textContent = error.message || "Ошибка загрузки шаблонов";
+        }
+    }
+
+    if (templatesModal) {
+        templatesModal.addEventListener("show.bs.modal", loadNonAutoActTemplates);
+    }
+});
+</script>
 {% endblock %}

@@ -43,7 +43,8 @@ from .archive_acts import (
     find_animal as find_archive_act_animal,
     get_archive_act_template_config,
 )
-from .transfer_acts import get_transfer_acts_page, transfer_act_response
+from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
+from .monthly_breeding_acts import monthly_breeding_act_response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -52,6 +53,7 @@ from django.http import JsonResponse
 from django.db.models import Count, Q, F
 from datetime import datetime, timedelta
 from django.utils import timezone
+from pathlib import Path
 
 from begunici.app_types.veterinary.vet_models import (
     WeightRecord,
@@ -62,12 +64,66 @@ from begunici.app_types.veterinary.vet_models import (
     StatusHistory,
     Status,
 )
+
 from begunici.app_types.veterinary.vet_serializers import (
     WeightRecordSerializer,
     VeterinarySerializer,
     PlaceMovementSerializer,
     StatusHistorySerializer,
 )
+
+
+NON_AUTO_ACT_TEMPLATE_PURPOSES = {
+    "4-C": "путевой лист грузового автомобиля",
+    "4-С": "путевой лист грузового автомобиля",
+    "406-АПК": "акт на выбраковку животных из основного стада",
+    "413-АПК": "расчет начисления оплаты труда работникам животноводства",
+    "414-АПК": "наряд на сдельную работу",
+    "СП-3": "реестр документов на выбытие продуктов",
+    "СП-17": "акт приема грубых и сочных кормов",
+    "СП-18": "акт на оприходование пастбищных кормов",
+    "СП-19": "акт на оприходование пастбищных кормов, учтенных по укосному методу",
+    "СП-20": "ведомость учёта расхода кормов",
+    "СП-24": "акт настрига и приема шерсти",
+    "СП-25": "дневник поступления и отправки шерсти",
+    "СП-32": "товарно-транспортная накладная (животные)",
+    "СП-35": "товарно-транспортная накладная (шерсть)",
+    "СП-38": "отчёт о продаже сельскохозяйственной продукции",
+    "СП-39": "акт на оприходование приплода животных",
+    "СП-43": "ведомость взвешивания животных",
+    "СП-47": "акт на перевод животных",
+    "СП-48": "учётный лист движения животных и расхода кормов",
+    "СП-51": "отчёт о движении скота и птицы на ферме",
+    "СП-54": "акт на выбытие животных и птицы",
+    "СП-55": "учётный лист убоя и падежа животных",
+    "СП-56": "производственный отчёт о переработке птицы и выходе продукции",
+}
+
+NON_AUTO_ACT_TEMPLATE_EXTENSIONS = {
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+}
+
+
+def get_non_auto_act_templates_dir():
+    return Path(__file__).resolve().parent / "excel_templates" / "non_auto"
+
+
+def list_non_auto_act_template_paths():
+    templates_dir = get_non_auto_act_templates_dir()
+    if not templates_dir.exists():
+        return []
+
+    return sorted(
+        (
+            path
+            for path in templates_dir.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in NON_AUTO_ACT_TEMPLATE_EXTENSIONS
+        ),
+        key=lambda path: path.stem.lower(),
+    )
 
 
 class PaginationSetting(PageNumberPagination):
@@ -5861,13 +5917,15 @@ def dashboard_statistics(request):
     """
     Возвращает статистику для главной страницы:
     - Всего активных животных (по типам)
-    - Перенесено в архив за последний месяц (по типам и статусам)
-    - Родилось за последний месяц (только молодняк Ram и Ewe, по типам)
+    - Перенесено в архив за текущий календарный месяц (по типам и статусам)
+    - Родилось за текущий календарный месяц (только молодняк Ram и Ewe, по типам)
     """
     from django.utils import timezone
     
-    # Дата месяц назад
-    one_month_ago = timezone.now().date() - timedelta(days=30)
+    # Текущий календарный месяц: с 1 числа по последнее число месяца.
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+    month_end = month_start + relativedelta(months=1) - timedelta(days=1)
     
     # 1. Всего активных животных
     active_makers = Maker.objects.filter(is_archived=False).count()
@@ -5876,7 +5934,7 @@ def dashboard_statistics(request):
     active_sheep = Sheep.objects.filter(is_archived=False).count()
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
-    # 2. Перенесено в архив за последний месяц
+    # 2. Перенесено в архив за текущий месяц
     archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо']
     
     # Используем StatusHistory для получения даты архивирования
@@ -5885,10 +5943,11 @@ def dashboard_statistics(request):
     # Получаем ID архивных статусов
     archive_status_ids = Status.objects.filter(status_type__in=archive_statuses).values_list('id', flat=True)
     
-    # Получаем бирки животных, которые были переведены в архивные статусы за последний месяц
+    # Получаем бирки животных, которые были переведены в архивные статусы за текущий месяц
     archived_tag_ids = StatusHistory.objects.filter(
         new_status_id__in=archive_status_ids,
-        change_date__gte=one_month_ago
+        change_date__date__gte=month_start,
+        change_date__date__lte=month_end,
     ).values_list('tag_id', flat=True)
     
     # Подсчитываем архивированных животных по типам
@@ -5919,9 +5978,9 @@ def dashboard_statistics(request):
     total_archived_sheep = sum(item['count'] for item in archived_sheep)
     total_archived = total_archived_makers + total_archived_rams + total_archived_ewes + total_archived_sheep
     
-    # 3. Родилось за последний месяц (только молодняк)
-    born_rams = Ram.objects.filter(birth_date__gte=one_month_ago).count()
-    born_ewes = Ewe.objects.filter(birth_date__gte=one_month_ago).count()
+    # 3. Родилось за текущий месяц (только молодняк)
+    born_rams = Ram.objects.filter(birth_date__gte=month_start, birth_date__lte=month_end).count()
+    born_ewes = Ewe.objects.filter(birth_date__gte=month_start, birth_date__lte=month_end).count()
     total_born = born_rams + born_ewes
     
     return Response({
@@ -5975,28 +6034,53 @@ def yearly_statistics(request):
     - Количество рождений мальчиков и девочек
     """
     from django.utils import timezone
-    from datetime import date
-    from django.db.models import Avg, Count, F, Q
+    from datetime import date, datetime, time
+    from django.db.models import Avg, Count, F, Q, Sum
     from begunici.app_types.veterinary.vet_models import VeterinaryCare, Place, StatusHistory
     
     year = request.GET.get('year', timezone.now().year)
+    selected_month = request.GET.get('month')
     try:
         year = int(year)
     except (ValueError, TypeError):
         return Response({'error': 'Неверный формат года'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if selected_month in (None, '', 'all'):
+        selected_month = None
+    else:
+        try:
+            selected_month = int(selected_month)
+        except (ValueError, TypeError):
+            return Response({'error': 'Неверный формат месяца'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if selected_month < 1 or selected_month > 12:
+            return Response({'error': 'Месяц должен быть от 1 до 12'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Даты начала и конца года
         year_start = date(year, 1, 1)
         year_end = date(year, 12, 31)
+        if selected_month:
+            period_start = date(year, selected_month, 1)
+            period_end = period_start + relativedelta(months=1) - timedelta(days=1)
+            months_to_calculate = [selected_month]
+        else:
+            period_start = year_start
+            period_end = year_end
+            months_to_calculate = range(1, 13)
+
+        current_tz = timezone.get_current_timezone()
+        period_end_exclusive_dt = timezone.make_aware(
+            datetime.combine(period_end + timedelta(days=1), time.min),
+            current_tz,
+        )
         
         # 1. ОПТИМИЗИРОВАННЫЙ расчет среднего набора веса по месяцам
         monthly_weight_gain = {}
         
-        # Получаем все взвешивания за год одним запросом
+        # Получаем все взвешивания за выбранный период одним запросом
         all_weights = WeightRecord.objects.filter(
-            weight_date__gte=year_start,
-            weight_date__lte=year_end
+            weight_date__gte=period_start,
+            weight_date__lte=period_end
         ).select_related('tag').order_by('tag', 'weight_date')
         
         # Группируем по месяцам и тегам
@@ -6009,7 +6093,7 @@ def yearly_statistics(request):
             weights_by_month_tag[(month, tag_id)].append(weight)
         
         # Рассчитываем прирост по месяцам
-        for month in range(1, 13):
+        for month in months_to_calculate:
             total_weight_gain = 0
             animals_with_gain = 0
             
@@ -6031,8 +6115,8 @@ def yearly_statistics(request):
         # 2. ОПТИМИЗИРОВАННЫЙ подсчет вакцинаций
         treatment_stats = {}
         vet_treatments = Veterinary.objects.filter(
-            date_of_care__gte=year_start,
-            date_of_care__lte=year_end
+            date_of_care__date__gte=period_start,
+            date_of_care__date__lte=period_end
         ).select_related('veterinary_care').values(
             'veterinary_care__care_name',
             'veterinary_care__medication'
@@ -6044,81 +6128,96 @@ def yearly_statistics(request):
             key = f"{care_name} ({medication})"
             treatment_stats[key] = treatment['count']
         
-        # 3. ИСПРАВЛЕННЫЙ подсчет животных по статусам (включая начальные статусы)
+        # 3. Подсчет животных по статусам на конец выбранного периода.
+        # Животное попадает в статистику ровно один раз, по статусу на конец периода.
         status_stats = {}
-        
-        # Получаем все изменения статусов за год из StatusHistory
-        from begunici.app_types.veterinary.vet_models import StatusHistory
-        
-        status_changes = StatusHistory.objects.filter(
-            change_date__gte=year_start,
-            change_date__lte=year_end
-        ).select_related('new_status')
-        
-        for change in status_changes:
-            if change.new_status:
-                status_type = change.new_status.status_type
-                if status_type not in status_stats:
-                    status_stats[status_type] = 0
-                status_stats[status_type] += 1
-        
-        # ДОБАВЛЯЕМ: Подсчет животных, созданных в этом году с начальными статусами
-        # (которые не попали в StatusHistory)
-        
-        # Получаем всех животных, созданных в этом году
-        animals_created_this_year = []
-        
-        # Собираем всех животных разных типов
+
+        animals_for_status = []
         for model in [Ram, Ewe, Sheep, Maker]:
             animals = model.objects.filter(
-                birth_date__gte=year_start,
-                birth_date__lte=year_end
+                Q(birth_date__lte=period_end)
+                | Q(birth_date__isnull=True, tag__issue_date__lte=period_end)
             ).select_related('animal_status', 'tag')
-            animals_created_this_year.extend(animals)
-        
-        # Получаем теги животных, у которых есть записи в StatusHistory за этот год
-        tags_with_history = set(
-            StatusHistory.objects.filter(
-                change_date__gte=year_start,
-                change_date__lte=year_end
-            ).values_list('tag_id', flat=True)
+            animals_for_status.extend(animals)
+
+        animals_by_tag = {}
+        for animal in animals_for_status:
+            if getattr(animal, 'tag_id', None) and animal.tag_id not in animals_by_tag:
+                animals_by_tag[animal.tag_id] = animal
+        animals_for_status = list(animals_by_tag.values())
+
+        tag_ids_for_status = [
+            animal.tag_id for animal in animals_for_status
+            if getattr(animal, 'tag_id', None)
+        ]
+        histories_by_tag = defaultdict(list)
+        status_histories = (
+            StatusHistory.objects.filter(tag_id__in=tag_ids_for_status)
+            .select_related('old_status', 'new_status')
+            .order_by('tag_id', 'change_date', 'id')
         )
-        
-        # Добавляем статусы животных, которые НЕ имеют записей в StatusHistory
-        for animal in animals_created_this_year:
-            if animal.tag.id not in tags_with_history and animal.animal_status:
+        for history in status_histories:
+            histories_by_tag[history.tag_id].append(history)
+
+        for animal in animals_for_status:
+            status_type = None
+            tag_histories = histories_by_tag.get(animal.tag_id, [])
+            last_change_before_year_end = None
+            first_change_after_year_end = None
+
+            for history in tag_histories:
+                if history.change_date < period_end_exclusive_dt:
+                    last_change_before_year_end = history
+                elif first_change_after_year_end is None:
+                    first_change_after_year_end = history
+
+            if last_change_before_year_end and last_change_before_year_end.new_status:
+                status_type = last_change_before_year_end.new_status.status_type
+            elif first_change_after_year_end and first_change_after_year_end.old_status:
+                status_type = first_change_after_year_end.old_status.status_type
+            elif animal.animal_status:
                 status_type = animal.animal_status.status_type
-                if status_type not in status_stats:
-                    status_stats[status_type] = 0
-                status_stats[status_type] += 1
+
+            if status_type:
+                status_stats[status_type] = status_stats.get(status_type, 0) + 1
         
         # 4. ОПТИМИЗИРОВАННЫЙ подсчет рождений
         # Используем агрегацию вместо count()
         boys_born = (
-            Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
-            Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+            Ram.objects.filter(birth_date__gte=period_start, birth_date__lte=period_end).count() +
+            Maker.objects.filter(birth_date__gte=period_start, birth_date__lte=period_end).count()
         )
         
         girls_born = (
-            Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
-            Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
+            Ewe.objects.filter(birth_date__gte=period_start, birth_date__lte=period_end).count() +
+            Sheep.objects.filter(birth_date__gte=period_start, birth_date__lte=period_end).count()
         )
 
-        # 5. Молодняк (в рамках выбранного года):
-        # животные, рожденные в этом году и достигшие возраста более 7 месяцев к концу года
-        young_stock_cutoff = year_end - relativedelta(months=7)
+        dead_lambs_born = (
+            Lambing.objects.filter(
+                is_active=False,
+                actual_lambing_date__gte=period_start,
+                actual_lambing_date__lte=period_end,
+            ).aggregate(total=Sum('dead_lambs_count'))['total'] or 0
+        )
+
+        # 5. Молодняк (в рамках выбранного года/месяца):
+        # животные, рожденные с начала года и достигшие возраста более 7 месяцев к концу периода
+        young_stock_cutoff = period_end - relativedelta(months=7)
         if young_stock_cutoff < year_start:
             young_stock_total = 0
         else:
+            young_stock_end = min(young_stock_cutoff, period_end)
             young_stock_total = (
-                Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_cutoff).count() +
-                Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_cutoff).count() +
-                Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_cutoff).count() +
-                Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_cutoff).count()
+                Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_end).count() +
+                Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_end).count() +
+                Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_end).count() +
+                Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=young_stock_end).count()
             )
         
         return Response({
             'year': year,
+            'month': selected_month,
             'monthly_weight_gain': monthly_weight_gain,
             'veterinary_treatments': treatment_stats,
             'animals_by_status': status_stats,
@@ -6126,6 +6225,7 @@ def yearly_statistics(request):
                 'boys': boys_born,
                 'girls': girls_born,
                 'total': boys_born + girls_born,
+                'deadborn': dead_lambs_born,
                 'young_stock_total': young_stock_total,
             }
         })
@@ -6137,75 +6237,6 @@ def yearly_statistics(request):
         return Response({
             'error': f'Ошибка при получении статистики: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        avg_gain = round(total_weight_gain / animals_with_gain, 2) if animals_with_gain > 0 else 0
-        monthly_weight_gain[f'month_{month}'] = {
-            'month': month,
-            'avg_gain': avg_gain,
-            'animals_count': animals_with_gain
-        }
-    
-    # 2. Количество вакцинаций по препаратам
-    vet_treatments = Veterinary.objects.filter(
-        date_of_care__gte=year_start,
-        date_of_care__lte=year_end
-    ).select_related('veterinary_care')
-    
-    treatment_stats = {}
-    for treatment in vet_treatments:
-        if treatment.veterinary_care:
-            care_name = treatment.veterinary_care.care_name
-            medication = treatment.veterinary_care.medication or 'Без препарата'
-            key = f"{care_name} ({medication})"
-            
-            if key not in treatment_stats:
-                treatment_stats[key] = 0
-            treatment_stats[key] += 1
-    
-    # 3. Количество животных по статусам на конец года
-    status_stats = {}
-    
-    # Получаем все статусы
-    all_statuses = Status.objects.all()
-    
-    for status_obj in all_statuses:
-        count = 0
-        # Считаем животных каждого типа с этим статусом на конец года
-        for model in [Maker, Ram, Ewe, Sheep]:
-            count += model.objects.filter(
-                animal_status=status_obj,
-                # Животное должно существовать на конец года
-                tag__issue_date__lte=year_end
-            ).count()
-        
-        if count > 0:
-            status_stats[status_obj.status_type] = count
-    
-    # 4. Рождения мальчиков и девочек за год
-    # Мальчики: Ram + Maker
-    boys_born = (
-        Ram.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count() +
-        Maker.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
-    )
-    
-    # Девочки: Ewe
-    girls_born = Ewe.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
-    
-    # Sheep могут быть как мальчиками, так и девочками, но по логике это взрослые самки
-    # Поэтому добавляем их к девочкам, если они родились в этом году
-    girls_born += Sheep.objects.filter(birth_date__gte=year_start, birth_date__lte=year_end).count()
-    
-    return Response({
-        'year': year,
-        'monthly_weight_gain': monthly_weight_gain,
-        'veterinary_treatments': treatment_stats,
-        'animals_by_status': status_stats,
-        'births': {
-            'boys': boys_born,
-            'girls': girls_born,
-            'total': boys_born + girls_born
-        }
-    })
 
 
 @api_view(['GET'])
@@ -7151,6 +7182,119 @@ def transfer_act_download(request, act_number):
             {"error": "Акт перевода не найден"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def manual_transfer_act_download(request):
+    """Скачивает акт перевода для только что выбранных животных без номера акта."""
+    try:
+        animals = request.data.get("animals") or []
+        old_place_id = request.data.get("old_place_id")
+        new_place_id = request.data.get("new_place_id")
+
+        if not animals:
+            return Response(
+                {"error": "Не переданы животные для акта перевода"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not old_place_id or not new_place_id:
+            return Response(
+                {"error": "Не передано место отправления или назначения"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return manual_transfer_act_response(
+            animals,
+            old_place_id,
+            new_place_id,
+            user=request.user,
+        )
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except FileNotFoundError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def monthly_breeding_act_download(request):
+    """Скачивает акт осеменения и окотов по месяцам за выбранный год."""
+    year_raw = request.GET.get("year") or timezone.localdate().year
+    try:
+        year = int(year_raw)
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "Некорректный год"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if year < 1900 or year > 2200:
+        return Response(
+            {"error": "Год должен быть в диапазоне 1900-2200"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        return monthly_breeding_act_response(year)
+    except FileNotFoundError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except RuntimeError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def non_auto_act_templates_api(request):
+    """Возвращает список ручных шаблонов актов из excel_templates/non_auto."""
+    templates = []
+    for path in list_non_auto_act_template_paths():
+        purpose = (
+            NON_AUTO_ACT_TEMPLATE_PURPOSES.get(path.stem)
+            or NON_AUTO_ACT_TEMPLATE_PURPOSES.get(path.name)
+            or "назначение не указано"
+        )
+        templates.append(
+            {
+                "filename": path.name,
+                "title": path.stem,
+                "purpose": purpose,
+            }
+        )
+
+    return Response({"results": templates})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def non_auto_act_template_download(request):
+    """Скачивает выбранный ручной шаблон акта без автоматического заполнения."""
+    from urllib.parse import quote
+
+    filename = (request.GET.get("filename") or "").strip()
+    if not filename:
+        return Response(
+            {"error": "Не передано название шаблона"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    allowed_templates = {path.name: path for path in list_non_auto_act_template_paths()}
+    template_path = allowed_templates.get(filename)
+    if not template_path:
+        return Response(
+            {"error": "Шаблон не найден"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    content_type = NON_AUTO_ACT_TEMPLATE_EXTENSIONS.get(
+        template_path.suffix.lower(),
+        "application/octet-stream",
+    )
+    response = HttpResponse(template_path.read_bytes(), content_type=content_type)
+    response["Content-Disposition"] = (
+        f"attachment; filename*=UTF-8''{quote(template_path.name)}"
+    )
     return response
 
 

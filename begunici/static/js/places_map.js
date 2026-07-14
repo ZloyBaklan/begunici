@@ -1,4 +1,4 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, getCSRFToken } from "./utils.js";
 
 let currentBarnStats = null;
 let showEmptySections = false;
@@ -430,7 +430,7 @@ async function loadAndShowAnimalsModal(animalType, placeId, sectionName) {
         }));
         
         // Показываем модальное окно
-        showAnimalsModal(animalType, formattedAnimals, sectionName);
+        showAnimalsModal(animalType, formattedAnimals, sectionName, placeId);
         
     } catch (error) {
         console.error('Ошибка загрузки животных:', error);
@@ -587,7 +587,7 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
             const makersSpan = document.createElement('span');
             makersSpan.className = 'animal-count makers';
             makersSpan.textContent = `Бараны-Производители: ${animals.makers.length}`;
-            makersSpan.onclick = () => showAnimalsModal('Бараны-Производители', animals.makers, section.name);
+            makersSpan.onclick = () => showAnimalsModal('Бараны-Производители', animals.makers, section.name, section.id);
             animalsDiv.appendChild(makersSpan);
         }
         
@@ -595,7 +595,7 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
             const ramsSpan = document.createElement('span');
             ramsSpan.className = 'animal-count rams';
             ramsSpan.textContent = `Баранчики: ${animals.rams.length}`;
-            ramsSpan.onclick = () => showAnimalsModal('Баранчики', animals.rams, section.name);
+            ramsSpan.onclick = () => showAnimalsModal('Баранчики', animals.rams, section.name, section.id);
             animalsDiv.appendChild(ramsSpan);
         }
         
@@ -603,7 +603,7 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
             const ewesSpan = document.createElement('span');
             ewesSpan.className = 'animal-count ewes';
             ewesSpan.textContent = `Ярки: ${animals.ewes.length}`;
-            ewesSpan.onclick = () => showAnimalsModal('Ярки', animals.ewes, section.name);
+            ewesSpan.onclick = () => showAnimalsModal('Ярки', animals.ewes, section.name, section.id);
             animalsDiv.appendChild(ewesSpan);
         }
         
@@ -611,7 +611,7 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
             const sheepSpan = document.createElement('span');
             sheepSpan.className = 'animal-count sheep';
             sheepSpan.textContent = `Овцематки: ${animals.sheep.length}`;
-            sheepSpan.onclick = () => showAnimalsModal('Овцематки', animals.sheep, section.name);
+            sheepSpan.onclick = () => showAnimalsModal('Овцематки', animals.sheep, section.name, section.id);
             animalsDiv.appendChild(sheepSpan);
         }
         
@@ -628,7 +628,7 @@ function createSectionCell(sectionNumber, section, animalsByPlace) {
 }
 
 // Показ модального окна с животными
-function showAnimalsModal(animalType, animals, sectionName) {
+function showAnimalsModal(animalType, animals, sectionName, placeId) {
     const modal = document.getElementById('animals-modal');
     const title = document.getElementById('modal-title');
     const list = document.getElementById('animals-list');
@@ -657,6 +657,7 @@ function showAnimalsModal(animalType, animals, sectionName) {
         checkbox.value = animal.id;
         checkbox.dataset.animalType = getAnimalTypeFromCategory(animalType);
         checkbox.dataset.tagNumber = tagNumber;
+        checkbox.dataset.oldPlaceId = placeId || '';
         checkbox.addEventListener('change', updateMoveButtonVisibility);
         
         const label = document.createElement('label');
@@ -755,6 +756,37 @@ function closeMoveModal() {
     document.getElementById('move-modal').style.display = 'none';
 }
 
+function toggleHousingStandardsCard() {
+    const card = document.getElementById('housing-standards-card');
+    const toggleButton = document.getElementById('housing-standards-toggle');
+    if (!card) {
+        return;
+    }
+
+    const shouldShow = card.style.display === 'none' || !card.style.display;
+    card.style.display = shouldShow ? 'block' : 'none';
+    if (toggleButton) {
+        toggleButton.textContent = shouldShow ? 'Скрыть нормы содержания' : 'Нормы содержания';
+        toggleButton.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+    }
+
+    if (shouldShow) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function closeHousingStandardsCard() {
+    const card = document.getElementById('housing-standards-card');
+    const toggleButton = document.getElementById('housing-standards-toggle');
+    if (card) {
+        card.style.display = 'none';
+    }
+    if (toggleButton) {
+        toggleButton.textContent = 'Нормы содержания';
+        toggleButton.setAttribute('aria-expanded', 'false');
+    }
+}
+
 // Обновление видимости кнопки перемещения
 function updateMoveButtonVisibility() {
     const checkboxes = document.querySelectorAll('.animal-checkbox:checked');
@@ -827,6 +859,11 @@ async function showMoveAnimalsDialog() {
             option.textContent = place.sheepfold;
             select.appendChild(option);
         });
+
+        const downloadActCheckbox = document.getElementById('download-transfer-act');
+        if (downloadActCheckbox) {
+            downloadActCheckbox.checked = true;
+        }
         
         // Показываем модальное окно
         document.getElementById('move-modal').style.display = 'block';
@@ -837,10 +874,57 @@ async function showMoveAnimalsDialog() {
     }
 }
 
+function getFilenameFromContentDisposition(contentDisposition) {
+    if (!contentDisposition) {
+        return '';
+    }
+
+    const utfMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utfMatch) {
+        return decodeURIComponent(utfMatch[1]);
+    }
+
+    const regularMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+    return regularMatch ? regularMatch[1] : '';
+}
+
+async function downloadManualTransferAct(animals, oldPlaceId, newPlaceId) {
+    const response = await fetch('/animals/api/acts/transfer/manual/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify({
+            animals,
+            old_place_id: oldPlaceId,
+            new_place_id: newPlaceId,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Ошибка скачивания акта перевода');
+    }
+
+    const blob = await response.blob();
+    const filename = getFilenameFromContentDisposition(response.headers.get('Content-Disposition'))
+        || 'akt_perevoda_bez_nomera.xlsx';
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+}
+
 // Перемещение выбранных животных
 async function moveSelectedAnimals() {
     const selectedCheckboxes = document.querySelectorAll('.animal-checkbox:checked');
     const destinationPlaceId = document.getElementById('destination-place').value;
+    const shouldDownloadTransferAct = Boolean(document.getElementById('download-transfer-act')?.checked);
     
     if (!destinationPlaceId) {
         alert('Выберите место назначения');
@@ -851,7 +935,19 @@ async function moveSelectedAnimals() {
         alert('Выберите животных для перемещения');
         return;
     }
-    
+
+    const selectedAnimalsForAct = Array.from(selectedCheckboxes).map((checkbox) => ({
+        animal_type: checkbox.dataset.animalType,
+        tag_number: checkbox.dataset.tagNumber,
+    }));
+    const oldPlaceIds = Array.from(
+        new Set(Array.from(selectedCheckboxes).map((checkbox) => checkbox.dataset.oldPlaceId).filter(Boolean))
+    );
+
+    if (shouldDownloadTransferAct && oldPlaceIds.length !== 1) {
+        alert('Не удалось определить исходный отсек для акта перемещения.');
+        return;
+    }
 
     
     try {
@@ -867,6 +963,15 @@ async function moveSelectedAnimals() {
         
         // Ждем завершения всех операций
         await Promise.all(movePromises);
+
+        if (shouldDownloadTransferAct) {
+            try {
+                await downloadManualTransferAct(selectedAnimalsForAct, oldPlaceIds[0], destinationPlaceId);
+            } catch (downloadError) {
+                console.error('Ошибка скачивания акта перемещения:', downloadError);
+                alert(`Животные перемещены, но акт не скачался: ${downloadError.message || 'неизвестная ошибка'}`);
+            }
+        }
         
         alert('Животные успешно перемещены!');
         
@@ -900,5 +1005,7 @@ async function moveSelectedAnimals() {
 // Экспортируем функции для глобального доступа
 window.closeAnimalsModal = closeAnimalsModal;
 window.closeMoveModal = closeMoveModal;
+window.toggleHousingStandardsCard = toggleHousingStandardsCard;
+window.closeHousingStandardsCard = closeHousingStandardsCard;
 window.showMoveAnimalsDialog = showMoveAnimalsDialog;
 window.moveSelectedAnimals = moveSelectedAnimals;

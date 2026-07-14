@@ -9,7 +9,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Список системных пользователей
-        system_users = ['vet', 'zootech', 'main', 'admin']
+        system_users = ['vet', 'zootech', 'main', 'finans', 'admin']
         
         # Проверяем, есть ли сторонние пользователи
         other_users = User.objects.exclude(username__in=system_users)
@@ -46,6 +46,7 @@ class Command(BaseCommand):
             {'username': 'vet', 'group': vet_group},
             {'username': 'zootech', 'group': zootech_group},
             {'username': 'main', 'group': main_group},
+            {'username': 'finans', 'group': main_group},
             {'username': 'admin', 'group': admin_group},
         ]
 

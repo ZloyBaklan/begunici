@@ -467,11 +467,14 @@ function openArchiveModal() {
         carcassWeightInput.value = '';
     }
     window.archiveActModal?.reset();
-    window.archiveActModal?.setSelectedAnimals(
-        Array.from(selectedEwes)
-            .filter(tag => tag && String(tag).trim())
-            .map(tag => ({ animalType: 'ewe', tagNumber: String(tag).trim() }))
-    );
+    const archiveAnimals = Array.from(selectedEwes)
+        .filter(tag => tag && String(tag).trim())
+        .map(tag => ({ animalType: 'ewe', tagNumber: String(tag).trim() }));
+    if (archiveAnimals.length > 1) {
+        window.archiveActModal?.startSequentialArchive(archiveAnimals);
+    } else {
+        window.archiveActModal?.setSelectedAnimals(archiveAnimals);
+    }
     
     loadArchiveStatuses();
 }
@@ -515,50 +518,35 @@ async function loadArchiveStatuses() {
 }
 
 async function applyArchiveStatus() {
-    const selectedTags = Array.from(selectedEwes).filter(tag => tag && String(tag).trim()).map(tag => String(tag).trim());
+    const selected = Array.from(selectedEwes)
+        .filter(tag => tag && String(tag).trim())
+        .map(tag => ({ animalType: 'ewe', tagNumber: String(tag).trim() }));
 
-    if (selectedTags.length === 0) {
+    if (selected.length === 0) {
         alert('Нет выбранных записей для переноса.');
         return;
     }
 
-    const statusSelect = document.getElementById('archive-status-select');
-    const statusId = statusSelect.value;
-    if (!statusId) {
-        alert('Выберите статус.');
+    const archiveStep = window.archiveActModal?.collectEntriesForSelected?.(selected);
+    if (archiveStep?.error) {
+        alert(archiveStep.error);
+        return;
+    }
+    if (!archiveStep?.complete) {
         return;
     }
 
-    const statusDate = document.getElementById('archive-status-date').value;
-    if (!statusDate) {
-        alert('Укажите дату присвоения статуса.');
-        return;
-    }
-
-    const carcassWeightRaw = document.getElementById('archive-carcass-weight')?.value?.trim();
-    let carcassWeight = null;
-    if (carcassWeightRaw) {
-        carcassWeight = parseFloat(carcassWeightRaw);
-        if (Number.isNaN(carcassWeight) || carcassWeight < 0) {
-            alert('Вес туши должен быть неотрицательным числом.');
-            return;
-        }
-    }
     try {
-        for (const tag of selectedTags) {
-            const archiveActPayload = window.archiveActModal?.collectPayload?.({ animalType: 'ewe', tagNumber: tag }) || {};
-            if (archiveActPayload.__archiveActError) {
-                alert(archiveActPayload.__archiveActError);
-                return;
-            }
-            await apiRequest(`/animals/ewe/${tag}/`, 'PATCH', { 
-                animal_status_id: statusId,
-                status_date: statusDate,
-                carcass_weight: carcassWeight,
-                ...archiveActPayload
+        for (const entry of archiveStep.entries) {
+            const item = entry.animal;
+            await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, 'PATCH', {
+                animal_status_id: entry.statusId,
+                status_date: entry.statusDate,
+                carcass_weight: entry.carcassWeight,
+                ...entry.archiveActPayload
             });
-            if (archiveActPayload.archive_act_download) {
-                window.archiveActModal?.downloadArchiveAct('ewe', tag);
+            if (entry.archiveActPayload.archive_act_download) {
+                window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
             }
         }
         alert('Выбранные записи успешно перенесены в архив.');

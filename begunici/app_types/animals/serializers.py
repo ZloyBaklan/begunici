@@ -1112,12 +1112,18 @@ class LambingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
             'number_of_lambs', 'dead_lambs_count', 'note', 'completion_type',
-            'completion_type_display', 'is_active', 'created_at',
+            'completion_type_display', 'mother_category_at_start', 'is_active', 'created_at',
             'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
             'mother_tag_text', 'mother_type_text', 'source_group'  # Добавляем новые поля
         ]
-        read_only_fields = ['id', 'planned_lambing_date', 'created_at', 'source_group']
+        read_only_fields = [
+            'id',
+            'planned_lambing_date',
+            'created_at',
+            'source_group',
+            'mother_category_at_start',
+        ]
     
     def get_mother_tag(self, obj):
         try:
