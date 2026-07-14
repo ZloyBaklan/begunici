@@ -8467,7 +8467,6 @@ def bulk_vaccination(request):
     vaccination_date = request.data.get('vaccination_date')
     veterinary_care_id = request.data.get('veterinary_care_id')
     care_name = (request.data.get('care_name') or '').strip()
-    duration_days = request.data.get('duration_days', 0)
     animal_tags = request.data.get('animal_tags', [])
     
     if not vaccination_date:
@@ -8510,6 +8509,8 @@ def bulk_vaccination(request):
             return Response({
                 'error': 'Выбранная обработка не найдена в базе данных'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        duration_days = veterinary_care.default_duration_days
         
         updated_count = 0
         errors = []
@@ -8531,7 +8532,7 @@ def bulk_vaccination(request):
                     tag=tag_obj,
                     veterinary_care=veterinary_care,
                     date_of_care=vaccination_datetime,
-                    duration_days=int(duration_days),
+                    duration_days=duration_days,
                     comments=f'Ковровая вакцинация от {vaccination_date_obj.strftime("%Y-%m-%d")}'
                 )
                 
