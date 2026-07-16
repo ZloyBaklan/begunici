@@ -19,6 +19,40 @@ function loadSelectedMakers() {
     }
 }
 
+async function pruneStaleSelectedMakers() {
+    const staleTags = [];
+
+    await Promise.all(Array.from(selectedMakers).map(async (tagNumber) => {
+        try {
+            const response = await fetch(`/animals/maker/${encodeURIComponent(tagNumber)}/`);
+            if (!response.ok) {
+                staleTags.push(tagNumber);
+                return;
+            }
+
+            const animal = await response.json();
+            if (animal?.is_archived) {
+                staleTags.push(tagNumber);
+            }
+        } catch (error) {
+            console.warn('Не удалось проверить выбранного барана-производителя перед архивацией:', tagNumber, error);
+        }
+    }));
+
+    if (staleTags.length > 0) {
+        staleTags.forEach(tagNumber => selectedMakers.delete(tagNumber));
+        saveSelectedMakers();
+        document.querySelectorAll('input[name="selectedMakers"]').forEach(checkbox => {
+            if (staleTags.includes(checkbox.value) || staleTags.includes(checkbox.dataset.tag)) {
+                checkbox.checked = false;
+            }
+        });
+        toggleDeleteButton();
+    }
+
+    return staleTags;
+}
+
 // Загружаем сохраненные выбранные элементы при инициализации
 loadSelectedMakers();
 
@@ -651,7 +685,19 @@ function updatePagination(response) {
     pagination.appendChild(paginationContainer);
 }
 
-function openArchiveModal() {
+async function openArchiveModal() {
+    const staleTags = await pruneStaleSelectedMakers();
+    const archiveAnimals = Array.from(selectedMakers)
+        .filter(tag => tag && String(tag).trim())
+        .map(tag => ({ animalType: 'maker', tagNumber: String(tag).trim() }));
+
+    if (archiveAnimals.length === 0) {
+        alert(staleTags.length > 0
+            ? 'Выбранные бараны-производители уже перенесены в архив или не найдены. Выбор очищен.'
+            : 'Нет выбранных записей для переноса.');
+        return;
+    }
+
     const modal = document.getElementById('archive-modal');
     modal.style.display = 'block';
 
@@ -663,9 +709,6 @@ function openArchiveModal() {
         carcassWeightInput.value = '';
     }
     window.archiveActModal?.reset();
-    const archiveAnimals = Array.from(selectedMakers)
-        .filter(tag => tag && String(tag).trim())
-        .map(tag => ({ animalType: 'maker', tagNumber: String(tag).trim() }));
     if (archiveAnimals.length > 1) {
         window.archiveActModal?.startSequentialArchive(archiveAnimals);
     } else {

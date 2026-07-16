@@ -188,3 +188,6 @@ cython_debug/
 
 # Obsidian - попытка структурировать проект в виде графа
 project_knowledge/
+
+# scales - репоз для весов
+scales/

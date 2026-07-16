@@ -30,6 +30,48 @@ function loadSelectedYoungStock() {
     }
 }
 
+async function pruneStaleSelectedYoungStock() {
+    const staleKeys = [];
+
+    await Promise.all(Array.from(selectedYoungStock.entries()).map(async ([key, item]) => {
+        const animalType = String(item?.animalType || "").trim();
+        const tagNumber = String(item?.tagNumber || "").trim();
+        if (!animalType || !tagNumber) {
+            staleKeys.push(key);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/animals/${animalType}/${encodeURIComponent(tagNumber)}/`);
+            if (!response.ok) {
+                staleKeys.push(key);
+                return;
+            }
+
+            const animal = await response.json();
+            if (animal?.is_archived) {
+                staleKeys.push(key);
+            }
+        } catch (error) {
+            console.warn("Не удалось проверить выбранный молодняк перед архивацией:", item, error);
+        }
+    }));
+
+    if (staleKeys.length > 0) {
+        staleKeys.forEach((key) => selectedYoungStock.delete(key));
+        saveSelectedYoungStock();
+        document.querySelectorAll(".select-young-stock").forEach((checkbox) => {
+            if (staleKeys.includes(checkbox.dataset.key)) {
+                checkbox.checked = false;
+            }
+        });
+        toggleSelectedActions();
+        console.info("Устаревший выбранный молодняк удален из списка:", staleKeys);
+    }
+
+    return staleKeys;
+}
+
 loadSelectedYoungStock();
 
 function escapeHtml(value) {
@@ -209,6 +251,7 @@ function toggleSelectAll(checkbox) {
     });
 
     saveSelectedYoungStock();
+    console.log("Текущее состояние selectedYoungStock после выбора всех:", selectedYoungStock);
     toggleSelectedActions();
 }
 
@@ -224,6 +267,7 @@ function toggleSelectYoungStock(checkbox) {
     }
 
     saveSelectedYoungStock();
+    console.log("Текущее состояние selectedYoungStock:", selectedYoungStock);
 
     const visibleCheckboxes = Array.from(document.querySelectorAll(".select-young-stock"));
     const selectAllCheckbox = document.getElementById("select-all");
@@ -279,7 +323,17 @@ function closeDeleteModal() {
     if (modal) modal.style.display = "none";
 }
 
-function openArchiveModal() {
+async function openArchiveModal() {
+    const staleKeys = await pruneStaleSelectedYoungStock();
+    const archiveAnimals = Array.from(selectedYoungStock.values()).filter((item) => item?.animalType && item?.tagNumber);
+
+    if (archiveAnimals.length === 0) {
+        alert(staleKeys.length > 0
+            ? "Выбранный молодняк уже перенесен в архив или не найден. Выбор очищен."
+            : "Нет выбранного молодняка для переноса.");
+        return;
+    }
+
     const modal = document.getElementById("archive-modal");
     if (!modal) return;
 
@@ -294,7 +348,6 @@ function openArchiveModal() {
     if (carcassWeightInput) carcassWeightInput.value = "";
 
     window.archiveActModal?.reset();
-    const archiveAnimals = Array.from(selectedYoungStock.values());
     if (archiveAnimals.length > 1) {
         window.archiveActModal?.startSequentialArchive(archiveAnimals);
     } else {

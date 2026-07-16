@@ -19,6 +19,40 @@ function loadSelectedSheeps() {
     }
 }
 
+async function pruneStaleSelectedSheeps() {
+    const staleTags = [];
+
+    await Promise.all(Array.from(selectedSheeps).map(async (tagNumber) => {
+        try {
+            const response = await fetch(`/animals/sheep/${encodeURIComponent(tagNumber)}/`);
+            if (!response.ok) {
+                staleTags.push(tagNumber);
+                return;
+            }
+
+            const animal = await response.json();
+            if (animal?.is_archived) {
+                staleTags.push(tagNumber);
+            }
+        } catch (error) {
+            console.warn('Не удалось проверить выбранную овцематку перед архивацией:', tagNumber, error);
+        }
+    }));
+
+    if (staleTags.length > 0) {
+        staleTags.forEach(tagNumber => selectedSheeps.delete(tagNumber));
+        saveSelectedSheeps();
+        document.querySelectorAll('input[name="selectedSheeps"]').forEach(checkbox => {
+            if (staleTags.includes(checkbox.value) || staleTags.includes(checkbox.dataset.tag)) {
+                checkbox.checked = false;
+            }
+        });
+        toggleDeleteButton();
+    }
+
+    return staleTags;
+}
+
 // Загружаем сохраненные выбранные элементы при инициализации
 loadSelectedSheeps();
 
@@ -575,6 +609,7 @@ async function deleteSelectedSheeps() {
             
             // Очищаем все выбранные элементы
             selectedSheeps.clear();
+            saveSelectedSheeps();
             
             // Снимаем галочку с "выбрать все"
             const selectAllCheckbox = document.getElementById('select-all');
@@ -592,7 +627,19 @@ async function deleteSelectedSheeps() {
     };
 }
 
-function openArchiveModal() {
+async function openArchiveModal() {
+    const staleTags = await pruneStaleSelectedSheeps();
+    const archiveAnimals = Array.from(selectedSheeps)
+        .filter(tag => tag && String(tag).trim())
+        .map(tag => ({ animalType: 'sheep', tagNumber: String(tag).trim() }));
+
+    if (archiveAnimals.length === 0) {
+        alert(staleTags.length > 0
+            ? 'Выбранные овцематки уже перенесены в архив или не найдены. Выбор очищен.'
+            : 'Нет выбранных записей для переноса.');
+        return;
+    }
+
     const modal = document.getElementById('archive-modal');
     modal.style.display = 'block';
     
@@ -604,9 +651,6 @@ function openArchiveModal() {
         carcassWeightInput.value = '';
     }
     window.archiveActModal?.reset();
-    const archiveAnimals = Array.from(selectedSheeps)
-        .filter(tag => tag && String(tag).trim())
-        .map(tag => ({ animalType: 'sheep', tagNumber: String(tag).trim() }));
     if (archiveAnimals.length > 1) {
         window.archiveActModal?.startSequentialArchive(archiveAnimals);
     } else {
@@ -690,6 +734,7 @@ async function applyArchiveStatus() {
         
         // Очищаем все выбранные элементы
         selectedSheeps.clear();
+        saveSelectedSheeps();
         
         // Снимаем галочку с "выбрать все"
         const selectAllCheckbox = document.getElementById('select-all');

@@ -41,6 +41,48 @@ function loadSelectedAnimals() {
     }
 }
 
+async function pruneStaleSelectedAnimals() {
+    const staleKeys = [];
+
+    await Promise.all(Array.from(selectedAnimals.entries()).map(async ([key, item]) => {
+        const animalType = String(item?.animalType || "").trim();
+        const tagNumber = String(item?.tagNumber || "").trim();
+        if (!animalType || !tagNumber) {
+            staleKeys.push(key);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/animals/${animalType}/${encodeURIComponent(tagNumber)}/`);
+            if (!response.ok) {
+                staleKeys.push(key);
+                return;
+            }
+
+            const animal = await response.json();
+            if (animal?.is_archived) {
+                staleKeys.push(key);
+            }
+        } catch (error) {
+            console.warn("Не удалось проверить выбранное животное перед архивацией:", item, error);
+        }
+    }));
+
+    if (staleKeys.length > 0) {
+        staleKeys.forEach((key) => selectedAnimals.delete(key));
+        saveSelectedAnimals();
+        document.querySelectorAll(".select-common").forEach((checkbox) => {
+            if (staleKeys.includes(checkbox.dataset.key)) {
+                checkbox.checked = false;
+            }
+        });
+        toggleSelectedActions();
+        console.info("Устаревшие выбранные животные удалены из общего списка:", staleKeys);
+    }
+
+    return staleKeys;
+}
+
 loadSelectedAnimals();
 
 function toggleCommonAdditionalFilters() {
@@ -411,6 +453,7 @@ function toggleSelectAll(checkbox) {
     });
 
     saveSelectedAnimals();
+    console.log("Текущее состояние selectedAnimals после выбора всех:", selectedAnimals);
     toggleSelectedActions();
 }
 
@@ -431,6 +474,7 @@ function toggleSelectAnimal(checkbox) {
     }
 
     saveSelectedAnimals();
+    console.log("Текущее состояние selectedAnimals:", selectedAnimals);
 
     const visibleCheckboxes = Array.from(document.querySelectorAll(".select-common"));
     const allVisibleChecked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((cb) => cb.checked);
@@ -493,7 +537,17 @@ function closeDeleteModal() {
     if (modal) modal.style.display = "none";
 }
 
-function openArchiveModal() {
+async function openArchiveModal() {
+    const staleKeys = await pruneStaleSelectedAnimals();
+    const archiveAnimals = Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber);
+
+    if (archiveAnimals.length === 0) {
+        alert(staleKeys.length > 0
+            ? "Выбранные животные уже перенесены в архив или не найдены. Выбор очищен."
+            : "Нет выбранных животных для переноса.");
+        return;
+    }
+
     const modal = document.getElementById("archive-modal");
     if (!modal) return;
 
@@ -507,7 +561,6 @@ function openArchiveModal() {
     const carcassWeightInput = document.getElementById("archive-carcass-weight");
     if (carcassWeightInput) carcassWeightInput.value = "";
     window.archiveActModal?.reset();
-    const archiveAnimals = Array.from(selectedAnimals.values()).filter(item => item?.animalType && item?.tagNumber);
     if (archiveAnimals.length > 1) {
         window.archiveActModal?.startSequentialArchive(archiveAnimals);
     } else {
