@@ -108,6 +108,14 @@ class UserActionLogMiddleware(MiddlewareMixin):
         method = request.method.upper()
         path = request.path
 
+        # Scales API logs successful data changes with business-level details.
+        if method == "POST" and path.rstrip("/") in {
+            "/api/scales/v1/bindings",
+            "/api/scales/v1/weights",
+            "/api/scales/v1/movements",
+        }:
+            return True
+
         # Animal card updates are logged in serializers with field-level details.
         if (
             method == "PATCH"

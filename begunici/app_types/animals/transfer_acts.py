@@ -45,6 +45,7 @@ TOTAL_ROW_BASE = 20
 FOOTER_DATE_BASE_ROW = 27
 RESPONSIBLE_PERSON_BY_USERNAME = {
     "main": "Гришин А.Е.",
+    "vet": "Муксулов К. К.",
 }
 
 

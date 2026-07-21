@@ -85,7 +85,15 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
     action = None
 
-    if "/backup/" in path:
+    if path.startswith("/api/scales/v1/"):
+        if method == "POST" and "/bindings/" in path:
+            action = "Присвоение РСХН"
+        elif method == "POST" and "/weights/" in path:
+            action = "Добавление записи о весе"
+        elif method == "POST" and "/movements/" in path:
+            action = "Перемещение животных"
+
+    elif "/backup/" in path:
         if method == "POST" and "/create/" in path:
             action = "Создание резервной копии"
         elif method == "POST" and "/restore/" in path:
@@ -270,6 +278,14 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
 def resolve_log_object_type(method, path):
     path = _normalize_path(path)
+
+    if path.startswith("/api/scales/v1/"):
+        if "/bindings/" in path:
+            return "Бирка РСХН"
+        if "/weights/" in path:
+            return "Запись о весе"
+        if "/movements/" in path:
+            return "Перемещение"
 
     if "/backup/" in path:
         return "Резервная копия"

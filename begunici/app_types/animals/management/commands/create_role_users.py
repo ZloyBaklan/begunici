@@ -9,7 +9,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Список системных пользователей
-        system_users = ['vet', 'zootech', 'main', 'finans', 'admin']
+        system_users = ['vet', 'zootech', 'main', 'finans', 'admin', 'scales']
         
         # Проверяем, есть ли сторонние пользователи
         other_users = User.objects.exclude(username__in=system_users)

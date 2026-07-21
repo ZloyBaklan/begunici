@@ -24,7 +24,7 @@ def internal_login(request):
 
         if username and password:
             user = authenticate(request, username=username, password=password)
-            if user is not None:
+            if user is not None and user.username != "scales":
                 login(request, user)
                 post_next = request.POST.get("next", "/")
 

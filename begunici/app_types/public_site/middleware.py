@@ -20,6 +20,7 @@ class LoginRequiredExceptPublicMiddleware:
             "/accounts/logout/",  # legacy URL логаута
             "/admin/login/",  # логин админки
             "/static/",  # статика
+            "/api/scales/v1/",  # закрытый Basic Auth API весового терминала
         )
 
     def __call__(self, request):

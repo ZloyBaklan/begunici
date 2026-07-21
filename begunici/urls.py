@@ -49,4 +49,14 @@ urlpatterns = [
         "animals/",
         include(("begunici.app_types.animals.urls", "animals"), namespace="animals"),
     ),  # Подключаем urls для animals с namespace
+    path(
+        "api/scales/v1/",
+        include(
+            (
+                "begunici.app_types.animals.scales_api_urls",
+                "scales_api",
+            ),
+            namespace="scales_api",
+        ),
+    ),
 ]

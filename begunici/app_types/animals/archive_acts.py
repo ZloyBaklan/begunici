@@ -87,6 +87,7 @@ RUSSIAN_MONTHS_GENITIVE = {
 
 RESPONSIBLE_PERSON_BY_USERNAME = {
     "main": "Гришин А.Е.",
+    "vet": "Муксулов К. К.",
 }
 
 
