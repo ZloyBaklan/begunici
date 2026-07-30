@@ -1,4 +1,10 @@
-﻿import { apiRequest, formatDateToOutput } from "./utils.js";
+import {
+    addRshnPresenceFilter,
+    apiRequest,
+    formatDateToOutput,
+    getCheckboxFilterValue,
+    setCheckboxFilterValue,
+} from "./utils.js";
 
 let selectedAnimals = new Map();
 let currentPage = 1;
@@ -103,10 +109,13 @@ function getCommonFiltersFromInputs() {
         father_tag: document.getElementById("common-father-tag-filter")?.value || "",
         mother_tag: document.getElementById("common-mother-tag-filter")?.value || "",
         animal_type: document.getElementById("common-animal-type-filter")?.value || "",
+        has_rshn_tag: getCheckboxFilterValue("common-has-rshn-tag-filter"),
     };
 }
 
 function initializeCommonFiltersFromUrl() {
+    addRshnPresenceFilter("common-advanced-filters", "common-has-rshn-tag-filter");
+
     const urlParams = new URLSearchParams(window.location.search);
     const filters = {
         search: urlParams.get("search") || "",
@@ -117,6 +126,7 @@ function initializeCommonFiltersFromUrl() {
         father_tag: urlParams.get("father_tag") || "",
         mother_tag: urlParams.get("mother_tag") || "",
         animal_type: urlParams.get("animal_type") || "",
+        has_rshn_tag: urlParams.get("has_rshn_tag") || "",
     };
 
     const searchInput = document.getElementById("common-search");
@@ -143,7 +153,9 @@ function initializeCommonFiltersFromUrl() {
     const animalTypeInput = document.getElementById("common-animal-type-filter");
     if (animalTypeInput) animalTypeInput.value = filters.animal_type;
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type) {
+    setCheckboxFilterValue("common-has-rshn-tag-filter", filters.has_rshn_tag);
+
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag) {
         const filtersBlock = document.getElementById("common-advanced-filters");
         if (filtersBlock) {
             filtersBlock.style.display = "block";
@@ -258,6 +270,7 @@ async function saveCommonAnimal() {
         rshn_tag: document.getElementById("rshn_tag")?.value || null,
         dorper_percentage: document.getElementById("dorper_percentage")?.value || null,
         is_manual_dorper: !!document.getElementById("dorper_percentage")?.value,
+        is_reject: Boolean(document.getElementById("is_reject")?.checked),
         note: document.getElementById("note")?.value || "",
     };
 
@@ -303,7 +316,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...filters };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag"];
 
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
@@ -330,6 +343,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         if (currentFilters.father_tag) params.set("father_tag", currentFilters.father_tag);
         if (currentFilters.mother_tag) params.set("mother_tag", currentFilters.mother_tag);
         if (currentFilters.animal_type) params.set("animal_type", currentFilters.animal_type);
+        if (currentFilters.has_rshn_tag) params.set("has_rshn_tag", currentFilters.has_rshn_tag);
 
         currentPage = page;
         const response = await apiRequest(`/animals/api/common/?${params.toString()}`);
@@ -390,6 +404,7 @@ function renderCommonAnimals(animals) {
                 <td>${animal.age || "-"}</td>
                 <td>${animal.place ? animal.place.sheepfold : "Нет данных"}</td>
                 <td>${animal.dorper_display || "-"}</td>
+                <td>${animal.is_reject ? "Брак" : "-"}</td>
                 <td>${weightText}</td>
                 <td>${vetText}</td>
                 <td>${animal.animal_type === "maker" ? (animal.working_condition || "-") : "-"}</td>

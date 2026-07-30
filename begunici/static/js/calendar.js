@@ -442,13 +442,18 @@ class LambingCalendar {
             // Группируем по типу взвешивания
             const primaryWeighings = weighingData.filter(w => w.weighing_type === 'primary');
             const secondaryWeighings = weighingData.filter(w => w.weighing_type === 'secondary');
-            
-            if (primaryWeighings.length > 0) {
-                content += '<h6 style="color: #007bff;">Первичное взвешивание:</h6>';
-                content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
-                
-                primaryWeighings.forEach(animal => {
-                    content += `
+            const finalWeighings = weighingData.filter(w => w.weighing_type === 'final');
+
+            const renderWeighingList = (title, color, animals) => {
+                if (animals.length === 0) {
+                    return '';
+                }
+
+                let html = `<h6 style="color: ${color};">${title}:</h6>`;
+                html += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+
+                animals.forEach(animal => {
+                    html += `
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
                                 <h6 class="mb-1">
@@ -458,38 +463,19 @@ class LambingCalendar {
                                 </h6>
                             </div>
                             <small>
-                                Дата отбивки: ${new Date(animal.date_otbivka).toLocaleDateString('ru-RU')}
+                                Дата рождения: ${new Date(animal.birth_date).toLocaleDateString('ru-RU')}
                             </small>
                         </div>
                     `;
                 });
-                
-                content += '</div>';
-            }
-            
-            if (secondaryWeighings.length > 0) {
-                content += '<h6 style="color: #0056b3;">Вторичное взвешивание:</h6>';
-                content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
-                
-                secondaryWeighings.forEach(animal => {
-                    content += `
-                        <div class="list-group-item">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">
-                                    <a href="${animal.url}" class="text-decoration-none" style="color: #007bff; text-decoration: underline; font-weight: bold;">
-                                        ${animal.display_name}
-                                    </a>
-                                </h6>
-                            </div>
-                            <small>
-                                Дата отбивки: ${new Date(animal.date_otbivka).toLocaleDateString('ru-RU')}
-                            </small>
-                        </div>
-                    `;
-                });
-                
-                content += '</div>';
-            }
+
+                html += '</div>';
+                return html;
+            };
+
+            content += renderWeighingList('Первичное взвешивание', '#007bff', primaryWeighings);
+            content += renderWeighingList('Вторичное взвешивание', '#0056b3', secondaryWeighings);
+            content += renderWeighingList('Заключительное взвешивание', '#0d6efd', finalWeighings);
         }
         
         if (!content) {

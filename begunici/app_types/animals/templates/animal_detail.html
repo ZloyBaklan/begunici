@@ -73,7 +73,7 @@
     <div class="container-fluid">
         <div class="row mb-4">
             <div class="col-12">
-                <h1 class="mb-3">Детальная страница: {{ animal.tag.tag_number }}</h1>
+                <h1 class="mb-3">Детальная страница: {{ animal_type_label }} {{ animal.tag.tag_number }}</h1>
                 
                 <!-- Навигация -->
                 <div class="card mb-4">
@@ -112,6 +112,7 @@
                                 {% endif %}
                                 <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
                                 <tr><th>Кровность по основной породе</th><td id="dorper-display">-</td></tr>
+                                <tr><th>Назначение</th><td id="reject-display">{% if animal.is_reject %}Брак{% else %}-{% endif %}</td></tr>
                                 <tr>
                                     <th>Мать</th>
                                     <td>
@@ -260,6 +261,12 @@
                                 <div class="col-md-6">
                                     <label for="place" class="form-label">Овчарня:</label>
                                     <select id="place" class="form-select"></select>
+                                </div>
+                                <div class="col-md-6 d-flex align-items-end">
+                                    <div class="form-check mb-2">
+                                        <input type="checkbox" id="is_reject" class="form-check-input" {% if animal.is_reject %}checked{% endif %}>
+                                        <label for="is_reject" class="form-check-label">Назначение: Брак</label>
+                                    </div>
                                 </div>
                                 {% if animal_type == 'maker' %}
                                 <div class="col-md-6">
@@ -526,15 +533,6 @@
                         <textarea id="completion-lambing-note" class="form-control" rows="2"></textarea>
                     </div>
                     
-                    <div class="mb-3">
-                        <label class="form-label">Новый статус для матери:</label>
-                        <select id="new-mother-status" class="form-control">
-                            <option value="">Выберите статус...</option>
-                            <!-- Статусы будут загружены через JavaScript -->
-                        </select>
-                        <div class="form-text">По умолчанию подставляется статус «Лактирующая».</div>
-                    </div>
-                    
                     <hr>
                     
                     <div id="lambs-creation-section">
@@ -579,7 +577,7 @@
                     <textarea id="group-removal-note" class="form-control" rows="2"></textarea>
                 </div>
                 <div class="alert alert-info mb-0">
-                    После снятия барана статус матерей - "Суягная", статус отца — "Ремонт".
+                    После снятия барана статус матерей - "Осемененная", статус отца — "Ремонт".
                 </div>
             </div>
             <div class="modal-footer">

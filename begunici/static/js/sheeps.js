@@ -1,4 +1,10 @@
-﻿import { apiRequest, formatDateToOutput } from "./utils.js";
+import {
+    addRshnPresenceFilter,
+    apiRequest,
+    formatDateToOutput,
+    getCheckboxFilterValue,
+    setCheckboxFilterValue,
+} from "./utils.js";
 
 // Глобальное хранение выбранных элементов с сохранением в sessionStorage
 let selectedSheeps = new Set();
@@ -75,11 +81,14 @@ function getSheepFiltersFromInputs() {
         age_min: document.getElementById('sheep-age-min-filter')?.value || '',
         age_max: document.getElementById('sheep-age-max-filter')?.value || '',
         father_tag: document.getElementById('sheep-father-tag-filter')?.value || '',
-        mother_tag: document.getElementById('sheep-mother-tag-filter')?.value || ''
+        mother_tag: document.getElementById('sheep-mother-tag-filter')?.value || '',
+        has_rshn_tag: getCheckboxFilterValue('sheep-has-rshn-tag-filter')
     };
 }
 
 function initializeSheepFiltersFromUrl() {
+    addRshnPresenceFilter('sheep-advanced-filters', 'sheep-has-rshn-tag-filter');
+
     const urlParams = new URLSearchParams(window.location.search);
     const filters = {
         search: urlParams.get('search') || '',
@@ -88,7 +97,8 @@ function initializeSheepFiltersFromUrl() {
         age_min: urlParams.get('age_min') || '',
         age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
-        mother_tag: urlParams.get('mother_tag') || ''
+        mother_tag: urlParams.get('mother_tag') || '',
+        has_rshn_tag: urlParams.get('has_rshn_tag') || ''
     };
 
     const searchInput = document.getElementById('sheep-search');
@@ -105,8 +115,9 @@ function initializeSheepFiltersFromUrl() {
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('sheep-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
+    setCheckboxFilterValue('sheep-has-rshn-tag-filter', filters.has_rshn_tag);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag) {
         const filtersBlock = document.getElementById('sheep-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -149,6 +160,7 @@ async function saveSheep() {
         rshn_tag: formData.get('rshn_tag') || null,
         dorper_percentage: formData.get('dorper_percentage') || null,
         is_manual_dorper: formData.get('dorper_percentage') ? true : false,
+        is_reject: formData.get('is_reject') === 'on',
         note: formData.get('note') || ''
     };
 
@@ -186,7 +198,7 @@ async function fetchSheeps(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag', 'has_rshn_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -228,6 +240,9 @@ async function fetchSheeps(page = 1, filters = {}) {
         }
         if (currentFilters.mother_tag) {
             params.set('mother_tag', currentFilters.mother_tag);
+        }
+        if (currentFilters.has_rshn_tag) {
+            params.set('has_rshn_tag', currentFilters.has_rshn_tag);
         }
         
         if (params.toString()) {
@@ -282,6 +297,7 @@ function renderSheeps(sheeps, startIndex = null) {
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>
+            <td>${sheep.is_reject ? 'Брак' : '-'}</td>
             <td>${sheep.place ? sheep.place.sheepfold : 'Не указано'}</td>
             <td>${sheep.last_weight_display || '-'}</td>
             <td>${formatLastInsemination(sheep.last_insemination)}</td>

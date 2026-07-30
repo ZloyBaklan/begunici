@@ -791,7 +791,7 @@ function createLambingRow(lambing) {
         <td>${note}</td>
         <td>
             <button class="btn btn-success btn-sm" onclick="showCompleteLambingModal(${lambing.id})">
-                Завершить окот
+                Окот
             </button>
         </td>
     `;
@@ -1445,9 +1445,6 @@ function showCompleteLambingModal(lambingId) {
     }
     updateCompletionMode();
     
-    // Загружаем список статусов
-    loadStatusesForMother();
-    
     // Генерируем формы для ягнят
     generateLambForms(1);
     
@@ -1485,41 +1482,9 @@ function updateCompletionMode() {
         createLambsCheckbox.disabled = isEarlyFailure;
     }
     if (submitButton) {
-        submitButton.textContent = isEarlyFailure ? 'Завершить досрочно' : 'Завершить окот';
+        submitButton.textContent = isEarlyFailure ? 'Аборт' : 'Окот';
         submitButton.classList.toggle('btn-success', !isEarlyFailure);
         submitButton.classList.toggle('btn-warning', isEarlyFailure);
-    }
-}
-
-// Загрузка статусов для матери
-async function loadStatusesForMother() {
-    try {
-        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
-        const statuses = await response.json();
-        
-        const statusSelect = document.getElementById('new-mother-status');
-        statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
-        
-        let lactatingStatusId = null;
-        
-        statuses.forEach(status => {
-            const option = document.createElement('option');
-            option.value = status.id;
-            option.textContent = status.status_type;
-            statusSelect.appendChild(option);
-            
-            // Ищем статус "Лактирующая"
-            if (status.status_type === 'Лактирующая') {
-                lactatingStatusId = status.id;
-            }
-        });
-        
-        // Устанавливаем статус "Лактирующее" по умолчанию
-        if (lactatingStatusId) {
-            statusSelect.value = lactatingStatusId;
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки статусов:', error);
     }
 }
 
@@ -1587,11 +1552,30 @@ function createLambForm(index) {
         </div>
     `;
     
+    const genderSelect = div.querySelector('.lamb-gender');
+    if (genderSelect) {
+        genderSelect.addEventListener('change', () => applyDefaultLambStatus(div));
+    }
+
     // Загружаем статусы и места для этой формы
     loadStatusesForLamb(div);
     loadPlacesForLamb(div);
     
     return div;
+}
+
+function applyDefaultLambStatus(formElement) {
+    const select = formElement.querySelector('.lamb-status');
+    const gender = formElement.querySelector('.lamb-gender')?.value;
+    if (!select) return;
+
+    const defaultStatusId = gender === 'male'
+        ? formElement.dataset.ramDefaultStatusId
+        : formElement.dataset.eweDefaultStatusId;
+
+    if (defaultStatusId) {
+        select.value = defaultStatusId;
+    }
 }
 
 // Загрузка статусов для ягненка
@@ -1602,7 +1586,8 @@ async function loadStatusesForLamb(formElement) {
         const statuses = response.results || response;
         const select = formElement.querySelector('.lamb-status');
         
-        let growingStatusId = null;
+        let defaultEweChildStatusId = null;
+        let defaultRamChildStatusId = null;
         
         statuses.forEach(status => {
             const option = document.createElement('option');
@@ -1610,16 +1595,22 @@ async function loadStatusesForLamb(formElement) {
             option.textContent = status.status_type;
             select.appendChild(option);
             
-            // Ищем статус "Доращивание"
-            if (status.status_type === 'Доращивание') {
-                growingStatusId = status.id;
+            // Ищем статус "Не определено"
+            if (status.status_type === 'Не определено') {
+                defaultEweChildStatusId = status.id;
+            }
+            if (status.status_type === 'Откорм') {
+                defaultRamChildStatusId = status.id;
             }
         });
         
-        // Устанавливаем статус "Доращивание" по умолчанию
-        if (growingStatusId) {
-            select.value = growingStatusId;
+        if (defaultEweChildStatusId) {
+            formElement.dataset.eweDefaultStatusId = defaultEweChildStatusId;
         }
+        if (defaultRamChildStatusId) {
+            formElement.dataset.ramDefaultStatusId = defaultRamChildStatusId;
+        }
+        applyDefaultLambStatus(formElement);
     } catch (error) {
         console.error('Ошибка загрузки статусов для ягненка:', error);
     }
@@ -1670,15 +1661,9 @@ async function completeLambingWithChildren() {
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
     const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox').checked;
-    const newMotherStatusId = document.getElementById('new-mother-status').value;
     
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
-        return;
-    }
-    
-    if (!newMotherStatusId) {
-        alert('Пожалуйста, выберите новый статус для матери');
         return;
     }
 
@@ -1733,7 +1718,6 @@ async function completeLambingWithChildren() {
             number_of_lambs: lambsCount,
             dead_lambs_count: deadLambsCount,
             note: lambingNote,
-            new_mother_status_id: parseInt(newMotherStatusId),
             lambs: lambsData
         };
         
@@ -1758,7 +1742,6 @@ async function completeLambingEarlyFailure() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambingNote = document.getElementById('completion-lambing-note').value;
-    const newMotherStatusId = document.getElementById('new-mother-status').value;
 
     if (!lambingId) {
         alert('Не выбран окот');
@@ -1772,8 +1755,7 @@ async function completeLambingEarlyFailure() {
     try {
         await apiRequest(`/animals/lambing/${lambingId}/complete-early-failure/`, 'POST', {
             actual_lambing_date: actualDate,
-            note: lambingNote || '',
-            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null
+            note: lambingNote || ''
         });
 
         alert('Окот досрочно завершен.');

@@ -14,6 +14,22 @@ from begunici.app_types.veterinary.vet_models import (
     StatusHistory,
 )
 
+ARCHIVE_STATUS_NAMES = {
+    "Падеж",
+    "Вынужденная прирезка",
+    "Реализация в живом весе",
+    "Продажа на племя",
+    "Убой на мясо",
+}
+
+STATUS_INSEMINATED = "Осемененная"
+STATUS_LAMBED = "Объягненная"
+STATUS_NOT_INSEMINATED = "Неосемененная"
+STATUS_UNDEFINED = "Не определено"
+STATUS_FATTENING = "Откорм"
+STATUS_REPAIR = "Ремонт"
+STATUS_IN_GROUP = "В группе"
+
 
 class AnimalBase(models.Model):
     tag = models.OneToOneField(
@@ -60,6 +76,12 @@ class AnimalBase(models.Model):
         default=False,
         verbose_name="Дорперность задана вручную",
         help_text="Указывает, была ли дорперность задана вручную или рассчитана автоматически"
+    )
+    is_reject = models.BooleanField(
+        default=False,
+        verbose_name="Брак",
+        help_text="Отдельная отметка назначения животного, не статус.",
+        db_index=True,
     )
     is_archived = models.BooleanField(default=False, verbose_name="В архиве", db_index=True)
     carcass_weight = models.DecimalField(
@@ -346,13 +368,7 @@ class AnimalBase(models.Model):
         skip_status_history = kwargs.pop('skip_status_history', False)
 
         # 🔹 Проверка на архивный статус
-        if self.animal_status and self.animal_status.status_type in [
-            "Падеж",
-            "Вынужденная прирезка",
-            "Реализация в живом весе",
-            "Продажа на племя",
-            "Убой на мясо",
-        ]:
+        if self.animal_status and self.animal_status.status_type in ARCHIVE_STATUS_NAMES:
             self.is_archived = True
         else:
             self.is_archived = False
@@ -772,6 +788,11 @@ class Lambing(models.Model):
 
     def complete_lambing(self):
         """Завершить окот"""
+        target_status_name = (
+            STATUS_LAMBED if (self.number_of_lambs or 0) > 0 else STATUS_NOT_INSEMINATED
+        )
+        target_status = Status.objects.filter(status_type__iexact=target_status_name).first()
+
         # Если мать - ярка, преобразуем её в овцу
         mother = self.get_mother()
         if mother and self.get_mother_type() == "Ярка":
@@ -780,6 +801,11 @@ class Lambing(models.Model):
             # Обновляем связь окота с новой овцой
             self.sheep = sheep
             self.ewe = None
+            mother = sheep
+
+        if mother and target_status:
+            mother.animal_status = target_status
+            mother.save()
         
         self.is_active = False
         self.save()
@@ -839,19 +865,24 @@ class Lambing(models.Model):
 
         if is_new and self.is_active and not skip_parent_status_on_create:
             try:
-                sluchka_status = Status.objects.filter(status_type__iexact="Случка").first()
+                sluchka_status = Status.objects.filter(status_type__iexact=STATUS_INSEMINATED).first()
+                in_group_status = Status.objects.filter(status_type__iexact=STATUS_IN_GROUP).first()
                 if sluchka_status:
                     mother = self.get_mother()
                     if mother:
                         mother.animal_status = sluchka_status
                         mother.save()
 
+                if in_group_status:
                     father = self.get_father()
                     if father:
-                        father.animal_status = sluchka_status
+                        father.animal_status = in_group_status
                         father.save()
             except Exception as e:
-                print(f"Ошибка при изменении статуса родителей на 'Случка': {e}")
+                print(
+                    "Ошибка при изменении статусов родителей "
+                    f"на '{STATUS_INSEMINATED}'/'{STATUS_IN_GROUP}': {e}"
+                )
         
         # Рассчитываем планируемую дату окота если нужно
         if self.start_date and not self.planned_lambing_date:
@@ -877,12 +908,12 @@ class Lambing(models.Model):
 
                 if not has_other_active_lambings:
                     try:
-                        otkorm_status = Status.objects.filter(status_type__iexact="Откорм").first()
+                        otkorm_status = Status.objects.filter(status_type__iexact=STATUS_FATTENING).first()
                         if otkorm_status:
                             father.animal_status = otkorm_status
                             father.save()
                     except Exception as e:
-                        print(f"Ошибка при установке статуса 'Откорм' отцу после завершения окота: {e}")
+                        print(f"Ошибка при установке статуса '{STATUS_FATTENING}' отцу после завершения окота: {e}")
 
 
 class Ram(AnimalBase):
@@ -948,6 +979,7 @@ class Ram(AnimalBase):
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
+                is_reject=self.is_reject,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
                 mother=self.mother,
@@ -1015,6 +1047,7 @@ class Ewe(AnimalBase):
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
+                is_reject=self.is_reject,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
                 mother=self.mother,
@@ -1095,6 +1128,7 @@ class Sheep(AnimalBase):
                     birth_date=lambing.actual_lambing_date,
                     mother=self.tag,
                     father=maker.tag,
+                    animal_status=Status.objects.filter(status_type__iexact=STATUS_FATTENING).first(),
                 )
             else:
                 Ewe.objects.create(
@@ -1102,6 +1136,7 @@ class Sheep(AnimalBase):
                     birth_date=lambing.actual_lambing_date,
                     mother=self.tag,
                     father=maker.tag,
+                    animal_status=Status.objects.filter(status_type__iexact=STATUS_UNDEFINED).first(),
                 )
 
         self.save()

@@ -4,7 +4,18 @@ from django.db import models
 from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
-from .models import Maker, Ram, Ewe, Sheep, Lambing, LambingGroup, AnimalBase, CalendarNote, ArchiveAct
+from .models import (
+    ARCHIVE_STATUS_NAMES,
+    Maker,
+    Ram,
+    Ewe,
+    Sheep,
+    Lambing,
+    LambingGroup,
+    AnimalBase,
+    CalendarNote,
+    ArchiveAct,
+)
 from begunici.app_types.veterinary.vet_models import (
     Place,
     PlaceMovement,
@@ -23,6 +34,7 @@ from begunici.app_types.veterinary.vet_serializers import (
     PlaceMovementSerializer,
     StatusHistorySerializer,
 )
+from .status_logic import set_mothers_not_inseminated_after_child_update
 
 
 def _format_weight_kg(value):
@@ -229,6 +241,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     )  # Для записи используется PrimaryKeyRelatedField
     tag_number = serializers.CharField(write_only=True, source='tag') # Для записи
     tag = TagSerializer(read_only=True) # Для чтения
+    rshn_tag = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        max_length=50,
+        validators=[],
+    )
     # tag_number = serializers.CharField(source='tag.tag_number', write_only=True)  # Для ввода номера бирки
     weight_records = serializers.SerializerMethodField()
     veterinary_history = serializers.SerializerMethodField()
@@ -322,6 +341,51 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             return value.strftime("%d.%m.%Y")
         return str(value)
 
+    @staticmethod
+    def _normalize_rshn_tag(value):
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    def _validate_global_rshn_unique(self, rshn_tag, current_instance=None):
+        rshn_tag = self._normalize_rshn_tag(rshn_tag)
+        if not rshn_tag:
+            return None
+
+        animal_sources = (
+            (Maker, "баран-производитель"),
+            (Ram, "баранчик"),
+            (Ewe, "ярка"),
+            (Sheep, "овцематка"),
+        )
+        for model, animal_type_label in animal_sources:
+            queryset = model.objects.filter(rshn_tag__iexact=rshn_tag).select_related("tag")
+            if current_instance is not None and isinstance(current_instance, model):
+                queryset = queryset.exclude(pk=current_instance.pk)
+
+            conflict = queryset.first()
+            if conflict:
+                tag_number = conflict.tag.tag_number if conflict.tag else "без бирки"
+                archived_suffix = " (архив)" if getattr(conflict, "is_archived", False) else ""
+                raise serializers.ValidationError({
+                    "rshn_tag": (
+                        "Бирка РСХН уже указана у животного: "
+                        f"{animal_type_label} {tag_number}{archived_suffix}."
+                    )
+                })
+
+        return rshn_tag
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "rshn_tag" in attrs:
+            attrs["rshn_tag"] = self._validate_global_rshn_unique(
+                attrs.get("rshn_tag"),
+                current_instance=self.instance,
+            )
+        return attrs
+
     def validate_birth_date(self, value):
         if value > timezone.now().date():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
@@ -361,14 +425,12 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         ):
             validated_data.pop(service_field, None)
 
-        archive_statuses = {
-            "Падеж",
-            "Вынужденная прирезка",
-            "Реализация в живом весе",
-            "Продажа на племя",
-            "Убой на мясо",
-        }
+        archive_statuses = ARCHIVE_STATUS_NAMES
         selected_status = validated_data.get("animal_status")
+        if selected_status and selected_status.status_type == "Брак":
+            raise serializers.ValidationError({
+                "animal_status_id": "Брак теперь отдельная отметка животного, а не статус."
+            })
         if selected_status and selected_status.status_type in archive_statuses:
             raise serializers.ValidationError({
                 "animal_status_id": "Нельзя создать животное сразу с архивным статусом. Используйте отдельное действие архивирования."
@@ -475,13 +537,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
         selected_status = validated_data.get("animal_status")
         selected_status_name = selected_status.status_type if selected_status else ""
-        archive_status_names = {
-            "Падеж",
-            "Вынужденная прирезка",
-            "Реализация в живом весе",
-            "Продажа на племя",
-            "Убой на мясо",
-        }
+        archive_status_names = ARCHIVE_STATUS_NAMES
+        if selected_status and selected_status != old_status and selected_status.status_type == "Брак":
+            raise serializers.ValidationError({
+                "animal_status_id": "Брак теперь отдельная отметка животного, а не статус."
+            })
         if (
             selected_status
             and selected_status != old_status
@@ -560,7 +620,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             new_status_name = validated_data['animal_status'].status_type
             
             # Проверяем, является ли новый статус архивным
-            archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']
+            archive_statuses = ARCHIVE_STATUS_NAMES
             if new_status_name in archive_statuses:
                 # Это архивирование
                 changes.append(f"{old_status_name} → {new_status_name}")
@@ -612,6 +672,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'working_condition': 'Рабочее состояние',
             'working_condition_date': 'Дата рабочего состояния',
             'carcass_weight': 'Вес туши (кг)',
+            'is_reject': 'Назначение',
         }
         
         for field, display_name in field_names.items():
@@ -737,7 +798,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 change_date=status_datetime_moscow
             )
 
-        archive_statuses = ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']
+        archive_statuses = ARCHIVE_STATUS_NAMES
         if (
             instance.animal_status
             and instance.animal_status.status_type in archive_statuses
@@ -758,6 +819,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     "download_on_archive": archive_act_download,
                 },
             )
+            if status_will_change:
+                set_mothers_not_inseminated_after_child_update(instance)
 
         if archive_weight_serializer is not None:
             archive_weight_serializer.save()
@@ -798,9 +861,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 # Определяем тип действия
                 action_type = "Редактирование животного"
                 new_status = validated_data.get('animal_status')
-                if new_status and new_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка']:
+                if new_status and new_status.status_type in ARCHIVE_STATUS_NAMES:
                     action_type = "Архивирование животного"
-                elif old_status and old_status.status_type in ['Реализация в живом весе', 'Продажа на племя', 'Убой на мясо', 'Падеж', 'Вынужденная прирезка'] and new_status:
+                elif old_status and old_status.status_type in ARCHIVE_STATUS_NAMES and new_status:
                     action_type = "Восстановление из архива"
                 
                 changes_text = "; ".join(changes)
@@ -942,7 +1005,7 @@ class UniversalChildSerializer(serializers.Serializer):
         # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
         from begunici.app_types.veterinary.vet_models import StatusHistory
         
-        archive_statuses = ['Падеж', 'Вынужденная прирезка', 'Реализация в живом весе', 'Продажа на племя', 'Убой на мясо']
+        archive_statuses = ARCHIVE_STATUS_NAMES
         if obj.animal_status.status_type in archive_statuses:
             status_history = StatusHistory.objects.filter(
                 tag=obj.tag,

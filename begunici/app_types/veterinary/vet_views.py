@@ -30,6 +30,7 @@ from .vet_serializers import (
     PlaceSerializer,
     PlaceMovementSerializer,
 )
+from begunici.app_types.animals.models import ARCHIVE_STATUS_NAMES
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import render
 from rest_framework.decorators import api_view
@@ -392,17 +393,15 @@ class StatusViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["status_type"]
 
-    archive_statuses = {
-        "Падеж",
-        "Вынужденная прирезка",
-        "Реализация в живом весе",
-        "Продажа на племя",
-        "Убой на мясо",
-    }
+    archive_statuses = ARCHIVE_STATUS_NAMES
+    non_select_statuses = {"Брак"}
 
     def get_queryset(self):
         queryset = super().get_queryset()
         exclude_archive = str(self.request.query_params.get("exclude_archive", "")).lower()
+        exclude_non_select = str(self.request.query_params.get("exclude_non_select", "")).lower()
+        if exclude_archive in {"1", "true", "yes"} or exclude_non_select in {"1", "true", "yes"}:
+            queryset = queryset.exclude(status_type__in=self.non_select_statuses)
         if exclude_archive in {"1", "true", "yes"}:
             queryset = queryset.exclude(status_type__in=self.archive_statuses)
         return queryset

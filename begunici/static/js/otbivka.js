@@ -393,7 +393,7 @@ async function performBulkOtbivka() {
     }
     
     // Подтверждение операции
-    const confirmMessage = `Выполнить отбивку для ${window.selectedAnimalsForOtbivka.length} животных на дату ${otbivkaDate}?\n\nВсем животным будет установлен статус "Откорм".`;
+    const confirmMessage = `Выполнить отбивку для ${window.selectedAnimalsForOtbivka.length} животных на дату ${otbivkaDate}?\n\nСтатусы животных автоматически меняться не будут.`;
     if (!confirm(confirmMessage)) {
         return;
     }

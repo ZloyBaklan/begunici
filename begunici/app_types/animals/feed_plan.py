@@ -8,7 +8,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .models import Ewe, Maker, Ram, Sheep
+from .models import Ewe, Maker, Ram, Sheep, STATUS_INSEMINATED, STATUS_LAMBED
 
 
 TEMPLATE_FILENAME = "korm_plan.xlsx"
@@ -95,8 +95,8 @@ def build_young_age_counts(as_of_date):
 def build_feed_plan_counts(as_of_date):
     counts = {
         "makers": Maker.objects.filter(is_archived=False).count(),
-        "pregnant_females": count_active_females_by_status("Суягная"),
-        "lactating_females": count_active_females_by_status("Лактирующая"),
+        "pregnant_females": count_active_females_by_status(STATUS_INSEMINATED),
+        "lactating_females": count_active_females_by_status(STATUS_LAMBED),
     }
     counts.update(build_young_age_counts(as_of_date))
     return counts

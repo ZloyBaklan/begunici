@@ -1,4 +1,10 @@
-﻿import { apiRequest, formatDateToOutput } from "./utils.js";
+import {
+    addRshnPresenceFilter,
+    apiRequest,
+    formatDateToOutput,
+    getCheckboxFilterValue,
+    setCheckboxFilterValue,
+} from "./utils.js";
 
 // Глобальное хранение выбранных элементов с сохранением в sessionStorage
 let selectedMakers = new Set();
@@ -74,11 +80,14 @@ function getMakerFiltersFromInputs() {
         age_min: document.getElementById('maker-age-min-filter')?.value || '',
         age_max: document.getElementById('maker-age-max-filter')?.value || '',
         father_tag: document.getElementById('maker-father-tag-filter')?.value || '',
-        mother_tag: document.getElementById('maker-mother-tag-filter')?.value || ''
+        mother_tag: document.getElementById('maker-mother-tag-filter')?.value || '',
+        has_rshn_tag: getCheckboxFilterValue('maker-has-rshn-tag-filter')
     };
 }
 
 function initializeMakerFiltersFromUrl() {
+    addRshnPresenceFilter('maker-advanced-filters', 'maker-has-rshn-tag-filter');
+
     const urlParams = new URLSearchParams(window.location.search);
     const filters = {
         search: urlParams.get('search') || '',
@@ -87,7 +96,8 @@ function initializeMakerFiltersFromUrl() {
         age_min: urlParams.get('age_min') || '',
         age_max: urlParams.get('age_max') || '',
         father_tag: urlParams.get('father_tag') || '',
-        mother_tag: urlParams.get('mother_tag') || ''
+        mother_tag: urlParams.get('mother_tag') || '',
+        has_rshn_tag: urlParams.get('has_rshn_tag') || ''
     };
 
     const searchInput = document.getElementById('maker-search');
@@ -104,8 +114,9 @@ function initializeMakerFiltersFromUrl() {
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('maker-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
+    setCheckboxFilterValue('maker-has-rshn-tag-filter', filters.has_rshn_tag);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag) {
         const filtersBlock = document.getElementById('maker-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -212,6 +223,7 @@ async function saveMaker() {
         rshn_tag: document.getElementById('rshn_tag').value,
         dorper_percentage: document.getElementById('dorper_percentage').value || null,
         is_manual_dorper: document.getElementById('dorper_percentage').value ? true : false,
+        is_reject: Boolean(document.getElementById('is_reject')?.checked),
         note: document.getElementById('note').value,
         place_id: parseInt(document.getElementById('place').value), // Передаём ID места,
     };
@@ -250,7 +262,7 @@ async function fetchMakers(page = 1, filters = {}) {
         
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag', 'has_rshn_tag'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -298,6 +310,9 @@ async function fetchMakers(page = 1, filters = {}) {
         }
         if (currentFilters.mother_tag) {
             params.append('mother_tag', currentFilters.mother_tag);
+        }
+        if (currentFilters.has_rshn_tag) {
+            params.append('has_rshn_tag', currentFilters.has_rshn_tag);
         }
         
         currentPage = page;
@@ -351,6 +366,7 @@ function renderMakers(makers, startIndex = null) {
             <td>${maker.age || 'Нет данных'}</td>
             <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
             <td>${maker.dorper_display || '-'}</td>
+            <td>${maker.is_reject ? 'Брак' : '-'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>

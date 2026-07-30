@@ -1,4 +1,9 @@
-﻿import { apiRequest } from "./utils.js";
+import {
+    addRshnPresenceFilter,
+    apiRequest,
+    getCheckboxFilterValue,
+    setCheckboxFilterValue,
+} from "./utils.js";
 
 let selectedYoungStock = new Map();
 let currentPage = 1;
@@ -25,7 +30,7 @@ function loadSelectedYoungStock() {
             selectedYoungStock.set(getSelectionKey(animalType, tagNumber), { animalType, tagNumber });
         });
     } catch (error) {
-        console.error("Ошибка восстановления выделенного молодняка:", error);
+        console.error("Ошибка восстановления выделенного приплода:", error);
         selectedYoungStock = new Map();
     }
 }
@@ -53,7 +58,7 @@ async function pruneStaleSelectedYoungStock() {
                 staleKeys.push(key);
             }
         } catch (error) {
-            console.warn("Не удалось проверить выбранный молодняк перед архивацией:", item, error);
+            console.warn("Не удалось проверить выбранный приплод перед архивацией:", item, error);
         }
     }));
 
@@ -66,7 +71,7 @@ async function pruneStaleSelectedYoungStock() {
             }
         });
         toggleSelectedActions();
-        console.info("Устаревший выбранный молодняк удален из списка:", staleKeys);
+        console.info("Устаревший выбранный приплод удален из списка:", staleKeys);
     }
 
     return staleKeys;
@@ -105,10 +110,13 @@ function getYoungStockFiltersFromInputs() {
         father_tag: document.getElementById("young-stock-father-tag-filter")?.value || "",
         mother_tag: document.getElementById("young-stock-mother-tag-filter")?.value || "",
         animal_type: document.getElementById("young-stock-animal-type-filter")?.value || "",
+        has_rshn_tag: getCheckboxFilterValue("young-stock-has-rshn-tag-filter"),
     };
 }
 
 function initializeYoungStockFiltersFromUrl() {
+    addRshnPresenceFilter("young-stock-advanced-filters", "young-stock-has-rshn-tag-filter");
+
     const urlParams = new URLSearchParams(window.location.search);
     const filters = {
         search: urlParams.get("search") || "",
@@ -119,6 +127,7 @@ function initializeYoungStockFiltersFromUrl() {
         father_tag: urlParams.get("father_tag") || "",
         mother_tag: urlParams.get("mother_tag") || "",
         animal_type: urlParams.get("animal_type") || "",
+        has_rshn_tag: urlParams.get("has_rshn_tag") || "",
     };
 
     const inputs = {
@@ -137,7 +146,9 @@ function initializeYoungStockFiltersFromUrl() {
         if (element) element.value = filters[key];
     });
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type) {
+    setCheckboxFilterValue("young-stock-has-rshn-tag-filter", filters.has_rshn_tag);
+
+    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag) {
         const filtersBlock = document.getElementById("young-stock-advanced-filters");
         if (filtersBlock) filtersBlock.style.display = "block";
     }
@@ -155,7 +166,7 @@ async function fetchYoungStock(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...(filters || {}) };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag"];
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
             currentFilters[key] = value;
@@ -177,15 +188,15 @@ async function fetchYoungStock(page = 1, filters = {}) {
         const response = await apiRequest(`/animals/api/young-stock/?${params.toString()}`);
         const animals = Array.isArray(response) ? response : response.results || response;
         if (!animals) {
-            alert("Ошибка: не удалось получить список молодняка.");
+            alert("Ошибка: не удалось получить список приплода.");
             return;
         }
 
         renderYoungStock(animals);
         updatePagination(response);
     } catch (error) {
-        console.error("Ошибка загрузки молодняка:", error);
-        alert("Ошибка при загрузке списка молодняка.");
+        console.error("Ошибка загрузки приплода:", error);
+        alert("Ошибка при загрузке списка приплода.");
     }
 }
 
@@ -287,7 +298,7 @@ function toggleSelectedActions() {
 async function deleteSelectedYoungStock() {
     const selected = Array.from(selectedYoungStock.values());
     if (selected.length === 0) {
-        alert("Нет выбранного молодняка для удаления.");
+        alert("Нет выбранного приплода для удаления.");
         return;
     }
 
@@ -310,10 +321,10 @@ async function deleteSelectedYoungStock() {
             closeDeleteModal();
             toggleSelectedActions();
             fetchYoungStock(currentPage, currentFilters);
-            alert("Выбранный молодняк успешно удалён.");
+            alert("Выбранный приплод успешно удалён.");
         } catch (error) {
-            console.error("Ошибка удаления молодняка:", error);
-            alert("Ошибка при удалении выбранного молодняка.");
+            console.error("Ошибка удаления приплода:", error);
+            alert("Ошибка при удалении выбранного приплода.");
         }
     };
 }
@@ -329,8 +340,8 @@ async function openArchiveModal() {
 
     if (archiveAnimals.length === 0) {
         alert(staleKeys.length > 0
-            ? "Выбранный молодняк уже перенесен в архив или не найден. Выбор очищен."
-            : "Нет выбранного молодняка для переноса.");
+            ? "Выбранный приплод уже перенесен в архив или не найден. Выбор очищен."
+            : "Нет выбранного приплода для переноса.");
         return;
     }
 
@@ -399,7 +410,7 @@ async function loadArchiveStatuses() {
 async function applyArchiveStatus() {
     const selected = Array.from(selectedYoungStock.values()).filter((item) => item?.animalType && item?.tagNumber);
     if (selected.length === 0) {
-        alert("Нет выбранного молодняка для переноса.");
+        alert("Нет выбранного приплода для переноса.");
         return;
     }
 
@@ -434,10 +445,10 @@ async function applyArchiveStatus() {
         closeArchiveModal();
         toggleSelectedActions();
         fetchYoungStock(currentPage, currentFilters);
-        alert("Выбранный молодняк успешно перенесён в архив.");
+        alert("Выбранный приплод успешно перенесён в архив.");
     } catch (error) {
-        console.error("Ошибка переноса молодняка в архив:", error);
-        alert("Ошибка при переносе выбранного молодняка в архив.");
+        console.error("Ошибка переноса приплода в архив:", error);
+        alert("Ошибка при переносе выбранного приплода в архив.");
     }
 }
 

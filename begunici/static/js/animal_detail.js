@@ -273,6 +273,16 @@ async function loadAnimalDetails(animalType, tagNumber) {
         if (dorperDisplay) {
             dorperDisplay.textContent = animal.dorper_display || '-';
         }
+
+        const rejectField = document.getElementById('is_reject');
+        if (rejectField) {
+            rejectField.checked = Boolean(animal.is_reject);
+        }
+
+        const rejectDisplay = document.getElementById('reject-display');
+        if (rejectDisplay) {
+            rejectDisplay.textContent = animal.is_reject ? 'Брак' : '-';
+        }
         
         document.getElementById('note').value = animal.note || '';
         updateCarcassWeightDisplay(animal);
@@ -445,6 +455,7 @@ async function saveAnimalDetails() {
         place_id: placeValue ? parseInt(placeValue) : null,
         rshn_tag: document.getElementById('rshn_tag').value || null,
         date_otbivka: document.getElementById('date_otbivka').value || null,
+        is_reject: Boolean(document.getElementById('is_reject')?.checked),
     };
 
     if (animalStatusValue) {
@@ -2009,41 +2020,6 @@ async function completeLambing(lambingId) {
         earlyFailureCheckbox.checked = false;
     }
     
-    // Загружаем список статусов
-    try {
-        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
-        const data = await response.json();
-        
-        // Обрабатываем пагинированный ответ
-        const statuses = data.results || data;
-        
-        if (!Array.isArray(statuses)) {
-            console.error('Ожидался массив статусов, получено:', statuses);
-            return;
-        }
-        
-        const statusSelect = document.getElementById('new-mother-status');
-        statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
-        let lactatingStatusId = null;
-
-        statuses.forEach(status => {
-            const option = document.createElement('option');
-            option.value = status.id;
-            option.textContent = status.status_type;
-            statusSelect.appendChild(option);
-
-            if (status.status_type === 'Лактирующая') {
-                lactatingStatusId = String(status.id);
-            }
-        });
-
-        if (lactatingStatusId) {
-            statusSelect.value = lactatingStatusId;
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки статусов:', error);
-    }
-    
     // Инициализируем состояние чекбокса и контейнера форм
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     const lambsFormsContainer = document.getElementById('lambs-forms-container');
@@ -2208,11 +2184,30 @@ function createLambForm(index) {
         </div>
     `;
     
+    const genderSelect = div.querySelector('.lamb-gender');
+    if (genderSelect) {
+        genderSelect.addEventListener('change', () => applyDefaultLambStatus(div));
+    }
+
     // Загружаем статусы и места для этой формы
     loadStatusesForLamb(div);
     loadPlacesForLamb(div);
     
     return div;
+}
+
+function applyDefaultLambStatus(formElement) {
+    const select = formElement.querySelector('.lamb-status');
+    const gender = formElement.querySelector('.lamb-gender')?.value;
+    if (!select) return;
+
+    const defaultStatusId = gender === 'male'
+        ? formElement.dataset.ramDefaultStatusId
+        : formElement.dataset.eweDefaultStatusId;
+
+    if (defaultStatusId) {
+        select.value = defaultStatusId;
+    }
 }
 
 // Загрузка статусов для формы ягненка
@@ -2228,13 +2223,30 @@ async function loadStatusesForLamb(formElement) {
         }
         
         const select = formElement.querySelector('.lamb-status');
+        let defaultEweChildStatusId = null;
+        let defaultRamChildStatusId = null;
         
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             select.appendChild(option);
+
+            if (status.status_type === 'Не определено') {
+                defaultEweChildStatusId = status.id;
+            }
+            if (status.status_type === 'Откорм') {
+                defaultRamChildStatusId = status.id;
+            }
         });
+
+        if (defaultEweChildStatusId) {
+            formElement.dataset.eweDefaultStatusId = defaultEweChildStatusId;
+        }
+        if (defaultRamChildStatusId) {
+            formElement.dataset.ramDefaultStatusId = defaultRamChildStatusId;
+        }
+        applyDefaultLambStatus(formElement);
     } catch (error) {
         console.error('Ошибка загрузки статусов для ягненка:', error);
     }
@@ -2346,40 +2358,6 @@ async function completeFatherLambing(lambingId) {
         createLambsCheckbox.checked = false;
     }
     
-    // Загружаем список статусов (но не будем менять статус матери, если её нет в БД)
-    try {
-        const response = await fetch('/animals/api/all-statuses/?exclude_archive=1');
-        const data = await response.json();
-        
-        const statuses = data.results || data;
-        
-        if (!Array.isArray(statuses)) {
-            console.error('Ожидался массив статусов, получено:', statuses);
-            return;
-        }
-        
-        const statusSelect = document.getElementById('new-mother-status');
-        statusSelect.innerHTML = '<option value="">Выберите статус...</option>';
-        let lactatingStatusId = null;
-
-        statuses.forEach(status => {
-            const option = document.createElement('option');
-            option.value = status.id;
-            option.textContent = status.status_type;
-            statusSelect.appendChild(option);
-
-            if (status.status_type === 'Лактирующая') {
-                lactatingStatusId = String(status.id);
-            }
-        });
-
-        if (lactatingStatusId) {
-            statusSelect.value = lactatingStatusId;
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки статусов:', error);
-    }
-    
     // Скрываем секцию создания ягнят (для отцов не создаем ягнят)
     const lambsCreationSection = document.getElementById('lambs-creation-section');
     if (lambsCreationSection) {
@@ -2405,7 +2383,6 @@ async function completeLambingWithChildren() {
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
     const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox') ? document.getElementById('create-lambs-checkbox').checked : false;
-    const newMotherStatusId = document.getElementById('new-mother-status').value;
     
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
@@ -2469,7 +2446,6 @@ async function completeLambingWithChildren() {
             number_of_lambs: lambsCount,
             dead_lambs_count: deadLambsCount,
             note: lambingNote,
-            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null,
             lambs: lambsData
         };
         
@@ -2564,7 +2540,6 @@ async function completeLambingEarlyFailure() {
     const lambingId = window.currentLambingId;
     const actualDate = document.getElementById('actual-lambing-date').value;
     const lambingNote = document.getElementById('completion-lambing-note').value;
-    const newMotherStatusId = document.getElementById('new-mother-status').value;
 
     if (!lambingId) {
         alert('Не выбран окот');
@@ -2578,8 +2553,7 @@ async function completeLambingEarlyFailure() {
     try {
         await apiRequest(`/animals/lambing/${lambingId}/complete-early-failure/`, 'POST', {
             actual_lambing_date: actualDate,
-            note: lambingNote || '',
-            new_mother_status_id: newMotherStatusId ? parseInt(newMotherStatusId) : null
+            note: lambingNote || ''
         });
 
         alert('Окот досрочно завершен.');

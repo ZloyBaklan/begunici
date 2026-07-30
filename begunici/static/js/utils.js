@@ -7,6 +7,67 @@ export function getCSRFToken() {
     return decodeURIComponent(tokenCookie.split("=")[1]);
 }
 
+export function isTruthyFilterValue(value) {
+    return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+export function getCheckboxFilterValue(elementId) {
+    return document.getElementById(elementId)?.checked ? '1' : '';
+}
+
+export function setCheckboxFilterValue(elementId, value) {
+    const checkbox = document.getElementById(elementId);
+    if (checkbox) {
+        checkbox.checked = isTruthyFilterValue(value);
+    }
+}
+
+export function addRshnPresenceFilter(containerId, checkboxId) {
+    const container = document.getElementById(containerId);
+    if (!container || document.getElementById(checkboxId)) {
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'row g-2 mt-2';
+    row.innerHTML = `
+        <div class="col-md-12">
+            <div class="form-check">
+                <input type="checkbox" id="${checkboxId}" class="form-check-input">
+                <label for="${checkboxId}" class="form-check-label">Наличие бирки РСХН</label>
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function getApiErrorMessage(errorData) {
+    if (!errorData || typeof errorData !== 'object') {
+        return 'Ошибка API';
+    }
+
+    if (typeof errorData.detail === 'string') {
+        return errorData.detail;
+    }
+
+    if (typeof errorData.error === 'string') {
+        return errorData.error;
+    }
+
+    const messages = [];
+    Object.entries(errorData).forEach(([field, value]) => {
+        if (Array.isArray(value)) {
+            messages.push(`${field}: ${value.join(', ')}`);
+        } else if (value && typeof value === 'object') {
+            messages.push(`${field}: ${JSON.stringify(value)}`);
+        } else if (value !== undefined && value !== null) {
+            messages.push(`${field}: ${value}`);
+        }
+    });
+
+    return messages.length ? messages.join('\n') : 'Ошибка API';
+}
+
 export async function apiRequest(url, method = 'GET', body) {
     const headers = {
         'Content-Type': 'application/json',
@@ -25,7 +86,7 @@ export async function apiRequest(url, method = 'GET', body) {
             if (contentType && contentType.includes('application/json')) {
                 const errorData = await response.json();
                 console.error(`Ошибка API [${response.status}]:`, errorData);
-                throw new Error(errorData.detail || 'Ошибка API');
+                throw new Error(getApiErrorMessage(errorData));
             } else {
                 // Если не JSON, читаем как текст для отладки
                 const errorText = await response.text();

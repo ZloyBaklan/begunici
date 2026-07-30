@@ -3,7 +3,9 @@
 function openExportModal(animalType) {
     const modal = document.getElementById('export-modal');
     modal.style.display = 'flex';
-    modal.dataset.animalType = animalType; // Сохраняем тип животного
+    modal.dataset.animalType = animalType;
+
+    ensureRshnExportFilter(); // Сохраняем тип животного
     
     // Сначала сбрасываем все поля и отключаем их
     resetModalFields();
@@ -81,6 +83,10 @@ async function performExport(animalType) {
             const ageMax = document.getElementById('filter-age-max').value;
             if (ageMin) data.age_min = parseFloat(ageMin);
             if (ageMax) data.age_max = parseFloat(ageMax);
+        }
+
+        if (document.getElementById('filter-rshn-enabled')?.checked) {
+            data.has_rshn_tag = true;
         }
     }
     
@@ -170,7 +176,27 @@ function getCSRFToken() {
     return '';
 }
 
-// Функция для получения выбранных животных
+// Adds the RSHN presence checkbox to the export modal.
+function ensureRshnExportFilter() {
+    const filtersContainer = document.querySelector('#export-modal .export-filters');
+    if (!filtersContainer || document.getElementById('filter-rshn-enabled')) {
+        return;
+    }
+
+    const section = document.createElement('div');
+    section.className = 'mb-3';
+    section.id = 'filter-rshn-section';
+    section.innerHTML = `
+        <div class="form-check">
+            <input type="checkbox" id="filter-rshn-enabled" class="form-check-input export-checkbox">
+            <label class="form-check-label" for="filter-rshn-enabled">&#1053;&#1072;&#1083;&#1080;&#1095;&#1080;&#1077; &#1073;&#1080;&#1088;&#1082;&#1080; &#1056;&#1057;&#1061;&#1053;</label>
+        </div>
+    `;
+
+    const includeDetailsSection = document.getElementById('include-details-section');
+    filtersContainer.insertBefore(section, includeDetailsSection || null);
+}
+
 function getSelectedAnimals() {
     const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]:checked');
     const selectedIds = [];
@@ -189,7 +215,8 @@ function disableFilterSections(disable) {
     const sections = [
         'filter-limit-section',
         'filter-weight-section', 
-        'filter-age-section'
+        'filter-age-section',
+        'filter-rshn-section'
     ];
     
     sections.forEach(sectionId => {
@@ -223,6 +250,8 @@ function resetModalFields() {
     document.getElementById('filter-limit-enabled').checked = false;
     document.getElementById('filter-weight-enabled').checked = false;
     document.getElementById('filter-age-enabled').checked = false;
+    const rshnCheckbox = document.getElementById('filter-rshn-enabled');
+    if (rshnCheckbox) rshnCheckbox.checked = false;
     document.getElementById('include-details').checked = false;
     
     // Сбрасываем и отключаем поля ввода
