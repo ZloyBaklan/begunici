@@ -405,7 +405,7 @@ class AnimalBase(models.Model):
 
 
 class ArchiveAct(models.Model):
-    """Данные для формирования индивидуального акта архивирования животного."""
+    """Данные для формирования акта архивирования животного."""
 
     FATNESS_CHOICES = [
         ("ср", "ср"),
@@ -423,6 +423,12 @@ class ArchiveAct(models.Model):
     animal_type = models.CharField(max_length=30, verbose_name="Тип животного")
     status_name = models.CharField(max_length=100, verbose_name="Архивный статус", db_index=True)
     status_date = models.DateField(null=True, blank=True, verbose_name="Дата присвоения статуса")
+    act_group_key = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Ключ общего акта",
+    )
     act_number = models.CharField(max_length=255, blank=True, default="", verbose_name="Номер акта")
     act_date = models.DateField(null=True, blank=True, verbose_name="Дата акта")
     live_weight = models.DecimalField(
@@ -618,9 +624,15 @@ class Lambing(models.Model):
 
     COMPLETION_NORMAL = "normal"
     COMPLETION_EARLY_FAILURE = "early_failure"
+    COMPLETION_UNSUCCESSFUL_INSEMINATION = "unsuccessful_insemination"
     COMPLETION_CHOICES = [
         (COMPLETION_NORMAL, "Обычное завершение"),
         (COMPLETION_EARLY_FAILURE, "Досрочно завершен"),
+        (COMPLETION_UNSUCCESSFUL_INSEMINATION, "Неудачное осеменение"),
+    ]
+    NON_PRODUCTIVE_COMPLETION_TYPES = [
+        COMPLETION_EARLY_FAILURE,
+        COMPLETION_UNSUCCESSFUL_INSEMINATION,
     ]
 
     # Мать может быть либо овцой, либо яркой
@@ -914,6 +926,117 @@ class Lambing(models.Model):
                             father.save()
                     except Exception as e:
                         print(f"Ошибка при установке статуса '{STATUS_FATTENING}' отцу после завершения окота: {e}")
+
+
+def get_lambing_sequence_queryset_for_mother(mother):
+    """Возвращает завершенные окоты конкретной матери для проверки последовательности."""
+    if not mother:
+        return Lambing.objects.none()
+
+    relation_filter = Q()
+    model_name = mother.__class__.__name__
+    if model_name == "Sheep":
+        relation_filter |= Q(sheep_id=mother.id)
+    elif model_name == "Ewe":
+        relation_filter |= Q(ewe_id=mother.id)
+    else:
+        return Lambing.objects.none()
+
+    mother_tag = mother.tag.tag_number if getattr(mother, "tag", None) else ""
+    if mother_tag:
+        relation_filter |= Q(sheep__tag__tag_number__iexact=mother_tag)
+        relation_filter |= Q(ewe__tag__tag_number__iexact=mother_tag)
+        relation_filter |= Q(mother_tag_text__iexact=mother_tag)
+
+    return Lambing.objects.filter(is_active=False).filter(relation_filter)
+
+
+def get_previous_lambing_sequence_queryset(lambing):
+    """Возвращает завершенные окоты матери, которые идут раньше указанного окота."""
+    mother = lambing.get_mother() if lambing else None
+    queryset = get_lambing_sequence_queryset_for_mother(mother)
+    if not lambing or not lambing.pk:
+        return queryset.order_by("-start_date", "-id")
+
+    queryset = queryset.exclude(pk=lambing.pk)
+    if lambing.start_date:
+        queryset = queryset.filter(
+            Q(start_date__lt=lambing.start_date)
+            | Q(start_date=lambing.start_date, id__lt=lambing.id)
+        )
+    return queryset.order_by("-start_date", "-id")
+
+
+def count_consecutive_unsuccessful_inseminations(lambings_queryset):
+    count = 0
+    for lambing in lambings_queryset:
+        if lambing.completion_type != Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION:
+            break
+        count += 1
+    return count
+
+
+def get_previous_unsuccessful_insemination_count(lambing):
+    return count_consecutive_unsuccessful_inseminations(
+        get_previous_lambing_sequence_queryset(lambing)
+    )
+
+
+def get_next_unsuccessful_insemination_count(lambing):
+    return get_previous_unsuccessful_insemination_count(lambing) + 1
+
+
+def get_current_unsuccessful_insemination_count_for_mother(mother):
+    queryset = get_lambing_sequence_queryset_for_mother(mother).order_by("-start_date", "-id")
+    return count_consecutive_unsuccessful_inseminations(queryset)
+
+
+def _unsuccessful_insemination_ordinal(count):
+    words = {
+        2: "второе",
+        3: "третье",
+        4: "четвертое",
+        5: "пятое",
+        6: "шестое",
+        7: "седьмое",
+        8: "восьмое",
+        9: "девятое",
+        10: "десятое",
+    }
+    return words.get(count, f"{count}-е")
+
+
+def _unsuccessful_insemination_cardinal(count):
+    words = {
+        2: "два",
+        3: "три",
+        4: "четыре",
+        5: "пять",
+        6: "шесть",
+        7: "семь",
+        8: "восемь",
+        9: "девять",
+        10: "десять",
+    }
+    return words.get(count, str(count))
+
+
+def build_unsuccessful_insemination_modal_warning(count):
+    if count < 2:
+        return ""
+    return (
+        f'Внимание! Это уже {_unsuccessful_insemination_ordinal(count)} подряд '
+        f'"неудачное" осеменение. Животное подлежит выбраковке!'
+    )
+
+
+def build_unsuccessful_insemination_mother_warning(count):
+    if count < 2:
+        return ""
+    return (
+        f'Внимание! У животного {_unsuccessful_insemination_cardinal(count)} подряд '
+        f'"неудачных" осеменения. Животное подлежит выбраковке!'
+    )
 
 
 class Ram(AnimalBase):
@@ -1271,6 +1394,7 @@ class CalendarNote(models.Model):
         
         return formatted_text
 
+
     def _hex_to_rgb(self, hex_color):
         """
         Конвертирует HEX цвет в RGB для прозрачного фона
@@ -1285,6 +1409,51 @@ class CalendarNote(models.Model):
             return "0, 0, 0"
         except:
             return "0, 0, 0"
+
+def get_birth_type_total_for_animal(animal):
+    """
+    Возвращает тип рождения животного: сколько всего ягнят было в его окоте.
+    Считаем по завершенному окоту матери на дату рождения: живые + мертвые.
+    """
+    if not animal or not getattr(animal, "birth_date", None) or not getattr(animal, "mother", None):
+        return None
+
+    mother_tag = str(animal.mother or "").strip()
+    if not mother_tag:
+        return None
+
+    lambing = (
+        Lambing.objects.filter(is_active=False, actual_lambing_date=animal.birth_date)
+        .filter(
+            Q(sheep__tag__tag_number__iexact=mother_tag)
+            | Q(ewe__tag__tag_number__iexact=mother_tag)
+            | Q(mother_tag_text__iexact=mother_tag)
+        )
+        .order_by("-id")
+        .first()
+    )
+    if not lambing:
+        return None
+
+    live_from_lambing = lambing.number_of_lambs or 0
+    dead_count = lambing.dead_lambs_count or 0
+
+    # Если в старых данных число живых не заполнено/занижено, не показываем меньше
+    # фактически найденных живых детей на эту дату у этой матери.
+    live_from_children = 0
+    for child_model in (Ram, Maker, Ewe, Sheep):
+        live_from_children += child_model.objects.filter(
+            birth_date=animal.birth_date,
+            mother__iexact=mother_tag,
+        ).count()
+
+    total = max(live_from_lambing, live_from_children) + dead_count
+    return total if total > 0 else None
+
+
+def format_birth_type_for_animal(animal):
+    birth_type_total = get_birth_type_total_for_animal(animal)
+    return str(birth_type_total) if birth_type_total is not None else "-"
 
 
 class ShiftTransferNote(models.Model):

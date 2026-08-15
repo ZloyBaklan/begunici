@@ -302,15 +302,18 @@ async function loadStatusHistory(animalType, tagNumber, page = 1) {
                     formattedDateTime = dateTime.toLocaleDateString('ru-RU', {
                         year: 'numeric',
                         month: '2-digit',
-                        day: '2-digit'
+                        day: '2-digit',
                     });
                 }
+
+                const oldStatus = record.old_status?.status_type || 'Не было статуса';
+                const newStatus = record.new_status?.status_type || 'Не указано';
                 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${formattedDateTime}</td>
-                    <td>${record.new_status?.status_type || 'Не указано'}</td>
-                    <td>${record.old_status?.status_type || 'Не указано'}</td>
+                    <td>${oldStatus}</td>
+                    <td>${newStatus}</td>
                 `;
                 statusHistoryList.appendChild(row);
             });
@@ -360,8 +363,8 @@ async function loadPlaceHistory(animalType, tagNumber, page = 1) {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${formattedDateTime}</td>
-                    <td>${record.new_place?.sheepfold || 'Не указано'}</td>
                     <td>${record.old_place?.sheepfold || 'Не указано'}</td>
+                    <td>${record.new_place?.sheepfold || 'Не указано'}</td>
                 `;
                 placeHistoryList.appendChild(row);
             });

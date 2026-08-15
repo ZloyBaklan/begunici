@@ -190,7 +190,7 @@ async function editStatus(statusId) {
         document.getElementById('cancel-edit-button').style.display = 'block';
     } catch (error) {
         console.error('Ошибка при редактировании статуса:', error);
-        showMessage('Произошла ошибка при попытке редактирования статуса.', 'danger');
+        showMessage(`Ошибка при загрузке статуса для редактирования: ${error.message || 'Неизвестная ошибка'}`, 'danger');
     }
 }
 
@@ -205,7 +205,7 @@ async function deleteStatus(statusId) {
         fetchStatuses(currentPage); // Обновляем текущую страницу
     } catch (error) {
         console.error('Ошибка при удалении статуса:', error);
-        showMessage('Ошибка при удалении статуса', 'danger');
+        showMessage(`Ошибка при удалении статуса: ${error.message || 'Неизвестная ошибка'}`, 'danger');
     }
 }
 

@@ -1,4 +1,4 @@
-// Глобальные переменные
+﻿// Глобальные переменные
 let currentDate = new Date();
 let currentViewMode = 'week'; // 'week' или 'month'
 let currentNoteId = null;
@@ -571,6 +571,104 @@ function getAnimalTypeRoute(animalType) {
 }
 
 // Сохраняет заметку
+function getCalendarNoteErrorFieldLabel(field) {
+    const labels = {
+        date: 'Дата',
+        text: 'Заметка',
+        non_field_errors: 'Общая ошибка',
+    };
+
+    return labels[field] || String(field).replaceAll('_', ' ');
+}
+
+function translateCalendarNoteErrorText(message) {
+    const text = String(message || '').trim();
+    const translations = {
+        'This field is required.': 'Это поле обязательно для заполнения.',
+        'This field may not be blank.': 'Это поле не может быть пустым.',
+        'This field may not be null.': 'Это поле не может быть пустым.',
+        'Enter a valid date.': 'Укажите корректную дату.',
+        'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.': 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ.',
+        'This field must be unique.': 'Такое значение уже используется.',
+    };
+    if (translations[text]) return translations[text];
+    if (text.includes('Invalid pk')) return 'Выбранное значение не найдено в базе.';
+    return text;
+}
+
+function parseCalendarNoteErrorString(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const cleaned = text.replace(
+        /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g,
+        (_, quote, errorMessage) => `'${String(errorMessage).replaceAll("'", "\\'")}'`
+    );
+
+    const fieldMessages = [];
+    const fieldRegex = /['"]([^'"]+)['"]\s*:\s*(\[[\s\S]*?\]|['"][\s\S]*?['"])/g;
+    let fieldMatch;
+    while ((fieldMatch = fieldRegex.exec(cleaned)) !== null) {
+        const field = fieldMatch[1];
+        const rawValue = fieldMatch[2];
+        const values = [];
+        const valueRegex = /['"]([^'"]+)['"]/g;
+        let valueMatch;
+        while ((valueMatch = valueRegex.exec(rawValue)) !== null) {
+            values.push(translateCalendarNoteErrorText(valueMatch[1]));
+        }
+
+        if (values.length) {
+            fieldMessages.push(`${getCalendarNoteErrorFieldLabel(field)}: ${values.join(', ')}`);
+        }
+    }
+
+    if (fieldMessages.length) return fieldMessages.join('\n');
+
+    const detailMessages = [];
+    const detailRegex = /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g;
+    let detailMatch;
+    while ((detailMatch = detailRegex.exec(text)) !== null) {
+        detailMessages.push(translateCalendarNoteErrorText(detailMatch[2]));
+    }
+
+    return detailMessages.length ? detailMessages.join('\n') : translateCalendarNoteErrorText(text);
+}
+
+function stringifyCalendarNoteErrorValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return parseCalendarNoteErrorString(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(stringifyCalendarNoteErrorValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value).map(([field, nestedValue]) => {
+            const message = stringifyCalendarNoteErrorValue(nestedValue);
+            if (!message) return '';
+            if (['error', 'detail', 'non_field_errors'].includes(field)) return message;
+            return `${getCalendarNoteErrorFieldLabel(field)}: ${message}`;
+        }).filter(Boolean).join('\n');
+    }
+    return String(value);
+}
+
+function getCalendarNoteErrorMessage(errorData) {
+    if (!errorData) return 'Неизвестная ошибка';
+    if (typeof errorData === 'string') return parseCalendarNoteErrorString(errorData);
+    if (typeof errorData.error === 'string') return parseCalendarNoteErrorString(errorData.error);
+    if (typeof errorData.detail === 'string') return parseCalendarNoteErrorString(errorData.detail);
+
+    const messages = Object.entries(errorData).map(([field, value]) => {
+        const message = stringifyCalendarNoteErrorValue(value);
+        if (!message) return '';
+        if (['error', 'detail', 'non_field_errors'].includes(field)) return message;
+        return `${getCalendarNoteErrorFieldLabel(field)}: ${message}`;
+    }).filter(Boolean);
+
+    return messages.length ? messages.join('\n') : 'Неизвестная ошибка';
+}
+
 async function saveNote() {
     const text = document.getElementById('noteText').value.trim();
     
@@ -618,11 +716,11 @@ async function saveNote() {
         } else {
             const errorData = await response.json();
             console.error('Ошибка ответа:', errorData);
-            alert('Ошибка сохранения: ' + (errorData.error || 'Неизвестная ошибка'));
+            alert('Ошибка сохранения: ' + getCalendarNoteErrorMessage(errorData));
         }
     } catch (error) {
         console.error('Ошибка сохранения заметки:', error);
-        alert('Ошибка сохранения заметки');
+        alert('Ошибка сохранения заметки: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -835,10 +933,12 @@ async function deleteNote() {
             updateCalendar(); // Перезагружаем календарь
         } else {
             const errorData = await response.json();
-            alert('Ошибка удаления: ' + (errorData.error || 'Неизвестная ошибка'));
+            alert('Ошибка удаления: ' + getCalendarNoteErrorMessage(errorData));
         }
     } catch (error) {
         console.error('Ошибка удаления заметки:', error);
-        alert('Ошибка удаления заметки');
+        alert('Ошибка удаления заметки: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
+
+

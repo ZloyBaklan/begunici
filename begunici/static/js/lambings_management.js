@@ -1,4 +1,4 @@
-import { apiRequest, getCSRFToken } from "./utils.js";
+import { apiRequest, getApiErrorMessage, getCSRFToken } from "./utils.js";
 
 // Глобальные переменные
 let selectedMothers = new Set(); // Для хранения ID выбранных матерей
@@ -199,7 +199,10 @@ document.addEventListener('DOMContentLoaded', function() {
             generateLambForms(count);
         }
         if (e.target && e.target.id === 'early-failure-checkbox') {
-            updateCompletionMode();
+            setCompletionMode(e.target.checked ? 'early_failure' : 'normal');
+        }
+        if (e.target && e.target.id === 'unsuccessful-insemination-checkbox') {
+            setCompletionMode(e.target.checked ? 'unsuccessful_insemination' : 'normal');
         }
     });
 });
@@ -1443,6 +1446,12 @@ function showCompleteLambingModal(lambingId) {
     if (earlyFailureCheckbox) {
         earlyFailureCheckbox.checked = false;
     }
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.checked = false;
+    }
+    window.currentCompletionMode = 'normal';
+    resetUnsuccessfulInseminationWarning();
     updateCompletionMode();
     
     // Генерируем формы для ягнят
@@ -1454,37 +1463,114 @@ function showCompleteLambingModal(lambingId) {
 }
 
 function isEarlyFailureMode() {
-    return Boolean(document.getElementById('early-failure-checkbox')?.checked);
+    return window.currentCompletionMode === 'early_failure'
+        || Boolean(document.getElementById('early-failure-checkbox')?.checked);
+}
+
+function isUnsuccessfulInseminationMode() {
+    return window.currentCompletionMode === 'unsuccessful_insemination';
+}
+
+function resetUnsuccessfulInseminationWarning() {
+    const warning = document.getElementById('unsuccessful-insemination-warning');
+    if (warning) {
+        warning.style.display = 'none';
+        warning.textContent = '';
+    }
+}
+
+async function loadUnsuccessfulInseminationWarning() {
+    const warning = document.getElementById('unsuccessful-insemination-warning');
+    if (!warning || !window.currentLambingId) return;
+
+    warning.style.display = 'none';
+    warning.textContent = '';
+
+    try {
+        const response = await apiRequest(`/animals/lambing/${window.currentLambingId}/unsuccessful-insemination-warning/`, 'GET');
+        if (response.warning) {
+            warning.textContent = response.warning;
+            warning.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Ошибка проверки неудачных осеменений:', error);
+    }
+}
+
+function setCompletionMode(mode) {
+    window.currentCompletionMode = mode || 'normal';
+
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.checked = window.currentCompletionMode === 'early_failure';
+    }
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.checked = window.currentCompletionMode === 'unsuccessful_insemination';
+    }
+
+    resetUnsuccessfulInseminationWarning();
+    updateCompletionMode();
+
+    if (isUnsuccessfulInseminationMode()) {
+        loadUnsuccessfulInseminationWarning();
+    }
+}
+
+function selectUnsuccessfulInseminationMode() {
+    setCompletionMode('unsuccessful_insemination');
 }
 
 function updateCompletionMode() {
     const isEarlyFailure = isEarlyFailureMode();
+    const isUnsuccessful = isUnsuccessfulInseminationMode();
     const dateLabel = document.getElementById('actual-lambing-date-label');
+    const infoHeading = document.getElementById('lambing-info-heading');
+    const dateField = document.getElementById('actual-lambing-date-field');
+    const earlyFailureCheck = document.querySelector('.early-failure-check');
+    const unsuccessfulAction = document.getElementById('unsuccessful-insemination-action');
     const lambsCountField = document.getElementById('lambs-count-field');
     const deadLambsCountField = document.getElementById('dead-lambs-count-field');
     const lambsCreationSection = document.getElementById('lambs-creation-section');
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    const separator = document.getElementById('lambing-completion-separator');
     const submitButton = document.getElementById('complete-lambing-submit-btn');
 
     if (dateLabel) {
         dateLabel.textContent = isEarlyFailure ? 'Дата завершения:' : 'Дата фактических родов:';
     }
+    if (infoHeading) {
+        infoHeading.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (dateField) {
+        dateField.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (earlyFailureCheck) {
+        earlyFailureCheck.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (unsuccessfulAction) {
+        unsuccessfulAction.style.display = isUnsuccessful ? 'none' : '';
+    }
     if (lambsCountField) {
-        lambsCountField.style.display = isEarlyFailure ? 'none' : '';
+        lambsCountField.style.display = (isEarlyFailure || isUnsuccessful) ? 'none' : '';
     }
     if (deadLambsCountField) {
-        deadLambsCountField.style.display = isEarlyFailure ? 'none' : '';
+        deadLambsCountField.style.display = (isEarlyFailure || isUnsuccessful) ? 'none' : '';
     }
     if (lambsCreationSection) {
-        lambsCreationSection.style.display = isEarlyFailure ? 'none' : '';
+        lambsCreationSection.style.display = (isEarlyFailure || isUnsuccessful) ? 'none' : '';
     }
     if (createLambsCheckbox) {
-        createLambsCheckbox.disabled = isEarlyFailure;
+        createLambsCheckbox.disabled = isEarlyFailure || isUnsuccessful;
+    }
+    if (separator) {
+        separator.style.display = isUnsuccessful ? 'none' : '';
     }
     if (submitButton) {
-        submitButton.textContent = isEarlyFailure ? 'Аборт' : 'Окот';
-        submitButton.classList.toggle('btn-success', !isEarlyFailure);
+        submitButton.textContent = isUnsuccessful ? 'Неудачное осеменение' : (isEarlyFailure ? 'Аборт' : 'Окот');
+        submitButton.classList.toggle('btn-success', !isEarlyFailure && !isUnsuccessful);
         submitButton.classList.toggle('btn-warning', isEarlyFailure);
+        submitButton.classList.toggle('btn-danger', isUnsuccessful);
     }
 }
 
@@ -1500,6 +1586,8 @@ function generateLambForms(count) {
 }
 
 // Создание формы для ягненка
+const lambStatusesByAnimalType = {};
+
 function createLambForm(index) {
     const div = document.createElement('div');
     div.className = 'lamb-form';
@@ -1554,7 +1642,7 @@ function createLambForm(index) {
     
     const genderSelect = div.querySelector('.lamb-gender');
     if (genderSelect) {
-        genderSelect.addEventListener('change', () => applyDefaultLambStatus(div));
+        genderSelect.addEventListener('change', () => loadStatusesForLamb(div));
     }
 
     // Загружаем статусы и места для этой формы
@@ -1564,58 +1652,58 @@ function createLambForm(index) {
     return div;
 }
 
+function getLambAnimalTypeByGender(gender) {
+    if (gender === 'male') return 'Ram';
+    if (gender === 'female') return 'Ewe';
+    return '';
+}
+
+async function getLambStatusesForAnimalType(animalType) {
+    if (!animalType) return [];
+    if (!lambStatusesByAnimalType[animalType]) {
+        const response = await apiRequest(`/veterinary/api/status/?exclude_archive=1&page_size=100&animal_type=${encodeURIComponent(animalType)}`);
+        lambStatusesByAnimalType[animalType] = response.results || response;
+    }
+    return lambStatusesByAnimalType[animalType];
+}
+
 function applyDefaultLambStatus(formElement) {
     const select = formElement.querySelector('.lamb-status');
     const gender = formElement.querySelector('.lamb-gender')?.value;
     if (!select) return;
 
-    const defaultStatusId = gender === 'male'
-        ? formElement.dataset.ramDefaultStatusId
-        : formElement.dataset.eweDefaultStatusId;
-
-    if (defaultStatusId) {
-        select.value = defaultStatusId;
+    const defaultStatusName = gender === 'male' ? 'Откорм' : 'Не определено';
+    const defaultOption = Array.from(select.options).find(option => option.textContent === defaultStatusName);
+    if (defaultOption) {
+        select.value = defaultOption.value;
     }
 }
-
 // Загрузка статусов для ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
-        // API возвращает пагинированные данные, берем массив из results
-        const statuses = response.results || response;
         const select = formElement.querySelector('.lamb-status');
-        
-        let defaultEweChildStatusId = null;
-        let defaultRamChildStatusId = null;
-        
+        const gender = formElement.querySelector('.lamb-gender')?.value;
+        const animalType = getLambAnimalTypeByGender(gender);
+        if (!select) return;
+
+        select.innerHTML = animalType
+            ? '<option value="">Выберите статус</option>'
+            : '<option value="">Сначала выберите тип животного</option>';
+        if (!animalType) return;
+
+        const statuses = await getLambStatusesForAnimalType(animalType);
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             select.appendChild(option);
-            
-            // Ищем статус "Не определено"
-            if (status.status_type === 'Не определено') {
-                defaultEweChildStatusId = status.id;
-            }
-            if (status.status_type === 'Откорм') {
-                defaultRamChildStatusId = status.id;
-            }
         });
-        
-        if (defaultEweChildStatusId) {
-            formElement.dataset.eweDefaultStatusId = defaultEweChildStatusId;
-        }
-        if (defaultRamChildStatusId) {
-            formElement.dataset.ramDefaultStatusId = defaultRamChildStatusId;
-        }
+
         applyDefaultLambStatus(formElement);
     } catch (error) {
         console.error('Ошибка загрузки статусов для ягненка:', error);
     }
 }
-
 // Загрузка мест для ягненка
 async function loadPlacesForLamb(formElement) {
     try {
@@ -1650,6 +1738,11 @@ function removeLambForm(button) {
 
 // Завершение окота с созданием детей
 async function completeLambingWithChildren() {
+    if (isUnsuccessfulInseminationMode()) {
+        await completeLambingUnsuccessfulInsemination();
+        return;
+    }
+
     if (isEarlyFailureMode()) {
         await completeLambingEarlyFailure();
         return;
@@ -1770,7 +1863,38 @@ async function completeLambingEarlyFailure() {
     }
 }
 
+async function completeLambingUnsuccessfulInsemination() {
+    const lambingId = window.currentLambingId;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
+
+    if (!lambingId) {
+        alert('Не выбрана случка');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing/${lambingId}/complete-unsuccessful-insemination/`, 'POST', {
+            note: lambingNote || ''
+        });
+
+        alert(response.warning || 'Неудачное осеменение отмечено.');
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
+        modal.hide();
+
+        loadActiveLambings();
+    } catch (error) {
+        console.error('Ошибка отметки неудачного осеменения:', error);
+        alert('Ошибка при отметке неудачного осеменения: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
 async function submitLambingCompletion() {
+    if (isUnsuccessfulInseminationMode()) {
+        await completeLambingUnsuccessfulInsemination();
+        return;
+    }
+
     if (isEarlyFailureMode()) {
         await completeLambingEarlyFailure();
         return;
@@ -1788,6 +1912,8 @@ window.createMultipleLambings = createMultipleLambings;
 window.showCompleteLambingModal = showCompleteLambingModal;
 window.completeLambingWithChildren = completeLambingWithChildren;
 window.completeLambingEarlyFailure = completeLambingEarlyFailure;
+window.completeLambingUnsuccessfulInsemination = completeLambingUnsuccessfulInsemination;
+window.selectUnsuccessfulInseminationMode = selectUnsuccessfulInseminationMode;
 window.submitLambingCompletion = submitLambingCompletion;
 window.removeLambForm = removeLambForm;
 window.changePage = changePage;
@@ -2288,7 +2414,7 @@ async function exportKinshipPairsToExcel() {
             let errorMessage = 'Ошибка экспорта';
             try {
                 const errorData = await response.json();
-                errorMessage = errorData.error || errorData.detail || errorMessage;
+                errorMessage = getApiErrorMessage(errorData, errorMessage);
             } catch (jsonError) {
                 // no-op
             }
@@ -2398,4 +2524,3 @@ async function checkAutoKinship() {
         `;
     }
 }
-

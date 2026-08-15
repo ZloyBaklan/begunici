@@ -41,6 +41,12 @@
     margin-left: 5px;
 }
 
+#completeLambingModal .early-failure-check,
+#completeLambingModal .unsuccessful-insemination-check {
+    text-align: left;
+    padding-left: 1.5rem;
+}
+
 #create-lambing-form {
     border: 1px solid #007bff;
     border-radius: 8px;
@@ -266,6 +272,7 @@
                                     <div class="form-check mb-2">
                                         <input type="checkbox" id="is_reject" class="form-check-input" {% if animal.is_reject %}checked{% endif %}>
                                         <label for="is_reject" class="form-check-label">Назначение: Брак</label>
+                                        <span id="reject-warning-display" class="text-warning small ms-2"></span>
                                     </div>
                                 </div>
                                 {% if animal_type == 'maker' %}
@@ -505,16 +512,23 @@
             </div>
             <div class="modal-body">
                 <div id="lambing-completion-form">
-                    <h6>Информация об окоте</h6>
-                    <div class="mb-3">
+                    <h6 id="lambing-info-heading">Информация об окоте</h6>
+                    <div class="mb-3" id="actual-lambing-date-field">
                         <label class="form-label" id="actual-lambing-date-label">Дата фактических родов:</label>
                         <input type="date" id="actual-lambing-date" class="form-control" required>
                     </div>
                     
-                    <div class="form-check mb-3">
+                    <div class="form-check mb-3 early-failure-check">
                         <input class="form-check-input" type="checkbox" id="early-failure-checkbox">
                         <label class="form-check-label" for="early-failure-checkbox">
-                            Завершить досрочно (неудача)
+                            Аборт
+                        </label>
+                    </div>
+
+                    <div class="form-check mb-3 unsuccessful-insemination-check" id="unsuccessful-insemination-action">
+                        <input class="form-check-input" type="checkbox" id="unsuccessful-insemination-checkbox">
+                        <label class="form-check-label" for="unsuccessful-insemination-checkbox">
+                            Неудачное осеменение
                         </label>
                     </div>
 
@@ -532,8 +546,10 @@
                         <label for="completion-lambing-note" class="form-label">Примечание к окоту:</label>
                         <textarea id="completion-lambing-note" class="form-control" rows="2"></textarea>
                     </div>
+
+                    <div id="unsuccessful-insemination-warning" class="alert alert-warning" style="display: none;"></div>
                     
-                    <hr>
+                    <hr id="lambing-completion-separator">
                     
                     <div id="lambs-creation-section">
                         <h6>Создание ягнят</h6>

@@ -335,7 +335,7 @@ function formatLastVetTreatment(veterinaryHistory) {
 // Функция загрузки статусов
 async function loadStatuses() {
     try {
-        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
+        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100&animal_type=Ewe');
         // API возвращает пагинированные данные, берем массив из results
         const statuses = response.results || response;
         const select = document.getElementById('animal_status');
@@ -502,7 +502,7 @@ async function deleteSelectedEwes() {
             modal.style.display = 'none';
         } catch (error) {
             console.error('Ошибка при удалении выбранных записей:', error);
-            alert('Ошибка при удалении записей');
+            alert('Ошибка при удалении записей: ' + (error.message || 'Неизвестная ошибка'));
         }
     };
 }
@@ -598,6 +598,10 @@ async function applyArchiveStatus() {
     }
 
     try {
+
+        const downloadedArchiveActKeys = new Set();
+        const archiveActDownloads = [];
+
         for (const entry of archiveStep.entries) {
             const item = entry.animal;
             await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, 'PATCH', {
@@ -606,10 +610,15 @@ async function applyArchiveStatus() {
                 carcass_weight: entry.carcassWeight,
                 ...entry.archiveActPayload
             });
-            if (entry.archiveActPayload.archive_act_download) {
-                window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
+            const archiveActDownloadKey = entry.archiveActPayload.archive_act_group_key || `${item.animalType}:${item.tagNumber}`;
+            if (entry.archiveActPayload.archive_act_download && !downloadedArchiveActKeys.has(archiveActDownloadKey)) {
+                downloadedArchiveActKeys.add(archiveActDownloadKey);
+                archiveActDownloads.push({ animalType: item.animalType, tagNumber: item.tagNumber });
             }
         }
+        archiveActDownloads.forEach((download) => {
+            window.archiveActModal?.downloadArchiveAct(download.animalType, download.tagNumber);
+        });
         alert('Выбранные записи успешно перенесены в архив.');
         
         // Очищаем все выбранные элементы
@@ -627,7 +636,7 @@ async function applyArchiveStatus() {
         toggleDeleteButton(); // Скрываем кнопки
     } catch (error) {
         console.error('Ошибка при переносе в архив:', error);
-        alert('Ошибка при переносе записей.');
+        alert('Ошибка при переносе записей: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -792,4 +801,6 @@ window.fetchEwes = fetchEwes;
 window.searchEwes = searchEwes;
 window.performSearch = performSearch;
 window.toggleEweAdditionalFilters = toggleEweAdditionalFilters;
+
+
 

@@ -8,7 +8,16 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .models import Ewe, Maker, Ram, Sheep, STATUS_INSEMINATED, STATUS_LAMBED
+from .models import (
+    ARCHIVE_STATUS_NAMES,
+    Ewe,
+    Maker,
+    Ram,
+    Sheep,
+    STATUS_INSEMINATED,
+    STATUS_LAMBED,
+    STATUS_NOT_INSEMINATED,
+)
 
 
 TEMPLATE_FILENAME = "korm_plan.xlsx"
@@ -26,13 +35,15 @@ MONTH_NAMES = {
     11: "ноябрь",
     12: "декабрь",
 }
-FEED_GROUP_ROWS = {
-    "makers": 10,
-    "pregnant_females": 11,
-    "lactating_females": 12,
-    "young_3_to_6_months": 13,
-    "young_7_to_12_months": 14,
-    "young_under_3_months": 15,
+FEED_GROUP_LABELS = {
+    "makers": "Баран-производитель",
+    "pregnant_females": "Овцематки, ярки (осемененные)",
+    "lactating_females": "Овцематки с ягнятами (объягненные)",
+    "young_3_to_6_months": "Баранчики и ярки питомник (от 3 до 6 мес)",
+    "young_7_to_12_months": "Баранчики, ярки ремонтные (7-12 мес)",
+    "young_under_3_months": "Приплод бараны и ярки (до 3 мес)",
+    "rams_over_12_months": "Баранчики (12+ мес)",
+    "non_inseminated_sheep": "Овцематки (неосемененные)",
 }
 
 
@@ -55,50 +66,95 @@ def get_full_age_months(birth_date, as_of_date):
     return delta.years * 12 + delta.months
 
 
-def count_active_females_by_status(status_name):
-    filters = {
-        "is_archived": False,
-        "animal_status__status_type": status_name,
+def normalize_feed_label(value):
+    return " ".join(str(value or "").split()).lower()
+
+
+def find_feed_group_rows(sheet):
+    expected = {
+        normalize_feed_label(label): group_key
+        for group_key, label in FEED_GROUP_LABELS.items()
     }
-    return Ewe.objects.filter(**filters).count() + Sheep.objects.filter(**filters).count()
+    rows = {}
+    for row_number in range(1, sheet.max_row + 1):
+        group_key = expected.get(normalize_feed_label(sheet[f"A{row_number}"].value))
+        if group_key:
+            rows[group_key] = row_number
 
-
-def build_young_age_counts(as_of_date):
-    counts = {
-        "young_under_3_months": 0,
-        "young_3_to_6_months": 0,
-        "young_7_to_12_months": 0,
-    }
-
-    birth_dates = []
-    for model in (Ram, Ewe):
-        birth_dates.extend(
-            model.objects.filter(is_archived=False, birth_date__isnull=False)
-            .values_list("birth_date", flat=True)
+    missing = [label for key, label in FEED_GROUP_LABELS.items() if key not in rows]
+    if missing:
+        raise ValueError(
+            "В шаблоне кормового плана не найдены строки категорий: "
+            + "; ".join(missing)
         )
+    return rows
 
-    for birth_date in birth_dates:
-        age_months = get_full_age_months(birth_date, as_of_date)
-        if age_months is None:
-            continue
 
-        if age_months < 3:
-            counts["young_under_3_months"] += 1
-        elif 3 <= age_months <= 6:
-            counts["young_3_to_6_months"] += 1
-        elif 7 <= age_months <= 12:
-            counts["young_7_to_12_months"] += 1
+def get_active_feed_queryset(model):
+    return (
+        model.objects.filter(is_archived=False)
+        .exclude(animal_status__status_type__in=ARCHIVE_STATUS_NAMES)
+        .select_related("tag", "animal_status")
+    )
 
-    return counts
+
+def get_status_name(animal):
+    return animal.animal_status.status_type if animal.animal_status else None
+
+
+def get_ram_or_ewe_age_group(animal, as_of_date):
+    age_months = get_full_age_months(animal.birth_date, as_of_date)
+    if age_months is None:
+        return None
+
+    if age_months < 3:
+        return "young_under_3_months"
+    if 3 <= age_months <= 6:
+        return "young_3_to_6_months"
+    if 7 <= age_months <= 12:
+        return "young_7_to_12_months"
+    if isinstance(animal, Ram):
+        return "rams_over_12_months"
+    return None
+
+
+def classify_feed_plan_animal(animal, as_of_date):
+    status_name = get_status_name(animal)
+
+    if isinstance(animal, Maker):
+        return "makers"
+
+    if isinstance(animal, Sheep):
+        if status_name == STATUS_INSEMINATED:
+            return "pregnant_females"
+        if status_name == STATUS_LAMBED:
+            return "lactating_females"
+        if status_name == STATUS_NOT_INSEMINATED:
+            return "non_inseminated_sheep"
+        return None
+
+    if isinstance(animal, Ewe):
+        if status_name == STATUS_INSEMINATED:
+            return "pregnant_females"
+        if status_name == STATUS_LAMBED:
+            return "lactating_females"
+        return get_ram_or_ewe_age_group(animal, as_of_date)
+
+    if isinstance(animal, Ram):
+        return get_ram_or_ewe_age_group(animal, as_of_date)
+
+    return None
 
 
 def build_feed_plan_counts(as_of_date):
-    counts = {
-        "makers": Maker.objects.filter(is_archived=False).count(),
-        "pregnant_females": count_active_females_by_status(STATUS_INSEMINATED),
-        "lactating_females": count_active_females_by_status(STATUS_LAMBED),
-    }
-    counts.update(build_young_age_counts(as_of_date))
+    counts = {group_key: 0 for group_key in FEED_GROUP_LABELS}
+
+    for model in (Maker, Sheep, Ewe, Ram):
+        for animal in get_active_feed_queryset(model):
+            group_key = classify_feed_plan_animal(animal, as_of_date)
+            if group_key:
+                counts[group_key] += 1
+
     return counts
 
 
@@ -112,11 +168,12 @@ def fill_feed_plan_workbook(workbook, as_of_date=None):
     sheet.title = f"кормовой план {month_name}"
     sheet["B3"] = f"     на {month_name}"
     sheet["E3"] = f"{as_of_date.year} г."
+    group_rows = find_feed_group_rows(sheet)
 
-    for row_number in FEED_GROUP_ROWS.values():
+    for row_number in group_rows.values():
         sheet[f"C{row_number}"] = days_in_month
 
-    for group_key, row_number in FEED_GROUP_ROWS.items():
+    for group_key, row_number in group_rows.items():
         sheet[f"B{row_number}"] = counts[group_key]
 
     workbook.calculation.fullCalcOnLoad = True

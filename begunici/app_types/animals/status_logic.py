@@ -15,10 +15,32 @@ from .models import (
     STATUS_IN_GROUP,
     STATUS_INSEMINATED,
     STATUS_LAMBED,
+    STATUS_FATTENING,
     STATUS_NOT_INSEMINATED,
     STATUS_REPAIR,
     STATUS_UNDEFINED,
 )
+
+ANIMAL_TYPE_STATUS_RULES = {
+    "Maker": {STATUS_FATTENING, STATUS_IN_GROUP, STATUS_REPAIR},
+    "Ram": {STATUS_FATTENING, STATUS_REPAIR},
+    "Ewe": {STATUS_UNDEFINED, STATUS_NOT_INSEMINATED, STATUS_INSEMINATED},
+    "Sheep": {STATUS_INSEMINATED, STATUS_LAMBED, STATUS_NOT_INSEMINATED},
+}
+
+ANIMAL_TYPE_ALIASES = {
+    "maker": "Maker",
+    "ram": "Ram",
+    "ewe": "Ewe",
+    "sheep": "Sheep",
+}
+
+ANIMAL_TYPE_LABELS = {
+    "Maker": "баран-производитель",
+    "Ram": "баранчик",
+    "Ewe": "ярка",
+    "Sheep": "овцематка",
+}
 
 
 def get_status_by_name(status_name):
@@ -39,6 +61,49 @@ def set_animal_status(animal, status_obj):
     animal.animal_status = status_obj
     animal.save()
     return True
+
+
+def normalize_animal_type(animal_type):
+    if not animal_type:
+        return None
+    value = str(animal_type).strip()
+    return ANIMAL_TYPE_ALIASES.get(value.lower(), value)
+
+
+def get_allowed_active_status_names_for_animal_type(animal_type):
+    normalized_type = normalize_animal_type(animal_type)
+    allowed = ANIMAL_TYPE_STATUS_RULES.get(normalized_type)
+    return set(allowed) if allowed is not None else None
+
+
+def get_animal_status_validation_error(status_obj, animal_type, allow_archive=False):
+    if not status_obj:
+        return None
+
+    status_name = status_obj.status_type
+    normalized_type = normalize_animal_type(animal_type)
+
+    if status_name == "Брак":
+        return "Брак теперь отдельная отметка назначения, а не статус животного."
+
+    if status_name in ARCHIVE_STATUS_NAMES:
+        if allow_archive:
+            return None
+        return "Архивный статус можно установить только через отдельное действие архивирования."
+
+    allowed_names = get_allowed_active_status_names_for_animal_type(normalized_type)
+    if allowed_names is None:
+        return None
+
+    if status_name not in allowed_names:
+        animal_label = ANIMAL_TYPE_LABELS.get(normalized_type, normalized_type or "животное")
+        allowed_text = ", ".join(sorted(allowed_names))
+        return (
+            f"Статус «{status_name}» нельзя назначить для типа животного "
+            f"«{animal_label}». Допустимые статусы: {allowed_text}."
+        )
+
+    return None
 
 
 def get_group_statuses():

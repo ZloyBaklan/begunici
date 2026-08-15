@@ -31,6 +31,7 @@ from .vet_serializers import (
     PlaceMovementSerializer,
 )
 from begunici.app_types.animals.models import ARCHIVE_STATUS_NAMES
+from begunici.app_types.animals.status_logic import get_allowed_active_status_names_for_animal_type
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import render
 from rest_framework.decorators import api_view
@@ -400,10 +401,16 @@ class StatusViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         exclude_archive = str(self.request.query_params.get("exclude_archive", "")).lower()
         exclude_non_select = str(self.request.query_params.get("exclude_non_select", "")).lower()
+        animal_type = self.request.query_params.get("animal_type")
         if exclude_archive in {"1", "true", "yes"} or exclude_non_select in {"1", "true", "yes"}:
             queryset = queryset.exclude(status_type__in=self.non_select_statuses)
         if exclude_archive in {"1", "true", "yes"}:
             queryset = queryset.exclude(status_type__in=self.archive_statuses)
+        if animal_type:
+            allowed_statuses = get_allowed_active_status_names_for_animal_type(animal_type)
+            if allowed_statuses is None:
+                return queryset.none()
+            queryset = queryset.filter(status_type__in=allowed_statuses)
         return queryset
 
 

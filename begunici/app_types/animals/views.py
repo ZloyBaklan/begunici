@@ -2,12 +2,14 @@
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.shortcuts import render, redirect
 from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from decimal import Decimal
 from collections import defaultdict
@@ -32,8 +34,13 @@ from .models import (
     Lambing,
     LambingGroup,
     AnimalBase,
+    ArchiveAct,
     CalendarNote,
     ShiftTransferNote,
+    build_unsuccessful_insemination_modal_warning,
+    format_birth_type_for_animal,
+    get_next_unsuccessful_insemination_count,
+    get_previous_unsuccessful_insemination_count,
 )
 from .serializers import (
     MakerSerializer,
@@ -55,6 +62,8 @@ from .serializers import (
     format_sheep_last_lambing_text,
 )
 from .status_logic import (
+    get_animal_status_validation_error,
+    get_allowed_active_status_names_for_animal_type,
     get_default_child_status,
     get_group_statuses,
     get_required_status,
@@ -71,6 +80,9 @@ from .archive_acts import (
 )
 from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
 from .monthly_breeding_acts import monthly_breeding_act_response
+from .weight_acts import get_weight_acts_page, weight_act_response
+from .progeny_acts import get_progeny_acts_page, progeny_act_response
+from .livestock_movement_acts import livestock_movement_act_response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -88,8 +100,43 @@ def _is_truthy_filter_value(value):
     return str(value or "").strip().lower() in TRUTHY_FILTER_VALUES
 
 
+def _remove_animal_from_archive_act(animal):
+    """Удаляет восстановленное животное из акта архивирования."""
+    if not getattr(animal, "tag", None):
+        return
+
+    archive_act = animal.tag.archive_acts.order_by("-updated_at", "-id").first()
+    if not archive_act:
+        return
+
+    group_key = archive_act.act_group_key
+    archive_act.delete()
+
+    if group_key:
+        remaining_acts = ArchiveAct.objects.filter(act_group_key=group_key).order_by("id")
+        if remaining_acts.count() == 1:
+            remaining_acts.update(act_group_key=None)
+
+
 def _filter_queryset_with_rshn_tag(queryset):
     return queryset.exclude(rshn_tag__isnull=True).exclude(rshn_tag__exact="")
+
+
+def _normalize_exception_response_data(exc):
+    if isinstance(exc, DRFValidationError):
+        return exc.detail
+
+    if isinstance(exc, DjangoValidationError):
+        if hasattr(exc, "message_dict"):
+            return exc.message_dict
+        if hasattr(exc, "messages"):
+            return {"error": "; ".join(exc.messages)}
+
+    detail = getattr(exc, "detail", None)
+    if detail is not None:
+        return detail
+
+    return {"error": str(exc)}
 
 
 from begunici.app_types.veterinary.vet_models import (
@@ -175,7 +222,7 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
     pagination_class = PaginationSetting  # Добавляем пагинацию
 
     def handle_exception(self, exc):
-        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_normalize_exception_response_data(exc), status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
         """Переопределяем метод удаления для логирования"""
@@ -462,7 +509,7 @@ class MakerViewSet(AnimalBaseViewSet):
         maker = self.get_object()  # Получаем объект Maker
         status_history = StatusHistory.objects.filter(
             tag__tag_number=maker.tag.tag_number
-        ).order_by("-change_date")
+        ).order_by("-change_date", "-id")
 
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
@@ -617,10 +664,10 @@ class MakerViewSet(AnimalBaseViewSet):
             if status_id:
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
-                # Проверяем, что это не архивный статус
-                if selected_status.status_type in ARCHIVE_STATUS_NAMES or selected_status.status_type == "Брак":
+                status_error = get_animal_status_validation_error(selected_status, "Maker")
+                if status_error:
                     return Response(
-                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        {"error": status_error},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 maker.animal_status = selected_status
@@ -628,16 +675,14 @@ class MakerViewSet(AnimalBaseViewSet):
                 # Находим безопасный рабочий статус по новой логике
                 active_status = _get_status_by_name(STATUS_REPAIR)
                 if not active_status:
-                    # Если нет подходящего статуса, берем любой неархивный
-                    active_status = Status.objects.exclude(
-                        status_type__in=ARCHIVE_STATUS_NAMES
-                    ).exclude(status_type__iexact="Брак").first()
+                    active_status = _get_first_allowed_restore_status("Maker")
                 
                 if active_status:
                     maker.animal_status = active_status
             
             maker.is_archived = False
             maker.save()
+            _remove_animal_from_archive_act(maker)
             
             # Создаем лог восстановления
             from .models_user_log import UserActionLog
@@ -837,7 +882,7 @@ class RamViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         ram = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=ram.tag).order_by("-change_date")
+        status_history = StatusHistory.objects.filter(tag=ram.tag).order_by("-change_date", "-id")
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
         if page is not None:
@@ -952,10 +997,10 @@ class RamViewSet(AnimalBaseViewSet):
             if status_id:
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
-                # Проверяем, что это не архивный статус
-                if selected_status.status_type in ARCHIVE_STATUS_NAMES or selected_status.status_type == "Брак":
+                status_error = get_animal_status_validation_error(selected_status, "Ram")
+                if status_error:
                     return Response(
-                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        {"error": status_error},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 ram.animal_status = selected_status
@@ -963,16 +1008,14 @@ class RamViewSet(AnimalBaseViewSet):
                 # Находим безопасный рабочий статус по новой логике
                 active_status = _get_status_by_name(STATUS_FATTENING)
                 if not active_status:
-                    # Если нет подходящего статуса, берем любой неархивный
-                    active_status = Status.objects.exclude(
-                        status_type__in=ARCHIVE_STATUS_NAMES
-                    ).exclude(status_type__iexact="Брак").first()
+                    active_status = _get_first_allowed_restore_status("Ram")
                 
                 if active_status:
                     ram.animal_status = active_status
             
             ram.is_archived = False
             ram.save()
+            _remove_animal_from_archive_act(ram)
             
             # Создаем лог восстановления
             from .models_user_log import UserActionLog
@@ -1158,7 +1201,7 @@ class EweViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         ewe = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=ewe.tag).order_by("-change_date")
+        status_history = StatusHistory.objects.filter(tag=ewe.tag).order_by("-change_date", "-id")
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
         if page is not None:
@@ -1273,10 +1316,10 @@ class EweViewSet(AnimalBaseViewSet):
             if status_id:
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
-                # Проверяем, что это не архивный статус
-                if selected_status.status_type in ARCHIVE_STATUS_NAMES or selected_status.status_type == "Брак":
+                status_error = get_animal_status_validation_error(selected_status, "Ewe")
+                if status_error:
                     return Response(
-                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        {"error": status_error},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 ewe.animal_status = selected_status
@@ -1284,16 +1327,14 @@ class EweViewSet(AnimalBaseViewSet):
                 # Находим безопасный рабочий статус по новой логике
                 active_status = _get_status_by_name(STATUS_UNDEFINED)
                 if not active_status:
-                    # Если нет подходящего статуса, берем любой неархивный
-                    active_status = Status.objects.exclude(
-                        status_type__in=ARCHIVE_STATUS_NAMES
-                    ).exclude(status_type__iexact="Брак").first()
+                    active_status = _get_first_allowed_restore_status("Ewe")
                 
                 if active_status:
                     ewe.animal_status = active_status
             
             ewe.is_archived = False
             ewe.save()
+            _remove_animal_from_archive_act(ewe)
             
             # Создаем лог восстановления
             from .models_user_log import UserActionLog
@@ -1476,7 +1517,7 @@ class SheepViewSet(AnimalBaseViewSet):
     @action(detail=True, methods=["get"], url_path="status_history")
     def status_history(self, request, pk=None):
         sheep = self.get_object()
-        status_history = StatusHistory.objects.filter(tag=sheep.tag).order_by("-change_date")
+        status_history = StatusHistory.objects.filter(tag=sheep.tag).order_by("-change_date", "-id")
         # Применяем пагинацию
         page = self.paginate_queryset(status_history)
         if page is not None:
@@ -1591,10 +1632,10 @@ class SheepViewSet(AnimalBaseViewSet):
             if status_id:
                 # Используем выбранный статус
                 selected_status = Status.objects.get(id=status_id)
-                # Проверяем, что это не архивный статус
-                if selected_status.status_type in ARCHIVE_STATUS_NAMES or selected_status.status_type == "Брак":
+                status_error = get_animal_status_validation_error(selected_status, "Sheep")
+                if status_error:
                     return Response(
-                        {"error": "Нельзя восстановить животное с архивным статусом"}, 
+                        {"error": status_error},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 sheep.animal_status = selected_status
@@ -1602,16 +1643,14 @@ class SheepViewSet(AnimalBaseViewSet):
                 # Находим безопасный рабочий статус по новой логике
                 active_status = _get_status_by_name(STATUS_NOT_INSEMINATED)
                 if not active_status:
-                    # Если нет подходящего статуса, берем любой неархивный
-                    active_status = Status.objects.exclude(
-                        status_type__in=ARCHIVE_STATUS_NAMES
-                    ).exclude(status_type__iexact="Брак").first()
+                    active_status = _get_first_allowed_restore_status("Sheep")
                 
                 if active_status:
                     sheep.animal_status = active_status
             
             sheep.is_archived = False
             sheep.save()
+            _remove_animal_from_archive_act(sheep)
             
             # Создаем лог восстановления
             from .models_user_log import UserActionLog
@@ -1654,6 +1693,19 @@ def _get_status_by_name(status_name):
 
 def _get_required_status(status_name):
     return get_required_status(status_name)
+
+
+def _get_first_allowed_restore_status(animal_type):
+    allowed_status_names = get_allowed_active_status_names_for_animal_type(animal_type) or set()
+    if not allowed_status_names:
+        return None
+    return (
+        Status.objects.filter(status_type__in=allowed_status_names)
+        .exclude(status_type__in=ARCHIVE_STATUS_NAMES)
+        .exclude(status_type__iexact="Брак")
+        .order_by("status_type")
+        .first()
+    )
 
 
 def _set_animal_status(animal, status_obj):
@@ -2529,15 +2581,34 @@ class LambingViewSet(viewsets.ModelViewSet):
                         )
                         tag.animal_type = 'Ram'
                     else:
+                        selected_child_status = default_child_status
+                        if lamb_data.get('animal_status_id'):
+                            selected_child_status = Status.objects.filter(
+                                pk=lamb_data.get('animal_status_id')
+                            ).first()
+                            if not selected_child_status:
+                                return Response(
+                                    {"error": f"Статус для ярки {lamb_data['tag_number']} не найден"},
+                                    status=status.HTTP_400_BAD_REQUEST
+                                )
+
+                            status_error = get_animal_status_validation_error(
+                                selected_child_status,
+                                "Ewe",
+                            )
+                            if status_error:
+                                return Response(
+                                    {"error": f"Некорректный статус для ярки {lamb_data['tag_number']}: {status_error}"},
+                                    status=status.HTTP_400_BAD_REQUEST
+                                )
+
                         # Создаем ярку
                         child = Ewe.objects.create(
                             tag=tag,
                             birth_date=actual_date,
                             mother=mother.tag if mother else None,
                             father=father.tag if father else None,
-                            animal_status_id=lamb_data.get('animal_status_id') or (
-                                default_child_status.id if default_child_status else None
-                            ),
+                            animal_status=selected_child_status,
                             place_id=lamb_data.get('place_id'),
                             note=lamb_data.get('note', '')
                         )
@@ -2685,6 +2756,86 @@ class LambingViewSet(viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='unsuccessful-insemination-warning')
+    def unsuccessful_insemination_warning(self, request, pk=None):
+        """Предупреждение перед фиксацией неудачного осеменения."""
+        try:
+            lambing = self.get_object()
+            count = get_next_unsuccessful_insemination_count(lambing)
+            return Response(
+                {
+                    "consecutive_count": count,
+                    "warning": build_unsuccessful_insemination_modal_warning(count),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='complete-unsuccessful-insemination')
+    def complete_unsuccessful_insemination(self, request, pk=None):
+        """Завершить случку как неудачное осеменение без даты окота и без детей."""
+        try:
+            lambing = self.get_object()
+            if not lambing.is_active:
+                return Response(
+                    {"error": "Окот уже завершен"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            note = (request.data.get('note') or '').strip()
+            previous_count = get_previous_unsuccessful_insemination_count(lambing)
+
+            mother = lambing.get_mother()
+            if mother:
+                _set_animal_status(mother, _get_required_status(STATUS_NOT_INSEMINATED))
+
+            if note:
+                lambing.note = note
+            lambing.actual_lambing_date = None
+            lambing.number_of_lambs = 0
+            lambing.dead_lambs_count = 0
+            lambing.completion_type = Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION
+            lambing.is_active = False
+            lambing._skip_father_status_on_complete = True
+            lambing.save()
+
+            count = previous_count + 1
+            warning = build_unsuccessful_insemination_modal_warning(count)
+
+            try:
+                from .models_user_log import UserActionLog
+                from django.contrib.auth.models import AnonymousUser
+
+                if not isinstance(request.user, AnonymousUser):
+                    mother_tag = lambing.get_mother_tag() or 'Неизвестно'
+                    father = lambing.get_father()
+                    father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
+                    UserActionLog.objects.create(
+                        user=request.user,
+                        action_type="Неудачное осеменение",
+                        object_type="Окот",
+                        object_id=f"{mother_tag}, {father_tag}",
+                        description=(
+                            f"Отмечено неудачное осеменение; "
+                            f"подряд: {count}; дети не создавались"
+                        ),
+                    )
+            except Exception as log_error:
+                print(f"Ошибка логирования неудачного осеменения: {log_error}")
+
+            return Response(
+                {
+                    "success": "Неудачное осеменение отмечено",
+                    "consecutive_count": count,
+                    "warning": warning,
+                    "lambing": LambingSerializer(lambing).data,
+                },
+                status=status.HTTP_200_OK,
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2883,7 +3034,7 @@ class LambingViewSet(viewsets.ModelViewSet):
             completed_qs = base_qs.filter(
                 is_active=False,
                 actual_lambing_date__isnull=False,
-            ).exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
+            ).exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
             available_years = sorted(
                 {year for year in completed_qs.values_list('actual_lambing_date__year', flat=True) if year},
                 reverse=True,
@@ -2937,7 +3088,7 @@ class LambingViewSet(viewsets.ModelViewSet):
                     is_active=False,
                     actual_lambing_date__isnull=False,
                 ).exclude(
-                    completion_type=Lambing.COMPLETION_EARLY_FAILURE
+                    completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES
                 ).order_by('actual_lambing_date', 'id')
 
                 first_lambing_id_by_mother = {}
@@ -3253,25 +3404,84 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                         'include_final_weighing': include_final_weighing,
                     })
 
+            weighing_events = []
+
             def add_weighing_event(animal, weighing_date, weighing_type, weighing_type_display):
-                if year and weighing_date.year != int(year):
-                    return
-                if month and weighing_date.month != int(month):
+                weighing_events.append({
+                    'animal': animal,
+                    'weighing_date': weighing_date,
+                    'weighing_type': weighing_type,
+                    'weighing_type_display': weighing_type_display,
+                })
+
+            def get_average_date(group_events):
+                average_ordinal = round(
+                    sum(event['weighing_date'].toordinal() for event in group_events)
+                    / len(group_events)
+                )
+                return datetime.fromordinal(average_ordinal).date()
+
+            def add_grouped_weighing_events(group_events):
+                if not group_events:
                     return
 
-                date_str = weighing_date.strftime('%Y-%m-%d')
+                grouped_date = get_average_date(group_events)
+                if year and grouped_date.year != int(year):
+                    return
+                if month and grouped_date.month != int(month):
+                    return
+
+                date_str = grouped_date.strftime('%Y-%m-%d')
                 if date_str not in calendar_data:
                     calendar_data[date_str] = []
 
-                calendar_data[date_str].append({
-                    'tag': animal['tag'],
-                    'animal_type': animal['animal_type'],
-                    'display_name': animal['display_name'],
-                    'birth_date': animal['birth_date'].strftime('%Y-%m-%d'),
-                    'weighing_type': weighing_type,
-                    'weighing_type_display': weighing_type_display,
-                    'url': animal['url']
-                })
+                group_start = min(event['weighing_date'] for event in group_events)
+                group_end = max(event['weighing_date'] for event in group_events)
+                group_size = len(group_events)
+
+                for event in group_events:
+                    animal = event['animal']
+                    calendar_data[date_str].append({
+                        'tag': animal['tag'],
+                        'animal_type': animal['animal_type'],
+                        'display_name': animal['display_name'],
+                        'birth_date': animal['birth_date'].strftime('%Y-%m-%d'),
+                        'weighing_type': event['weighing_type'],
+                        'weighing_type_display': event['weighing_type_display'],
+                        'original_weighing_date': event['weighing_date'].strftime('%Y-%m-%d'),
+                        'group_start_date': group_start.strftime('%Y-%m-%d'),
+                        'group_end_date': group_end.strftime('%Y-%m-%d'),
+                        'group_size': group_size,
+                        'url': animal['url']
+                    })
+
+            def add_grouped_weighings_to_calendar():
+                for weighing_type in ('primary', 'secondary', 'final'):
+                    typed_events = sorted(
+                        [
+                            event for event in weighing_events
+                            if event['weighing_type'] == weighing_type
+                        ],
+                        key=lambda event: event['weighing_date'],
+                    )
+
+                    group_events = []
+                    group_start_date = None
+                    for event in typed_events:
+                        if (
+                            not group_events
+                            or (event['weighing_date'] - group_start_date).days <= 7
+                        ):
+                            group_events.append(event)
+                            if group_start_date is None:
+                                group_start_date = event['weighing_date']
+                            continue
+
+                        add_grouped_weighing_events(group_events)
+                        group_events = [event]
+                        group_start_date = event['weighing_date']
+
+                    add_grouped_weighing_events(group_events)
 
             # Для каждого животного создаем напоминания о взвешивании от даты рождения.
             for animal in animals:
@@ -3294,6 +3504,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                         'final',
                         'Заключительное взвешивание',
                     )
+
+            add_grouped_weighings_to_calendar()
 
             return Response(calendar_data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -3374,7 +3586,7 @@ class AnimalAnalyticsView(TemplateView):
             "animal_type": self.model._meta.model_name,
             "children": children_serialized,
             "status_history": StatusHistorySerializer(
-                StatusHistory.objects.filter(tag=animal.tag).order_by("-change_date"),
+                StatusHistory.objects.filter(tag=animal.tag).order_by("-change_date", "-id"),
                 many=True
             ).data,
             "place_movements": PlaceMovementSerializer(
@@ -3450,6 +3662,12 @@ class AnimalActionsViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if archive_status.status_type not in ARCHIVE_STATUS_NAMES:
+            return Response(
+                {"error": "Для архивирования можно выбрать только архивный статус."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         updated_count = 0
         animal_models = [Maker, Ram, Ewe, Sheep]
         for model in animal_models:
@@ -3472,6 +3690,77 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
     filter_backends = [OrderingFilter]  # Убираем DjangoFilterBackend, так как работаем со списком
     ordering_fields = ["birth_date", "age", "tag__tag_number"]
     pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
+
+    def _build_archive_act_rows(self, animals_list):
+        """Группирует архивные животные в строки актов для страницы актов выбытия."""
+        rows_by_key = {}
+
+        for animal in animals_list:
+            tag = getattr(animal, "tag", None)
+            if not tag:
+                continue
+
+            archive_act = tag.archive_acts.order_by("-updated_at", "-id").first()
+            group_key = str(archive_act.act_group_key) if archive_act and archive_act.act_group_key else ""
+            row_key = group_key or f"{animal.get_animal_type()}::{tag.tag_number}"
+
+            if row_key in rows_by_key:
+                continue
+
+            group_animals = [animal]
+            if group_key:
+                group_animals = []
+                group_acts = (
+                    ArchiveAct.objects.filter(act_group_key=archive_act.act_group_key)
+                    .select_related("tag")
+                    .order_by("id")
+                )
+                for group_act in group_acts:
+                    group_tag_number = group_act.tag.tag_number if group_act.tag else ""
+                    group_animal = find_archive_act_animal(group_act.animal_type, group_tag_number)
+                    if group_animal and getattr(group_animal, "is_archived", False):
+                        group_animals.append(group_animal)
+
+                if not group_animals:
+                    group_animals = [animal]
+
+            first_animal = group_animals[0]
+            first_tag = first_animal.tag
+            first_status = first_animal.animal_status
+            tag_items = []
+            for group_animal in group_animals:
+                group_tag = group_animal.tag
+                if not group_tag:
+                    continue
+                tag_items.append(
+                    {
+                        "animal_type": group_animal.get_animal_type(),
+                        "tag_number": group_tag.tag_number,
+                        "display_name": (
+                            group_animal.get_display_name()
+                            if hasattr(group_animal, "get_display_name")
+                            else group_tag.tag_number
+                        ),
+                    }
+                )
+
+            rows_by_key[row_key] = {
+                "tag_number": first_tag.tag_number if first_tag else "",
+                "animal_type": first_animal.get_animal_type(),
+                "display_name": ", ".join(item["display_name"] for item in tag_items) or (first_tag.tag_number if first_tag else ""),
+                "group_animals": tag_items,
+                "status": first_status.status_type if first_status else "Нет данных",
+                "status_color": first_status.color if first_status else "#FFFFFF",
+                "archived_date": ArchiveAnimalSerializer._get_archive_date_from_act(
+                    first_tag,
+                    first_status.status_type if first_status else None,
+                ),
+                "can_download_act": bool(
+                    get_archive_act_template_config(first_status.status_type if first_status else "")
+                ),
+            }
+
+        return list(rows_by_key.values())
 
     def get_queryset(self):
         """
@@ -3517,22 +3806,31 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             
             def get_archive_date(animal):
                 try:
-                    # Ищем последнюю запись в истории статусов для текущего статуса
+                    archive_act = (
+                        animal.tag.archive_acts.order_by("-updated_at", "-id").first()
+                        if getattr(animal, "tag", None)
+                        else None
+                    )
+                    if archive_act and archive_act.status_date:
+                        return archive_act.status_date
+
+                    # Fallback для старых архивных животных без ArchiveAct.
                     status_history = StatusHistory.objects.filter(
                         tag=animal.tag,
-                        new_status=animal.animal_status
+                        new_status=animal.animal_status,
                     ).order_by('-change_date', '-id').first()
-                    
                     if status_history and status_history.change_date:
-                        # Возвращаем datetime для правильной сортировки
-                        return status_history.change_date
-                    else:
-                        # Если нет записи в истории, используем дату рождения или минимальную дату
-                        return animal.birth_date or datetime.min.replace(tzinfo=None)
+                        return (
+                            status_history.change_date.date()
+                            if hasattr(status_history.change_date, "date")
+                            else status_history.change_date
+                        )
+
+                    return animal.birth_date or date.min
                 except Exception as e:
                     # В случае ошибки используем минимальную дату
                     print(f"Ошибка сортировки для {animal.tag.tag_number}: {e}")
-                    return datetime.min.replace(tzinfo=None)
+                    return date.min
             
             # Фильтруем по диапазону дат архивирования
             if archive_date_from or archive_date_to:
@@ -4062,7 +4360,7 @@ def _build_young_stock_row(animal_type, type_label, animal):
         "animal_type_label": type_label,
         "tag_number": tag_number,
         "tag_url": _get_animal_url_by_type(animal_type, tag_number),
-        "birth_type": "-",
+        "birth_type": format_birth_type_for_animal(animal),
         "birth_date": animal.birth_date.strftime("%Y-%m-%d") if animal.birth_date else "-",
         "birth_weight": _format_ewe_birth_weight(animal),
         "weaning": _format_ewe_weaning(animal),
@@ -4475,7 +4773,7 @@ def _parse_checkbox_param(raw_value):
 def _build_last_completed_lambings_map():
     completed_lambings = (
         Lambing.objects.filter(is_active=False, actual_lambing_date__isnull=False)
-        .exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
+        .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
         .select_related("sheep__tag", "ewe__tag")
         .order_by("-actual_lambing_date", "-id")
     )
@@ -4635,6 +4933,7 @@ def journal_progeny(request):
     month, year, month_from, month_to = _get_month_year_filters(request)
     mother_tag_search = request.GET.get("mother_tag", "").strip()
     abortion_only = _parse_checkbox_param(request.GET.get("abortion_only"))
+    all_dead_only = _parse_checkbox_param(request.GET.get("all_dead_only"))
     has_dead_only = _parse_checkbox_param(request.GET.get("has_dead_only"))
     last_lambing_only = _parse_checkbox_param(request.GET.get("last_lambing_only"))
     bad_mother_only = _parse_checkbox_param(request.GET.get("bad_mother_only"))
@@ -4643,8 +4942,6 @@ def journal_progeny(request):
     base_queryset = Lambing.objects.filter(
         is_active=False,
         actual_lambing_date__isnull=False,
-    ).exclude(
-        completion_type=Lambing.COMPLETION_EARLY_FAILURE
     ).select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
 
     years = _get_year_options_from_queryset(base_queryset, "actual_lambing_date")
@@ -4665,6 +4962,15 @@ def journal_progeny(request):
         )
         filtered_queryset = filtered_queryset.filter(mother_filter)
 
+    if abortion_only:
+        filtered_queryset = filtered_queryset.filter(
+            completion_type=Lambing.COMPLETION_EARLY_FAILURE
+        )
+    else:
+        filtered_queryset = filtered_queryset.exclude(
+            completion_type=Lambing.COMPLETION_EARLY_FAILURE
+        )
+
     filtered_queryset = filtered_queryset.order_by("-actual_lambing_date", "-id")
 
     lambings = list(filtered_queryset)
@@ -4676,7 +4982,7 @@ def journal_progeny(request):
     if bad_mother_only:
         active_mother_keys = _build_active_lambing_mother_keys()
 
-    if abortion_only:
+    if all_dead_only:
         lambings = [
             lambing
             for lambing in lambings
@@ -4900,6 +5206,7 @@ def journal_progeny(request):
         "selected_month_to": month_to,
         "selected_mother_tag": mother_tag_search,
         "selected_abortion_only": abortion_only,
+        "selected_all_dead_only": all_dead_only,
         "selected_has_dead_only": has_dead_only,
         "selected_last_lambing_only": last_lambing_only,
         "selected_bad_mother_only": bad_mother_only,
@@ -4958,7 +5265,7 @@ def _get_animal_link_data(animal):
 
 
 def _get_visible_actual_lambing_date(lambing):
-    if not lambing or lambing.completion_type == Lambing.COMPLETION_EARLY_FAILURE:
+    if not lambing or lambing.completion_type in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES:
         return None
     return lambing.actual_lambing_date
 
@@ -4989,6 +5296,25 @@ def _build_group_lambing_actual_date_map(groups):
     return actual_date_map
 
 
+def _build_group_unsuccessful_insemination_keys(groups):
+    group_ids = [group.id for group in groups]
+    if not group_ids:
+        return set()
+
+    keys = set()
+    lambings = Lambing.objects.filter(
+        source_group_id__in=group_ids,
+        completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION,
+    ).values_list("source_group_id", "sheep_id", "ewe_id")
+
+    for group_id, sheep_id, ewe_id in lambings:
+        if sheep_id:
+            keys.add((group_id, "sheep", sheep_id))
+        elif ewe_id:
+            keys.add((group_id, "ewe", ewe_id))
+    return keys
+
+
 def _passes_insemination_tag_filters(mother_tag, father_tag, mother_tag_search, father_tag_search):
     if mother_tag_search and not _matches_multi_search(mother_tag, mother_tag_search):
         return False
@@ -5005,6 +5331,7 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
         .order_by("-placement_date", "-id")
     )
     actual_date_map = _build_group_lambing_actual_date_map(groups)
+    unsuccessful_group_keys = _build_group_unsuccessful_insemination_keys(groups)
 
     rows = []
     for group in groups:
@@ -5013,6 +5340,9 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
         mothers.extend((mother, "ewe") for mother in group.ewes.all())
 
         for mother, mother_type in mothers:
+            if (group.id, mother_type, mother.id) in unsuccessful_group_keys:
+                continue
+
             mother_tag, mother_url = _get_animal_link_data(mother)
             if not _passes_insemination_tag_filters(
                 mother_tag,
@@ -5038,6 +5368,7 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
 
     fallback_lambings = (
         Lambing.objects.filter(source_group__isnull=True)
+        .exclude(completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION)
         .select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
         .order_by("-start_date", "-id")
     )
@@ -5392,7 +5723,7 @@ def export_to_excel(request):
                     idx,
                     animal.tag.tag_number,
                     animal.birth_date.strftime('%Y-%m-%d') if animal.birth_date else '-',
-                    '-',
+                    format_birth_type_for_animal(animal),
                     _format_ewe_birth_weight(animal),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
@@ -5707,9 +6038,18 @@ def export_animal_detail_excel(request, animal_type, tag_number):
     def get_child_archive_date(child_animal):
         if not child_animal.is_archived or not child_animal.animal_status:
             return '-'
+        archive_act = (
+            child_animal.tag.archive_acts.order_by("-updated_at", "-id").first()
+            if child_animal.tag
+            else None
+        )
+        if archive_act and archive_act.status_date:
+            return format_date(archive_act.status_date)
+
+        # Fallback for old archived animals without ArchiveAct rows.
         archive_record = (
             StatusHistory.objects.filter(tag=child_animal.tag, new_status=child_animal.animal_status)
-            .order_by('-change_date')
+            .order_by('-change_date', '-id')
             .first()
         )
         return format_datetime(archive_record.change_date) if archive_record else '-'
@@ -5870,7 +6210,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
         status_rows = (
             StatusHistory.objects.filter(tag=animal.tag)
             .select_related('old_status', 'new_status')
-            .order_by('-change_date')
+            .order_by('-change_date', '-id')
         )
         rows = []
         for idx, status_item in enumerate(status_rows, 1):
@@ -5919,21 +6259,27 @@ def dashboard_statistics(request):
     active_sheep = Sheep.objects.filter(is_archived=False).count()
     total_active = active_makers + active_rams + active_ewes + active_sheep
     
-    # 2. Перенесено в архив за текущий месяц
-    archive_statuses = ARCHIVE_STATUS_NAMES
-    
-    # Используем StatusHistory для получения даты архивирования
-    from begunici.app_types.veterinary.vet_models import StatusHistory
-    
-    # Получаем ID архивных статусов
-    archive_status_ids = Status.objects.filter(status_type__in=archive_statuses).values_list('id', flat=True)
-    
-    # Получаем бирки животных, которые были переведены в архивные статусы за текущий месяц
-    archived_tag_ids = StatusHistory.objects.filter(
-        new_status_id__in=archive_status_ids,
-        change_date__date__gte=month_start,
-        change_date__date__lte=month_end,
-    ).values_list('tag_id', flat=True)
+    # 2. Перенесено в архив за текущий месяц.
+    # Для бизнес-отчетов используем дату статуса из модалки архивации,
+    # а не техническое время записи StatusHistory.
+    archive_act_tag_ids = set(ArchiveAct.objects.filter(
+        status_date__gte=month_start,
+        status_date__lte=month_end,
+    ).values_list('tag_id', flat=True))
+
+    tags_with_archive_acts = ArchiveAct.objects.values_list('tag_id', flat=True)
+    archive_status_ids = Status.objects.filter(status_type__in=ARCHIVE_STATUS_NAMES).values_list('id', flat=True)
+    fallback_archived_tag_ids = set(
+        StatusHistory.objects.filter(
+            new_status_id__in=archive_status_ids,
+            change_date__date__gte=month_start,
+            change_date__date__lte=month_end,
+        )
+        .exclude(tag_id__in=tags_with_archive_acts)
+        .values_list('tag_id', flat=True)
+    )
+
+    archived_tag_ids = archive_act_tag_ids | fallback_archived_tag_ids
     
     # Подсчитываем архивированных животных по типам
     archived_makers = Maker.objects.filter(
@@ -6144,6 +6490,17 @@ def yearly_statistics(request):
         for history in status_histories:
             histories_by_tag[history.tag_id].append(history)
 
+        archive_acts_by_tag = defaultdict(list)
+        archive_acts = (
+            ArchiveAct.objects.filter(
+                tag_id__in=tag_ids_for_status,
+                status_date__isnull=False,
+            )
+            .order_by("tag_id", "status_date", "id")
+        )
+        for archive_act in archive_acts:
+            archive_acts_by_tag[archive_act.tag_id].append(archive_act)
+
         for animal in animals_for_status:
             status_type = None
             tag_histories = histories_by_tag.get(animal.tag_id, [])
@@ -6162,6 +6519,16 @@ def yearly_statistics(request):
                 status_type = first_change_after_year_end.old_status.status_type
             elif animal.animal_status:
                 status_type = animal.animal_status.status_type
+
+            if animal.is_archived:
+                latest_archive_act = None
+                for archive_act in archive_acts_by_tag.get(animal.tag_id, []):
+                    if archive_act.status_date <= period_end:
+                        latest_archive_act = archive_act
+                    else:
+                        break
+                if latest_archive_act:
+                    status_type = latest_archive_act.status_name
 
             if status_type:
                 status_stats[status_type] = status_stats.get(status_type, 0) + 1
@@ -6729,6 +7096,40 @@ def _build_case_variants_q(field_name, value):
     return _build_case_variants_filter(field_name, value)
 
 
+def _format_mother_age_group_from_category(category):
+    if category == Lambing.MOTHER_CATEGORY_EWE:
+        return 'Ярка'
+    if category == Lambing.MOTHER_CATEGORY_SHEEP:
+        return 'Овцематка'
+    return None
+
+
+def _format_mother_age_group_from_text(value):
+    value = (value or '').strip()
+    lowered = value.lower()
+    if 'яр' in lowered:
+        return 'Ярка'
+    if 'овц' in lowered or 'матк' in lowered:
+        return 'Овцематка'
+    return value or '-'
+
+
+def _format_lambing_mother_age_group(lambing):
+    category_label = _format_mother_age_group_from_category(lambing.mother_category_at_start)
+    if category_label:
+        return category_label
+    return _format_mother_age_group_from_text(lambing.get_mother_type())
+
+
+def _format_group_mother_age_group(mother):
+    animal_type = mother.get_animal_type() if hasattr(mother, 'get_animal_type') else ''
+    if animal_type == 'Ewe':
+        return 'Ярка'
+    if animal_type == 'Sheep':
+        return 'Овцематка'
+    return '-'
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def lambings_export_excel(request):
@@ -6789,12 +7190,11 @@ def lambings_export_excel(request):
             [
                 idx,
                 mother_value,
+                _format_lambing_mother_age_group(lambing),
                 father_value,
                 _format_date_for_excel(lambing.start_date),
                 _format_date_for_excel(lambing.planned_lambing_date),
-                _format_date_for_excel(lambing.actual_lambing_date),
                 lambing.note or '-',
-                'Активный' if lambing.is_active else 'Завершен',
             ]
         )
 
@@ -6804,12 +7204,11 @@ def lambings_export_excel(request):
         headers=[
             '№',
             'Бирка матери',
+            'Половозрастная группа',
             'Бирка отца',
             'Дата снятия барана',
             'Планируемые роды',
-            'Фактические роды',
             'Примечание',
-            'Статус',
         ],
         rows=rows,
         summary_lines=[f'Итого записей: {len(rows)}'],
@@ -6856,12 +7255,8 @@ def lambing_groups_export_excel(request):
         )
 
     rows = []
-    for idx, group in enumerate(queryset.distinct(), start=1):
-        mother_tags = []
-        for mother in group.get_mothers():
-            if mother.tag:
-                mother_tags.append(mother.tag.tag_number)
-
+    groups = list(queryset.distinct())
+    for idx, group in enumerate(groups, start=1):
         father_value = '-'
         father = group.get_father()
         if father and father.tag:
@@ -6870,32 +7265,45 @@ def lambing_groups_export_excel(request):
             else:
                 father_value = father.tag.tag_number
 
-        rows.append(
-            [
-                idx,
-                '; '.join(mother_tags) if mother_tags else '-',
-                father_value,
-                _format_date_for_excel(group.placement_date),
-                _format_date_for_excel(group.removal_date),
-                group.note or '-',
-                'Активная' if group.is_active else 'Снята',
-            ]
-        )
+        mothers = group.get_mothers()
+        if not mothers:
+            rows.append(
+                [
+                    idx,
+                    '-',
+                    '-',
+                    father_value,
+                    _format_date_for_excel(group.placement_date),
+                    group.note or '-',
+                ]
+            )
+            continue
+
+        for mother in mothers:
+            rows.append(
+                [
+                    idx,
+                    mother.tag.tag_number if mother.tag else '-',
+                    _format_group_mother_age_group(mother),
+                    father_value,
+                    _format_date_for_excel(group.placement_date),
+                    group.note or '-',
+                ]
+            )
 
     return _build_excel_response(
         filename_prefix='lambing_groups',
         sheet_title='Группы',
         headers=[
-            '№',
-            'Матери',
+            '№ Группы',
+            'Бирка матери',
+            'Половозрастная группа',
             'Отец',
             'Дата постановки в группу',
-            'Дата снятия барана',
             'Примечание',
-            'Статус',
         ],
         rows=rows,
-        summary_lines=[f'Итого групп: {len(rows)}'],
+        summary_lines=[f'Итого групп: {len(groups)}'],
     )
 
 
@@ -7108,6 +7516,20 @@ def archive_act_preview(request):
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
+def archive_acts_api(request):
+    """Возвращает список актов выбытия с учетом общих актов."""
+    viewset = ArchiveViewSet()
+    viewset.request = request
+    archive_rows = viewset._build_archive_act_rows(list(viewset.get_queryset()))
+
+    paginator = PaginationSetting()
+    page = paginator.paginate_queryset(archive_rows, request)
+    serializer = ArchiveAnimalSerializer(page, many=True)
+    return paginator.get_paginated_response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def archive_act_download(request, animal_type, tag_number):
     """Скачивает индивидуальный акт архивирования для животного."""
     animal = find_archive_act_animal(animal_type, tag_number)
@@ -7160,6 +7582,80 @@ def transfer_act_download(request, act_number):
     if response is None:
         return Response(
             {"error": "Акт перевода не найден"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def weight_acts_api(request):
+    """Возвращает список актов взвешивания, собранных по парам дат весов."""
+    page_number = request.GET.get("page", 1)
+    page_size = request.GET.get("page_size", 10)
+    weighing_date = request.GET.get("weighing_date", "")
+    previous_weight_date = request.GET.get("previous_weight_date", "")
+    month = request.GET.get("month", "")
+    year = request.GET.get("year", "")
+
+    try:
+        page_size = max(1, min(int(page_size), 100))
+    except (TypeError, ValueError):
+        page_size = 10
+
+    return Response(
+        get_weight_acts_page(
+            page_number=page_number,
+            page_size=page_size,
+            weighing_date=weighing_date,
+            previous_weight_date=previous_weight_date,
+            month=month,
+            year=year,
+        )
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def weight_act_download(request, act_number):
+    """Скачивает акт взвешивания по автоматически рассчитанному номеру."""
+    response = weight_act_response(act_number, user=request.user)
+    if response is None:
+        return Response(
+            {"error": "Акт взвешивания не найден"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def progeny_acts_api(request):
+    """Возвращает список актов оприходования приплода по месяцам."""
+    page_number = request.GET.get("page", 1)
+    page_size = request.GET.get("page_size", 10)
+
+    try:
+        page_size = max(1, min(int(page_size), 100))
+    except (TypeError, ValueError):
+        page_size = 10
+
+    return Response(
+        get_progeny_acts_page(
+            page_number=page_number,
+            page_size=page_size,
+        )
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def progeny_act_download(request, act_number):
+    """Скачивает акт оприходования приплода СП-39."""
+    response = progeny_act_response(act_number)
+    if response is None:
+        return Response(
+            {"error": "Акт оприходования приплода не найден"},
             status=status.HTTP_404_NOT_FOUND,
         )
     return response
@@ -7218,6 +7714,49 @@ def monthly_breeding_act_download(request):
 
     try:
         return monthly_breeding_act_response(year)
+    except FileNotFoundError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except RuntimeError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def livestock_movement_act_download(request):
+    """Скачивает отчет о движении скота и птицы на ферме СП-51 за выбранный месяц."""
+    today = timezone.localdate()
+    year_raw = request.GET.get("year") or today.year
+    month_raw = request.GET.get("month") or today.month
+
+    try:
+        year = int(year_raw)
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "Некорректный год"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        month = int(month_raw)
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "Некорректный месяц"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if year < 1900 or year > 2200:
+        return Response(
+            {"error": "Год должен быть в диапазоне 1900-2200"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if month < 1 or month > 12:
+        return Response(
+            {"error": "Месяц должен быть в диапазоне 1-12"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        return livestock_movement_act_response(year, month)
     except FileNotFoundError as exc:
         return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     except RuntimeError as exc:

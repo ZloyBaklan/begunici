@@ -1,4 +1,4 @@
-import { apiRequest, getCSRFToken } from "./utils.js";
+import { apiRequest, getApiErrorMessage, getCSRFToken } from "./utils.js";
 
 let currentBarnStats = null;
 let showEmptySections = false;
@@ -904,7 +904,7 @@ async function downloadManualTransferAct(animals, oldPlaceId, newPlaceId) {
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Ошибка скачивания акта перевода');
+        throw new Error(getApiErrorMessage(errorData, 'Ошибка скачивания акта перевода'));
     }
 
     const blob = await response.blob();

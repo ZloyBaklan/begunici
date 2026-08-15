@@ -156,14 +156,23 @@ def get_weight_for_transfer(tag, transfer_date):
     return "", None
 
 
+def get_animal_status_label(movement, transfer_date):
+    animal = get_current_animal(movement.tag)
+    current_status = animal.animal_status if animal else None
+    status_obj = get_status_at_transfer(movement.tag, current_status, transfer_date)
+    return status_obj.status_type if status_obj else "статус не указан"
+
+
 def get_animal_description(movement, transfer_date):
     animal = get_current_animal(movement.tag)
     animal_type = animal.get_animal_type() if animal else movement.tag.animal_type
     animal_type_label = ANIMAL_TYPE_LABELS.get(animal_type, animal_type or "")
-    current_status = animal.animal_status if animal else None
-    status_obj = get_status_at_transfer(movement.tag, current_status, transfer_date)
-    status_label = status_obj.status_type if status_obj else "статус не указан"
-    return f"{animal_type_label} ({status_label})"
+
+    if animal_type == "Sheep":
+        feature_label = "Брак" if animal and animal.is_reject else "Племенная"
+        return f"{animal_type_label} ({feature_label})"
+
+    return animal_type_label
 
 
 def build_transfer_act_groups():
@@ -425,6 +434,10 @@ def copy_data_row_merges(sheet, source_row, target_row):
         merge_by_coordinates(sheet, target_row, min_col, target_row, max_col)
 
 
+def update_print_area(sheet, last_row):
+    sheet.print_area = f"A1:X{last_row}"
+
+
 def prepare_data_rows(sheet, row_count):
     row_count = max(row_count, 1)
     if row_count > DATA_TEMPLATE_ROWS:
@@ -443,11 +456,11 @@ def apply_transfer_data_row_style(sheet, row):
     from openpyxl.styles import Alignment, Font
 
     sheet.row_dimensions[row].height = 25.05
-    for col_idx in range(1, 11):
+    for col_idx in range(1, 13):
         cell = sheet.cell(row, col_idx)
         cell.font = Font(name="Times New Roman", size=7.5)
         cell.alignment = Alignment(
-            horizontal="center" if col_idx in (1, 7, 8, 9, 10) else "left",
+            horizontal="center" if col_idx in (1, 7, 8, 9, 10, 11, 12) else "left",
             vertical="center",
             wrap_text=True,
         )
@@ -472,21 +485,23 @@ def fill_transfer_act_sheet(sheet, group, user=None):
     sheet[f"D{footer_date_row}"] = f"{download_date.day:02d}"
     sheet[f"F{footer_date_row}"] = f"{download_date.month:02d}"
     sheet[f"L{footer_date_row}"] = str(download_date.year)[-2:]
+    update_print_area(sheet, footer_date_row)
 
     for index, movement in enumerate(movements):
         row = DATA_START_ROW + index
         transfer_date = group["transfer_date"]
         sheet[f"A{row}"] = movement.tag.tag_number if movement.tag else ""
         sheet[f"B{row}"] = get_animal_description(movement, transfer_date)
-        sheet[f"G{row}"] = 1
+        sheet[f"G{row}"] = get_animal_status_label(movement, transfer_date)
+        sheet[f"I{row}"] = 1
         weight_display, weight_value = get_weight_for_transfer(movement.tag, transfer_date)
-        sheet[f"I{row}"] = weight_display
+        sheet[f"K{row}"] = weight_display
         if weight_value is not None:
             total_weight = weight_value if total_weight is None else total_weight + weight_value
         apply_transfer_data_row_style(sheet, row)
 
-    sheet[f"G{total_row}"] = len(movements)
-    sheet[f"I{total_row}"] = format_weight(total_weight) if total_weight is not None else ""
+    sheet[f"I{total_row}"] = len(movements)
+    sheet[f"K{total_row}"] = format_weight(total_weight) if total_weight is not None else ""
 
 
 def generate_transfer_act_workbook(act_number, user=None):

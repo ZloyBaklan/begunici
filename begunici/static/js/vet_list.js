@@ -1,4 +1,4 @@
-// Глобальные переменные
+﻿// Глобальные переменные
 let currentPage = 1;
 const pageSize = 10;
 
@@ -8,6 +8,115 @@ function getCurrentLocalDateString() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+}
+
+const API_ERROR_FIELD_LABELS = {
+    animal_ids: 'Животные',
+    animal_type: 'Тип животного',
+    date: 'Дата',
+    medication: 'Препарат',
+    non_field_errors: 'Общая ошибка',
+    purpose: 'Цель',
+    tag_number: 'Бирка',
+    veterinary_care: 'Ветобработка',
+    veterinary_care_id: 'Ветобработка',
+};
+
+function getApiErrorFieldLabel(field) {
+    return API_ERROR_FIELD_LABELS[field] || String(field).replaceAll('_', ' ');
+}
+
+function translateApiErrorText(message) {
+    const text = String(message || '').trim();
+    const translations = {
+        'This field is required.': 'Это поле обязательно для заполнения.',
+        'This field may not be blank.': 'Это поле не может быть пустым.',
+        'This field may not be null.': 'Это поле не может быть пустым.',
+        'A valid integer is required.': 'Нужно указать целое число.',
+        'A valid number is required.': 'Нужно указать число.',
+        'Enter a valid date.': 'Укажите корректную дату.',
+        'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.': 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ.',
+        'Enter a valid date/time.': 'Укажите корректные дату и время.',
+        'This field must be unique.': 'Такое значение уже используется.',
+    };
+    if (translations[text]) return translations[text];
+    if (text.includes('Ensure this value is greater than or equal to 0')) return 'Значение не может быть меньше 0.';
+    if (text.includes('Invalid pk')) return 'Выбранное значение не найдено в базе.';
+    return text;
+}
+
+function parseApiErrorString(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const cleaned = text.replace(
+        /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g,
+        (_, quote, errorMessage) => `'${String(errorMessage).replaceAll("'", "\\'")}'`
+    );
+
+    const fieldMessages = [];
+    const fieldRegex = /['"]([^'"]+)['"]\s*:\s*(\[[\s\S]*?\]|['"][\s\S]*?['"])/g;
+    let fieldMatch;
+    while ((fieldMatch = fieldRegex.exec(cleaned)) !== null) {
+        const field = fieldMatch[1];
+        const rawValue = fieldMatch[2];
+        const values = [];
+        const valueRegex = /['"]([^'"]+)['"]/g;
+        let valueMatch;
+        while ((valueMatch = valueRegex.exec(rawValue)) !== null) {
+            values.push(translateApiErrorText(valueMatch[1]));
+        }
+
+        if (values.length) {
+            fieldMessages.push(`${getApiErrorFieldLabel(field)}: ${values.join(', ')}`);
+        }
+    }
+
+    if (fieldMessages.length) return fieldMessages.join('\n');
+
+    const detailMessages = [];
+    const detailRegex = /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g;
+    let detailMatch;
+    while ((detailMatch = detailRegex.exec(text)) !== null) {
+        detailMessages.push(translateApiErrorText(detailMatch[2]));
+    }
+
+    return detailMessages.length ? detailMessages.join('\n') : translateApiErrorText(text);
+}
+
+function stringifyApiErrorValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return parseApiErrorString(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(stringifyApiErrorValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value).map(([field, nestedValue]) => {
+            const message = stringifyApiErrorValue(nestedValue);
+            if (!message) return '';
+            if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+            return `${getApiErrorFieldLabel(field)}: ${message}`;
+        }).filter(Boolean).join('\n');
+    }
+    return String(value);
+}
+
+function getApiErrorMessage(errorData, fallback = 'Не удалось выполнить действие. Проверьте введенные данные.') {
+    if (!errorData) return fallback;
+    if (typeof errorData === 'string') return parseApiErrorString(errorData);
+    if (typeof errorData !== 'object') return fallback;
+    if (typeof errorData.detail === 'string') return parseApiErrorString(errorData.detail);
+    if (typeof errorData.error === 'string') return parseApiErrorString(errorData.error);
+
+    const messages = Object.entries(errorData).map(([field, value]) => {
+        const message = stringifyApiErrorValue(value);
+        if (!message) return '';
+        if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+        return `${getApiErrorFieldLabel(field)}: ${message}`;
+    }).filter(Boolean);
+
+    return messages.length ? messages.join('\n') : fallback;
 }
 
 // Инициализация при загрузке страницы
@@ -47,7 +156,14 @@ async function apiRequest(url, method = 'GET', data = null) {
     const response = await fetch(url, options);
     
     if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const errorData = await response.json();
+            throw new Error(getApiErrorMessage(errorData));
+        }
+
+        const errorText = await response.text();
+        throw new Error(errorText || `Ошибка сервера: ${response.status}`);
     }
     
     return await response.json();
@@ -616,3 +732,5 @@ function changePage(page) {
 
 // Экспортируем функции для глобального доступа
 window.changePage = changePage;
+
+

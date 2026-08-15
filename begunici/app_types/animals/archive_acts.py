@@ -1,5 +1,7 @@
+from copy import copy
 from io import BytesIO
 from pathlib import Path
+import re
 from urllib.parse import quote
 
 from dateutil.relativedelta import relativedelta
@@ -21,13 +23,13 @@ ARCHIVE_ACT_TEMPLATES = {
     },
     "Вынужденная прирезка": {
         "filename": "zaboi.xlsx",
-        "reason": "Забой (Вынужденная прирезка)",
+        "reason": "Вынужденная прирезка",
         "row": 15,
         "layout": "standard",
     },
     "Убой на мясо": {
         "filename": "prirezka.xlsx",
-        "reason": "Прирезка (Убой на мясо)",
+        "reason": "Убой на мясо",
         "row": 15,
         "layout": "standard",
     },
@@ -143,6 +145,11 @@ def get_latest_live_weight(tag):
 def get_archive_status_date(animal):
     if not animal.tag or not animal.animal_status:
         return None
+    act = animal.tag.archive_acts.order_by("-updated_at", "-id").first()
+    if act and act.status_date:
+        return act.status_date
+
+    # Fallback for old archived animals without ArchiveAct rows.
     history = (
         StatusHistory.objects.filter(tag=animal.tag, new_status=animal.animal_status)
         .order_by("-change_date", "-id")
@@ -237,13 +244,17 @@ def get_act_number_from_note(note):
     return ""
 
 
-def get_archive_act_context(animal, user=None):
-    status_name = animal.animal_status.status_type if animal.animal_status else ""
+def get_archive_act_context(animal, user=None, act=None):
+    act = act or get_archive_act_for_animal(animal)
+    status_name = (
+        act.status_name
+        if act and act.status_name
+        else (animal.animal_status.status_type if animal.animal_status else "")
+    )
     config = get_archive_act_template_config(status_name)
     if not config:
         return None
 
-    act = get_archive_act_for_animal(animal)
     status_date = (act.status_date if act else None) or get_archive_status_date(animal)
     live_weight = (act.live_weight if act and act.live_weight is not None else None) or get_latest_live_weight(animal.tag)
     animal_type = animal.get_animal_type()
@@ -260,10 +271,41 @@ def get_archive_act_context(animal, user=None):
         "diagnosis": (act.diagnosis if act else "") or "",
         "responsible_person": responsible_person or (act.worker_name if act else "") or "",
         "animal_group": "овцы",
+        "tag_number": animal.tag.tag_number if animal.tag else "",
         "animal_identifier": animal.get_display_name() if hasattr(animal, "get_display_name") else animal.tag.tag_number,
         "sex": ANIMAL_SEX_LABELS.get(animal_type, ""),
         "age": format_age_for_act(animal.birth_date, status_date),
     }
+
+
+def get_archive_act_contexts_for_download(animal, user=None):
+    """Возвращает строки акта: одну для индивидуального акта или несколько для общего."""
+    act = get_archive_act_for_animal(animal)
+    if not act or not act.act_group_key:
+        context = get_archive_act_context(animal, user=user, act=act)
+        return [context] if context else []
+
+    contexts = []
+    acts = (
+        ArchiveAct.objects.filter(act_group_key=act.act_group_key)
+        .select_related("tag")
+        .order_by("id")
+    )
+    for group_act in acts:
+        tag_number = group_act.tag.tag_number if group_act.tag else ""
+        group_animal = find_animal(group_act.animal_type, tag_number)
+        if not group_animal or not getattr(group_animal, "is_archived", False):
+            continue
+
+        context = get_archive_act_context(group_animal, user=user, act=group_act)
+        if context and context["status_name"] == act.status_name:
+            contexts.append(context)
+
+    if contexts:
+        return contexts
+
+    context = get_archive_act_context(animal, user=user, act=act)
+    return [context] if context else []
 
 
 def write_date_parts(sheet, date_value, cells=("G27", "I27", "P27")):
@@ -302,8 +344,8 @@ def write_archive_sender(sheet, context):
     sheet["F11"] = responsible_person
 
 
-def write_archive_act_row(sheet, context):
-    row = context["config"]["row"]
+def write_archive_act_row(sheet, context, row=None):
+    row = row or context["config"]["row"]
     weight_value = format_weight_value(context["live_weight"])
 
     if context["config"].get("layout") == "sale":
@@ -331,15 +373,89 @@ def write_archive_act_row(sheet, context):
     sheet[f"AJ{row}"] = context.get("responsible_person") or ""
 
 
+def _get_single_row_merge_ranges(sheet, row):
+    return [
+        (merged.min_col, merged.max_col)
+        for merged in sheet.merged_cells.ranges
+        if merged.min_row == row and merged.max_row == row
+    ]
+
+
+def _copy_row_layout(sheet, source_row, target_row, merge_ranges):
+    sheet.row_dimensions[target_row].height = sheet.row_dimensions[source_row].height
+    for column in range(1, sheet.max_column + 1):
+        source_cell = sheet.cell(source_row, column)
+        target_cell = sheet.cell(target_row, column)
+        if source_cell.has_style:
+            target_cell._style = copy(source_cell._style)
+        if source_cell.number_format:
+            target_cell.number_format = source_cell.number_format
+        if source_cell.alignment:
+            target_cell.alignment = copy(source_cell.alignment)
+        if source_cell.font:
+            target_cell.font = copy(source_cell.font)
+        if source_cell.fill:
+            target_cell.fill = copy(source_cell.fill)
+        if source_cell.border:
+            target_cell.border = copy(source_cell.border)
+        if source_cell.protection:
+            target_cell.protection = copy(source_cell.protection)
+
+    for min_col, max_col in merge_ranges:
+        try:
+            sheet.merge_cells(
+                start_row=target_row,
+                start_column=min_col,
+                end_row=target_row,
+                end_column=max_col,
+            )
+        except ValueError:
+            # Если openpyxl уже перенес объединение, повторно его создавать не нужно.
+            pass
+
+
+def _prepare_rows_for_archive_act(sheet, row, rows_count):
+    if rows_count <= 1:
+        return
+
+    merge_ranges = _get_single_row_merge_ranges(sheet, row)
+    sheet.insert_rows(row + 1, amount=rows_count - 1)
+    for offset in range(1, rows_count):
+        _copy_row_layout(sheet, row, row + offset, merge_ranges)
+
+
+def _shift_cell_reference(cell_reference, inserted_after_row, row_offset):
+    if row_offset <= 0:
+        return cell_reference
+
+    match = re.fullmatch(r"([A-Z]+)(\d+)", cell_reference)
+    if not match:
+        return cell_reference
+
+    column, row_text = match.groups()
+    row = int(row_text)
+    if row <= inserted_after_row:
+        return cell_reference
+    return f"{column}{row + row_offset}"
+
+
+def _shift_cell_references(cell_references, inserted_after_row, row_offset):
+    return tuple(
+        _shift_cell_reference(cell_reference, inserted_after_row, row_offset)
+        for cell_reference in cell_references
+    )
+
+
 def generate_archive_act_workbook(animal, user=None):
     try:
         from openpyxl import load_workbook
     except ImportError as exc:
         raise RuntimeError("Библиотека openpyxl не установлена") from exc
 
-    context = get_archive_act_context(animal, user=user)
-    if not context:
+    contexts = get_archive_act_contexts_for_download(animal, user=user)
+    if not contexts:
         return None
+    context = contexts[0]
 
     template_path = get_archive_act_template_path(context["status_name"])
     if not template_path or not template_path.exists():
@@ -347,17 +463,39 @@ def generate_archive_act_workbook(animal, user=None):
 
     workbook = load_workbook(template_path)
     sheet = workbook.active
+    start_row = context["config"]["row"]
+    _prepare_rows_for_archive_act(sheet, start_row, len(contexts))
+    inserted_rows_count = max(len(contexts) - 1, 0)
 
     write_act_number(sheet, context)
     write_archive_sender(sheet, context)
+    download_date = timezone.localdate()
     if context["config"].get("layout") == "sale":
-        write_status_date_parts(sheet, context["status_date"], cells=("AO8", "AQ8", "AR8"))
-        write_archive_act_row(sheet, context)
-        write_date_parts(sheet, context["act_date"], cells=("G34", "I34", "P34"))
+        write_status_date_parts(
+            sheet,
+            context["status_date"],
+            cells=_shift_cell_references(("AO8", "AQ8", "AR8"), start_row, inserted_rows_count),
+        )
+        for offset, row_context in enumerate(contexts):
+            write_archive_act_row(sheet, row_context, row=start_row + offset)
+        write_date_parts(
+            sheet,
+            download_date,
+            cells=_shift_cell_references(("G34", "I34", "P34"), start_row, inserted_rows_count),
+        )
     else:
-        write_status_date_parts(sheet, context["status_date"])
-        write_archive_act_row(sheet, context)
-        write_date_parts(sheet, context["act_date"])
+        write_status_date_parts(
+            sheet,
+            context["status_date"],
+            cells=_shift_cell_references(("AN7", "AO7", "AP7"), start_row, inserted_rows_count),
+        )
+        for offset, row_context in enumerate(contexts):
+            write_archive_act_row(sheet, row_context, row=start_row + offset)
+        write_date_parts(
+            sheet,
+            download_date,
+            cells=_shift_cell_references(("G27", "I27", "P27"), start_row, inserted_rows_count),
+        )
 
 
     output = BytesIO()
@@ -371,9 +509,14 @@ def archive_act_response(animal, user=None):
     if output is None:
         return None
 
+    contexts = get_archive_act_contexts_for_download(animal, user=user)
     tag_number = animal.tag.tag_number if animal.tag else "animal"
-    status_name = animal.animal_status.status_type if animal.animal_status else "act"
-    filename = f"act_{status_name}_{tag_number}.xlsx".replace(" ", "_")
+    status_name = contexts[0]["status_name"] if contexts else (animal.animal_status.status_type if animal.animal_status else "act")
+    if len(contexts) > 1:
+        filename_tag = f"multiple_{timezone.localdate().isoformat()}"
+    else:
+        filename_tag = tag_number
+    filename = f"act_{status_name}_{filename_tag}.xlsx".replace(" ", "_")
     response = HttpResponse(
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

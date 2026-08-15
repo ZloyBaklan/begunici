@@ -1,12 +1,140 @@
-﻿// ! UTILS.sj cannot be importted due to injection html
+// ! UTILS.sj cannot be importted due to injection html
 // TODO Resolve that
 function getCSRFToken() {
     const cookies = document.cookie.split(";").map(c => c.trim());
     const tokenCookie = cookies.find(c => c.startsWith("csrftoken="));
-    
+
     if (!tokenCookie) return undefined;
 
     return decodeURIComponent(tokenCookie.split("=")[1]);
+}
+
+const API_ERROR_FIELD_LABELS = {
+    animal_status_id: 'Статус',
+    archive_act_date: 'Дата акта',
+    archive_act_death_reason: 'Причина падежа',
+    archive_act_diagnosis: 'Диагноз / основание',
+    archive_act_fatness: 'Упитанность',
+    archive_act_live_weight: 'Живой вес для акта',
+    archive_act_number: 'Номер акта',
+    archive_act_weight_date: 'Дата дополнительного веса',
+    birth_date: 'Дата рождения',
+    carcass_weight: 'Вес туши',
+    dead_lambs_count: 'Мертвые ягнята',
+    dorper_percentage: 'Кровность по основной породе',
+    father: 'Отец',
+    mother: 'Мать',
+    non_field_errors: 'Общая ошибка',
+    note: 'Примечание',
+    place_id: 'Овчарня',
+    plemstatus: 'Племенной статус',
+    rshn_tag: 'Бирка РСХН',
+    status_date: 'Дата статуса',
+    tag: 'Бирка',
+    tag_number: 'Бирка',
+    veterinary_care: 'Ветобработка',
+    veterinary_care_id: 'Ветобработка',
+    weight: 'Вес',
+    weight_date: 'Дата взвешивания',
+    working_condition: 'Рабочее состояние',
+};
+
+function getApiErrorFieldLabel(field) {
+    return API_ERROR_FIELD_LABELS[field] || String(field).replaceAll('_', ' ');
+}
+
+function translateApiErrorText(message) {
+    const text = String(message || '').trim();
+    const translations = {
+        'This field is required.': 'Это поле обязательно для заполнения.',
+        'This field may not be blank.': 'Это поле не может быть пустым.',
+        'This field may not be null.': 'Это поле не может быть пустым.',
+        'A valid integer is required.': 'Нужно указать целое число.',
+        'A valid number is required.': 'Нужно указать число.',
+        'Enter a valid date.': 'Укажите корректную дату.',
+        'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.': 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ.',
+        'Enter a valid date/time.': 'Укажите корректные дату и время.',
+        'This field must be unique.': 'Такое значение уже используется.',
+    };
+    if (translations[text]) return translations[text];
+    if (text.includes('Ensure this value is greater than or equal to 0')) return 'Значение не может быть меньше 0.';
+    if (text.includes('Invalid pk')) return 'Выбранное значение не найдено в базе.';
+    if (text.includes('Got a `TypeError` when calling')) return 'Сервер не смог сохранить данные из-за неподдерживаемого поля. Сообщите разработчику, на какой форме возникла ошибка.';
+    return text;
+}
+
+function parseApiErrorString(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const cleaned = text.replace(
+        /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g,
+        (_, quote, errorMessage) => `'${String(errorMessage).replaceAll("'", "\\'")}'`
+    );
+
+    const fieldMessages = [];
+    const fieldRegex = /['"]([^'"]+)['"]\s*:\s*(\[[\s\S]*?\]|['"][\s\S]*?['"])/g;
+    let fieldMatch;
+    while ((fieldMatch = fieldRegex.exec(cleaned)) !== null) {
+        const field = fieldMatch[1];
+        const rawValue = fieldMatch[2];
+        const values = [];
+        const valueRegex = /['"]([^'"]+)['"]/g;
+        let valueMatch;
+        while ((valueMatch = valueRegex.exec(rawValue)) !== null) {
+            values.push(translateApiErrorText(valueMatch[1]));
+        }
+
+        if (values.length) {
+            fieldMessages.push(`${getApiErrorFieldLabel(field)}: ${values.join(', ')}`);
+        }
+    }
+
+    if (fieldMessages.length) return fieldMessages.join('\n');
+
+    const detailMessages = [];
+    const detailRegex = /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g;
+    let detailMatch;
+    while ((detailMatch = detailRegex.exec(text)) !== null) {
+        detailMessages.push(translateApiErrorText(detailMatch[2]));
+    }
+
+    return detailMessages.length ? detailMessages.join('\n') : translateApiErrorText(text);
+}
+
+function stringifyApiErrorValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return parseApiErrorString(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(stringifyApiErrorValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value).map(([field, nestedValue]) => {
+            const message = stringifyApiErrorValue(nestedValue);
+            if (!message) return '';
+            if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+            return `${getApiErrorFieldLabel(field)}: ${message}`;
+        }).filter(Boolean).join('\n');
+    }
+    return String(value);
+}
+
+function getApiErrorMessage(errorData, fallback = 'Не удалось выполнить действие. Проверьте введенные данные.') {
+    if (!errorData) return fallback;
+    if (typeof errorData === 'string') return parseApiErrorString(errorData);
+    if (typeof errorData !== 'object') return fallback;
+    if (typeof errorData.detail === 'string') return parseApiErrorString(errorData.detail);
+    if (typeof errorData.error === 'string') return parseApiErrorString(errorData.error);
+
+    const messages = Object.entries(errorData).map(([field, value]) => {
+        const message = stringifyApiErrorValue(value);
+        if (!message) return '';
+        if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+        return `${getApiErrorFieldLabel(field)}: ${message}`;
+    }).filter(Boolean);
+
+    return messages.length ? messages.join('\n') : fallback;
 }
 
 async function apiRequest(url, method, body) {
@@ -19,12 +147,12 @@ async function apiRequest(url, method, body) {
     if (body) options.body = JSON.stringify(body)
 
     console.log(`Отправка запроса: ${method} ${url}`, options);
-    
+
     try {
         const response = await fetch(url, options);
         const responseText = await response.text();
         let responseData;
-        
+
         try {
             responseData = responseText ? JSON.parse(responseText) : {};
         } catch (e) {
@@ -36,9 +164,9 @@ async function apiRequest(url, method, body) {
 
         if (!response.ok) {
             console.error(`Ошибка API [${response.status}]:`, responseData);
-            throw new Error(responseData.detail || JSON.stringify(responseData) || 'Ошибка API');
+            throw new Error(getApiErrorMessage(responseData));
         }
-        
+
         return responseData;
     } catch (error) {
         console.error('Ошибка при выполнении запроса:', error);
@@ -112,11 +240,11 @@ async function exportAnimalToExcel() {
             let errorText = `Ошибка экспорта (${response.status})`;
             try {
                 const errorData = await response.json();
-                errorText = errorData.error || errorData.detail || errorText;
+                errorText = getApiErrorMessage(errorData, errorText);
             } catch (_) {
                 const rawText = await response.text();
                 if (rawText) {
-                    errorText = rawText;
+                    errorText = parseApiErrorString(rawText);
                 }
             }
             throw new Error(errorText);
@@ -152,16 +280,16 @@ async function exportAnimalToExcel() {
 async function loadSelectOptions(selectId, apiEndpoint, selectedId = null) {
     const select = document.getElementById(selectId);
     select.innerHTML = '';
-    
+
     try {
         // Добавляем page_size=100 для получения всех данных
         const url = apiEndpoint.includes('?') ? `${apiEndpoint}&page_size=100` : `${apiEndpoint}?page_size=100`;
         const response = await apiRequest(url, 'GET');
         console.log(`Ответ API для ${selectId}:`, response);
-        
+
         // Обрабатываем пагинированный ответ
         const items = response.results || response;
-        
+
         if (!Array.isArray(items)) {
             console.error(`Ожидался массив для ${selectId}, получено:`, items);
             return;
@@ -250,24 +378,24 @@ async function loadAnimalDetails(animalType, tagNumber) {
         console.log(`Данные ${animalType}:`, animal); // Отладка данных
         document.getElementById('tag').value = animal.tag.tag_number;
         document.getElementById('birth_date').value = animal.birth_date ? formatDateToInput(animal.birth_date) : ''; // Преобразуем дату
-        
+
         // Поля plemstatus и working_condition есть только у Maker
         const plemsStatusField = document.getElementById('plemstatus');
         const workingConditionField = document.getElementById('working_condition');
-        
+
         if (plemsStatusField) {
             plemsStatusField.value = animal.plemstatus || '';
         }
         if (workingConditionField) {
             workingConditionField.value = animal.working_condition || '';
         }
-        
+
         // Поле кровности по основной породе
         const dorperField = document.getElementById('dorper_percentage');
         if (dorperField) {
             dorperField.value = animal.dorper_percentage || '';
         }
-        
+
         // Отображение кровности по основной породе в основной информации
         const dorperDisplay = document.getElementById('dorper-display');
         if (dorperDisplay) {
@@ -280,16 +408,22 @@ async function loadAnimalDetails(animalType, tagNumber) {
         }
 
         const rejectDisplay = document.getElementById('reject-display');
+        const rejectWarningDisplay = document.getElementById('reject-warning-display');
+        const warningText = animal.unsuccessful_insemination_warning || '';
         if (rejectDisplay) {
-            rejectDisplay.textContent = animal.is_reject ? 'Брак' : '-';
+            const rejectText = animal.is_reject ? 'Брак' : '-';
+            rejectDisplay.textContent = warningText ? `${rejectText} (${warningText})` : rejectText;
         }
-        
+        if (rejectWarningDisplay) {
+            rejectWarningDisplay.textContent = warningText ? `(${warningText})` : '';
+        }
+
         document.getElementById('note').value = animal.note || '';
         updateCarcassWeightDisplay(animal);
 
         console.log('Загружаем дополнительные данные (статусы, места, вес, ветобработки)...');
         await Promise.all([
-            loadSelectOptions('animal_status', '/veterinary/api/status/?exclude_archive=1', animal.animal_status?.id),
+            loadSelectOptions('animal_status', `/veterinary/api/status/?exclude_archive=1&animal_type=${encodeURIComponent(animalType)}`, animal.animal_status?.id),
             loadSelectOptions('place', '/veterinary/api/place/', animal.place?.id),
             loadLastWeight(animalType, tagNumber),
             loadCurrentVetTreatments()
@@ -325,22 +459,22 @@ async function loadLastWeight(animalType, tagNumber) {
 async function loadCurrentVetTreatments() {
     const tagNumber = document.getElementById('animal-detail').dataset.tagNumber;
     const animalType = document.getElementById('animal-detail').dataset.animalType;
-    
+
     try {
         console.log(`Загружаем текущие ветобработки для ${animalType} ${tagNumber}`);
         const response = await apiRequest(`/animals/${animalType}/${tagNumber}/current_vet_treatments/`, 'GET');
         console.log('Текущие ветобработки:', response);
-        
+
         const tableBody = document.getElementById('current-vet-treatments-body');
         const noTreatmentsDiv = document.getElementById('no-current-treatments');
-        
+
         // Обрабатываем пагинированный ответ
         const treatments = response.results || response;
-        
+
         if (Array.isArray(treatments) && treatments.length > 0) {
             tableBody.innerHTML = '';
             noTreatmentsDiv.style.display = 'none';
-            
+
             treatments.forEach(treatment => {
                 const row = createVetTreatmentRow(treatment);
                 tableBody.appendChild(row);
@@ -359,28 +493,28 @@ async function loadCurrentVetTreatments() {
 // Создаем строку таблицы для ветобработки
 function createVetTreatmentRow(treatment) {
     const row = document.createElement('tr');
-    
+
     // Вычисляем дату окончания и оставшиеся дни
     const careDate = parseDateOnlyToLocal(treatment.care_date) || new Date(treatment.date_of_care);
     const expiryDate = parseDateOnlyToLocal(treatment.expiry_date) || new Date(careDate.getTime() + (treatment.duration_days * 24 * 60 * 60 * 1000));
-    
+
     // Получаем текущую дату в московском времени (только дата, без времени)
     const now = new Date();
     const moscowOffset = 3 * 60; // 3 часа в минутах
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const moscowTime = new Date(utc + (moscowOffset * 60000));
-    
+
     // Приводим к началу дня для корректного сравнения
     const today = new Date(moscowTime.getFullYear(), moscowTime.getMonth(), moscowTime.getDate());
     const expiryDateOnly = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
-    
+
     // Вычисляем разность в днях
     const remainingDays = Math.floor((expiryDateOnly - today) / (1000 * 60 * 60 * 24));
-    
+
     // Определяем цвет для оставшихся дней
     let remainingClass = '';
     let remainingText = '';
-    
+
     if (remainingDays < 0) {
         remainingClass = 'text-danger fw-bold';
         remainingText = 'Просрочено';
@@ -394,7 +528,7 @@ function createVetTreatmentRow(treatment) {
         remainingClass = 'text-success';
         remainingText = `${remainingDays} дн.`;
     }
-    
+
     row.innerHTML = `
         <td>${treatment.veterinary_care?.care_type || 'Не указан'}</td>
         <td>${treatment.veterinary_care?.medication || 'Нет препарата'}</td>
@@ -409,7 +543,7 @@ function createVetTreatmentRow(treatment) {
             </button>
         </td>
     `;
-    
+
     return row;
 }
 
@@ -417,16 +551,16 @@ function createVetTreatmentRow(treatment) {
 async function hideVetTreatment(treatmentId) {
     const tagNumber = document.getElementById('animal-detail').dataset.tagNumber;
     const animalType = document.getElementById('animal-detail').dataset.animalType;
-    
+
     if (!confirm('Вы уверены, что хотите скрыть эту ветобработку из отслеживания?')) {
         return;
     }
-    
+
     try {
         const response = await apiRequest(`/animals/${animalType}/${tagNumber}/hide_vet_treatment/`, 'POST', {
             treatment_id: treatmentId
         });
-        
+
         if (response.success) {
             // Перезагружаем таблицу
             await loadCurrentVetTreatments();
@@ -435,7 +569,7 @@ async function hideVetTreatment(treatmentId) {
         }
     } catch (error) {
         console.error('Ошибка скрытия ветобработки:', error);
-        alert('Ошибка скрытия ветобработки');
+        alert('Ошибка скрытия ветобработки: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -574,7 +708,7 @@ async function loadArchiveStatuses() {
         toggleArchiveActNumberField();
     } catch (error) {
         console.error('Ошибка загрузки архивных статусов:', error);
-        alert('Ошибка загрузки архивных статусов.');
+        alert('Ошибка загрузки архивных статусов: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -692,7 +826,7 @@ async function addWeightRecord() {
     const animalType = animalDetail.dataset.animalType;
     const weight = document.getElementById('edit-weight-value').value;
     const weightDate = document.getElementById('edit-weight-date').value;
-    
+
     // Если данные о баране-производителе ещё не загружены, загружаем их
     if (!animalData) {
         try {
@@ -703,12 +837,12 @@ async function addWeightRecord() {
             return;
         }
     }
-    
+
     // Проверяем, что у нас есть данные о бирке
     console.log(`Полные данные ${animalType}:`, JSON.stringify(animalData, null, 2));
-    
+
     let tagNumber = animalData.tag?.tag_number;
-    
+
     if (!tagNumber) {
         console.error('Номер бирки не найден в данных животного. Доступные поля:', Object.keys(animalData.tag || {}));
         alert('Ошибка: не удалось определить номер бирки. Проверьте консоль для деталей.');
@@ -719,28 +853,28 @@ async function addWeightRecord() {
         alert('Пожалуйста, заполните все поля для добавления веса.');
         return;
     }
-    
+
     try {
         console.log('[v3] Начало addWeightRecord');
         // Используем данные из уже загруженного барана-производителя
         if (!animalData || !animalData.id) {
             throw new Error('[v3] Не удалось загрузить данные барана-производителя');
         }
-        
+
         // Проверяем, есть ли у нас данные о бирке
         if (!animalData.tag || !animalData.tag.tag_number) {
             console.error('[v3] Проверка бирки не удалась. animalData.tag:', animalData.tag);
             throw new Error('[v3] Номер бирки не найден в данных барана-производителя');
         }
-        
+
         const data = {
             tag_write: animalData.tag.tag_number,
             weight: parseFloat(weight),
             weight_date: weightDate,
         };
-        
+
         console.log('[v3] Отправляемые данные:', JSON.stringify(data, null, 2));
-        
+
         await apiRequest('/veterinary/api/weight-record/', 'POST', data);
         alert('Вес добавлен!');
         document.getElementById('edit-weight-value').value = '';
@@ -779,23 +913,23 @@ async function addVetRecord() {
         const result = await apiRequest('/veterinary/api/veterinary/', 'POST', data);
         console.log('Ветобработка успешно добавлена, ответ сервера:', result);
         alert('Ветобработка добавлена!');
-        
+
         // Очищаем форму после успешного добавления
         document.getElementById('vet-treatment-select').value = '';
         document.getElementById('vet-treatment-date').value = '';
         document.getElementById('vet-treatment-comments').value = '';
         displayTreatmentDetails(); // Очищаем отображение деталей
-        
+
         console.log('Обновляем отображение текущих ветобработок...');
         await loadCurrentVetTreatments(); // Обновляем таблицу текущих ветобработок
     } catch (error) {
         console.error('Ошибка добавления ветобработки:', error);
-        
+
         // Проверяем, является ли это ошибкой уникальности
         if (error.message && error.message.includes('unique set')) {
             const selectedOption = document.getElementById('vet-treatment-select').options[document.getElementById('vet-treatment-select').selectedIndex];
             const treatmentName = selectedOption ? selectedOption.textContent : 'выбранная обработка';
-            
+
             alert(`Ошибка: Для этого животного уже существует запись "${treatmentName}" на дату ${careDate}.\n\nВыберите другую дату или другой тип обработки.`);
         } else {
             alert(`Ошибка при добавлении ветобработки: ${error.message || 'Неизвестная ошибка'}`);
@@ -808,7 +942,7 @@ async function addVetRecord() {
 
 
 
-    
+
 async function loadVetTreatments() {
     try {
         // Добавляем page_size=100 для получения всех ветобработок
@@ -817,7 +951,7 @@ async function loadVetTreatments() {
 
         // Обрабатываем пагинированный ответ
         const treatments = response.results || response;
-        
+
         if (!Array.isArray(treatments)) {
             console.error('Ожидался массив ветобработок, получено:', treatments);
             return;
@@ -858,7 +992,7 @@ function displayTreatmentDetails() {
         document.getElementById('treatment-class').innerHTML = `<strong>Класс:</strong> ${selectedOption.dataset.class || '-'}`;
         document.getElementById('treatment-medicine').innerHTML = `<strong>Препарат:</strong> ${selectedOption.dataset.medication || '-'}`;
         document.getElementById('treatment-description').innerHTML = `<strong>Цель:</strong> ${selectedOption.dataset.purpose || '-'}`;
-        
+
         // Отображаем срок действия
         const durationDays = selectedOption.dataset.defaultDuration || '0';
         let durationText = '';
@@ -888,21 +1022,21 @@ async function loadParents(animalType, tagNumber) {
         console.log('Данные о родителях:', { mother, father }); // Отладочная информация
 
         updateParentDisplay(mother, father);
-        
+
         // Заполняем поля ввода текущими значениями родителей
         const motherInput = document.getElementById('mother-input');
         const fatherInput = document.getElementById('father-input');
-        
+
         if (motherInput) {
             motherInput.value = mother ? mother.tag_number : '';
             motherInput.placeholder = mother ? `Текущая мать: ${mother.tag_number}` : 'Введите бирку матери или оставьте пустым';
         }
-        
+
         if (fatherInput) {
             fatherInput.value = father ? father.tag_number : '';
             fatherInput.placeholder = father ? `Текущий отец: ${father.tag_number}` : 'Введите бирку отца или оставьте пустым';
         }
-        
+
     } catch (error) {
         console.error('Ошибка загрузки родителей:', error);
     }
@@ -957,19 +1091,19 @@ function updateParentDisplay(mother, father) {
 function getAnimalTypeRoute(animalType) {
     const typeMap = {
         'Maker': 'maker',
-        'Ram': 'ram', 
+        'Ram': 'ram',
         'Ewe': 'ewe',
         'Sheep': 'sheep'
     };
-    
+
     console.log(`Преобразование типа животного: ${animalType} -> ${typeMap[animalType] || 'unknown'}`);
-    
+
     // Если тип не найден, попробуем определить по первой букве или другим признакам
     if (!typeMap[animalType]) {
         console.warn(`Неизвестный тип животного: ${animalType}. Доступные типы:`, Object.keys(typeMap));
         return 'maker'; // По умолчанию
     }
-    
+
     return typeMap[animalType];
 }
 
@@ -984,7 +1118,7 @@ async function updateParents() {
     const fatherTagNumber = document.getElementById('father-input').value.trim(); // Бирка папы
 
     // Убираем проверку на обязательность заполнения - теперь можно оставлять поля пустыми
-    
+
     try {
         // Отправляем запрос на обновление родителей
         // Пустые строки преобразуем в null для удаления родителя
@@ -994,10 +1128,10 @@ async function updateParents() {
         });
 
         alert('Родители успешно обновлены!');
-        
+
         // Перезагружаем данные о родителях, чтобы обновить поля ввода с новыми значениями
         await loadParents(animalType, tagNumber);
-        
+
     } catch (error) {
         console.error('Ошибка обновления родителей:', error);
         alert('Ошибка при обновлении родителей: ' + (error.message || 'Неизвестная ошибка'));
@@ -1028,31 +1162,31 @@ async function convertEweToSheep() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
-    
+
     // Проверяем, что это действительно ярка
     if (animalType !== 'ewe') {
         alert('Эта функция доступна только для ярок');
         return;
     }
-    
+
     // Подтверждение действия
     const confirmConvert = confirm(
         `Вы уверены, что хотите преобразовать ярку ${tagNumber} в овцематку? ` +
         'Это действие нельзя отменить!'
     );
-    
+
     if (!confirmConvert) {
         return;
     }
-    
+
     try {
         const response = await apiRequest(`/animals/ewe/${tagNumber}/to_sheep/`, 'POST');
-        
+
         alert('Ярка успешно преобразована в овцематку!');
-        
+
         // Перенаправляем на страницу новой овцематки
         window.location.href = `/animals/sheep/${tagNumber}/info/`;
-        
+
     } catch (error) {
         console.error('Ошибка при преобразовании ярки в овцематку:', error);
         alert('Ошибка при преобразовании: ' + (error.message || 'Неизвестная ошибка'));
@@ -1147,12 +1281,12 @@ async function loadLambings() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
-    
+
     // Проверяем, что это овцематка или ярка
     if (animalType !== 'sheep' && animalType !== 'ewe') {
         return;
     }
-    
+
     try {
         const lambings = await apiRequest(`/animals/lambing/by-animal/?animal_type=${animalType}&tag_number=${tagNumber}`, 'GET');
         displayLambings(lambings);
@@ -1166,12 +1300,12 @@ async function loadFatherLambings() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
-    
+
     // Проверяем, что это баран-производитель или баранчик
     if (animalType !== 'maker' && animalType !== 'ram') {
         return;
     }
-    
+
     try {
         const lambings = await apiRequest(`/animals/lambing/by-father/?animal_type=${animalType}&tag_number=${tagNumber}`, 'GET');
         displayFatherLambings(lambings);
@@ -1281,26 +1415,26 @@ function createLambingGroupCard(group, isFatherPage) {
 function displayLambings(lambings) {
     const activeLambingsList = document.getElementById('active-lambings-list');
     const lambingHistoryList = document.getElementById('lambing-history-list');
-    
+
     if (!activeLambingsList || !lambingHistoryList) {
         return;
     }
-    
+
     // Сохраняем все окоты для фильтрации
     window.allLambings = lambings;
     initializeFemaleLambingsYearStats(lambings);
-    
+
     // Разделяем активные и завершенные окоты
     const activeLambings = lambings.filter(l => l.is_active);
     const completedLambings = lambings.filter(l => !l.is_active);
-    
+
     // Отображаем активные случки (без пагинации, их обычно мало)
     if (activeLambings.length === 0) {
         activeLambingsList.innerHTML = '<div class="no-lambings">Нет активных случек</div>';
     } else {
         activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
     }
-    
+
     // Отображаем историю окотов с пагинацией
     if (completedLambings.length === 0) {
         lambingHistoryList.innerHTML = '<div class="no-lambings">Нет завершенных окотов</div>';
@@ -1357,22 +1491,22 @@ function initializeLambingHistoryPagination(lambings) {
     let currentPage = 1;
     let filteredLambings = lambings; // Для фильтрации
     const totalPages = Math.ceil(filteredLambings.length / itemsPerPage);
-    
+
     function displayPage(page) {
         const startIndex = (page - 1) * itemsPerPage;
         const endIndex = startIndex + itemsPerPage;
         const pageItems = filteredLambings.slice(startIndex, endIndex);
-        
+
         const lambingHistoryList = document.getElementById('lambing-history-list');
-        
+
         // Сохраняем текущие значения из полей перед перерисовкой
         const currentDateFrom = document.getElementById('history-date-from')?.value || window.historyDateFrom || '';
         const currentDateTo = document.getElementById('history-date-to')?.value || window.historyDateTo || '';
-        
+
         // Обновляем глобальные переменные
         window.historyDateFrom = currentDateFrom;
         window.historyDateTo = currentDateTo;
-        
+
         // Создаем фильтр с сохраненными значениями
         const filterHtml = `
             <div class="date-filter-container mb-3 p-3 bg-light rounded">
@@ -1393,29 +1527,29 @@ function initializeLambingHistoryPagination(lambings) {
                 </div>
             </div>
         `;
-        
+
         // Обновляем содержимое
         lambingHistoryList.innerHTML = filterHtml + pageItems.map(lambing => createLambingCard(lambing, false)).join('');
-        
+
         // Обновляем пагинацию
         updateLambingHistoryPagination(page, Math.ceil(filteredLambings.length / itemsPerPage));
     }
-    
+
     function updateLambingHistoryPagination(page, total) {
         let paginationHtml = '<div class="pagination-container mt-3">';
-        
+
         if (total > 1) {
             paginationHtml += '<nav><ul class="pagination pagination-sm justify-content-center">';
-            
+
             // Кнопка "Предыдущая"
             if (page > 1) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${page - 1})">‹</a></li>`;
             }
-            
+
             // Определяем диапазон страниц для отображения (текущая + 2 слева + 2 справа)
             const startPage = Math.max(1, page - 2);
             const endPage = Math.min(total, page + 2);
-            
+
             // Показываем первую страницу и многоточие, если нужно
             if (startPage > 1) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(1)">1</a></li>`;
@@ -1423,13 +1557,13 @@ function initializeLambingHistoryPagination(lambings) {
                     paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
                 }
             }
-            
+
             // Номера страниц в диапазоне
             for (let i = startPage; i <= endPage; i++) {
                 const activeClass = i === page ? 'active' : '';
                 paginationHtml += `<li class="page-item ${activeClass}"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${i})">${i}</a></li>`;
             }
-            
+
             // Показываем многоточие и последнюю страницу, если нужно
             if (endPage < total) {
                 if (endPage < total - 1) {
@@ -1437,47 +1571,47 @@ function initializeLambingHistoryPagination(lambings) {
                 }
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${total})">${total}</a></li>`;
             }
-            
+
             // Кнопка "Следующая"
             if (page < total) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeLambingHistoryPage(${page + 1})">›</a></li>`;
             }
-            
+
             paginationHtml += '</ul></nav>';
         }
-        
+
         paginationHtml += `<div class="text-center text-muted small">Показано ${Math.min(itemsPerPage, filteredLambings.length - (page - 1) * itemsPerPage)} из ${filteredLambings.length} окотов</div>`;
         paginationHtml += '</div>';
-        
+
         const lambingHistoryList = document.getElementById('lambing-history-list');
         lambingHistoryList.innerHTML += paginationHtml;
     }
-    
+
     // Глобальные функции для фильтрации
     window.applyHistoryDateFilter = function() {
         const dateFrom = document.getElementById('history-date-from').value;
         const dateTo = document.getElementById('history-date-to').value;
-        
+
         // Сохраняем значения в глобальных переменных
         window.historyDateFrom = dateFrom;
         window.historyDateTo = dateTo;
-        
+
         // Применяем фильтр ко всем окотам
         const allLambings = window.allLambings || lambings;
         const filteredAllLambings = allLambings.filter(lambing => {
             const startDate = new Date(lambing.start_date);
             const fromDate = dateFrom ? new Date(dateFrom) : null;
             const toDate = dateTo ? new Date(dateTo) : null;
-            
+
             if (fromDate && startDate < fromDate) return false;
             if (toDate && startDate > toDate) return false;
             return true;
         });
-        
+
         // Разделяем отфильтрованные окоты на активные и завершенные
         const filteredActiveLambings = filteredAllLambings.filter(l => l.is_active);
         const filteredCompletedLambings = filteredAllLambings.filter(l => !l.is_active);
-        
+
         // Обновляем активные окоты
         const activeLambingsList = document.getElementById('active-lambings-list');
         if (filteredActiveLambings.length === 0) {
@@ -1485,26 +1619,26 @@ function initializeLambingHistoryPagination(lambings) {
         } else {
             activeLambingsList.innerHTML = filteredActiveLambings.map(lambing => createLambingCard(lambing, true)).join('');
         }
-        
+
         // Обновляем завершенные окоты
         filteredLambings = filteredCompletedLambings;
         currentPage = 1;
         displayPage(1);
     };
-    
+
     window.clearHistoryDateFilter = function() {
         // Очищаем глобальные переменные
         window.historyDateFrom = '';
         window.historyDateTo = '';
-        
+
         document.getElementById('history-date-from').value = '';
         document.getElementById('history-date-to').value = '';
-        
+
         // Восстанавливаем все окоты
         const allLambings = window.allLambings || lambings;
         const activeLambings = allLambings.filter(l => l.is_active);
         const completedLambings = allLambings.filter(l => !l.is_active);
-        
+
         // Обновляем активные окоты
         const activeLambingsList = document.getElementById('active-lambings-list');
         if (activeLambings.length === 0) {
@@ -1512,19 +1646,19 @@ function initializeLambingHistoryPagination(lambings) {
         } else {
             activeLambingsList.innerHTML = activeLambings.map(lambing => createLambingCard(lambing, true)).join('');
         }
-        
+
         // Обновляем завершенные окоты
         filteredLambings = completedLambings;
         currentPage = 1;
         displayPage(1);
     };
-    
+
     // Глобальная функция для смены страницы
     window.changeLambingHistoryPage = function(page) {
         currentPage = page;
         displayPage(page);
     };
-    
+
     // Показываем первую страницу
     displayPage(1);
 }
@@ -1532,15 +1666,15 @@ function initializeLambingHistoryPagination(lambings) {
 // Отображение истории окотов для отцов
 function displayFatherLambings(lambings) {
     const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
-    
+
     if (!fatherLambingHistoryList) {
         return;
     }
-    
+
     // Сохраняем все окоты для фильтрации в стабильном порядке:
     // сначала активные, затем завершенные, внутри групп по дате случки (новые сверху)
     window.allFatherLambings = sortFatherLambings(lambings);
-    
+
     if (lambings.length === 0) {
         fatherLambingHistoryList.innerHTML = '<div class="no-lambings">Нет окотов, где это животное выступало как отец</div>';
     } else {
@@ -1555,24 +1689,24 @@ function initializeFatherLambingsPagination(lambings) {
     let currentPage = 1;
     let filteredLambings = sortFatherLambings(lambings); // Для фильтрации
     const totalPages = Math.ceil(filteredLambings.length / itemsPerPage);
-    
+
     function displayPage(page) {
         const startIndex = (page - 1) * itemsPerPage;
         const endIndex = startIndex + itemsPerPage;
         const pageItems = filteredLambings.slice(startIndex, endIndex);
-        
+
         const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
-        
+
         // Сохраняем текущие значения из полей перед перерисовкой
         const currentDateFrom = document.getElementById('father-history-date-from')?.value || window.fatherHistoryDateFrom || '';
         const currentDateTo = document.getElementById('father-history-date-to')?.value || window.fatherHistoryDateTo || '';
         const currentStatus = document.getElementById('father-history-status-filter')?.value || window.fatherHistoryStatusFilter || 'all';
-        
+
         // Обновляем глобальные переменные
         window.fatherHistoryDateFrom = currentDateFrom;
         window.fatherHistoryDateTo = currentDateTo;
         window.fatherHistoryStatusFilter = currentStatus;
-        
+
         // Создаем фильтр с сохраненными значениями
         const filterHtml = `
             <div class="date-filter-container mb-3 p-3 bg-light rounded">
@@ -1601,29 +1735,29 @@ function initializeFatherLambingsPagination(lambings) {
                 </div>
             </div>
         `;
-        
+
         // Обновляем содержимое
         fatherLambingHistoryList.innerHTML = filterHtml + pageItems.map(lambing => createFatherLambingCard(lambing)).join('');
-        
+
         // Обновляем пагинацию
         updateFatherLambingsPagination(page, Math.ceil(filteredLambings.length / itemsPerPage));
     }
-    
+
     function updateFatherLambingsPagination(page, total) {
         let paginationHtml = '<div class="pagination-container mt-3">';
-        
+
         if (total > 1) {
             paginationHtml += '<nav><ul class="pagination pagination-sm justify-content-center">';
-            
+
             // Кнопка "Предыдущая"
             if (page > 1) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${page - 1})">‹</a></li>`;
             }
-            
+
             // Определяем диапазон страниц для отображения (текущая + 2 слева + 2 справа)
             const startPage = Math.max(1, page - 2);
             const endPage = Math.min(total, page + 2);
-            
+
             // Показываем первую страницу и многоточие, если нужно
             if (startPage > 1) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(1)">1</a></li>`;
@@ -1631,13 +1765,13 @@ function initializeFatherLambingsPagination(lambings) {
                     paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
                 }
             }
-            
+
             // Номера страниц в диапазоне
             for (let i = startPage; i <= endPage; i++) {
                 const activeClass = i === page ? 'active' : '';
                 paginationHtml += `<li class="page-item ${activeClass}"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${i})">${i}</a></li>`;
             }
-            
+
             // Показываем многоточие и последнюю страницу, если нужно
             if (endPage < total) {
                 if (endPage < total - 1) {
@@ -1645,73 +1779,73 @@ function initializeFatherLambingsPagination(lambings) {
                 }
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${total})">${total}</a></li>`;
             }
-            
+
             // Кнопка "Следующая"
             if (page < total) {
                 paginationHtml += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="changeFatherLambingsPage(${page + 1})">›</a></li>`;
             }
-            
+
             paginationHtml += '</ul></nav>';
         }
-        
+
         paginationHtml += `<div class="text-center text-muted small">Показано ${Math.min(itemsPerPage, filteredLambings.length - (page - 1) * itemsPerPage)} из ${filteredLambings.length} окотов</div>`;
         paginationHtml += '</div>';
-        
+
         const fatherLambingHistoryList = document.getElementById('father-lambing-history-list');
         fatherLambingHistoryList.innerHTML += paginationHtml;
     }
-    
+
     // Глобальные функции для фильтрации
     window.applyFatherHistoryDateFilter = function() {
         const dateFrom = document.getElementById('father-history-date-from').value;
         const dateTo = document.getElementById('father-history-date-to').value;
         const statusFilter = document.getElementById('father-history-status-filter').value;
-        
+
         // Сохраняем значения в глобальных переменных
         window.fatherHistoryDateFrom = dateFrom;
         window.fatherHistoryDateTo = dateTo;
         window.fatherHistoryStatusFilter = statusFilter;
-        
+
         // Применяем фильтр ко всем окотам отца
         const allFatherLambings = window.allFatherLambings || lambings;
         filteredLambings = sortFatherLambings(allFatherLambings.filter(lambing => {
             const startDate = new Date(lambing.start_date);
             const fromDate = dateFrom ? new Date(dateFrom) : null;
             const toDate = dateTo ? new Date(dateTo) : null;
-            
+
             if (fromDate && startDate < fromDate) return false;
             if (toDate && startDate > toDate) return false;
             if (statusFilter === 'active' && !lambing.is_active) return false;
             if (statusFilter === 'completed' && lambing.is_active) return false;
             return true;
         }));
-        
+
         currentPage = 1;
         displayPage(1);
     };
-    
+
     window.clearFatherHistoryDateFilter = function() {
         // Очищаем глобальные переменные
         window.fatherHistoryDateFrom = '';
         window.fatherHistoryDateTo = '';
         window.fatherHistoryStatusFilter = 'all';
-        
+
         document.getElementById('father-history-date-from').value = '';
         document.getElementById('father-history-date-to').value = '';
         document.getElementById('father-history-status-filter').value = 'all';
-        
+
         // Восстанавливаем все окоты отца
         filteredLambings = sortFatherLambings(window.allFatherLambings || lambings);
         currentPage = 1;
         displayPage(1);
     };
-    
+
     // Глобальная функция для смены страницы
     window.changeFatherLambingsPage = function(page) {
         currentPage = page;
         displayPage(page);
     };
-    
+
     // Показываем первую страницу
     displayPage(1);
 }
@@ -1771,10 +1905,11 @@ function formatAnimalTypeLabel(animalType) {
 function createLambingCard(lambing, isActive) {
     const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
     const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
-    const actualDate = lambing.actual_lambing_date ? 
+    const actualDate = lambing.actual_lambing_date ?
         new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
     const isEarlyFailure = lambing.completion_type === 'early_failure';
-    
+    const isUnsuccessfulInsemination = lambing.completion_type === 'unsuccessful_insemination';
+
     // Показываем примечание только если оно не об импорте
     const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
 
@@ -1783,7 +1918,7 @@ function createLambingCard(lambing, isActive) {
     if (lambing.father_url && lambing.father_tag) {
         fatherTagContent = `<a href="${lambing.father_url}">${fatherTagContent}</a>`;
     }
-    
+
     return `
         <div class="lambing-card ${isActive ? 'active' : 'completed'}">
             <div class="lambing-info">
@@ -1794,7 +1929,7 @@ function createLambingCard(lambing, isActive) {
                     <strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}
                 </div>
                 <div>
-                    <strong>Планируемые роды:</strong> 
+                    <strong>Планируемые роды:</strong>
                     <span class="planned-date">${plannedDate}</span>
                 </div>
                 ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
@@ -1803,7 +1938,12 @@ function createLambingCard(lambing, isActive) {
                         <strong>Статус завершения:</strong> Досрочно завершен (неудача)
                     </div>
                 ` : ''}
-                ${!isActive && !isEarlyFailure ? `
+                ${isUnsuccessfulInsemination ? `
+                    <div style="grid-column: 2;">
+                        <strong>Статус завершения:</strong> Неудачное осеменение
+                    </div>
+                ` : ''}
+                ${!isActive && !isEarlyFailure && !isUnsuccessfulInsemination ? `
                     <div style="grid-column: 2;">
                         <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
@@ -1826,14 +1966,15 @@ function createLambingCard(lambing, isActive) {
 function createFatherLambingCard(lambing) {
     const startDate = new Date(lambing.start_date).toLocaleDateString('ru-RU');
     const plannedDate = new Date(lambing.planned_lambing_date).toLocaleDateString('ru-RU');
-    const actualDate = lambing.actual_lambing_date ? 
+    const actualDate = lambing.actual_lambing_date ?
         new Date(lambing.actual_lambing_date).toLocaleDateString('ru-RU') : null;
     const isEarlyFailure = lambing.completion_type === 'early_failure';
-    
+    const isUnsuccessfulInsemination = lambing.completion_type === 'unsuccessful_insemination';
+
     // Определяем статус окота
     const statusClass = lambing.is_active ? 'active' : 'completed';
     const statusText = lambing.is_active ? 'Активный' : 'Завершен';
-    
+
     // Формируем информацию о матери
     let motherTagContent = lambing.mother_tag;
     if (lambing.mother_url && lambing.mother_found) {
@@ -1847,10 +1988,10 @@ function createFatherLambingCard(lambing) {
     } else {
         motherInfo = `${motherTypeDisplay} ${lambing.mother_tag} (не найдена)`;
     }
-    
+
     // Показываем примечание только если оно не об импорте
     const shouldShowNote = lambing.note && !lambing.note.includes('Импорт из');
-    
+
     return `
         <div class="lambing-card ${statusClass}">
             <div class="lambing-info">
@@ -1864,7 +2005,7 @@ function createFatherLambingCard(lambing) {
                     <strong>Дата снятия барана:</strong> ${startDate}
                 </div>
                 <div>
-                    <strong>Планируемые роды:</strong> 
+                    <strong>Планируемые роды:</strong>
                     <span class="planned-date">${plannedDate}</span>
                 </div>
                 ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
@@ -1873,7 +2014,12 @@ function createFatherLambingCard(lambing) {
                         <strong>Статус завершения:</strong> Досрочно завершен (неудача)
                     </div>
                 ` : ''}
-                ${!lambing.is_active && !isEarlyFailure ? `
+                ${isUnsuccessfulInsemination ? `
+                    <div style="grid-column: 2;">
+                        <strong>Статус завершения:</strong> Неудачное осеменение
+                    </div>
+                ` : ''}
+                ${!lambing.is_active && !isEarlyFailure && !isUnsuccessfulInsemination ? `
                     <div style="grid-column: 2;">
                         <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
                         <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
@@ -1920,22 +2066,22 @@ async function createLambing() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
-    
+
     const startDate = document.getElementById('lambing-start-date').value;
     const fatherTag = document.getElementById('lambing-father-tag').value.trim();
     const note = document.getElementById('group-lambing-note').value.trim();
-    
+
     // Валидация
     if (!startDate) {
         alert('Пожалуйста, укажите дату постановки в группу');
         return;
     }
-    
+
     if (!fatherTag) {
         alert('Пожалуйста, укажите бирку отца');
         return;
     }
-    
+
     try {
         const groupData = {
             placement_date: startDate,
@@ -1943,16 +2089,16 @@ async function createLambing() {
             mother_tag_numbers: [tagNumber],
             note: note || null
         };
-        
+
         await apiRequest('/animals/lambing-group/', 'POST', groupData);
-        
+
         alert('Группа успешно создана!');
         hideCreateLambingForm();
-        
+
         // Перезагружаем список групп и случек
         await loadLambingGroups();
         await loadLambings();
-        
+
     } catch (error) {
         console.error('Ошибка создания группы:', error);
         alert('Ошибка при создании группы: ' + (error.message || 'Неизвестная ошибка'));
@@ -1960,41 +2106,118 @@ async function createLambing() {
 }
 
 function isEarlyFailureMode() {
-    return Boolean(document.getElementById('early-failure-checkbox')?.checked);
+    return window.currentCompletionMode === 'early_failure'
+        || Boolean(document.getElementById('early-failure-checkbox')?.checked);
+}
+
+function isUnsuccessfulInseminationMode() {
+    return window.currentCompletionMode === 'unsuccessful_insemination';
+}
+
+function resetUnsuccessfulInseminationWarning() {
+    const warning = document.getElementById('unsuccessful-insemination-warning');
+    if (warning) {
+        warning.style.display = 'none';
+        warning.textContent = '';
+    }
+}
+
+async function loadUnsuccessfulInseminationWarning() {
+    const warning = document.getElementById('unsuccessful-insemination-warning');
+    if (!warning || !window.currentLambingId) return;
+
+    warning.style.display = 'none';
+    warning.textContent = '';
+
+    try {
+        const response = await apiRequest(`/animals/lambing/${window.currentLambingId}/unsuccessful-insemination-warning/`, 'GET');
+        if (response.warning) {
+            warning.textContent = response.warning;
+            warning.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Ошибка проверки неудачных осеменений:', error);
+    }
+}
+
+function setCompletionMode(mode) {
+    window.currentCompletionMode = mode || 'normal';
+
+    const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
+    if (earlyFailureCheckbox) {
+        earlyFailureCheckbox.checked = window.currentCompletionMode === 'early_failure';
+    }
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.checked = window.currentCompletionMode === 'unsuccessful_insemination';
+    }
+
+    resetUnsuccessfulInseminationWarning();
+    updateCompletionMode();
+
+    if (isUnsuccessfulInseminationMode()) {
+        loadUnsuccessfulInseminationWarning();
+    }
+}
+
+function selectUnsuccessfulInseminationMode() {
+    setCompletionMode('unsuccessful_insemination');
 }
 
 function updateCompletionMode() {
     const isEarlyFailure = isEarlyFailureMode();
+    const isUnsuccessful = isUnsuccessfulInseminationMode();
     const isFatherCompletion = Boolean(window.currentCompletionIsFather);
     const dateLabel = document.getElementById('actual-lambing-date-label');
+    const infoHeading = document.getElementById('lambing-info-heading');
+    const dateField = document.getElementById('actual-lambing-date-field');
+    const earlyFailureCheck = document.querySelector('.early-failure-check');
+    const unsuccessfulAction = document.getElementById('unsuccessful-insemination-action');
     const lambsCountField = document.getElementById('lambs-count-field');
     const deadLambsCountField = document.getElementById('dead-lambs-count-field');
     const lambsCreationSection = document.getElementById('lambs-creation-section');
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
+    const separator = document.getElementById('lambing-completion-separator');
     const submitButton = document.getElementById('complete-lambing-submit-btn');
 
     if (dateLabel) {
         dateLabel.textContent = isEarlyFailure ? 'Дата завершения:' : 'Дата фактических родов:';
     }
+    if (infoHeading) {
+        infoHeading.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (dateField) {
+        dateField.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (earlyFailureCheck) {
+        earlyFailureCheck.style.display = isUnsuccessful ? 'none' : '';
+    }
+    if (unsuccessfulAction) {
+        unsuccessfulAction.style.display = isUnsuccessful ? 'none' : '';
+    }
     if (lambsCountField) {
-        lambsCountField.style.display = isEarlyFailure ? 'none' : '';
+        lambsCountField.style.display = (isEarlyFailure || isUnsuccessful) ? 'none' : '';
     }
     if (deadLambsCountField) {
-        deadLambsCountField.style.display = isEarlyFailure ? 'none' : '';
+        deadLambsCountField.style.display = (isEarlyFailure || isUnsuccessful) ? 'none' : '';
     }
     if (lambsCreationSection) {
-        lambsCreationSection.style.display = isEarlyFailure || isFatherCompletion ? 'none' : '';
+        lambsCreationSection.style.display = (isEarlyFailure || isUnsuccessful || isFatherCompletion) ? 'none' : '';
     }
     if (createLambsCheckbox) {
         if (isFatherCompletion) {
             createLambsCheckbox.checked = false;
         }
-        createLambsCheckbox.disabled = isEarlyFailure || isFatherCompletion;
+        createLambsCheckbox.disabled = isEarlyFailure || isUnsuccessful || isFatherCompletion;
+    }
+    if (separator) {
+        separator.style.display = isUnsuccessful ? 'none' : '';
     }
     if (submitButton) {
-        submitButton.textContent = isEarlyFailure ? 'Завершить досрочно' : 'Завершить окот';
-        submitButton.classList.toggle('btn-success', !isEarlyFailure);
+        submitButton.textContent = isUnsuccessful ? 'Неудачное осеменение' : (isEarlyFailure ? 'Аборт' : 'Окот');
+        submitButton.classList.toggle('btn-success', !isEarlyFailure && !isUnsuccessful);
         submitButton.classList.toggle('btn-warning', isEarlyFailure);
+        submitButton.classList.toggle('btn-danger', isUnsuccessful);
     }
 }
 
@@ -2003,7 +2226,7 @@ async function completeLambing(lambingId) {
     // Сохраняем ID окота для использования в модальном окне
     window.currentLambingId = lambingId;
     window.currentCompletionIsFather = false;
-    
+
     // Устанавливаем текущую дату как дату фактических родов
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('actual-lambing-date').value = today;
@@ -2019,20 +2242,26 @@ async function completeLambing(lambingId) {
     if (earlyFailureCheckbox) {
         earlyFailureCheckbox.checked = false;
     }
-    
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.checked = false;
+    }
+    window.currentCompletionMode = 'normal';
+    resetUnsuccessfulInseminationWarning();
+
     // Инициализируем состояние чекбокса и контейнера форм
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     const lambsFormsContainer = document.getElementById('lambs-forms-container');
     const lambsCountInput = document.getElementById('lambs-count');
-    
+
     // По умолчанию чекбокс отмечен, показываем формы
     createLambsCheckbox.checked = true;
     lambsFormsContainer.style.display = 'block';
     updateCompletionMode();
-    
+
     // Генерируем формы для ягнят
     generateLambForms(1);
-    
+
     // Добавляем обработчик для чекбокса создания ягнят
     createLambsCheckbox.addEventListener('change', function() {
         if (this.checked) {
@@ -2046,7 +2275,7 @@ async function completeLambing(lambingId) {
             lambsFormsContainer.style.display = 'none';
         }
     });
-    
+
     // Добавляем обработчик для изменения количества ягнят
     lambsCountInput.addEventListener('change', function() {
         const createLambs = createLambsCheckbox.checked;
@@ -2055,7 +2284,7 @@ async function completeLambing(lambingId) {
             generateLambForms(count);
         }
     });
-    
+
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
     modal.show();
@@ -2078,10 +2307,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('1. Загружаем основные данные животного...');
         await loadAnimalDetails(animalType, tagNumber);
-        
+
         console.log('2. Загружаем данные о родителях...');
         await loadParents(animalType, tagNumber);
-        
+
         console.log('3. Загружаем список ветобработок...');
         await loadVetTreatments();
 
@@ -2106,7 +2335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.location.href = `/animals/${animalType}/${tagNumber}/analytics/`;
             };
         }
-        
+
         console.log('=== ЗАГРУЗКА СТРАНИЦЫ ЗАВЕРШЕНА ===');
     } catch (error) {
         console.error('Ошибка при загрузке данных:', error);
@@ -2124,7 +2353,7 @@ window.completeLambing = completeLambing;
 function generateLambForms(count) {
     const container = document.getElementById('lambs-forms-container');
     container.innerHTML = '';
-    
+
     for (let i = 1; i <= count; i++) {
         const lambForm = createLambForm(i);
         container.appendChild(lambForm);
@@ -2132,6 +2361,8 @@ function generateLambForms(count) {
 }
 
 // Создание формы для одного ягненка
+const lambStatusesByAnimalType = {};
+
 function createLambForm(index) {
     const div = document.createElement('div');
     div.className = 'lamb-form';
@@ -2140,7 +2371,7 @@ function createLambForm(index) {
             <h6>Ягненок ${index}</h6>
             ${index > 1 ? `<button type="button" class="remove-lamb-btn" onclick="removeLambForm(this)">Удалить</button>` : ''}
         </div>
-        
+
         <div class="form-row">
             <div class="form-group">
                 <label>Тип животного:</label>
@@ -2155,7 +2386,7 @@ function createLambForm(index) {
                 <input type="text" class="lamb-tag" placeholder="Номер бирки" required>
             </div>
         </div>
-        
+
         <div class="form-row">
             <div class="form-group">
                 <label>Статус:</label>
@@ -2177,23 +2408,38 @@ function createLambForm(index) {
                 </select>
             </div>
         </div>
-        
+
         <div class="form-group">
             <label>Примечание:</label>
             <textarea class="lamb-note" rows="2" placeholder="Дополнительная информация"></textarea>
         </div>
     `;
-    
+
     const genderSelect = div.querySelector('.lamb-gender');
     if (genderSelect) {
-        genderSelect.addEventListener('change', () => applyDefaultLambStatus(div));
+        genderSelect.addEventListener('change', () => loadStatusesForLamb(div));
     }
 
     // Загружаем статусы и места для этой формы
     loadStatusesForLamb(div);
     loadPlacesForLamb(div);
-    
+
     return div;
+}
+
+function getLambAnimalTypeByGender(gender) {
+    if (gender === 'male') return 'Ram';
+    if (gender === 'female') return 'Ewe';
+    return '';
+}
+
+async function getLambStatusesForAnimalType(animalType) {
+    if (!animalType) return [];
+    if (!lambStatusesByAnimalType[animalType]) {
+        const response = await apiRequest(`/veterinary/api/status/?exclude_archive=1&page_size=100&animal_type=${encodeURIComponent(animalType)}`);
+        lambStatusesByAnimalType[animalType] = response.results || response;
+    }
+    return lambStatusesByAnimalType[animalType];
 }
 
 function applyDefaultLambStatus(formElement) {
@@ -2201,71 +2447,52 @@ function applyDefaultLambStatus(formElement) {
     const gender = formElement.querySelector('.lamb-gender')?.value;
     if (!select) return;
 
-    const defaultStatusId = gender === 'male'
-        ? formElement.dataset.ramDefaultStatusId
-        : formElement.dataset.eweDefaultStatusId;
-
-    if (defaultStatusId) {
-        select.value = defaultStatusId;
+    const defaultStatusName = gender === 'male' ? 'Откорм' : 'Не определено';
+    const defaultOption = Array.from(select.options).find(option => option.textContent === defaultStatusName);
+    if (defaultOption) {
+        select.value = defaultOption.value;
     }
 }
-
 // Загрузка статусов для формы ягненка
 async function loadStatusesForLamb(formElement) {
     try {
-        const response = await apiRequest('/veterinary/api/status/?exclude_archive=1&page_size=100');
-        // API возвращает пагинированные данные, берем массив из results
-        const statuses = response.results || response;
-        
-        if (!Array.isArray(statuses)) {
-            console.error('Ожидался массив статусов для ягненка, получено:', statuses);
-            return;
-        }
-        
         const select = formElement.querySelector('.lamb-status');
-        let defaultEweChildStatusId = null;
-        let defaultRamChildStatusId = null;
-        
+        const gender = formElement.querySelector('.lamb-gender')?.value;
+        const animalType = getLambAnimalTypeByGender(gender);
+        if (!select) return;
+
+        select.innerHTML = animalType
+            ? '<option value="">Выберите статус</option>'
+            : '<option value="">Сначала выберите тип животного</option>';
+        if (!animalType) return;
+
+        const statuses = await getLambStatusesForAnimalType(animalType);
         statuses.forEach(status => {
             const option = document.createElement('option');
             option.value = status.id;
             option.textContent = status.status_type;
             select.appendChild(option);
-
-            if (status.status_type === 'Не определено') {
-                defaultEweChildStatusId = status.id;
-            }
-            if (status.status_type === 'Откорм') {
-                defaultRamChildStatusId = status.id;
-            }
         });
 
-        if (defaultEweChildStatusId) {
-            formElement.dataset.eweDefaultStatusId = defaultEweChildStatusId;
-        }
-        if (defaultRamChildStatusId) {
-            formElement.dataset.ramDefaultStatusId = defaultRamChildStatusId;
-        }
         applyDefaultLambStatus(formElement);
     } catch (error) {
         console.error('Ошибка загрузки статусов для ягненка:', error);
     }
 }
-
 // Загрузка мест для формы ягненка
 async function loadPlacesForLamb(formElement) {
     try {
         const response = await apiRequest('/veterinary/api/place/?page_size=100');
         // API возвращает пагинированные данные, берем массив из results
         const places = response.results || response;
-        
+
         if (!Array.isArray(places)) {
             console.error('Ожидался массив мест для ягненка, получено:', places);
             return;
         }
-        
+
         const select = formElement.querySelector('.lamb-place');
-        
+
         places.forEach(place => {
             const option = document.createElement('option');
             option.value = place.id;
@@ -2281,7 +2508,7 @@ async function loadPlacesForLamb(formElement) {
 function removeLambForm(button) {
     const lambForm = button.closest('.lamb-form');
     lambForm.remove();
-    
+
     // Перенумеровываем оставшиеся формы
     const remainingForms = document.querySelectorAll('.lamb-form');
     remainingForms.forEach((form, index) => {
@@ -2304,7 +2531,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     // Обработчик чекбокса создания ягнят
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     if (createLambsCheckbox) {
@@ -2314,7 +2541,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const container = document.getElementById('lambs-forms-container');
             const lambsCountInput = document.getElementById('lambs-count');
-            
+
             if (e.target.checked) {
                 container.style.display = 'block';
                 lambsCountInput.disabled = false;
@@ -2328,7 +2555,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const earlyFailureCheckbox = document.getElementById('early-failure-checkbox');
     if (earlyFailureCheckbox) {
-        earlyFailureCheckbox.addEventListener('change', updateCompletionMode);
+        earlyFailureCheckbox.addEventListener('change', (event) => {
+            setCompletionMode(event.target.checked ? 'early_failure' : 'normal');
+        });
+    }
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.addEventListener('change', (event) => {
+            setCompletionMode(event.target.checked ? 'unsuccessful_insemination' : 'normal');
+        });
     }
 });
 
@@ -2337,7 +2572,7 @@ async function completeFatherLambing(lambingId) {
     // Сохраняем ID окота для использования в модальном окне
     window.currentLambingId = lambingId;
     window.currentCompletionIsFather = true;
-    
+
     // Устанавливаем текущую дату как дату фактических родов
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('actual-lambing-date').value = today;
@@ -2353,18 +2588,24 @@ async function completeFatherLambing(lambingId) {
     if (earlyFailureCheckbox) {
         earlyFailureCheckbox.checked = false;
     }
+    const unsuccessfulCheckbox = document.getElementById('unsuccessful-insemination-checkbox');
+    if (unsuccessfulCheckbox) {
+        unsuccessfulCheckbox.checked = false;
+    }
+    window.currentCompletionMode = 'normal';
+    resetUnsuccessfulInseminationWarning();
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     if (createLambsCheckbox) {
         createLambsCheckbox.checked = false;
     }
-    
+
     // Скрываем секцию создания ягнят (для отцов не создаем ягнят)
     const lambsCreationSection = document.getElementById('lambs-creation-section');
     if (lambsCreationSection) {
         lambsCreationSection.style.display = 'none';
     }
     updateCompletionMode();
-    
+
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
     modal.show();
@@ -2372,6 +2613,11 @@ async function completeFatherLambing(lambingId) {
 
 // Обновляем функцию завершения окота для работы с отцами
 async function completeLambingWithChildren() {
+    if (isUnsuccessfulInseminationMode()) {
+        await completeLambingUnsuccessfulInsemination();
+        return;
+    }
+
     if (isEarlyFailureMode()) {
         await completeLambingEarlyFailure();
         return;
@@ -2383,7 +2629,7 @@ async function completeLambingWithChildren() {
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
     const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox') ? document.getElementById('create-lambs-checkbox').checked : false;
-    
+
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
         return;
@@ -2393,20 +2639,20 @@ async function completeLambingWithChildren() {
         alert('Количество живых и мертвых ягнят не может быть отрицательным');
         return;
     }
-    
+
     try {
         // Собираем данные о ягнятах, если нужно их создавать
         let lambsData = [];
-        
+
         if (createLambs && lambsCount > 0) {
             const lambForms = document.querySelectorAll('.lamb-form');
-            
+
             // Проверяем, что количество форм соответствует количеству ягнят
             if (lambForms.length !== lambsCount) {
                 alert(`Количество форм ягнят (${lambForms.length}) не соответствует указанному количеству (${lambsCount})`);
                 return;
             }
-            
+
             for (let form of lambForms) {
                 const gender = form.querySelector('.lamb-gender').value;
                 const tag = form.querySelector('.lamb-tag').value.trim();
@@ -2423,12 +2669,12 @@ async function completeLambingWithChildren() {
                         return;
                     }
                 }
-                
+
                 if (!gender || !tag) {
                     alert('Пожалуйста, заполните тип животного и бирку для всех ягнят');
                     return;
                 }
-                
+
                 lambsData.push({
                     gender: gender,
                     tag_number: tag,
@@ -2439,7 +2685,7 @@ async function completeLambingWithChildren() {
                 });
             }
         }
-        
+
         // Отправляем запрос на завершение окота
         const completionData = {
             actual_lambing_date: actualDate,
@@ -2448,9 +2694,9 @@ async function completeLambingWithChildren() {
             note: lambingNote,
             lambs: lambsData
         };
-        
+
         await apiRequest(`/animals/lambing/${lambingId}/complete-with-children/`, 'POST', completionData);
-        
+
         // Формируем сообщение об успехе
         let successMessage = 'Окот успешно завершен!';
         if (createLambs && lambsData.length > 0) {
@@ -2458,29 +2704,29 @@ async function completeLambingWithChildren() {
         } else if (lambsCount > 0) {
             successMessage += ` Зафиксировано ${lambsCount} ягнят (без создания записей).`;
         }
-        
+
         alert(successMessage);
-        
+
         // Закрываем модальное окно
         const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
         modal.hide();
-        
+
         // Перезагружаем список окотов
         const animalDetail = document.getElementById('animal-detail');
         const animalType = animalDetail.dataset.animalType;
-        
+
         if (animalType === 'sheep' || animalType === 'ewe') {
             await loadLambings();
         } else if (animalType === 'maker' || animalType === 'ram') {
             await loadFatherLambings();
         }
-        
+
         // Показываем секцию создания ягнят обратно
         const lambsCreationSection = document.getElementById('lambs-creation-section');
         if (lambsCreationSection) {
             lambsCreationSection.style.display = 'block';
         }
-        
+
     } catch (error) {
         console.error('Ошибка завершения окота:', error);
         alert('Ошибка при завершении окота: ' + (error.message || 'Неизвестная ошибка'));
@@ -2574,7 +2820,46 @@ async function completeLambingEarlyFailure() {
     }
 }
 
+async function completeLambingUnsuccessfulInsemination() {
+    const lambingId = window.currentLambingId;
+    const lambingNote = document.getElementById('completion-lambing-note').value;
+
+    if (!lambingId) {
+        alert('Не выбрана случка');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/lambing/${lambingId}/complete-unsuccessful-insemination/`, 'POST', {
+            note: lambingNote || ''
+        });
+
+        alert(response.warning || 'Неудачное осеменение отмечено.');
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('completeLambingModal'));
+        modal.hide();
+
+        const animalDetail = document.getElementById('animal-detail');
+        const animalType = animalDetail.dataset.animalType;
+        const tagNumber = animalDetail.dataset.tagNumber;
+        if (animalType === 'sheep' || animalType === 'ewe') {
+            await loadLambings();
+            await loadAnimalDetails(animalType, tagNumber);
+        } else if (animalType === 'maker' || animalType === 'ram') {
+            await loadFatherLambings();
+        }
+    } catch (error) {
+        console.error('Ошибка отметки неудачного осеменения:', error);
+        alert('Ошибка при отметке неудачного осеменения: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
 async function submitLambingCompletion() {
+    if (isUnsuccessfulInseminationMode()) {
+        await completeLambingUnsuccessfulInsemination();
+        return;
+    }
+
     if (isEarlyFailureMode()) {
         await completeLambingEarlyFailure();
         return;
@@ -2586,6 +2871,8 @@ async function submitLambingCompletion() {
 // Экспортируем новые функции для глобального доступа
 window.completeLambingWithChildren = completeLambingWithChildren;
 window.completeLambingEarlyFailure = completeLambingEarlyFailure;
+window.completeLambingUnsuccessfulInsemination = completeLambingUnsuccessfulInsemination;
+window.selectUnsuccessfulInseminationMode = selectUnsuccessfulInseminationMode;
 window.submitLambingCompletion = submitLambingCompletion;
 window.removeLambForm = removeLambForm;
 window.showRemoveFatherModal = showRemoveFatherModal;
@@ -2596,5 +2883,3 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.toggleArchiveActNumberField = toggleArchiveActNumberField;
-
-

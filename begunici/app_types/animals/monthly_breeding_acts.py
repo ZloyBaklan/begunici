@@ -75,7 +75,7 @@ def get_lambing_order_date(lambing):
 def build_first_regular_lambing_ids_by_mother():
     lambings = list(
         Lambing.objects.select_related("sheep__tag", "ewe__tag")
-        .exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
+        .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
     )
     lambings.sort(key=lambda lambing: (get_lambing_order_date(lambing), lambing.id))
 
@@ -116,6 +116,7 @@ def build_monthly_breeding_counts(year):
 
     insemination_lambings = (
         Lambing.objects.filter(start_date__year=year)
+        .exclude(completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION)
         .select_related("sheep__tag", "ewe__tag")
         .order_by("start_date", "id")
     )
@@ -129,7 +130,7 @@ def build_monthly_breeding_counts(year):
             actual_lambing_date__isnull=False,
             actual_lambing_date__year=year,
         )
-        .exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
+        .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
         .select_related("sheep__tag", "ewe__tag")
         .order_by("actual_lambing_date", "id")
     )

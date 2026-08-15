@@ -15,6 +15,9 @@ from .models import (
     AnimalBase,
     CalendarNote,
     ArchiveAct,
+    build_unsuccessful_insemination_mother_warning,
+    format_birth_type_for_animal,
+    get_current_unsuccessful_insemination_count_for_mother,
 )
 from begunici.app_types.veterinary.vet_models import (
     Place,
@@ -34,7 +37,10 @@ from begunici.app_types.veterinary.vet_serializers import (
     PlaceMovementSerializer,
     StatusHistorySerializer,
 )
-from .status_logic import set_mothers_not_inseminated_after_child_update
+from .status_logic import (
+    get_animal_status_validation_error,
+    set_mothers_not_inseminated_after_child_update,
+)
 
 
 def _format_weight_kg(value):
@@ -294,9 +300,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_death_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=50)
     archive_act_add_weight_record = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
+    archive_act_group_key = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
+    unsuccessful_insemination_warning = serializers.SerializerMethodField()
 
     class Meta:
         model = AnimalBase
@@ -319,6 +327,12 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             formatted += "*"
             
         return formatted
+
+    def get_unsuccessful_insemination_warning(self, obj):
+        if not isinstance(obj, (Sheep, Ewe)):
+            return ""
+        count = get_current_unsuccessful_insemination_count_for_mother(obj)
+        return build_unsuccessful_insemination_mother_warning(count)
 
     @staticmethod
     def _format_dorper_log_value(value, is_manual):
@@ -348,18 +362,51 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         normalized = str(value).strip()
         return normalized or None
 
-    def _validate_global_rshn_unique(self, rshn_tag, current_instance=None):
-        rshn_tag = self._normalize_rshn_tag(rshn_tag)
-        if not rshn_tag:
+    @staticmethod
+    def _normalize_tag_number(value):
+        if value in (None, ""):
             return None
+        normalized = str(value).strip()
+        return normalized or None
 
-        animal_sources = (
+    @staticmethod
+    def _animal_sources():
+        return (
             (Maker, "баран-производитель"),
             (Ram, "баранчик"),
             (Ewe, "ярка"),
             (Sheep, "овцематка"),
         )
-        for model, animal_type_label in animal_sources:
+
+    def _validate_global_tag_unique(self, tag_number, current_instance=None):
+        tag_number = self._normalize_tag_number(tag_number)
+        if not tag_number:
+            raise serializers.ValidationError({"tag": "Укажите бирку животного."})
+
+        for model, animal_type_label in self._animal_sources():
+            queryset = model.objects.filter(tag__tag_number__iexact=tag_number).select_related("tag")
+            if current_instance is not None and isinstance(current_instance, model):
+                queryset = queryset.exclude(pk=current_instance.pk)
+
+            conflict = queryset.first()
+            if conflict:
+                conflict_tag = conflict.tag.tag_number if conflict.tag else tag_number
+                archived_suffix = " (архив)" if getattr(conflict, "is_archived", False) else ""
+                raise serializers.ValidationError({
+                    "tag": (
+                        "Бирка с таким номером уже используется: "
+                        f"{animal_type_label} {conflict_tag}{archived_suffix}."
+                    )
+                })
+
+        return tag_number
+
+    def _validate_global_rshn_unique(self, rshn_tag, current_instance=None):
+        rshn_tag = self._normalize_rshn_tag(rshn_tag)
+        if not rshn_tag:
+            return None
+
+        for model, animal_type_label in self._animal_sources():
             queryset = model.objects.filter(rshn_tag__iexact=rshn_tag).select_related("tag")
             if current_instance is not None and isinstance(current_instance, model):
                 queryset = queryset.exclude(pk=current_instance.pk)
@@ -379,11 +426,43 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        if "tag" in attrs:
+            normalized_tag = self._normalize_tag_number(attrs.get("tag"))
+            current_tag = (
+                self.instance.tag.tag_number
+                if self.instance is not None and self.instance.tag
+                else None
+            )
+            if self.instance is None or current_tag != normalized_tag:
+                attrs["tag"] = self._validate_global_tag_unique(
+                    normalized_tag,
+                    current_instance=self.instance,
+                )
+            else:
+                attrs["tag"] = normalized_tag
+
         if "rshn_tag" in attrs:
             attrs["rshn_tag"] = self._validate_global_rshn_unique(
                 attrs.get("rshn_tag"),
                 current_instance=self.instance,
             )
+
+        if "animal_status" in attrs:
+            selected_status = attrs.get("animal_status")
+            allow_archive_status = bool(
+                self.instance is not None
+                and selected_status
+                and selected_status.status_type in ARCHIVE_STATUS_NAMES
+                and attrs.get("status_date")
+            )
+            status_error = get_animal_status_validation_error(
+                selected_status,
+                self.Meta.model.__name__,
+                allow_archive=allow_archive_status,
+            )
+            if status_error:
+                raise serializers.ValidationError({"animal_status_id": status_error})
+
         return attrs
 
     def validate_birth_date(self, value):
@@ -422,6 +501,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_death_reason",
             "archive_act_add_weight_record",
             "archive_act_download",
+            "archive_act_group_key",
         ):
             validated_data.pop(service_field, None)
 
@@ -438,12 +518,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
         # tag_data содержит строку номера бирки из поля tag_number
         tag_number = tag_data if isinstance(tag_data, str) else str(tag_data)
-
-        if (Maker.objects.filter(tag__tag_number=tag_number).exists() or
-            Ram.objects.filter(tag__tag_number=tag_number).exists() or
-            Ewe.objects.filter(tag__tag_number=tag_number).exists() or
-            Sheep.objects.filter(tag__tag_number=tag_number).exists()):
-            raise serializers.ValidationError({"tag": "Бирка с таким номером уже используется."})
+        tag_number = self._validate_global_tag_unique(tag_number)
 
         tag, created = Tag.objects.get_or_create(tag_number=tag_number)
         animal_type = self.Meta.model.__name__
@@ -518,6 +593,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_death_reason",
             "archive_act_add_weight_record",
             "archive_act_download",
+            "archive_act_group_key",
         }
         archive_act_fields_submitted = any(
             field_name in getattr(self, "initial_data", {})
@@ -534,6 +610,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         archive_act_death_reason = (validated_data.pop("archive_act_death_reason", "") or "").strip()
         archive_act_add_weight_record = bool(validated_data.pop("archive_act_add_weight_record", False))
         archive_act_download = bool(validated_data.pop("archive_act_download", False))
+        archive_act_group_key = validated_data.pop("archive_act_group_key", None)
 
         selected_status = validated_data.get("animal_status")
         selected_status_name = selected_status.status_type if selected_status else ""
@@ -755,7 +832,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         new_tag = validated_data.pop("tag", None)  # Убираем из validated_data
         if new_tag:
             # Если передана строка (номер бирки), обновляем
-            if isinstance(new_tag, str) and instance.tag.tag_number != new_tag:
+            if isinstance(new_tag, str) and instance.tag.tag_number != new_tag.strip():
+                new_tag = self._validate_global_tag_unique(new_tag, current_instance=instance)
                 instance.tag.update_tag(new_tag)
         
         # Проверяем, изменится ли статус
@@ -777,25 +855,20 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         # Если изменился статус и передана дата статуса
         if status_will_change and status_date:
-            from datetime import datetime
             from django.utils import timezone
-            import pytz
             
             # НЕ обновляем date_of_status в Status - это поле используется всеми животными!
             # Используем только StatusHistory для хранения даты присвоения статуса конкретному животному
             
-            # Создаем запись в истории с пользовательской датой в московском времени
+            # StatusHistory хранит техническую хронологию действий.
+            # Бизнес-дата архивирования хранится отдельно в ArchiveAct.status_date.
             from begunici.app_types.veterinary.vet_models import StatusHistory
-            
-            # Создаем datetime в московском часовом поясе
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            status_datetime_moscow = moscow_tz.localize(datetime.combine(status_date, datetime.min.time()))
             
             StatusHistory.objects.create(
                 tag=instance.tag,
                 old_status=old_status,
                 new_status=instance.animal_status,
-                change_date=status_datetime_moscow
+                change_date=timezone.now(),
             )
 
         archive_statuses = ARCHIVE_STATUS_NAMES
@@ -810,6 +883,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     "animal_type": instance.get_animal_type(),
                     "status_name": instance.animal_status.status_type,
                     "status_date": status_date,
+                    "act_group_key": archive_act_group_key,
                     "act_number": act_number,
                     "act_date": archive_act_date,
                     "live_weight": archive_act_live_weight,
@@ -895,15 +969,20 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
     def get_archived_date(self, obj):
         """
-        Возвращаем дату архивирования на основе последней записи в StatusHistory.
+        Возвращаем бизнес-дату архивирования из ArchiveAct.
+        StatusHistory используется только как fallback для старых данных без акта.
         """
         if obj.is_archived and obj.animal_status:
+            archive_act = obj.tag.archive_acts.order_by("-updated_at", "-id").first() if obj.tag else None
+            if archive_act and archive_act.status_date:
+                return archive_act.status_date
+
             # Ищем самую последнюю запись в истории статусов для этого животного (по ID, который автоинкрементный)
             from begunici.app_types.veterinary.vet_models import StatusHistory
             last_status_change = StatusHistory.objects.filter(
                 tag=obj.tag,
                 new_status=obj.animal_status
-            ).order_by('-id').first()  # Сортируем по ID (последняя созданная запись)
+            ).order_by('-change_date', '-id').first()
             
             if last_status_change:
                 return last_status_change.change_date
@@ -998,11 +1077,15 @@ class UniversalChildSerializer(serializers.Serializer):
         return obj.animal_status.status_type if obj.animal_status else None
 
     def get_archive_date(self, obj):
-        """Получаем дату архивирования из StatusHistory"""
+        """Получаем бизнес-дату архивирования из ArchiveAct."""
         if not obj.animal_status:
             return None
+
+        archive_act = obj.tag.archive_acts.order_by("-updated_at", "-id").first() if obj.tag else None
+        if archive_act and archive_act.status_date:
+            return archive_act.status_date
         
-        # Ищем последнюю запись в StatusHistory, где животное получило текущий архивный статус
+        # Fallback для старых данных без ArchiveAct.
         from begunici.app_types.veterinary.vet_models import StatusHistory
         
         archive_statuses = ARCHIVE_STATUS_NAMES
@@ -1010,7 +1093,7 @@ class UniversalChildSerializer(serializers.Serializer):
             status_history = StatusHistory.objects.filter(
                 tag=obj.tag,
                 new_status=obj.animal_status
-            ).order_by('-change_date').first()
+            ).order_by('-change_date', '-id').first()
             
             if status_history:
                 return status_history.change_date
@@ -1100,7 +1183,7 @@ class EweSerializer(AnimalBaseSerializer):
             return []
 
     def get_birth_type_display(self, obj):
-        return "-"
+        return format_birth_type_for_animal(obj)
 
     def get_birth_weight_display(self, obj):
         weight_record = _get_weight_record_near_date(obj.tag, obj.birth_date)
@@ -1433,6 +1516,29 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         return bool(get_archive_act_template_config(status_type))
 
     @staticmethod
+    def _get_archive_date_from_act(tag_obj, status_type=None):
+        if not tag_obj:
+            return None
+
+        archive_act = tag_obj.archive_acts.order_by("-updated_at", "-id").first()
+        if archive_act and archive_act.status_date:
+            return archive_act.status_date
+
+        if not status_type:
+            return None
+
+        # Fallback for old archived animals without ArchiveAct rows.
+        status_history = (
+            StatusHistory.objects.filter(
+                tag=tag_obj,
+                new_status__status_type=status_type,
+            )
+            .order_by("-change_date", "-id")
+            .first()
+        )
+        return status_history.change_date if status_history else None
+
+    @staticmethod
     def _format_age_at_date(birth_date, reference_date):
         if not birth_date:
             return None
@@ -1470,10 +1576,21 @@ class ArchiveAnimalSerializer(serializers.Serializer):
             return None
 
     def to_representation(self, instance):
-        from begunici.app_types.veterinary.vet_models import StatusHistory
         from begunici.app_types.animals.models import Tag
 
         if isinstance(instance, dict):
+            if instance.get("group_animals") is not None:
+                return {
+                    "tag_number": instance.get("tag_number") or "Нет данных",
+                    "animal_type": instance.get("animal_type") or "Unknown",
+                    "display_name": instance.get("display_name") or "Нет данных",
+                    "group_animals": instance.get("group_animals") or [],
+                    "status": instance.get("status") or "Нет данных",
+                    "status_color": instance.get("status_color", "#FFFFFF"),
+                    "archived_date": instance.get("archived_date"),
+                    "can_download_act": bool(instance.get("can_download_act")),
+                }
+
             tag_number = instance.get("tag__tag_number") or instance.get("tag_number")
             animal_type = instance.get("tag__animal_type") or instance.get("animal_type")
             status_type = instance.get("animal_status__status_type") or "Нет данных"
@@ -1487,16 +1604,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
                     tag_obj = None
 
             if status_type and tag_obj:
-                last_status_change = (
-                    StatusHistory.objects.filter(
-                        tag=tag_obj,
-                        new_status__status_type=status_type,
-                    )
-                    .order_by("-id")
-                    .first()
-                )
-                if last_status_change:
-                    archived_date = last_status_change.change_date
+                archived_date = self._get_archive_date_from_act(tag_obj, status_type)
 
             birth_date_value = instance.get("birth_date")
             age_display = self._format_age_at_date(birth_date_value, archived_date)
@@ -1525,16 +1633,10 @@ class ArchiveAnimalSerializer(serializers.Serializer):
 
         archived_date = None
         if instance.animal_status and instance.tag:
-            last_status_change = (
-                StatusHistory.objects.filter(
-                    tag=instance.tag,
-                    new_status=instance.animal_status,
-                )
-                .order_by("-id")
-                .first()
+            archived_date = self._get_archive_date_from_act(
+                instance.tag,
+                instance.animal_status.status_type,
             )
-            if last_status_change:
-                archived_date = last_status_change.change_date
 
         mother_tag = (instance.mother or "").strip() or None
         age_display = self._format_age_at_date(instance.birth_date, archived_date)

@@ -41,6 +41,19 @@ function buildAnimalInfo(animal) {
     return { detailUrl: "#" };
 }
 
+function buildAnimalLink(animal) {
+    const animalInfo = buildAnimalInfo(animal);
+    const label = animal.display_name || animal.tag_number || "-";
+    return `<a href="${animalInfo.detailUrl}">${escapeHtml(label)}</a>`;
+}
+
+function buildAnimalLinksCell(animal) {
+    if (Array.isArray(animal.group_animals) && animal.group_animals.length > 1) {
+        return animal.group_animals.map(buildAnimalLink).join(", ");
+    }
+    return buildAnimalLink(animal);
+}
+
 function downloadArchiveAct(animalType, tagNumber) {
     const link = document.createElement("a");
     link.href = `/animals/api/archive/act/${encodeURIComponent(animalType)}/${encodeURIComponent(tagNumber)}/`;
@@ -84,14 +97,13 @@ function displayArchiveActs(data) {
         const row = document.createElement("tr");
         const recordNumber = (currentPage - 1) * pageSize + index + 1;
         const tagNumber = animal.tag_number || "-";
-        const animalInfo = buildAnimalInfo(animal);
         const status = animal.status || "Не указан";
         const statusColor = animal.status_color || "#FFFFFF";
         const archivedDate = formatDateToOutput(animal.archived_date) || "Не указана";
 
         row.innerHTML = `
             <td>${recordNumber}</td>
-            <td><a href="${animalInfo.detailUrl}">${escapeHtml(animal.display_name || tagNumber)}</a></td>
+            <td>${buildAnimalLinksCell(animal)}</td>
             <td style="background-color:${escapeHtml(statusColor)}">${escapeHtml(status)}</td>
             <td>${escapeHtml(archivedDate)}</td>
             <td>${buildActionsCell(animal)}</td>
@@ -150,6 +162,7 @@ async function fetchArchiveActs(page = 1) {
 
     params.set("page", String(page));
     params.set("page_size", String(pageSize));
+    params.delete("acts_view");
     if (search) {
         params.set("search", search);
     } else {
@@ -157,7 +170,7 @@ async function fetchArchiveActs(page = 1) {
     }
     setUrlParams(params);
 
-    const response = await apiRequest(`/animals/archive/?${params.toString()}`);
+    const response = await apiRequest(`/animals/api/acts/archive/?${params.toString()}`);
     displayArchiveActs(response.results || []);
     updatePagination(response);
 }

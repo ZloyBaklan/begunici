@@ -449,7 +449,8 @@ class LambingCalendar {
                     return '';
                 }
 
-                let html = `<h6 style="color: ${color};">${title}:</h6>`;
+                const animalWord = animals.length === 1 ? 'животное' : 'животных';
+                let html = `<h6 style="color: ${color};">${title}: ${animals.length} ${animalWord}</h6>`;
                 html += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
 
                 animals.forEach(animal => {

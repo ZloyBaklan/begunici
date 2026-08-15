@@ -1,15 +1,15 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
 {% block content %}
 <div class="container mt-4">
     <h1>Создание животных</h1>
-    
+
     <!-- Кнопка для тестирования API -->
     <div class="mb-3">
         <button class="btn btn-info" onclick="testAPI()">Тест API</button>
     </div>
-    
+
     <!-- Вкладки для выбора типа животного -->
     <ul class="nav nav-tabs" id="animalTabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function testAPI() {
     console.log('Testing API endpoints...');
-    
+
     // Тестируем статусы
     fetch('/veterinary/api/status/')
         .then(response => {
@@ -226,7 +226,7 @@ function testAPI() {
             console.error('Status API error:', error);
             alert('Ошибка статусов API: ' + error.message);
         });
-    
+
     // Тестируем овчарни
     fetch('/veterinary/api/place/')
         .then(response => {
@@ -244,48 +244,64 @@ function testAPI() {
 }
 
 function loadStatuses() {
-    fetch('/veterinary/api/status/?exclude_archive=1&page_size=100')
-        .then(response => {
+    const statusSelectTypes = {
+        'maker-animal_status': 'Maker',
+        'ram-animal_status': 'Ram',
+        'ewe-animal_status': 'Ewe',
+        'sheep-animal_status': 'Sheep',
+    };
+
+    Object.entries(statusSelectTypes).forEach(([selectId, animalType]) => {
+        fetch(`/veterinary/api/status/?exclude_archive=1&page_size=100&animal_type=${encodeURIComponent(animalType)}`)
+        .then(async response => {
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                let errorData = null;
+                try {
+                    errorData = await response.json();
+                } catch (error) {
+                    errorData = null;
+                }
+                throw new Error(getApiErrorMessage(errorData) || `Ошибка сервера: ${response.status}`);
             }
             return response.json();
         })
         .then(data => {
-            console.log('Statuses data:', data); // Отладочная информация
-            const statusSelects = [
-                'maker-animal_status', 'ram-animal_status', 'ewe-animal_status', 'sheep-animal_status'
-            ];
-            statusSelects.forEach(selectId => {
-                const select = document.getElementById(selectId);
-                if (select) {
-                    select.innerHTML = '<option value="">Выберите статус</option>';
-                    // Проверяем, есть ли пагинация (results) или данные возвращаются напрямую
-                    const statuses = data.results || data;
-                    if (Array.isArray(statuses)) {
-                        statuses.forEach(status => {
-                            const option = document.createElement('option');
-                            option.value = status.id;
-                            option.textContent = status.status_type;
-                            select.appendChild(option);
-                        });
-                    } else {
-                        console.error('Statuses data is not an array:', statuses);
-                    }
+            console.log(`Statuses data for ${animalType}:`, data); // Отладочная информация
+            const select = document.getElementById(selectId);
+            if (select) {
+                select.innerHTML = '<option value="">Выберите статус</option>';
+                // Проверяем, есть ли пагинация (results) или данные возвращаются напрямую
+                const statuses = data.results || data;
+                if (Array.isArray(statuses)) {
+                    statuses.forEach(status => {
+                        const option = document.createElement('option');
+                        option.value = status.id;
+                        option.textContent = status.status_type;
+                        select.appendChild(option);
+                    });
+                } else {
+                    console.error('Statuses data is not an array:', statuses);
                 }
-            });
+            }
         })
         .catch(error => {
-            console.error('Error loading statuses:', error);
+            console.error(`Error loading statuses for ${animalType}:`, error);
             alert('Ошибка загрузки статусов: ' + error.message);
         });
+    });
 }
 
 function loadPlaces() {
     fetch('/veterinary/api/place/')
-        .then(response => {
+        .then(async response => {
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                let errorData = null;
+                try {
+                    errorData = await response.json();
+                } catch (error) {
+                    errorData = null;
+                }
+                throw new Error(getApiErrorMessage(errorData) || `Ошибка сервера: ${response.status}`);
             }
             return response.json();
         })
@@ -319,10 +335,148 @@ function loadPlaces() {
         });
 }
 
+const apiErrorFieldLabels = {
+    animal_status_id: 'Статус',
+    birth_date: 'Дата рождения',
+    non_field_errors: 'Общая ошибка',
+    place_id: 'Овчарня',
+    plemstatus: 'Племенной статус',
+    tag: 'Бирка',
+    tag_number: 'Бирка',
+    working_condition: 'Рабочее состояние',
+};
+
+function getApiErrorFieldLabel(field) {
+    return apiErrorFieldLabels[field] || String(field).replaceAll('_', ' ');
+}
+
+function translateApiErrorText(message) {
+    const text = String(message || '').trim();
+    const translations = {
+        'This field is required.': 'Это поле обязательно для заполнения.',
+        'This field may not be blank.': 'Это поле не может быть пустым.',
+        'This field may not be null.': 'Это поле не может быть пустым.',
+        'A valid integer is required.': 'Нужно указать целое число.',
+        'A valid number is required.': 'Нужно указать число.',
+        'Enter a valid date.': 'Укажите корректную дату.',
+        'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.': 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ.',
+        'Enter a valid date/time.': 'Укажите корректные дату и время.',
+        'This field must be unique.': 'Такое значение уже используется.',
+    };
+    if (translations[text]) return translations[text];
+    if (text.includes('Ensure this value is greater than or equal to 0')) return 'Значение не может быть меньше 0.';
+    if (text.includes('Invalid pk')) return 'Выбранное значение не найдено в базе.';
+    if (text.includes('Got a `TypeError` when calling')) return 'Сервер не смог сохранить данные из-за неподдерживаемого поля. Сообщите разработчику, на какой форме возникла ошибка.';
+    return text;
+}
+
+function parseApiErrorString(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const cleaned = text.replace(
+        /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g,
+        (_, quote, errorMessage) => `'${String(errorMessage).replaceAll("'", "\\'")}'`
+    );
+
+    const fieldMessages = [];
+    const fieldRegex = /['"]([^'"]+)['"]\s*:\s*(\[[\s\S]*?\]|['"][\s\S]*?['"])/g;
+    let fieldMatch;
+    while ((fieldMatch = fieldRegex.exec(cleaned)) !== null) {
+        const field = fieldMatch[1];
+        const rawValue = fieldMatch[2];
+        const values = [];
+        const valueRegex = /['"]([^'"]+)['"]/g;
+        let valueMatch;
+        while ((valueMatch = valueRegex.exec(rawValue)) !== null) {
+            values.push(translateApiErrorText(valueMatch[1]));
+        }
+
+        if (values.length) {
+            fieldMessages.push(`${getApiErrorFieldLabel(field)}: ${values.join(', ')}`);
+        }
+    }
+
+    if (fieldMessages.length) return fieldMessages.join('\n');
+
+    const detailMessages = [];
+    const detailRegex = /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g;
+    let detailMatch;
+    while ((detailMatch = detailRegex.exec(text)) !== null) {
+        detailMessages.push(translateApiErrorText(detailMatch[2]));
+    }
+
+    return detailMessages.length ? detailMessages.join('\n') : translateApiErrorText(text);
+}
+
+function stringifyApiErrorValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return parseApiErrorString(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(stringifyApiErrorValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value).map(([field, nestedValue]) => {
+            const message = stringifyApiErrorValue(nestedValue);
+            if (!message) return '';
+            if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+            return `${getApiErrorFieldLabel(field)}: ${message}`;
+        }).filter(Boolean).join('\n');
+    }
+    return String(value);
+}
+
+function getApiErrorMessage(errorData) {
+    if (!errorData) return 'Проверьте введенные данные.';
+    if (typeof errorData === 'string') return parseApiErrorString(errorData);
+    if (typeof errorData !== 'object') return 'Проверьте введенные данные.';
+    if (typeof errorData.detail === 'string') return parseApiErrorString(errorData.detail);
+    if (typeof errorData.error === 'string') return parseApiErrorString(errorData.error);
+
+    const messages = Object.entries(errorData).map(([field, value]) => {
+        const message = stringifyApiErrorValue(value);
+        if (!message) return '';
+        if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+        return `${getApiErrorFieldLabel(field)}: ${message}`;
+    }).filter(Boolean);
+
+    return messages.length ? messages.join('\n') : 'Проверьте введенные данные.';
+}
+
+async function sendCreateAnimalRequest(url, data, successMessage, formId) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    });
+
+    const responseText = await response.text();
+    let responseData = {};
+    try {
+        responseData = responseText ? JSON.parse(responseText) : {};
+    } catch (error) {
+        if (!response.ok) {
+            throw new Error(`Сервер вернул некорректный ответ. Код ошибки: ${response.status}`);
+        }
+        throw new Error('Сервер вернул некорректный ответ.');
+    }
+
+    if (!response.ok || !responseData.id) {
+        throw new Error(getApiErrorMessage(responseData));
+    }
+
+    alert(successMessage);
+    document.getElementById(formId).reset();
+}
+
 function createMaker() {
     const formData = new FormData(document.getElementById('create-maker-form'));
     const data = {
-        tag: formData.get('tag'),
+        tag_number: formData.get('tag'),
         animal_status_id: formData.get('animal_status') || null,
         birth_date: formData.get('birth_date') || null,
         plemstatus: formData.get('plemstatus') || '',
@@ -331,125 +485,61 @@ function createMaker() {
         note: formData.get('note') || ''
     };
 
-    fetch('/animals/maker/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken()
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.id) {
-            alert('Баран-Производитель создан успешно!');
-            document.getElementById('create-maker-form').reset();
-        } else {
-            alert('Ошибка при создании барана-производителя: ' + JSON.stringify(data));
-        }
-    })
+    sendCreateAnimalRequest('/animals/maker/', data, 'Баран-Производитель создан успешно!', 'create-maker-form')
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании барана-производителя');
+        alert('Ошибка при создании барана-производителя: ' + error.message);
     });
 }
 
 function createRam() {
     const formData = new FormData(document.getElementById('create-ram-form'));
     const data = {
-        tag: formData.get('tag'),
+        tag_number: formData.get('tag'),
         animal_status_id: formData.get('animal_status') || null,
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') || null,
         note: formData.get('note') || ''
     };
 
-    fetch('/animals/ram/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken()
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.id) {
-            alert('Баранчик создан успешно!');
-            document.getElementById('create-ram-form').reset();
-        } else {
-            alert('Ошибка при создании баранчика: ' + JSON.stringify(data));
-        }
-    })
+    sendCreateAnimalRequest('/animals/ram/', data, 'Баранчик создан успешно!', 'create-ram-form')
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании баранчика');
+        alert('Ошибка при создании баранчика: ' + error.message);
     });
 }
 
 function createEwe() {
     const formData = new FormData(document.getElementById('create-ewe-form'));
     const data = {
-        tag: formData.get('tag'),
+        tag_number: formData.get('tag'),
         animal_status_id: formData.get('animal_status') || null,
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') || null,
         note: formData.get('note') || ''
     };
 
-    fetch('/animals/ewe/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken()
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.id) {
-            alert('Ярка создана успешно!');
-            document.getElementById('create-ewe-form').reset();
-        } else {
-            alert('Ошибка при создании ярки: ' + JSON.stringify(data));
-        }
-    })
+    sendCreateAnimalRequest('/animals/ewe/', data, 'Ярка создана успешно!', 'create-ewe-form')
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании ярки');
+        alert('Ошибка при создании ярки: ' + error.message);
     });
 }
 
 function createSheep() {
     const formData = new FormData(document.getElementById('create-sheep-form'));
     const data = {
-        tag: formData.get('tag'),
+        tag_number: formData.get('tag'),
         animal_status_id: formData.get('animal_status') || null,
         birth_date: formData.get('birth_date') || null,
         place_id: formData.get('place') || null,
         note: formData.get('note') || ''
     };
 
-    fetch('/animals/sheep/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken()
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.id) {
-            alert('Овцематка создана успешно!');
-            document.getElementById('create-sheep-form').reset();
-        } else {
-            alert('Ошибка при создании овцематки: ' + JSON.stringify(data));
-        }
-    })
+    sendCreateAnimalRequest('/animals/sheep/', data, 'Овцематка создана успешно!', 'create-sheep-form')
     .catch(error => {
         console.error('Error:', error);
-        alert('Произошла ошибка при создании овцематки');
+        alert('Ошибка при создании овцематки: ' + error.message);
     });
 }
 

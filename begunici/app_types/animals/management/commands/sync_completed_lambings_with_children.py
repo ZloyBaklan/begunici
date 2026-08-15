@@ -163,7 +163,7 @@ class Command(BaseCommand):
 
         lambings_qs = (
             Lambing.objects.filter(is_active=False, actual_lambing_date__isnull=False)
-            .exclude(completion_type=Lambing.COMPLETION_EARLY_FAILURE)
+            .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
             .select_related("sheep__tag", "ewe__tag")
             .order_by("-actual_lambing_date", "-id")
         )

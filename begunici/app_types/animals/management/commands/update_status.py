@@ -182,8 +182,8 @@ class Command(BaseCommand):
         if not latest_lambing:
             return STATUS_NOT_INSEMINATED, "нет активных и завершенных окотов"
 
-        if latest_lambing.completion_type == Lambing.COMPLETION_EARLY_FAILURE:
-            return STATUS_NOT_INSEMINATED, "последний окот досрочно завершен"
+        if latest_lambing.completion_type in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES:
+            return STATUS_NOT_INSEMINATED, "последний окот завершен без приплода"
 
         live_count = latest_lambing.number_of_lambs or 0
         if live_count <= 0:
@@ -238,15 +238,33 @@ class Command(BaseCommand):
         return Lambing.objects.filter(ewe=animal, is_active=True).exists()
 
     def _latest_completed_lambing_as_mother(self, animal):
-        queryset = Lambing.objects.filter(
-            is_active=False,
-            actual_lambing_date__isnull=False,
-        )
+        queryset = Lambing.objects.filter(is_active=False)
+        tag_number = animal.tag.tag_number if getattr(animal, "tag", None) else ""
+        relation_filter = Q()
         if isinstance(animal, Sheep):
-            queryset = queryset.filter(Q(sheep=animal) | Q(mother_tag_text__iexact=animal.tag.tag_number))
+            relation_filter |= Q(sheep=animal)
         else:
-            queryset = queryset.filter(Q(ewe=animal) | Q(mother_tag_text__iexact=animal.tag.tag_number))
-        return queryset.order_by("-actual_lambing_date", "-id").first()
+            relation_filter |= Q(ewe=animal)
+        if tag_number:
+            relation_filter |= Q(sheep__tag__tag_number__iexact=tag_number)
+            relation_filter |= Q(ewe__tag__tag_number__iexact=tag_number)
+            relation_filter |= Q(mother_tag_text__iexact=tag_number)
+        queryset = queryset.filter(relation_filter)
+
+        lambings = list(queryset)
+        if not lambings:
+            return None
+
+        return max(
+            lambings,
+            key=lambda lambing: (
+                lambing.actual_lambing_date
+                or lambing.start_date
+                or lambing.planned_lambing_date
+                or date.min,
+                lambing.id or 0,
+            ),
+        )
 
     @staticmethod
     def _model_label(model):

@@ -324,7 +324,7 @@ async function deleteSelectedYoungStock() {
             alert("Выбранный приплод успешно удалён.");
         } catch (error) {
             console.error("Ошибка удаления приплода:", error);
-            alert("Ошибка при удалении выбранного приплода.");
+            alert("Ошибка при удалении выбранного приплода: " + (error.message || "Неизвестная ошибка"));
         }
     };
 }
@@ -424,6 +424,10 @@ async function applyArchiveStatus() {
     }
 
     try {
+
+        const downloadedArchiveActKeys = new Set();
+        const archiveActDownloads = [];
+
         for (const entry of archiveStep.entries) {
             const item = entry.animal;
             await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, "PATCH", {
@@ -432,10 +436,16 @@ async function applyArchiveStatus() {
                 carcass_weight: entry.carcassWeight,
                 ...entry.archiveActPayload,
             });
-            if (entry.archiveActPayload.archive_act_download) {
-                window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
+            const archiveActDownloadKey = entry.archiveActPayload.archive_act_group_key || `${item.animalType}:${item.tagNumber}`;
+            if (entry.archiveActPayload.archive_act_download && !downloadedArchiveActKeys.has(archiveActDownloadKey)) {
+                downloadedArchiveActKeys.add(archiveActDownloadKey);
+                archiveActDownloads.push({ animalType: item.animalType, tagNumber: item.tagNumber });
             }
         }
+
+        archiveActDownloads.forEach((download) => {
+            window.archiveActModal?.downloadArchiveAct(download.animalType, download.tagNumber);
+        });
 
         selectedYoungStock.clear();
         saveSelectedYoungStock();
@@ -448,7 +458,7 @@ async function applyArchiveStatus() {
         alert("Выбранный приплод успешно перенесён в архив.");
     } catch (error) {
         console.error("Ошибка переноса приплода в архив:", error);
-        alert("Ошибка при переносе выбранного приплода в архив.");
+        alert("Ошибка при переносе выбранного приплода в архив: " + (error.message || "Неизвестная ошибка"));
     }
 }
 
@@ -531,4 +541,6 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.exportYoungStock = exportYoungStock;
+
+
 

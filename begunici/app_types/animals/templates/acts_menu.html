@@ -33,6 +33,16 @@
                     </a>
                 </div>
                 <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:acts-weight' %}" class="btn btn-outline-primary w-100 py-3">
+                        Акты взвешивания (СП-43)
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <a href="{% url 'animals:acts-progeny' %}" class="btn btn-outline-primary w-100 py-3">
+                        Акты на оприходование приплода животных (СП-39)
+                    </a>
+                </div>
+                <div class="col-md-6 col-lg-3">
                     <button
                         type="button"
                         class="btn btn-outline-primary w-100 py-3"
@@ -40,6 +50,16 @@
                         data-bs-target="#monthlyBreedingActModal"
                     >
                         Акт осеменения и окотов по месяцам
+                    </button>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary w-100 py-3"
+                        data-bs-toggle="modal"
+                        data-bs-target="#livestockMovementActModal"
+                    >
+                        Отчет о движении скота и птицы на ферме (СП-51)
                     </button>
                 </div>
             </div>
@@ -98,6 +118,55 @@
     </div>
 </div>
 
+<div class="modal fade" id="livestockMovementActModal" tabindex="-1" aria-labelledby="livestockMovementActModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="livestock-movement-act-form">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="livestockMovementActModalLabel">Отчет о движении скота и птицы на ферме (СП-51)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="livestock-movement-act-year" class="form-label">Год</label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="livestock-movement-act-year"
+                            min="1900"
+                            max="2200"
+                            step="1"
+                            value="{% now "Y" %}"
+                            required
+                        >
+                    </div>
+                    <div class="mb-0">
+                        <label for="livestock-movement-act-month" class="form-label">Месяц</label>
+                        <select class="form-select" id="livestock-movement-act-month" required>
+                            <option value="1">Январь</option>
+                            <option value="2">Февраль</option>
+                            <option value="3">Март</option>
+                            <option value="4">Апрель</option>
+                            <option value="5">Май</option>
+                            <option value="6">Июнь</option>
+                            <option value="7">Июль</option>
+                            <option value="8">Август</option>
+                            <option value="9">Сентябрь</option>
+                            <option value="10">Октябрь</option>
+                            <option value="11">Ноябрь</option>
+                            <option value="12">Декабрь</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-success">Скачать</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("monthly-breeding-act-form");
@@ -108,6 +177,20 @@ document.addEventListener("DOMContentLoaded", () => {
             const year = yearInput.value.trim();
             if (!year) return;
             window.location.href = `/animals/api/acts/monthly-breeding/?year=${encodeURIComponent(year)}`;
+        });
+    }
+
+    const livestockMovementForm = document.getElementById("livestock-movement-act-form");
+    const livestockMovementYearInput = document.getElementById("livestock-movement-act-year");
+    const livestockMovementMonthSelect = document.getElementById("livestock-movement-act-month");
+    if (livestockMovementForm && livestockMovementYearInput && livestockMovementMonthSelect) {
+        livestockMovementMonthSelect.value = String(new Date().getMonth() + 1);
+        livestockMovementForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const year = livestockMovementYearInput.value.trim();
+            const month = livestockMovementMonthSelect.value;
+            if (!year || !month) return;
+            window.location.href = `/animals/api/acts/livestock-movement/?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`;
         });
     }
 

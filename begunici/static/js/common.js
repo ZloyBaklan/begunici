@@ -189,23 +189,32 @@ function updateCreateFormByType() {
 document.addEventListener("DOMContentLoaded", function () {
     const initialFilters = initializeCommonFiltersFromUrl();
     fetchCommonAnimals(1, initialFilters);
-    loadStatuses();
     loadPlaces();
 
     const createTypeSelect = document.getElementById("create-animal-type");
     if (createTypeSelect) {
-        createTypeSelect.addEventListener("change", updateCreateFormByType);
+        createTypeSelect.addEventListener("change", () => {
+            updateCreateFormByType();
+            loadStatuses(createTypeSelect.value);
+        });
     }
 
     updateCreateFormByType();
+    loadStatuses(createTypeSelect?.value || "");
 });
 
-async function loadStatuses() {
+async function loadStatuses(animalType = "") {
     try {
-        const response = await apiRequest("/veterinary/api/status/?exclude_archive=1&page_size=100");
-        const statuses = response.results || response;
         const select = document.getElementById("animal_status");
         if (!select) return;
+
+        if (!animalType) {
+            select.innerHTML = '<option value="">Сначала выберите тип животного</option>';
+            return;
+        }
+
+        const response = await apiRequest(`/veterinary/api/status/?exclude_archive=1&page_size=100&animal_type=${encodeURIComponent(animalType)}`);
+        const statuses = response.results || response;
 
         select.innerHTML = "";
         statuses.forEach((status) => {
@@ -542,7 +551,7 @@ async function deleteSelectedAnimals() {
             alert("Выбранные животные успешно удалены");
         } catch (error) {
             console.error("Ошибка удаления животных:", error);
-            alert("Ошибка при удалении выбранных животных");
+            alert("Ошибка при удалении выбранных животных: " + (error.message || "Неизвестная ошибка"));
         }
     };
 }
@@ -645,6 +654,10 @@ async function applyArchiveStatus() {
     }
 
     try {
+
+        const downloadedArchiveActKeys = new Set();
+        const archiveActDownloads = [];
+
         for (const entry of archiveStep.entries) {
             const item = entry.animal;
             await apiRequest(`/animals/${item.animalType}/${encodeURIComponent(item.tagNumber)}/`, "PATCH", {
@@ -653,10 +666,16 @@ async function applyArchiveStatus() {
                 carcass_weight: entry.carcassWeight,
                 ...entry.archiveActPayload,
             });
-            if (entry.archiveActPayload.archive_act_download) {
-                window.archiveActModal?.downloadArchiveAct(item.animalType, item.tagNumber);
+            const archiveActDownloadKey = entry.archiveActPayload.archive_act_group_key || `${item.animalType}:${item.tagNumber}`;
+            if (entry.archiveActPayload.archive_act_download && !downloadedArchiveActKeys.has(archiveActDownloadKey)) {
+                downloadedArchiveActKeys.add(archiveActDownloadKey);
+                archiveActDownloads.push({ animalType: item.animalType, tagNumber: item.tagNumber });
             }
         }
+
+        archiveActDownloads.forEach((download) => {
+            window.archiveActModal?.downloadArchiveAct(download.animalType, download.tagNumber);
+        });
 
         selectedAnimals.clear();
         saveSelectedAnimals();
@@ -670,7 +689,7 @@ async function applyArchiveStatus() {
         alert("Выбранные животные успешно перенесены в архив.");
     } catch (error) {
         console.error("Ошибка переноса в архив:", error);
-        alert("Ошибка при переносе выбранных животных в архив");
+        alert("Ошибка при переносе выбранных животных в архив: " + (error.message || "Неизвестная ошибка"));
     }
 }
 
@@ -738,4 +757,6 @@ window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.saveCommonAnimal = saveCommonAnimal;
+
+
 

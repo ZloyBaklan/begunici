@@ -330,14 +330,12 @@ function exportArchiveToExcel() {
     window.location.href = `/animals/api/archive/export-excel/?${params.toString()}`;
 }
 
-async function loadRestoreStatuses() {
+async function loadRestoreStatuses(animalType) {
     try {
-        const response = await apiRequest("/veterinary/api/status/?page_size=200");
+        const response = await apiRequest(`/veterinary/api/status/?page_size=200&animal_type=${encodeURIComponent(animalType || "")}`);
         const statuses = response.results || response;
 
-        const activeStatuses = statuses.filter((status) =>
-            !["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"].includes(status.status_type)
-        );
+        const activeStatuses = statuses;
 
         const statusSelect = document.getElementById("restore-status-select");
         if (!statusSelect) return;
@@ -367,7 +365,7 @@ async function openRestoreModal(animalType, tagNumber) {
     const modal = document.getElementById("restore-modal");
     const confirmButton = document.getElementById("restore-confirm-button");
 
-    await loadRestoreStatuses();
+    await loadRestoreStatuses(animalType);
 
     if (modal) {
         modal.style.display = "block";
@@ -409,7 +407,7 @@ async function performRestore(animalType, tagNumber) {
         fetchArchive(currentPage);
     } catch (error) {
         console.error("Ошибка при восстановлении животного:", error);
-        alert("Ошибка при восстановлении животного");
+        alert("Ошибка при восстановлении животного: " + (error.message || "Неизвестная ошибка"));
     }
 }
 

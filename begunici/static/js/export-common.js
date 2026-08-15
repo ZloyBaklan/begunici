@@ -1,4 +1,108 @@
-// Общие функции для экспорта в Excel
+﻿// Общие функции для экспорта в Excel
+
+function getExportApiErrorFieldLabel(field) {
+    const labels = {
+        animal_type: 'Тип животного',
+        include_details: 'Детальный экспорт',
+        limit: 'Лимит',
+        selected_animals: 'Выбранные животные',
+        non_field_errors: 'Общая ошибка',
+    };
+
+    return labels[field] || String(field).replaceAll('_', ' ');
+}
+
+function translateExportApiErrorText(message) {
+    const text = String(message || '').trim();
+    const translations = {
+        'This field is required.': 'Это поле обязательно для заполнения.',
+        'This field may not be blank.': 'Это поле не может быть пустым.',
+        'This field may not be null.': 'Это поле не может быть пустым.',
+        'A valid integer is required.': 'Нужно указать целое число.',
+        'A valid number is required.': 'Нужно указать число.',
+        'Enter a valid date.': 'Укажите корректную дату.',
+        'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.': 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ.',
+        'This field must be unique.': 'Такое значение уже используется.',
+    };
+    if (translations[text]) return translations[text];
+    if (text.includes('Ensure this value is greater than or equal to 0')) return 'Значение не может быть меньше 0.';
+    if (text.includes('Invalid pk')) return 'Выбранное значение не найдено в базе.';
+    return text;
+}
+
+function parseExportApiErrorString(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const cleaned = text.replace(
+        /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g,
+        (_, quote, errorMessage) => `'${String(errorMessage).replaceAll("'", "\\'")}'`
+    );
+
+    const fieldMessages = [];
+    const fieldRegex = /['"]([^'"]+)['"]\s*:\s*(\[[\s\S]*?\]|['"][\s\S]*?['"])/g;
+    let fieldMatch;
+    while ((fieldMatch = fieldRegex.exec(cleaned)) !== null) {
+        const field = fieldMatch[1];
+        const rawValue = fieldMatch[2];
+        const values = [];
+        const valueRegex = /['"]([^'"]+)['"]/g;
+        let valueMatch;
+        while ((valueMatch = valueRegex.exec(rawValue)) !== null) {
+            values.push(translateExportApiErrorText(valueMatch[1]));
+        }
+
+        if (values.length) {
+            fieldMessages.push(`${getExportApiErrorFieldLabel(field)}: ${values.join(', ')}`);
+        }
+    }
+
+    if (fieldMessages.length) return fieldMessages.join('\n');
+
+    const detailMessages = [];
+    const detailRegex = /ErrorDetail\(string=(['"])(.*?)\1,\s*code=(['"]).*?\3\)/g;
+    let detailMatch;
+    while ((detailMatch = detailRegex.exec(text)) !== null) {
+        detailMessages.push(translateExportApiErrorText(detailMatch[2]));
+    }
+
+    return detailMessages.length ? detailMessages.join('\n') : translateExportApiErrorText(text);
+}
+
+function stringifyExportApiErrorValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return parseExportApiErrorString(value);
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        return value.map(stringifyExportApiErrorValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value).map(([field, nestedValue]) => {
+            const message = stringifyExportApiErrorValue(nestedValue);
+            if (!message) return '';
+            if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+            return `${getExportApiErrorFieldLabel(field)}: ${message}`;
+        }).filter(Boolean).join('\n');
+    }
+    return String(value);
+}
+
+function getExportApiErrorMessage(errorData, fallback = 'Не удалось выполнить экспорт. Проверьте выбранные параметры.') {
+    if (!errorData) return fallback;
+    if (typeof errorData === 'string') return parseExportApiErrorString(errorData);
+    if (typeof errorData !== 'object') return fallback;
+    if (typeof errorData.error === 'string') return parseExportApiErrorString(errorData.error);
+    if (typeof errorData.detail === 'string') return parseExportApiErrorString(errorData.detail);
+
+    const messages = Object.entries(errorData).map(([field, value]) => {
+        const message = stringifyExportApiErrorValue(value);
+        if (!message) return '';
+        if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
+        return `${getExportApiErrorFieldLabel(field)}: ${message}`;
+    }).filter(Boolean);
+
+    return messages.length ? messages.join('\n') : fallback;
+}
 
 function openExportModal(animalType) {
     const modal = document.getElementById('export-modal');
@@ -108,8 +212,22 @@ async function performExport(animalType) {
         });
         
         if (!response.ok) {
+            const contentType = response.headers.get('content-type') || '';
             const errorText = await response.text();
             console.error('Ошибка сервера:', errorText);
+
+            if (contentType.includes('application/json')) {
+                let errorData = null;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (parseError) {
+                    errorData = null;
+                }
+                if (errorData) {
+                    throw new Error(getExportApiErrorMessage(errorData));
+                }
+            }
+
             throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}`);
         }
         
@@ -314,3 +432,5 @@ function setupFilterEventListeners() {
         }
     });
 }
+
+
