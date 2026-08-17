@@ -185,6 +185,95 @@ function getCookie(name) {
     return cookieValue;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function uploadImportFile(importType, action, fileInputId) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        throw new Error('Выберите файл импорта');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/animals/api/import/${importType}/${action}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(getApiErrorMessage(data));
+    }
+    return data;
+}
+
+function renderImportResult(resultId, data, fallbackSuccessText = 'Файл прочитан') {
+    const resultBlock = document.getElementById(resultId);
+    if (!resultBlock) return;
+
+    const errors = data.errors || [];
+    const warnings = data.warnings || [];
+    const hasIssues = errors.length > 0 || warnings.length > 0;
+    const alertClass = hasIssues ? 'alert-warning' : 'alert-success';
+
+    const issueItems = []
+        .concat(errors.map(error => `<li>${escapeHtml(error)}</li>`))
+        .concat(warnings.map(warning => `<li>${escapeHtml(warning)}</li>`))
+        .join('');
+
+    resultBlock.className = `alert ${alertClass}`;
+    resultBlock.style.display = 'block';
+    resultBlock.innerHTML = `
+        <div class="fw-semibold mb-1">${escapeHtml(fallbackSuccessText)}</div>
+        <div>Готово к импорту: ${data.valid_count || 0}</div>
+        ${issueItems ? `<hr><div class="fw-semibold mb-1">Проверка файла:</div><ul class="mb-0">${issueItems}</ul>` : ''}
+    `;
+}
+
+async function previewVetImport() {
+    const confirmBtn = document.getElementById('vet-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('vet', 'preview', 'vet-import-file');
+        renderImportResult('vet-import-result', data, 'Файл ветобработок прочитан');
+        if (confirmBtn) confirmBtn.disabled = !data.can_confirm;
+    } catch (error) {
+        renderImportResult('vet-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка чтения файла');
+    }
+}
+
+async function confirmVetImport() {
+    if (!confirm('Подтвердить импорт ветобработок? Ошибочные строки будут пропущены.')) {
+        return;
+    }
+
+    const confirmBtn = document.getElementById('vet-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('vet', 'confirm', 'vet-import-file');
+        const createdCount = data.created_count || 0;
+        renderImportResult('vet-import-result', data, `Импорт завершен. Создано ветобработок: ${createdCount}`);
+        loadVetList();
+    } catch (error) {
+        renderImportResult('vet-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка импорта');
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
 // Загрузка опций для фильтров
 async function loadFilterOptions() {
     try {

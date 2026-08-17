@@ -1,11 +1,14 @@
-import { apiRequest } from "./utils.js";
+import { apiRequest, getCSRFToken, getApiErrorMessage } from "./utils.js";
 
 // Глобальные переменные для ковровой отбивки
 let selectedAnimals = new Set(); // Для хранения выбранных животных
 let selectedAnimalsData = new Map(); // Для хранения полной информации о выбранных животных
+let selectedAnimalsWeights = new Map(); // Для хранения веса при отбивке по бирке
+let weightsStepVisible = false;
 
 document.addEventListener('DOMContentLoaded', function () {
     fetchOtbivka();  // Загружаем список отбивки при загрузке страницы
+    loadBulkOtbivkaPlaces();
 
     // Убираем автоматические обработчики для поиска и дат
     // Теперь фильтрация работает только по кнопке "Применить"
@@ -29,6 +32,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (e.key === 'Enter') {
                 searchAnimals();
             }
+        });
+    }
+
+    const selectAnimalsModal = document.getElementById('selectAnimalsModal');
+    if (selectAnimalsModal) {
+        selectAnimalsModal.addEventListener('hidden.bs.modal', function() {
+            saveSelectedWeights();
         });
     }
     
@@ -226,6 +236,127 @@ window.exportOtbivkaToExcel = exportOtbivkaToExcel;
 window.showSelectAnimalsModal = showSelectAnimalsModal;
 window.confirmAnimalsSelection = confirmAnimalsSelection;
 window.performBulkOtbivka = performBulkOtbivka;
+window.previewOtbivkaImport = previewOtbivkaImport;
+window.confirmOtbivkaImport = confirmOtbivkaImport;
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function loadBulkOtbivkaPlaces() {
+    const placeSelect = document.getElementById('bulk-otbivka-place');
+    if (!placeSelect) {
+        return;
+    }
+
+    try {
+        placeSelect.disabled = true;
+        const response = await apiRequest('/veterinary/api/place/?page_size=1000');
+        const places = Array.isArray(response) ? response : (response.results || []);
+
+        placeSelect.innerHTML = '<option value="">Не перемещать</option>';
+        places.forEach(place => {
+            const option = document.createElement('option');
+            option.value = place.id;
+            option.textContent = place.sheepfold;
+            placeSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки овчарен для отбивки:', error);
+        placeSelect.innerHTML = '<option value="">Не удалось загрузить овчарни</option>';
+    } finally {
+        placeSelect.disabled = false;
+    }
+}
+
+async function uploadImportFile(importType, action, fileInputId) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        throw new Error('Выберите файл импорта');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/animals/api/import/${importType}/${action}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(getApiErrorMessage(data));
+    }
+    return data;
+}
+
+function renderImportResult(resultId, data, title) {
+    const resultBlock = document.getElementById(resultId);
+    if (!resultBlock) return;
+
+    const errors = data.errors || [];
+    const warnings = data.warnings || [];
+    const hasIssues = errors.length > 0 || warnings.length > 0;
+    const issueItems = []
+        .concat(errors.map(error => `<li>${escapeHtml(error)}</li>`))
+        .concat(warnings.map(warning => `<li>${escapeHtml(warning)}</li>`))
+        .join('');
+
+    resultBlock.className = `alert ${hasIssues ? 'alert-warning' : 'alert-success'}`;
+    resultBlock.style.display = 'block';
+    resultBlock.innerHTML = `
+        <div class="fw-semibold mb-1">${escapeHtml(title)}</div>
+        <div>Готово к импорту: ${data.valid_count || 0}</div>
+        ${issueItems ? `<hr><div class="fw-semibold mb-1">Проверка файла:</div><ul class="mb-0">${issueItems}</ul>` : ''}
+    `;
+}
+
+async function previewOtbivkaImport() {
+    const confirmBtn = document.getElementById('otbivka-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('otbivka', 'preview', 'otbivka-import-file');
+        renderImportResult('otbivka-import-result', data, 'Файл отбивки прочитан');
+        if (confirmBtn) confirmBtn.disabled = !data.can_confirm;
+    } catch (error) {
+        renderImportResult('otbivka-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка чтения файла');
+    }
+}
+
+async function confirmOtbivkaImport() {
+    if (!confirm('Подтвердить импорт отбивки? Ошибочные строки будут пропущены.')) {
+        return;
+    }
+
+    const confirmBtn = document.getElementById('otbivka-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('otbivka', 'confirm', 'otbivka-import-file');
+        const updatedCount = data.updated_count || 0;
+        const weightCount = data.weight_records_count || 0;
+        const movedCount = data.moved_count || 0;
+        renderImportResult(
+            'otbivka-import-result',
+            data,
+            `Импорт завершен. Отбито: ${updatedCount}; весов: ${weightCount}; перемещено: ${movedCount}`
+        );
+        fetchOtbivka();
+    } catch (error) {
+        renderImportResult('otbivka-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка импорта');
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
 
 // Показать модальное окно выбора животных
 async function showSelectAnimalsModal() {
@@ -235,6 +366,8 @@ async function showSelectAnimalsModal() {
             Введите номер бирки и нажмите "Поиск" для отображения результатов
         </div>
     `;
+    weightsStepVisible = selectedAnimalsData.size > 0;
+    renderSelectedAnimalsWeights();
     
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('selectAnimalsModal'));
@@ -255,6 +388,7 @@ async function searchAnimals() {
     }
     
     // Сохраняем текущие выбранные чекбоксы
+    saveSelectedWeights();
     saveSelectedAnimals();
     
     // Показываем индикатор загрузки
@@ -292,6 +426,7 @@ async function searchAnimals() {
             
             // Восстанавливаем выбранные чекбоксы
             restoreSelectedAnimals();
+            renderSelectedAnimalsWeights();
         }
     } catch (error) {
         console.error('Ошибка поиска животных:', error);
@@ -334,6 +469,7 @@ function saveSelectedAnimals() {
         } else {
             selectedAnimals.delete(tagNumber);
             selectedAnimalsData.delete(tagNumber);
+            selectedAnimalsWeights.delete(tagNumber);
         }
     });
 }
@@ -348,18 +484,93 @@ function restoreSelectedAnimals() {
     });
 }
 
-// Подтверждение выбора животных
-function confirmAnimalsSelection() {
-    // Сохраняем текущие выбранные чекбоксы
-    saveSelectedAnimals();
-    
-    // Создаем массив из всех выбранных животных
+function saveSelectedWeights() {
+    const weightInputs = document.querySelectorAll('.otbivka-weight-input');
+    weightInputs.forEach(input => {
+        const tagNumber = input.dataset.tag;
+        const value = input.value.trim();
+
+        if (!tagNumber) {
+            return;
+        }
+
+        if (value) {
+            selectedAnimalsWeights.set(tagNumber, value);
+        } else {
+            selectedAnimalsWeights.delete(tagNumber);
+        }
+    });
+}
+
+function updateSelectionModalButton() {
+    const button = document.getElementById('confirmAnimalsSelectionBtn');
+    if (button) {
+        button.textContent = weightsStepVisible ? 'Готово' : 'Выбрать';
+    }
+}
+
+function renderSelectedAnimalsWeights() {
+    const section = document.getElementById('selected-animals-weights-section');
+    const list = document.getElementById('selected-animals-weights-list');
+    if (!section || !list) {
+        return;
+    }
+
     const selectedAnimalsArray = Array.from(selectedAnimalsData.values());
-    
-    // Обновляем отображение
+    if (!weightsStepVisible || selectedAnimalsArray.length === 0) {
+        section.style.display = 'none';
+        list.innerHTML = '';
+        updateSelectionModalButton();
+        return;
+    }
+
+    section.style.display = 'block';
+    list.innerHTML = selectedAnimalsArray.map(animal => {
+        const tagNumber = animal.tag_number;
+        const savedWeight = selectedAnimalsWeights.get(tagNumber) || '';
+
+        return `
+            <div class="row g-2 align-items-center">
+                <div class="col-md-7">
+                    <span class="fw-semibold">${escapeHtml(animal.display_name || tagNumber)}</span>
+                </div>
+                <div class="col-md-5">
+                    <input type="number"
+                           class="form-control otbivka-weight-input"
+                           data-tag="${escapeHtml(tagNumber)}"
+                           min="0"
+                           step="0.1"
+                           placeholder="Вес, кг"
+                           value="${escapeHtml(savedWeight)}">
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.otbivka-weight-input').forEach(input => {
+        input.addEventListener('input', function() {
+            const value = this.value.trim();
+            if (value) {
+                selectedAnimalsWeights.set(this.dataset.tag, value);
+            } else {
+                selectedAnimalsWeights.delete(this.dataset.tag);
+            }
+        });
+    });
+
+    updateSelectionModalButton();
+}
+
+function updateSelectedAnimalsDisplay() {
+    const selectedAnimalsArray = Array.from(selectedAnimalsData.values());
     const display = document.getElementById('selected-animals-display');
     const bulkOtbivkaBtn = document.getElementById('bulk-otbivka-btn');
-    
+
+    if (!display || !bulkOtbivkaBtn) {
+        window.selectedAnimalsForOtbivka = selectedAnimalsArray;
+        return;
+    }
+
     if (selectedAnimalsArray.length === 0) {
         display.textContent = 'Не выбрано';
         display.className = 'mt-2 text-muted';
@@ -369,11 +580,44 @@ function confirmAnimalsSelection() {
         display.className = 'mt-2 text-success';
         bulkOtbivkaBtn.disabled = false;
     }
-    
-    // Сохраняем массив для использования в других функциях
+
     window.selectedAnimalsForOtbivka = selectedAnimalsArray;
-    
-    // Закрываем модальное окно
+}
+
+// Подтверждение выбора животных
+function confirmAnimalsSelection() {
+    // Сохраняем текущие выбранные чекбоксы
+    saveSelectedWeights();
+    saveSelectedAnimals();
+    updateSelectedAnimalsDisplay();
+
+    if (selectedAnimalsData.size === 0) {
+        weightsStepVisible = false;
+        renderSelectedAnimalsWeights();
+        const emptyModal = bootstrap.Modal.getInstance(document.getElementById('selectAnimalsModal'));
+        emptyModal.hide();
+        return;
+    }
+
+    if (!weightsStepVisible) {
+        weightsStepVisible = true;
+        renderSelectedAnimalsWeights();
+        return;
+    }
+
+    const renderedWeightTags = new Set(
+        Array.from(document.querySelectorAll('.otbivka-weight-input')).map(input => input.dataset.tag)
+    );
+    const hasSelectedAnimalsWithoutWeightRow = Array
+        .from(selectedAnimalsData.keys())
+        .some(tagNumber => !renderedWeightTags.has(tagNumber));
+
+    if (hasSelectedAnimalsWithoutWeightRow) {
+        renderSelectedAnimalsWeights();
+        return;
+    }
+
+    // Закрываем модальное окно после ввода необязательных весов.
     const modal = bootstrap.Modal.getInstance(document.getElementById('selectAnimalsModal'));
     modal.hide();
 }
@@ -381,6 +625,9 @@ function confirmAnimalsSelection() {
 // Выполнение массовой отбивки
 async function performBulkOtbivka() {
     const otbivkaDate = document.getElementById('otbivka-date').value;
+    const placeSelect = document.getElementById('bulk-otbivka-place');
+    const selectedPlaceId = placeSelect?.value || '';
+    const selectedPlaceName = placeSelect?.selectedOptions?.[0]?.textContent || '';
     
     if (!otbivkaDate) {
         alert('Укажите дату отбивки');
@@ -393,20 +640,47 @@ async function performBulkOtbivka() {
     }
     
     // Подтверждение операции
-    const confirmMessage = `Выполнить отбивку для ${window.selectedAnimalsForOtbivka.length} животных на дату ${otbivkaDate}?\n\nСтатусы животных автоматически меняться не будут.`;
+    let confirmMessage = `Выполнить отбивку для ${window.selectedAnimalsForOtbivka.length} животных на дату ${otbivkaDate}?\n\nСтатусы животных автоматически меняться не будут.`;
+    if (selectedPlaceId) {
+        confirmMessage += `\n\nПосле отбивки животные будут перемещены в: ${selectedPlaceName}.`;
+    }
     if (!confirm(confirmMessage)) {
         return;
     }
     
     try {
         const animalTags = window.selectedAnimalsForOtbivka.map(animal => animal.tag_number);
-        
-        const response = await apiRequest('/animals/api/bulk-otbivka/', 'POST', {
+        const animalWeights = {};
+
+        window.selectedAnimalsForOtbivka.forEach(animal => {
+            const savedWeight = selectedAnimalsWeights.get(animal.tag_number);
+            if (savedWeight) {
+                animalWeights[animal.tag_number] = savedWeight;
+            }
+        });
+
+        const payload = {
             otbivka_date: otbivkaDate,
             animal_tags: animalTags
-        });
-        
+        };
+
+        if (Object.keys(animalWeights).length > 0) {
+            payload.animal_weights = animalWeights;
+        }
+
+        if (selectedPlaceId) {
+            payload.place_id = selectedPlaceId;
+        }
+
+        const response = await apiRequest('/animals/api/bulk-otbivka/', 'POST', payload);
+
         let message = `Успешно выполнена отбивка для ${response.updated_count} из ${response.total_requested} животных!`;
+        if (response.weight_records_count) {
+            message += `\nЗаписей веса добавлено/обновлено: ${response.weight_records_count}`;
+        }
+        if (response.moved_count) {
+            message += `\nПеремещено животных: ${response.moved_count}`;
+        }
         
         if (response.errors && response.errors.length > 0) {
             message += `\n\nОшибки:\n${response.errors.join('\n')}`;
@@ -433,7 +707,16 @@ function resetBulkOtbivkaForm() {
     
     selectedAnimals.clear();
     selectedAnimalsData.clear();
+    selectedAnimalsWeights.clear();
+    weightsStepVisible = false;
     window.selectedAnimalsForOtbivka = [];
+
+    const placeSelect = document.getElementById('bulk-otbivka-place');
+    if (placeSelect) {
+        placeSelect.value = '';
+    }
+
+    renderSelectedAnimalsWeights();
     
     document.getElementById('selected-animals-display').textContent = 'Не выбрано';
     document.getElementById('selected-animals-display').className = 'mt-2 text-muted';

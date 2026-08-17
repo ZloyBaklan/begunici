@@ -1903,6 +1903,100 @@ async function submitLambingCompletion() {
     await completeLambingWithChildren();
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function uploadImportFile(importType, action, fileInputId) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        throw new Error('Выберите файл импорта');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/animals/api/import/${importType}/${action}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(getApiErrorMessage(data));
+    }
+    return data;
+}
+
+function renderImportResult(resultId, data, title) {
+    const resultBlock = document.getElementById(resultId);
+    if (!resultBlock) return;
+
+    const errors = data.errors || [];
+    const warnings = data.warnings || [];
+    const hasIssues = errors.length > 0 || warnings.length > 0;
+    const issueItems = []
+        .concat(errors.map(error => `<li>${escapeHtml(error)}</li>`))
+        .concat(warnings.map(warning => `<li>${escapeHtml(warning)}</li>`))
+        .join('');
+
+    resultBlock.className = `alert ${hasIssues ? 'alert-warning' : 'alert-success'}`;
+    resultBlock.style.display = 'block';
+    resultBlock.innerHTML = `
+        <div class="fw-semibold mb-1">${escapeHtml(title)}</div>
+        <div>Готово к импорту: ${data.valid_count || 0}</div>
+        ${issueItems ? `<hr><div class="fw-semibold mb-1">Проверка файла:</div><ul class="mb-0">${issueItems}</ul>` : ''}
+    `;
+}
+
+async function previewGroupImport() {
+    const confirmBtn = document.getElementById('group-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('group', 'preview', 'group-import-file');
+        renderImportResult('group-import-result', data, 'Файл групп прочитан');
+        if (confirmBtn) confirmBtn.disabled = !data.can_confirm;
+    } catch (error) {
+        renderImportResult('group-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка чтения файла');
+    }
+}
+
+async function confirmGroupImport() {
+    if (!confirm('Подтвердить импорт групп? Ошибочные строки будут пропущены.')) {
+        return;
+    }
+
+    const confirmBtn = document.getElementById('group-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadImportFile('group', 'confirm', 'group-import-file');
+        const createdGroups = data.created_groups_count || 0;
+        const updatedGroups = data.updated_groups_count || 0;
+        const addedMothers = data.added_mothers_count || 0;
+        renderImportResult(
+            'group-import-result',
+            data,
+            `Импорт завершен. Новых групп: ${createdGroups}; обновлено групп: ${updatedGroups}; добавлено матерей: ${addedMothers}`
+        );
+        loadActiveGroups();
+        loadActiveLambings();
+    } catch (error) {
+        renderImportResult('group-import-result', { valid_count: 0, errors: [error.message] }, 'Ошибка импорта');
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
 // Экспортируем функции для глобального доступа
 window.showSelectMothersModal = showSelectMothersModal;
 window.showSelectFatherModal = showSelectFatherModal;
@@ -1931,6 +2025,8 @@ window.showAddMothersToGroupModal = showAddMothersToGroupModal;
 window.confirmAddMothersToGroup = confirmAddMothersToGroup;
 window.showRemoveMothersFromGroupModal = showRemoveMothersFromGroupModal;
 window.confirmRemoveMothersFromGroup = confirmRemoveMothersFromGroup;
+window.previewGroupImport = previewGroupImport;
+window.confirmGroupImport = confirmGroupImport;
 
 // Функции для проверки родства
 window.showSelectKinshipFatherModal = showSelectKinshipFatherModal;

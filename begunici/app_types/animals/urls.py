@@ -75,6 +75,11 @@ from .views import (
     journal_three,
     journal_shift_transfer,
 )
+from .excel_imports import (
+    import_confirm,
+    import_preview,
+    import_template_download,
+)
 
 # Создаем маршруты для ViewSet
 router = DefaultRouter()
@@ -341,4 +346,9 @@ urlpatterns = [
     
     # API для ковровой вакцинации
     path("api/bulk-vaccination/", bulk_vaccination, name="bulk-vaccination"),  # Массовая вакцинация
+
+    # API для импортов из Excel
+    path("api/import/<str:import_type>/template/", import_template_download, name="import-template-download"),
+    path("api/import/<str:import_type>/preview/", import_preview, name="import-preview"),
+    path("api/import/<str:import_type>/confirm/", import_confirm, name="import-confirm"),
 ]

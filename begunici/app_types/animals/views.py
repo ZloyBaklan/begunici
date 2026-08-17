@@ -58,8 +58,6 @@ from .serializers import (
     CalendarNoteSerializer,
     build_sheep_last_insemination_data,
     build_sheep_last_lambing_summary,
-    format_sheep_last_insemination_text,
-    format_sheep_last_lambing_text,
 )
 from .status_logic import (
     get_animal_status_validation_error,
@@ -89,7 +87,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django.http import JsonResponse
 from django.db.models import Count, Q, F
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from django.utils import timezone
 from pathlib import Path
 
@@ -143,6 +141,7 @@ from begunici.app_types.veterinary.vet_models import (
     WeightRecord,
     Veterinary,
     VeterinaryCare,
+    Place,
     PlaceMovement,
     Tag,
     StatusHistory,
@@ -4449,7 +4448,7 @@ def young_stock_export_excel(request):
                 idx,
                 row["tag_number"],
                 row["birth_type"],
-                row["birth_date"],
+                _format_date_for_excel(animal.birth_date),
                 row["birth_weight"],
                 row["weaning"],
                 row["mother_tag"],
@@ -4602,10 +4601,19 @@ def _format_weight_kg_fixed(value):
         return "-"
 
 
-def _format_weight_record_with_date(record):
+EXCEL_DATE_FORMAT = "dd.mm.yyyy"
+
+
+def _format_weight_record_date_text(record):
     if not record:
         return "-"
-    return f"{record.weight_date.strftime('%Y-%m-%d')}: {_format_weight_kg_fixed(record.weight)}"
+    return f"{record.weight_date.strftime('%d.%m.%Y')}: {_format_weight_kg_fixed(record.weight)}"
+
+
+def _format_weight_record_value(record):
+    if not record:
+        return "-"
+    return _format_weight_kg_fixed(record.weight)
 
 
 def _get_weight_record_near_date(tag, target_date, delta_days=5):
@@ -4634,10 +4642,17 @@ def _format_ewe_birth_weight(animal):
 
 def _format_ewe_weaning(animal):
     weight_record = _get_weight_record_near_date(animal.tag, animal.date_otbivka)
-    return _format_weight_record_with_date(weight_record)
+    return _format_weight_record_date_text(weight_record)
 
 
 def _format_last_vet(animal):
+    care_date, care_text = _get_last_vet_parts(animal)
+    if not care_date:
+        return "-"
+    return f"{care_date.strftime('%d.%m.%Y')}: {care_text}"
+
+
+def _get_last_vet_parts(animal):
     vet_record = (
         Veterinary.objects.filter(tag=animal.tag)
         .select_related("veterinary_care")
@@ -4645,14 +4660,37 @@ def _format_last_vet(animal):
         .first()
     )
     if not vet_record or not vet_record.veterinary_care:
-        return "-"
+        return None, "-"
 
     care = vet_record.veterinary_care
     care_type = care.care_name or "-"
     medication = care.medication or "без препарата"
     care_date = vet_record.get_care_date()
-    care_date_text = care_date.strftime('%d.%m.%Y') if care_date else "-"
-    return f"{care_date_text}: {care_type} ({medication})"
+    return care_date, f"{care_type} ({medication})"
+
+
+def _split_sheep_last_insemination(animal):
+    data = build_sheep_last_insemination_data(animal)
+    if not data:
+        return None, "-"
+    return _format_date_for_excel(data.get("date")), data.get("father_tag") or "-"
+
+
+def _split_sheep_last_lambing(animal):
+    summary = build_sheep_last_lambing_summary(animal)
+    if not summary:
+        return None, "-"
+
+    lambing_date = _format_date_for_excel(summary.get("date"))
+    if summary.get("is_early_failure"):
+        return lambing_date, "Досрочно завершен"
+
+    children = summary.get("children") or []
+    children_text = ", ".join(
+        f"{child.get('tag_number', '-')} ({child.get('birth_weight') or '-'})"
+        for child in children
+    ) or "детей: 0"
+    return lambing_date, f"{children_text}; м/р: {summary.get('dead_lambs_count', 0)}"
 
 
 def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None):
@@ -4672,7 +4710,7 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
             writer.writerow([])
         writer.writerow(headers)
         for row in rows:
-            writer.writerow(row)
+            writer.writerow([_format_export_value_for_csv(value) for value in row])
 
         response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = (
@@ -4702,7 +4740,7 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
 
     for data_row_idx, data_row in enumerate(rows, start=row_index + 1):
         for col_index, value in enumerate(data_row, start=1):
-            worksheet.cell(row=data_row_idx, column=col_index, value=value)
+            _write_excel_cell(worksheet, data_row_idx, col_index, value)
 
     for col_index in range(1, len(headers) + 1):
         max_length = len(str(headers[col_index - 1]))
@@ -5160,7 +5198,7 @@ def journal_progeny(request):
                 [
                     idx,
                     row["mother_tag"],
-                    row["actual_lambing_date"].strftime("%d.%m.%Y"),
+                    _format_date_for_excel(row["actual_lambing_date"]),
                     row["total_born"],
                     _numbered_tags_as_text(row["ewe_tags"]),
                     _numbered_tags_as_text(row["ram_tags"]),
@@ -5442,11 +5480,11 @@ def journal_insemination(request):
                 idx,
                 row["mother_tag"],
                 row["father_tag"],
-                row["placement_date"].strftime("%d.%m.%Y") if row["placement_date"] else "-",
+                _format_date_for_excel(row["placement_date"]) if row["placement_date"] else "-",
             ]
             if show_actual_lambing_date:
                 export_row.append(
-                    row["actual_lambing_date"].strftime("%d.%m.%Y")
+                    _format_date_for_excel(row["actual_lambing_date"])
                     if row["actual_lambing_date"]
                     else "-"
                 )
@@ -5539,7 +5577,7 @@ def journal_shift_transfer(request):
     if request.GET.get("export") == "1":
         export_rows = []
         for idx, note in enumerate(filtered_queryset, start=1):
-            export_rows.append([idx, note.date.strftime("%d.%m.%Y"), note.text])
+            export_rows.append([idx, _format_date_for_excel(note.date), note.text])
         return _build_excel_response(
             filename_prefix="journal_shift_transfer",
             sheet_title="Передача смены",
@@ -5710,8 +5748,10 @@ def export_to_excel(request):
                 'Статус',
                 'Назначение',
                 'Овчарня',
+                'Дата последнего взвешивания',
                 'Последнее взвешивание',
                 'Отбивка',
+                'Дата последней ветобработки',
                 'Последняя ветобработка',
                 'Бирка РСХН',
                 'Примечание',
@@ -5719,20 +5759,24 @@ def export_to_excel(request):
             export_data = []
             for idx, item in enumerate(animals_list, start=1):
                 animal = item['animal']
+                last_weight_record = WeightRecord.objects.filter(
+                    tag=animal.tag
+                ).order_by('-weight_date', '-id').first()
+                last_vet_date, last_vet_text = _get_last_vet_parts(animal)
                 export_data.append([
                     idx,
                     animal.tag.tag_number,
-                    animal.birth_date.strftime('%Y-%m-%d') if animal.birth_date else '-',
+                    _format_date_for_excel(animal.birth_date),
                     format_birth_type_for_animal(animal),
                     _format_ewe_birth_weight(animal),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
                     animal.place.sheepfold if animal.place else 'Нет данных',
-                    _format_weight_record_with_date(
-                        WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date', '-id').first()
-                    ),
+                    _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
+                    _format_weight_record_value(last_weight_record),
                     _format_ewe_weaning(animal),
-                    _format_last_vet(animal),
+                    _format_date_for_excel(last_vet_date) if last_vet_date else '-',
+                    last_vet_text,
                     animal.rshn_tag or '-',
                     animal.note or '',
                 ])
@@ -5744,9 +5788,13 @@ def export_to_excel(request):
                 'Статус',
                 'Назначение',
                 'Овчарня',
+                'Дата последнего взвешивания',
                 'Последнее взвешивание',
+                'Дата последнего осеменения',
                 'Последнее осеменение',
-                'Последняя дата окота',
+                'Дата последнего окота',
+                'Последний окот',
+                'Дата последней ветобработки',
                 'Последняя ветобработка',
                 'Бирка РСХН',
                 'Примечание',
@@ -5754,19 +5802,27 @@ def export_to_excel(request):
             export_data = []
             for idx, item in enumerate(animals_list, start=1):
                 animal = item['animal']
+                last_weight_record = WeightRecord.objects.filter(
+                    tag=animal.tag
+                ).order_by('-weight_date', '-id').first()
+                last_insemination_date, last_insemination_text = _split_sheep_last_insemination(animal)
+                last_lambing_date, last_lambing_text = _split_sheep_last_lambing(animal)
+                last_vet_date, last_vet_text = _get_last_vet_parts(animal)
                 export_data.append([
                     idx,
                     animal.tag.tag_number,
-                    animal.birth_date.strftime('%Y-%m-%d') if animal.birth_date else '-',
+                    _format_date_for_excel(animal.birth_date),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
                     animal.place.sheepfold if animal.place else 'Нет данных',
-                    _format_weight_record_with_date(
-                        WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date', '-id').first()
-                    ),
-                    format_sheep_last_insemination_text(build_sheep_last_insemination_data(animal)),
-                    format_sheep_last_lambing_text(build_sheep_last_lambing_summary(animal)),
-                    _format_last_vet(animal),
+                    _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
+                    _format_weight_record_value(last_weight_record),
+                    last_insemination_date or '-',
+                    last_insemination_text,
+                    last_lambing_date or '-',
+                    last_lambing_text,
+                    _format_date_for_excel(last_vet_date) if last_vet_date else '-',
+                    last_vet_text,
                     animal.rshn_tag or '-',
                     animal.note or '',
                 ])
@@ -5808,7 +5864,7 @@ def export_to_excel(request):
                     _format_dorper_display(animal),
                     'Брак' if animal.is_reject else '-',
                     item['last_weight'] if item['last_weight'] else '-',
-                    item['last_weight_date'].strftime('%Y-%m-%d') if item['last_weight_date'] else '-'
+                    _format_date_for_excel(item['last_weight_date']) if item['last_weight_date'] else '-'
                 ]
 
                 if animal_type == 'common':
@@ -5888,7 +5944,7 @@ def export_to_excel(request):
             # Добавляем данные
             for row_num, row_data in enumerate(export_data, start=2):
                 for col_num, value in enumerate(row_data, 1):
-                    ws.cell(row=row_num, column=col_num, value=value)
+                    _write_excel_cell(ws, row_num, col_num, value)
             
             # Автоширина колонок
             for col in range(1, len(headers) + 1):
@@ -5912,7 +5968,7 @@ def export_to_excel(request):
             
             # Добавляем данные
             for row_data in export_data:
-                writer.writerow(row_data)
+                writer.writerow([_format_export_value_for_csv(value) for value in row_data])
             
             # Сохраняем в response
             filename = f"{animal_type}s_{datetime.now().strftime('%Y-%m-%d')}.csv"
@@ -5996,14 +6052,14 @@ def export_animal_detail_excel(request, animal_type, tag_number):
     def format_date(date_value):
         if not date_value:
             return '-'
-        return date_value.strftime('%d.%m.%Y')
+        return _format_date_for_excel(date_value)
 
     def format_datetime(datetime_value):
         if not datetime_value:
             return '-'
         if timezone.is_aware(datetime_value):
             datetime_value = timezone.localtime(datetime_value)
-        return datetime_value.strftime('%d.%m.%Y %H:%M')
+        return _format_date_for_excel(datetime_value)
 
     def auto_width(worksheet):
         for col_cells in worksheet.columns:
@@ -6028,7 +6084,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
 
         for row_num, row in enumerate(rows, 2):
             for col_num, value in enumerate(row, 1):
-                cell = worksheet.cell(row=row_num, column=col_num, value=value)
+                cell = _write_excel_cell(worksheet, row_num, col_num, value)
                 cell.alignment = Alignment(vertical='top', wrap_text=True)
 
         worksheet.freeze_panes = 'A2'
@@ -6204,7 +6260,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
                 movement.old_place.sheepfold if movement.old_place else '-',
                 movement.new_place.sheepfold if movement.new_place else '-',
             ])
-        add_table_sheet(workbook, 'История перемещений', ['№', 'Дата и время', 'Из', 'В'], rows)
+        add_table_sheet(workbook, 'История перемещений', ['№', 'Дата', 'Из', 'В'], rows)
 
     if 'status_history' in selected_sections:
         status_rows = (
@@ -6220,7 +6276,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
                 status_item.old_status.status_type if status_item.old_status else '-',
                 status_item.new_status.status_type if status_item.new_status else '-',
             ])
-        add_table_sheet(workbook, 'История статусов', ['№', 'Дата и время', 'Старый статус', 'Новый статус'], rows)
+        add_table_sheet(workbook, 'История статусов', ['№', 'Дата', 'Старый статус', 'Новый статус'], rows)
 
     from urllib.parse import quote
     import re
@@ -7070,26 +7126,60 @@ def _parse_filter_date(raw_value):
         return None
 
 
+def _coerce_excel_date(value):
+    if not value or value == "-":
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if isinstance(value, str):
+        value = value.strip()
+        if not value or value == "-":
+            return None
+        for pattern in (
+            "%Y-%m-%d",
+            "%d.%m.%Y",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                return datetime.strptime(value[:19], pattern).date()
+            except ValueError:
+                continue
+
+    return None
+
+
 def _format_date_for_excel(value):
     if not value:
         return '-'
 
-    if hasattr(value, 'date'):
-        value = value.date()
-
-    if hasattr(value, 'strftime'):
-        return value.strftime('%d.%m.%Y')
-
-    if isinstance(value, str):
-        for pattern in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
-            try:
-                parsed = datetime.strptime(value[:19], pattern)
-                return parsed.strftime('%d.%m.%Y')
-            except ValueError:
-                continue
-        return value
+    parsed_date = _coerce_excel_date(value)
+    if parsed_date:
+        return parsed_date
 
     return str(value)
+
+
+def _format_export_value_for_csv(value):
+    parsed_date = _coerce_excel_date(value)
+    if parsed_date:
+        return parsed_date.strftime("%d.%m.%Y")
+    return value
+
+
+def _write_excel_cell(worksheet, row_index, column_index, value):
+    parsed_date = _coerce_excel_date(value)
+    if parsed_date:
+        value = parsed_date
+    cell = worksheet.cell(row=row_index, column=column_index, value=value)
+    if parsed_date:
+        cell.number_format = EXCEL_DATE_FORMAT
+    return cell
 
 
 def _build_case_variants_q(field_name, value):
@@ -8906,6 +8996,8 @@ def bulk_otbivka(request):
     """
     otbivka_date = request.data.get('otbivka_date')
     animal_tags = request.data.get('animal_tags', [])
+    animal_weights = request.data.get('animal_weights') or {}
+    place_id = request.data.get('place_id')
     
     if not otbivka_date:
         return Response({
@@ -8916,9 +9008,32 @@ def bulk_otbivka(request):
         return Response({
             'error': 'Необходимо выбрать животных'
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    if not isinstance(animal_weights, dict):
+        return Response({
+            'error': 'Вес при отбивке должен быть передан в формате "бирка: вес"'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        otbivka_date_obj = datetime.strptime(otbivka_date, '%Y-%m-%d').date()
+    except ValueError:
+        return Response({
+            'error': 'Некорректный формат даты отбивки'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    target_place = None
+    if place_id:
+        try:
+            target_place = Place.objects.get(pk=place_id)
+        except Place.DoesNotExist:
+            return Response({
+                'error': 'Выбранная овчарня не найдена'
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         updated_count = 0
+        moved_count = 0
+        weight_records_count = 0
         errors = []
         
         for tag_number in animal_tags:
@@ -8938,10 +9053,46 @@ def bulk_otbivka(request):
                 if animal.date_otbivka:
                     errors.append(f'У животного {tag_number} уже есть дата отбивки')
                     continue
+
+                weight_serializer = None
+                weight_value = animal_weights.get(str(tag_number))
+                if weight_value not in (None, ''):
+                    weight_serializer = WeightRecordSerializer(
+                        data={
+                            'tag_write': animal.tag.tag_number,
+                            'weight': weight_value,
+                            'weight_date': otbivka_date_obj,
+                        },
+                        context={'request': request},
+                    )
+                    if not weight_serializer.is_valid():
+                        errors.append(f'Некорректный вес для животного {tag_number}: {weight_serializer.errors}')
+                        continue
                 
-                # Устанавливаем только дату отбивки. Статус после отбивки пользователь задает вручную.
-                animal.date_otbivka = otbivka_date
-                animal.save()
+                # Устанавливаем дату отбивки. Статус после отбивки пользователь задает вручную.
+                old_place = animal.place
+                old_place_id = old_place.id if old_place else None
+                animal.date_otbivka = otbivka_date_obj
+
+                update_fields = ['date_otbivka']
+                if target_place and old_place_id != target_place.id:
+                    animal.place = target_place
+                    update_fields.append('place')
+
+                animal.save(update_fields=update_fields)
+
+                if weight_serializer:
+                    weight_serializer.save()
+                    weight_records_count += 1
+
+                if target_place and old_place_id != target_place.id:
+                    PlaceMovement.objects.create(
+                        tag=animal.tag,
+                        old_place=old_place,
+                        new_place=target_place,
+                    )
+                    moved_count += 1
+
                 set_mothers_not_inseminated_after_child_update(animal)
                 
                 updated_count += 1
@@ -8953,6 +9104,8 @@ def bulk_otbivka(request):
             'success': True,
             'updated_count': updated_count,
             'total_requested': len(animal_tags),
+            'weight_records_count': weight_records_count,
+            'moved_count': moved_count,
             'errors': errors
         })
         

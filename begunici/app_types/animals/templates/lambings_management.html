@@ -131,6 +131,30 @@
                     </form>
                 </div>
             </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>Импорт</h5>
+                </div>
+                <div class="card-body">
+                    <a href="/animals/api/import/group/template/" class="btn btn-outline-success w-100 mb-3">
+                        Скачать шаблон
+                    </a>
+                    <div class="mb-3">
+                        <label for="group-import-file" class="form-label">Файл импорта</label>
+                        <input type="file" class="form-control" id="group-import-file" accept=".xlsx">
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-primary" onclick="previewGroupImport()">
+                            Прочитать файл
+                        </button>
+                        <button type="button" class="btn btn-success" id="group-import-confirm-btn" onclick="confirmGroupImport()" disabled>
+                            Подтвердить
+                        </button>
+                    </div>
+                    <div id="group-import-result" class="mt-3" style="display: none;"></div>
+                </div>
+            </div>
         </div>
 
         <!-- Правая колонка - группы -->
