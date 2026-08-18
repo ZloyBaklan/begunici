@@ -79,6 +79,36 @@ def _parse_int(value, field_label):
         raise ValueError(f"Поле «{field_label}» должно быть целым числом") from exc
 
 
+def _parse_vet_care_ids(value):
+    text = _clean_text(value)
+    if not text:
+        raise ValueError("Поле «№ обработки» обязательно для заполнения")
+
+    care_ids = []
+    seen_ids = set()
+    invalid_parts = []
+    for part in re.split(r"[,;\n]+", text):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            care_id = _parse_int(part, "№ обработки")
+        except ValueError:
+            invalid_parts.append(part)
+            continue
+        if care_id in seen_ids:
+            continue
+        seen_ids.add(care_id)
+        care_ids.append(care_id)
+
+    if not care_ids:
+        if invalid_parts:
+            raise ValueError("Некорректный № обработки: " + ", ".join(invalid_parts))
+        raise ValueError("Поле «№ обработки» обязательно для заполнения")
+
+    return care_ids, invalid_parts
+
+
 def _parse_optional_int(value, field_label):
     if value is None or str(value).strip() == "":
         return None
@@ -311,7 +341,7 @@ def _parse_vet_import(workbook):
 
         try:
             care_date = _parse_import_date(date_value, "Дата обработки")
-            care_id = _parse_int(care_id_value, "№ обработки")
+            care_ids, invalid_care_id_parts = _parse_vet_care_ids(care_id_value)
         except ValueError as exc:
             _add_row_error(errors, row_number, str(exc))
             continue
@@ -321,36 +351,51 @@ def _parse_vet_import(workbook):
             _add_row_error(errors, row_number, animal_error)
             continue
 
-        try:
-            care = VeterinaryCare.objects.get(pk=care_id)
-        except VeterinaryCare.DoesNotExist:
-            _add_row_error(errors, row_number, f"Ветобработка №{care_id} не найдена")
-            continue
-
-        key = (animal.tag_id, care.id, care_date)
-        if key in seen_keys:
-            _add_row_error(errors, row_number, "Дубль обработки в загруженном файле")
-            continue
-        seen_keys.add(key)
-
-        if Veterinary.objects.filter(
-            tag=animal.tag,
-            veterinary_care=care,
-            date_of_care__date=care_date,
-        ).exists():
+        if invalid_care_id_parts:
             _add_row_error(
                 errors,
                 row_number,
-                f"У животного {animal.tag.tag_number} уже есть эта обработка за {care_date.strftime('%d.%m.%Y')}",
+                "Некорректный № обработки: " + ", ".join(invalid_care_id_parts),
             )
-            continue
 
-        valid_rows.append({
-            "row": row_number,
-            "tag": animal.tag.tag_number,
-            "care_date": care_date,
-            "care": care,
-        })
+        for care_id in care_ids:
+            try:
+                care = VeterinaryCare.objects.get(pk=care_id)
+            except VeterinaryCare.DoesNotExist:
+                _add_row_error(errors, row_number, f"Ветобработка №{care_id} не найдена")
+                continue
+
+            key = (animal.tag_id, care.id, care_date)
+            if key in seen_keys:
+                _add_row_error(
+                    errors,
+                    row_number,
+                    f"Дубль обработки №{care.id} в загруженном файле",
+                )
+                continue
+            seen_keys.add(key)
+
+            if Veterinary.objects.filter(
+                tag=animal.tag,
+                veterinary_care=care,
+                date_of_care__date=care_date,
+            ).exists():
+                _add_row_error(
+                    errors,
+                    row_number,
+                    (
+                        f"У животного {animal.tag.tag_number} уже есть обработка №{care.id} "
+                        f"за {care_date.strftime('%d.%m.%Y')}"
+                    ),
+                )
+                continue
+
+            valid_rows.append({
+                "row": row_number,
+                "tag": animal.tag.tag_number,
+                "care_date": care_date,
+                "care": care,
+            })
 
     return valid_rows, errors, []
 
