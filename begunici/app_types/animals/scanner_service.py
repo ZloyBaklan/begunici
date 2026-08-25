@@ -264,7 +264,7 @@ def _scanner_agent_url():
 def _read_scanner_history_agent(max_records=MAX_HISTORY_RECORDS):
     agent_url = _scanner_agent_url()
     if not agent_url:
-        raise ScannerError("Локальный мост сканера не настроен.")
+        raise ScannerError("Мост сканера не настроен")
 
     try:
         response = requests.get(
@@ -331,7 +331,7 @@ def read_scanner_history(max_records=MAX_HISTORY_RECORDS):
         try:
             return _read_scanner_history_agent(max_records=max_records)
         except ScannerError as exc:
-            errors.append(f"Локальный мост: {exc}")
+            errors.append(f"Сканер: {exc}")
 
     raise ScannerError(" ".join(errors))
 

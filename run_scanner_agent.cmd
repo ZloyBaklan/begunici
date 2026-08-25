@@ -20,13 +20,7 @@ if "%PYTHON_EXE%"=="" (
 )
 
 if "%PYTHON_EXE%"=="" (
-    if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
-        set "PYTHON_EXE=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-    )
-)
-
-if "%PYTHON_EXE%"=="" (
-    echo Python не найден. Установите Python 3.11+ или запустите мост через окружение Codex.
+    echo Python не найден. Установите Python 3.11+ и проверьте, что он доступен в PATH.
     pause
     exit /b 1
 )
