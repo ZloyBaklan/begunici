@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadVetCalendar(animalType, tagNumber);
         await loadStatusHistory(animalType, tagNumber);
         await loadPlaceHistory(animalType, tagNumber);
+        await loadNoteHistory(animalType, tagNumber);
         await initializeMaleFertilityCard(animalType, tagNumber);
         
         // Обработчик чекбокса для скрытия архивных детей
@@ -383,6 +384,70 @@ async function loadPlaceHistory(animalType, tagNumber, page = 1) {
 
     } catch (error) {
         console.error('Ошибка загрузки истории перемещений:', error);
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatNoteValue(value) {
+    const text = String(value || '').trim();
+    return text ? escapeHtml(text) : 'Не указано';
+}
+
+async function loadNoteHistory(animalType, tagNumber, page = 1) {
+    try {
+        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/note_history/?page=${page}&page_size=${analyticsPageSize}`);
+        const noteHistoryList = document.getElementById('note-history');
+        const prevButton = document.getElementById('note-history-prev');
+        const nextButton = document.getElementById('note-history-next');
+        const pageNumbers = document.getElementById('note-history-page-numbers');
+
+        if (!noteHistoryList || !prevButton || !nextButton || !pageNumbers) {
+            return;
+        }
+
+        noteHistoryList.innerHTML = '';
+
+        if (response.results && response.results.length > 0) {
+            response.results.forEach(record => {
+                let formattedDate = '-';
+                if (record.change_date) {
+                    const dateTime = new Date(record.change_date);
+                    formattedDate = dateTime.toLocaleDateString('ru-RU', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                    });
+                }
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${formattedDate}</td>
+                    <td><div class="note-history-text">${formatNoteValue(record.old_note)}</div></td>
+                    <td><div class="note-history-text">${formatNoteValue(record.new_note)}</div></td>
+                `;
+                noteHistoryList.appendChild(row);
+            });
+        } else {
+            noteHistoryList.innerHTML = '<tr><td colspan="3">Нет истории примечаний</td></tr>';
+        }
+
+        prevButton.disabled = !response.previous;
+        nextButton.disabled = !response.next;
+        prevButton.onclick = () => loadNoteHistory(animalType, tagNumber, page - 1);
+        nextButton.onclick = () => loadNoteHistory(animalType, tagNumber, page + 1);
+
+        const totalPages = Math.ceil(response.count / analyticsPageSize);
+        renderPageNumbers(pageNumbers, page, totalPages, (p) => loadNoteHistory(animalType, tagNumber, p));
+    } catch (error) {
+        console.error('Ошибка загрузки истории примечаний:', error);
     }
 }
 

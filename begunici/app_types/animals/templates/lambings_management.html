@@ -51,8 +51,11 @@
                         
                         <div class="mb-3">
                             <label class="form-label">Выбор барана-производителя/баранчика</label>
-                            <button type="button" class="btn btn-outline-primary w-100" onclick="showSelectFatherModal()">
-                                Выбрать барана-производителя/баранчика
+                            <select class="form-select" id="father-select">
+                                <option value="">Загрузка производителей...</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="showSelectFatherModal()">
+                                Выбрать вручную
                             </button>
                             <div id="selected-father-display" class="mt-2 text-muted">
                                 Не выбран
@@ -67,6 +70,13 @@
                             <div id="selected-mothers-display" class="mt-2 text-muted">
                                 Не выбрано
                             </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="group-place-select" class="form-label">Выбор овчарни (необязательно)</label>
+                            <select class="form-select" id="group-place-select">
+                                <option value="">Без перемещения</option>
+                            </select>
                         </div>
                         
                         <div class="mb-3">
@@ -97,8 +107,11 @@
                     <form id="kinship-check-form">
                         <div class="mb-3">
                             <label class="form-label">Выбор барана-производителя/баранчика</label>
-                            <button type="button" class="btn btn-outline-info w-100" onclick="showSelectKinshipFatherModal()">
-                                Выбрать барана-производителя/баранчика
+                            <select class="form-select" id="kinship-father-select">
+                                <option value="">Загрузка производителей...</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-info btn-sm mt-2" onclick="showSelectKinshipFatherModal()">
+                                Выбрать вручную
                             </button>
                             <div id="kinship-father-display" class="mt-2 text-muted">
                                 Не выбран
@@ -179,12 +192,12 @@
                     </div>
                     <div class="row mt-3">
                         <div class="col-md-4">
-                            <label for="group-mother-tag-filter" class="form-label">Бирка матери:</label>
-                            <input type="text" class="form-control" id="group-mother-tag-filter">
+                            <label for="group-mother-tag-filter" class="form-label">Бирка / РСХН матери:</label>
+                            <input type="text" class="form-control" id="group-mother-tag-filter" placeholder="Введите бирку или РСХН">
                         </div>
                         <div class="col-md-4">
-                            <label for="group-father-tag-filter" class="form-label">Бирка отца:</label>
-                            <input type="text" class="form-control" id="group-father-tag-filter">
+                            <label for="group-father-tag-filter" class="form-label">Бирка / РСХН отца:</label>
+                            <input type="text" class="form-control" id="group-father-tag-filter" placeholder="Введите бирку или РСХН">
                         </div>
                         <div class="col-md-4">
                             <!-- Пустая колонка для выравнивания -->
@@ -257,12 +270,12 @@
                     </div>
                     <div class="row mt-3">
                         <div class="col-md-4">
-                            <label for="mother-tag-filter" class="form-label">Бирка матери:</label>
-                            <input type="text" class="form-control" id="mother-tag-filter">
+                            <label for="mother-tag-filter" class="form-label">Бирка / РСХН матери:</label>
+                            <input type="text" class="form-control" id="mother-tag-filter" placeholder="Введите бирку или РСХН">
                         </div>
                         <div class="col-md-4">
-                            <label for="father-tag-filter" class="form-label">Бирка отца:</label>
-                            <input type="text" class="form-control" id="father-tag-filter">
+                            <label for="father-tag-filter" class="form-label">Бирка / РСХН отца:</label>
+                            <input type="text" class="form-control" id="father-tag-filter" placeholder="Введите бирку или РСХН">
                         </div>
                         <div class="col-md-4">
                             <!-- Пустая колонка для выравнивания -->
@@ -318,13 +331,13 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="mothersSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="mothersSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchMothersBtn">Поиск</button>
                     </div>
                 </div>
                 <div id="mothers-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
                     </div>
                 </div>
             </div>
@@ -347,13 +360,13 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="fathersSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="fathersSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchFathersBtn">Поиск</button>
                     </div>
                 </div>
                 <div id="fathers-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
                     </div>
                 </div>
             </div>
@@ -482,14 +495,14 @@
                 <input type="hidden" id="adding-mothers-group-id">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="groupAddMothersSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="groupAddMothersSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchGroupAddMothersBtn">Поиск</button>
                     </div>
                     <div id="selected-group-add-mothers-display" class="mt-2 text-muted">Не выбрано</div>
                 </div>
                 <div id="group-add-mothers-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения доступных ярок/овцематок
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения доступных ярок/овцематок
                     </div>
                 </div>
             </div>
@@ -535,13 +548,13 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="kinshipFathersSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="kinshipFathersSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchKinshipFathersBtn">Поиск</button>
                     </div>
                 </div>
                 <div id="kinship-fathers-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
                     </div>
                 </div>
             </div>
@@ -564,13 +577,13 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="kinshipMothersSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="kinshipMothersSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchKinshipMothersBtn">Поиск</button>
                     </div>
                 </div>
                 <div id="kinship-mothers-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
                     </div>
                 </div>
             </div>

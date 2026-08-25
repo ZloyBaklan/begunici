@@ -127,7 +127,7 @@ function getApiErrorMessage(errorData, fallback = 'Не удалось выпо�
     if (typeof errorData.detail === 'string') return parseApiErrorString(errorData.detail);
     if (typeof errorData.error === 'string') return parseApiErrorString(errorData.error);
 
-    const messages = Object.entries(errorData).map(([field, value]) => {
+    const messages = Object.entries(errorData).filter(([field]) => field !== 'requires_confirmation').map(([field, value]) => {
         const message = stringifyApiErrorValue(value);
         if (!message) return '';
         if (['detail', 'error', 'non_field_errors'].includes(field)) return message;
@@ -164,7 +164,10 @@ async function apiRequest(url, method, body) {
 
         if (!response.ok) {
             console.error(`Ошибка API [${response.status}]:`, responseData);
-            throw new Error(getApiErrorMessage(responseData));
+            const error = new Error(getApiErrorMessage(responseData));
+            error.data = responseData;
+            error.status = response.status;
+            throw error;
         }
 
         return responseData;
@@ -603,8 +606,28 @@ async function saveAnimalDetails() {
         data.working_condition = document.getElementById('working_condition').value;
     }
 
+    async function submitAnimalDetails(payload) {
+        return apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', payload);
+    }
+
     try {
-        const updatedAnimal = await apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', data);
+        let updatedAnimal;
+        try {
+            updatedAnimal = await submitAnimalDetails(data);
+        } catch (error) {
+            if (error?.data?.requires_confirmation) {
+                const warningText = getApiErrorMessage(error.data);
+                if (!confirm(`${warningText}\n\nПродолжить перемещение?`)) {
+                    return;
+                }
+                updatedAnimal = await submitAnimalDetails({
+                    ...data,
+                    confirm_group_place_move: true,
+                });
+            } else {
+                throw error;
+            }
+        }
         const updatedTagNumber = String(
             updatedAnimal?.tag?.tag_number
             || updatedAnimal?.tag_number
@@ -1195,6 +1218,129 @@ async function convertEweToSheep() {
 
 // Экспортируем функцию для глобального доступа
 window.convertEweToSheep = convertEweToSheep;
+
+let eweRamConversionPreview = null;
+
+function setTextContent(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = value || '';
+    }
+}
+
+async function openEweRamConversionModal() {
+    const animalDetail = document.getElementById('animal-detail');
+    if (!animalDetail) return;
+
+    const tagNumber = animalDetail.dataset.tagNumber;
+    const animalType = animalDetail.dataset.animalType;
+
+    if (animalType !== 'ewe' && animalType !== 'ram') {
+        alert('Преобразование доступно только для ярок и баранчиков');
+        return;
+    }
+
+    const previewAction = animalType === 'ewe' ? 'to_ram_preview' : 'to_ewe_preview';
+    const modalElement = document.getElementById('eweRamConversionModal');
+    const statusSelect = document.getElementById('ewe-ram-target-status');
+    const warningBlock = document.getElementById('ewe-ram-conversion-warning');
+    const conflictConfirmRow = document.getElementById('ewe-ram-confirm-conflicts-row');
+    const confirmConvert = document.getElementById('ewe-ram-confirm-convert');
+    const confirmConflicts = document.getElementById('ewe-ram-confirm-conflicts');
+
+    if (!modalElement || !statusSelect) return;
+
+    try {
+        const preview = await apiRequest(`/animals/${animalType}/${encodeURIComponent(tagNumber)}/${previewAction}/`, 'GET');
+        eweRamConversionPreview = {
+            ...preview,
+            sourceType: animalType,
+            tagNumber,
+        };
+
+        setTextContent(
+            'eweRamConversionModalLabel',
+            animalType === 'ewe' ? 'Преобразование ярки в баранчика' : 'Преобразование баранчика в ярку'
+        );
+
+        statusSelect.innerHTML = '';
+        (preview.status_options || []).forEach(statusOption => {
+            const option = document.createElement('option');
+            option.value = statusOption.id;
+            option.textContent = statusOption.status_type;
+            if (String(statusOption.id) === String(preview.default_status_id)) {
+                option.selected = true;
+            }
+            statusSelect.appendChild(option);
+        });
+
+        const hasConflicts = Boolean(preview.conflicts?.has_conflicts);
+        if (warningBlock) {
+            warningBlock.textContent = preview.warning || '';
+            warningBlock.style.display = hasConflicts ? 'block' : 'none';
+        }
+        if (conflictConfirmRow) {
+            conflictConfirmRow.style.display = hasConflicts ? 'block' : 'none';
+        }
+        if (confirmConvert) confirmConvert.checked = false;
+        if (confirmConflicts) confirmConflicts.checked = false;
+
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } catch (error) {
+        console.error('Ошибка открытия модалки преобразования ярка/баранчик:', error);
+        alert('Ошибка при подготовке преобразования: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+async function submitEweRamConversion() {
+    const preview = eweRamConversionPreview;
+    if (!preview) {
+        alert('Данные для преобразования не загружены. Откройте окно ещё раз.');
+        return;
+    }
+
+    const statusSelect = document.getElementById('ewe-ram-target-status');
+    const confirmConvert = document.getElementById('ewe-ram-confirm-convert');
+    const confirmConflicts = document.getElementById('ewe-ram-confirm-conflicts');
+    const statusId = statusSelect ? statusSelect.value : '';
+    const hasConflicts = Boolean(preview.conflicts?.has_conflicts);
+
+    if (!statusId) {
+        alert('Выберите статус после преобразования');
+        return;
+    }
+
+    if (!confirmConvert?.checked) {
+        alert('Подтвердите преобразование животного');
+        return;
+    }
+
+    if (hasConflicts && !confirmConflicts?.checked) {
+        alert('Подтвердите удаление несовместимых окотов/групп');
+        return;
+    }
+
+    try {
+        const response = await apiRequest(
+            `/animals/${preview.sourceType}/${encodeURIComponent(preview.tagNumber)}/${preview.action_url_part}/`,
+            'POST',
+            {
+                status_id: statusId,
+                confirm_delete_conflicts: hasConflicts,
+            }
+        );
+
+        alert(response.status || 'Животное успешно преобразовано');
+        window.location.href = response.redirect_url || `/animals/${preview.target_type}/${encodeURIComponent(preview.tagNumber)}/info/`;
+    } catch (error) {
+        console.error('Ошибка преобразования ярка/баранчик:', error);
+        alert('Ошибка при преобразовании: ' + (error.message || 'Неизвестная ошибка'));
+    }
+}
+
+window.openEweRamConversionModal = openEweRamConversionModal;
+window.submitEweRamConversion = submitEweRamConversion;
 
 function openConvertRamToMakerModal() {
     const modalElement = document.getElementById('convertRamToMakerModal');

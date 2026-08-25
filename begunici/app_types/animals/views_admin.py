@@ -20,16 +20,96 @@ def _hide_technical_and_duplicate_logs(logs):
         Q(action_type__icontains="Предпросмотр акта")
         | Q(description__icontains="/animals/api/archive/act-preview/")
         | Q(additional_data__path="/animals/api/archive/act-preview/")
+        | Q(action_type__icontains="Экспорт")
+        | Q(action_type__icontains="Скачивание акта")
+        | Q(description__icontains="/export-excel/")
+        | Q(description__icontains="/export-detail-excel/")
+        | Q(description__icontains="/api/kinship-pairs/export-excel/")
+        | Q(description__icontains="/api/archive/act/")
+        | Q(description__icontains="/api/acts/")
+        | Q(description__icontains="/scanner/export/")
+        | Q(description__icontains="/veterinary/api/export-cares/")
+        | Q(additional_data__path__icontains="/export-excel/")
+        | Q(additional_data__path__icontains="/export-detail-excel/")
+        | Q(additional_data__path__icontains="/api/kinship-pairs/export-excel/")
+        | Q(additional_data__path__icontains="/api/archive/act/")
+        | Q(additional_data__path__icontains="/api/acts/")
+        | Q(additional_data__path__icontains="/scanner/export/")
+        | Q(additional_data__path__icontains="/veterinary/api/export-cares/")
         | Q(action_type__iexact="Проверка родства")
         | Q(description__icontains="/animals/api/check-kinship/")
         | Q(additional_data__path="/animals/api/check-kinship/")
+    )
+    raw_request_noise = Q(action_type__icontains=" запрос к ") & (
+        Q(description__icontains="/animals/api/import/")
+        | Q(description__icontains="/animals/api/bulk-place-move/")
+        | Q(description__icontains="/animals/api/bulk-otbivka/")
+        | Q(description__icontains="/animals/api/bulk-vaccination/")
+        | Q(description__icontains="/to_ewe/")
+        | Q(description__icontains="/to_ram/")
+        | Q(description__icontains="/to_maker/")
+        | Q(description__icontains="/to_sheep/")
+        | Q(additional_data__path__icontains="/animals/api/import/")
+        | Q(additional_data__path__icontains="/animals/api/bulk-place-move/")
+        | Q(additional_data__path__icontains="/animals/api/bulk-otbivka/")
+        | Q(additional_data__path__icontains="/animals/api/bulk-vaccination/")
+        | Q(additional_data__path__icontains="/to_ewe/")
+        | Q(additional_data__path__icontains="/to_ram/")
+        | Q(additional_data__path__icontains="/to_maker/")
+        | Q(additional_data__path__icontains="/to_sheep/")
     )
     successful_middleware_duplicates = Q(additional_data__status_code__lt=400) & (
         Q(additional_data__path="/animals/lambing-group/")
         | Q(additional_data__path__regex=r"^/animals/lambing-group/[0-9]+/remove-father/$")
         | Q(additional_data__path__regex=r"^/animals/lambing/[0-9]+/(complete|complete-with-children|complete-early-failure)/$")
     )
-    return logs.exclude(hidden_readonly_logs | successful_middleware_duplicates)
+    return logs.exclude(hidden_readonly_logs | raw_request_noise | successful_middleware_duplicates)
+
+
+def _find_animal_link_by_tag(tag):
+    if not tag:
+        return None
+
+    from begunici.app_types.animals.models import Ewe, Maker, Ram, Sheep
+
+    animal_types = [
+        (Maker, "maker", "Баран-Производитель"),
+        (Ram, "ram", "Баранчик"),
+        (Ewe, "ewe", "Ярка"),
+        (Sheep, "sheep", "Овцематка"),
+    ]
+    for model_class, url_type, russian_name in animal_types:
+        try:
+            if model_class.objects.filter(tag__tag_number__iexact=tag).exists():
+                return {
+                    "tag": tag,
+                    "url_type": url_type,
+                    "russian_name": russian_name,
+                }
+        except Exception:
+            continue
+    return None
+
+
+def _build_animal_link_info(object_id):
+    tags = [tag.strip() for tag in str(object_id or "").split(",") if tag.strip()]
+    if not tags:
+        return None
+
+    if len(tags) == 1:
+        tag_info = _find_animal_link_by_tag(tags[0])
+        if not tag_info:
+            return None
+        return {
+            "url_type": tag_info["url_type"],
+            "russian_name": tag_info["russian_name"],
+        }
+
+    link_items = []
+    for tag in tags:
+        tag_info = _find_animal_link_by_tag(tag)
+        link_items.append(tag_info or {"tag": tag, "url_type": None})
+    return {"pair_tags": link_items}
 
 
 @login_required
@@ -100,58 +180,7 @@ def admin_logs_api(request):
                 and (display_object_type != "Окот" or ", " in display_object_id)
             )
             if should_build_animal_link:
-                from begunici.app_types.animals.models import Ewe, Maker, Ram, Sheep
-
-                if ", " in display_object_id:
-                    tags = [tag.strip() for tag in display_object_id.split(", ")]
-                    if len(tags) == 2:
-                        animal_link_info = {"pair_tags": []}
-                        animal_types = [
-                            (Maker, "maker", "Баран-Производитель"),
-                            (Ram, "ram", "Баранчик"),
-                            (Ewe, "ewe", "Ярка"),
-                            (Sheep, "sheep", "Овцематка"),
-                        ]
-                        for tag in tags:
-                            tag_info = None
-                            for model_class, url_type, russian_name in animal_types:
-                                try:
-                                    if model_class.objects.filter(
-                                        tag__tag_number=tag
-                                    ).exists():
-                                        tag_info = {
-                                            "tag": tag,
-                                            "url_type": url_type,
-                                            "russian_name": russian_name,
-                                        }
-                                        break
-                                except Exception:
-                                    continue
-                            if tag_info:
-                                animal_link_info["pair_tags"].append(tag_info)
-                            else:
-                                animal_link_info["pair_tags"].append(
-                                    {"tag": tag, "url_type": None}
-                                )
-                else:
-                    animal_types = [
-                        (Maker, "maker", "Баран-Производитель"),
-                        (Ram, "ram", "Баранчик"),
-                        (Ewe, "ewe", "Ярка"),
-                        (Sheep, "sheep", "Овцематка"),
-                    ]
-                    for model_class, url_type, russian_name in animal_types:
-                        try:
-                            if model_class.objects.filter(
-                                tag__tag_number=display_object_id
-                            ).exists():
-                                animal_link_info = {
-                                    "url_type": url_type,
-                                    "russian_name": russian_name,
-                                }
-                                break
-                        except Exception:
-                            continue
+                animal_link_info = _build_animal_link_info(display_object_id)
 
             logs_data.append(
                 {

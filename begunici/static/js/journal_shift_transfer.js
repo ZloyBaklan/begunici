@@ -34,7 +34,7 @@ function showShiftTagModal(targetTextareaId) {
     if (tagsList) {
         tagsList.innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки и нажмите «Поиск»
+                Введите бирку или РСХН и нажмите «Поиск»
             </div>
         `;
     }
@@ -107,7 +107,7 @@ async function searchShiftTags() {
 
     const searchValue = searchInput.value.trim();
     if (!searchValue) {
-        tagsList.innerHTML = `<div class="text-center text-muted py-3">Введите номер бирки для поиска</div>`;
+        tagsList.innerHTML = `<div class="text-center text-muted py-3">Введите бирку или РСХН для поиска</div>`;
         return;
     }
 

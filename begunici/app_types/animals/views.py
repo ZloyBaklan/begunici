@@ -34,6 +34,7 @@ from .models import (
     Lambing,
     LambingGroup,
     AnimalBase,
+    AnimalNoteHistory,
     ArchiveAct,
     CalendarNote,
     ShiftTransferNote,
@@ -55,11 +56,13 @@ from .serializers import (
     LambingGroupSerializer,
     ArchiveAnimalSerializer,
     UniversalChildSerializer,
+    AnimalNoteHistorySerializer,
     CalendarNoteSerializer,
     build_sheep_last_insemination_data,
     build_sheep_last_lambing_summary,
 )
 from .status_logic import (
+    build_group_place_warning,
     get_animal_status_validation_error,
     get_allowed_active_status_names_for_animal_type,
     get_default_child_status,
@@ -86,16 +89,39 @@ from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django.http import JsonResponse
-from django.db.models import Count, Q, F
+from django.db.models import Count, Q, F, OuterRef, Subquery
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from pathlib import Path
 
 TRUTHY_FILTER_VALUES = {"1", "true", "yes", "on"}
+EWE_RAM_CONVERSION_ALLOWED_USERS = {"admin", "main"}
 
 
 def _is_truthy_filter_value(value):
     return str(value or "").strip().lower() in TRUTHY_FILTER_VALUES
+
+
+def _unique_log_values(values):
+    result = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _short_log_values(values, limit=8):
+    values = _unique_log_values(values)
+    if len(values) <= limit:
+        return ", ".join(values)
+    return f"{', '.join(values[:limit])}, ... (+{len(values) - limit})"
 
 
 def _remove_animal_from_archive_act(animal):
@@ -118,6 +144,268 @@ def _remove_animal_from_archive_act(animal):
 
 def _filter_queryset_with_rshn_tag(queryset):
     return queryset.exclude(rshn_tag__isnull=True).exclude(rshn_tag__exact="")
+
+
+def _filter_queryset_by_latest_weight(queryset, weight_min_raw=None, weight_max_raw=None):
+    weight_min = _parse_decimal_filter(weight_min_raw)
+    weight_max = _parse_decimal_filter(weight_max_raw)
+    if weight_min is None and weight_max is None:
+        return queryset
+
+    latest_weight_subquery = (
+        WeightRecord.objects.filter(tag_id=OuterRef("tag_id"))
+        .order_by("-weight_date", "-id")
+        .values("weight")[:1]
+    )
+    queryset = queryset.annotate(_latest_weight=Subquery(latest_weight_subquery))
+
+    if weight_min is not None:
+        queryset = queryset.filter(_latest_weight__gte=weight_min)
+    if weight_max is not None:
+        queryset = queryset.filter(_latest_weight__lte=weight_max)
+
+    return queryset
+
+
+def _can_convert_ewe_ram(user):
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and getattr(user, "username", "") in EWE_RAM_CONVERSION_ALLOWED_USERS
+    )
+
+
+def _require_ewe_ram_conversion_access(request):
+    if not _can_convert_ewe_ram(getattr(request, "user", None)):
+        return Response(
+            {"error": "Преобразование ярка ↔ баранчик доступно только пользователям admin и main."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
+def _get_conversion_status_options(target_animal_type):
+    allowed_status_names = get_allowed_active_status_names_for_animal_type(target_animal_type) or set()
+    statuses = Status.objects.filter(status_type__in=allowed_status_names).order_by("status_type")
+    return [
+        {
+            "id": status_obj.id,
+            "status_type": status_obj.status_type,
+            "color": status_obj.color,
+        }
+        for status_obj in statuses
+    ]
+
+
+def _get_default_conversion_status_id(target_animal_type, options):
+    preferred_status = STATUS_FATTENING if target_animal_type == "Ram" else STATUS_UNDEFINED
+    for option in options:
+        if option["status_type"] == preferred_status:
+            return option["id"]
+    return options[0]["id"] if options else None
+
+
+def _get_conversion_status_or_response(status_id, target_animal_type):
+    if not status_id:
+        return None, Response(
+            {"error": "Выберите статус, который будет установлен после преобразования."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        status_obj = Status.objects.get(id=status_id)
+    except (Status.DoesNotExist, ValueError, TypeError):
+        return None, Response(
+            {"error": "Выбранный статус не найден."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    status_error = get_animal_status_validation_error(status_obj, target_animal_type)
+    if status_error:
+        return None, Response({"error": status_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    return status_obj, None
+
+
+def _ewe_to_ram_conflicts(ewe):
+    lambings_count = Lambing.objects.filter(ewe=ewe).count()
+    groups_count = LambingGroup.objects.filter(ewes=ewe).distinct().count()
+    return {
+        "lambings_count": lambings_count,
+        "groups_count": groups_count,
+        "has_conflicts": lambings_count > 0 or groups_count > 0,
+    }
+
+
+def _ram_to_ewe_conflicts(ram):
+    lambings_count = Lambing.objects.filter(ram=ram).count()
+    groups_count = LambingGroup.objects.filter(ram=ram).count()
+    return {
+        "lambings_count": lambings_count,
+        "groups_count": groups_count,
+        "has_conflicts": lambings_count > 0 or groups_count > 0,
+    }
+
+
+def _format_conversion_conflict_warning(conflicts):
+    if not conflicts.get("has_conflicts"):
+        return ""
+    return "Животное участвует в окоте, запись об окоте будет УДАЛЕНА"
+
+
+def _delete_ewe_to_ram_conflicts(ewe):
+    lambings_qs = Lambing.objects.filter(ewe=ewe)
+    lambings_count = lambings_qs.count()
+    lambings_qs.delete()
+
+    groups = list(LambingGroup.objects.filter(ewes=ewe).distinct())
+    removed_group_memberships = len(groups)
+    deleted_empty_groups = 0
+    for group in groups:
+        group.ewes.remove(ewe)
+        if group.sheep.count() == 0 and group.ewes.count() == 0:
+            group.delete()
+            deleted_empty_groups += 1
+
+    return {
+        "deleted_lambings_count": lambings_count,
+        "removed_group_memberships_count": removed_group_memberships,
+        "deleted_empty_groups_count": deleted_empty_groups,
+    }
+
+
+def _delete_ram_to_ewe_conflicts(ram):
+    lambings_qs = Lambing.objects.filter(ram=ram)
+    lambings_count = lambings_qs.count()
+    lambings_qs.delete()
+
+    groups_qs = LambingGroup.objects.filter(ram=ram)
+    groups_count = groups_qs.count()
+    groups_qs.delete()
+
+    return {
+        "deleted_lambings_count": lambings_count,
+        "deleted_groups_count": groups_count,
+    }
+
+
+def _build_base_animal_kwargs(source_animal, status_obj):
+    return {
+        "tag": source_animal.tag,
+        "animal_status": status_obj,
+        "birth_date": source_animal.birth_date,
+        "age": source_animal.age,
+        "note": source_animal.note,
+        "rshn_tag": source_animal.rshn_tag,
+        "date_otbivka": source_animal.date_otbivka,
+        "dorper_percentage": source_animal.dorper_percentage,
+        "is_manual_dorper": source_animal.is_manual_dorper,
+        "is_reject": source_animal.is_reject,
+        "is_archived": source_animal.is_archived,
+        "carcass_weight": source_animal.carcass_weight,
+        "mother": source_animal.mother,
+        "father": source_animal.father,
+        "place": source_animal.place,
+    }
+
+
+def _convert_between_ewe_and_ram(source_animal, target_model, target_animal_type, status_obj, delete_conflicts_func):
+    with transaction.atomic():
+        if target_model.objects.filter(tag=source_animal.tag).exists():
+            raise DRFValidationError(
+                {"error": f"Животное с этой биркой уже существует в целевом типе {target_model._meta.verbose_name}."}
+            )
+
+        old_status = source_animal.animal_status
+        deleted_info = delete_conflicts_func(source_animal)
+
+        target_animal = target_model.objects.create(
+            **_build_base_animal_kwargs(source_animal, status_obj)
+        )
+        target_animal.weight_records.set(source_animal.weight_records.all())
+        target_animal.veterinary_history.set(source_animal.veterinary_history.all())
+
+        tag = source_animal.tag
+        tag.animal_type = target_animal_type
+        tag.save(update_fields=["animal_type"])
+
+        if old_status != status_obj:
+            StatusHistory.objects.create(tag=tag, old_status=old_status, new_status=status_obj)
+
+        source_animal.delete()
+
+    return target_animal, deleted_info
+
+
+def _conversion_preview_response(source_animal, source_type, target_type):
+    if source_type == "ewe" and target_type == "ram":
+        conflicts = _ewe_to_ram_conflicts(source_animal)
+        target_animal_type = "Ram"
+        target_label = "баранчика"
+        action_url_part = "to_ram"
+    else:
+        conflicts = _ram_to_ewe_conflicts(source_animal)
+        target_animal_type = "Ewe"
+        target_label = "ярку"
+        action_url_part = "to_ewe"
+
+    status_options = _get_conversion_status_options(target_animal_type)
+    return Response(
+        {
+            "target_type": target_type,
+            "target_label": target_label,
+            "action_url_part": action_url_part,
+            "status_options": status_options,
+            "default_status_id": _get_default_conversion_status_id(target_animal_type, status_options),
+            "conflicts": conflicts,
+            "warning": _format_conversion_conflict_warning(conflicts),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+def _log_ewe_ram_conversion(request, tag_number, source_label, target_label, status_obj, deleted_info):
+    if not getattr(request, "user", None) or not request.user.is_authenticated:
+        return
+
+    from .models_user_log import UserActionLog
+
+    deleted_parts = []
+    if deleted_info.get("deleted_lambings_count"):
+        deleted_parts.append(f"удалено окотов: {deleted_info['deleted_lambings_count']}")
+    if deleted_info.get("deleted_groups_count"):
+        deleted_parts.append(f"удалено групп: {deleted_info['deleted_groups_count']}")
+    if deleted_info.get("removed_group_memberships_count"):
+        deleted_parts.append(f"убрано участий в группах: {deleted_info['removed_group_memberships_count']}")
+    if deleted_info.get("deleted_empty_groups_count"):
+        deleted_parts.append(f"удалено пустых групп: {deleted_info['deleted_empty_groups_count']}")
+
+    details = f"Преобразование {source_label} в {target_label}; новый статус: {status_obj.status_type}"
+    if deleted_parts:
+        details += "; " + "; ".join(deleted_parts)
+
+    UserActionLog.objects.create(
+        user=request.user,
+        action_type=f"Преобразование {source_label} в {target_label}",
+        object_type="Животное",
+        object_id=tag_number,
+        description=details,
+    )
+
+
+def _log_conversion(request, tag_number, source_label, target_label, description):
+    if not getattr(request, "user", None) or not request.user.is_authenticated:
+        return
+
+    from .models_user_log import UserActionLog
+
+    UserActionLog.objects.create(
+        user=request.user,
+        action_type=f"Преобразование {source_label} в {target_label}",
+        object_type="Животное",
+        object_id=tag_number,
+        description=description,
+    )
 
 
 def _normalize_exception_response_data(exc):
@@ -265,11 +553,16 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         """
         birth_date_from = self.request.query_params.get('birth_date_from', '').strip()
         birth_date_to = self.request.query_params.get('birth_date_to', '').strip()
+        date_otbivka_from = self.request.query_params.get('date_otbivka_from', '').strip()
+        date_otbivka_to = self.request.query_params.get('date_otbivka_to', '').strip()
         father_tag = self.request.query_params.get('father_tag', '').strip()
         mother_tag = self.request.query_params.get('mother_tag', '').strip()
         age_min_raw = self.request.query_params.get('age_min', '').strip()
         age_max_raw = self.request.query_params.get('age_max', '').strip()
+        weight_min_raw = self.request.query_params.get('weight_min', '').strip()
+        weight_max_raw = self.request.query_params.get('weight_max', '').strip()
         has_rshn_tag = self.request.query_params.get('has_rshn_tag', '').strip()
+        is_reject = self.request.query_params.get('is_reject', '').strip()
 
         age_min = None
         if age_min_raw:
@@ -299,6 +592,20 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
 
+        if date_otbivka_from:
+            try:
+                from_date = datetime.strptime(date_otbivka_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(date_otbivka__gte=from_date)
+            except ValueError:
+                pass
+
+        if date_otbivka_to:
+            try:
+                to_date = datetime.strptime(date_otbivka_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(date_otbivka__lte=to_date)
+            except ValueError:
+                pass
+
         if age_min is not None:
             queryset = queryset.filter(age__gte=age_min)
 
@@ -314,7 +621,25 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         if _is_truthy_filter_value(has_rshn_tag):
             queryset = _filter_queryset_with_rshn_tag(queryset)
 
+        if _is_truthy_filter_value(is_reject):
+            queryset = queryset.filter(is_reject=True)
+
+        queryset = _filter_queryset_by_latest_weight(queryset, weight_min_raw, weight_max_raw)
+
         return queryset
+
+    @action(detail=True, methods=["get"], url_path="note_history")
+    def note_history(self, request, pk=None):
+        animal = self.get_object()
+        note_history = AnimalNoteHistory.objects.filter(tag=animal.tag).order_by("-change_date", "-id")
+
+        page = self.paginate_queryset(note_history)
+        if page is not None:
+            serializer = AnimalNoteHistorySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = AnimalNoteHistorySerializer(note_history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class MakerViewSet(AnimalBaseViewSet):
@@ -341,7 +666,7 @@ class MakerViewSet(AnimalBaseViewSet):
             search_filter = (
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
-                | Q(rshn_tag__icontains=search)
+                | _build_icontains_multi_filter("rshn_tag", search)
                 | Q(place__sheepfold__icontains=search)
                 | Q(name__icontains=search)
             )
@@ -736,7 +1061,7 @@ class RamViewSet(AnimalBaseViewSet):
             search_filter = (
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
-                | Q(rshn_tag__icontains=search)
+                | _build_icontains_multi_filter("rshn_tag", search)
                 | Q(place__sheepfold__icontains=search)
             )
             
@@ -775,7 +1100,18 @@ class RamViewSet(AnimalBaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            tag_number = ram.tag.tag_number
             maker = ram.to_maker(plemstatus=plemstatus, working_condition=working_condition)
+            _log_conversion(
+                request,
+                tag_number,
+                "баранчика",
+                "барана-производителя",
+                (
+                    "Баранчик преобразован в барана-производителя; "
+                    f"племенной статус: {plemstatus}; рабочее состояние: {working_condition}"
+                ),
+            )
             return Response(
                 {
                     "status": "Баранчик преобразован в барана-производителя",
@@ -784,6 +1120,58 @@ class RamViewSet(AnimalBaseViewSet):
             )
         except Exception as e:
             return self.handle_exception(e)
+
+    @action(detail=True, methods=["get"], url_path="to_ewe_preview")
+    def to_ewe_preview(self, request, pk=None):
+        access_response = _require_ewe_ram_conversion_access(request)
+        if access_response is not None:
+            return access_response
+        return _conversion_preview_response(self.get_object(), source_type="ram", target_type="ewe")
+
+    @action(detail=True, methods=["post"], url_path="to_ewe")
+    def to_ewe(self, request, pk=None):
+        access_response = _require_ewe_ram_conversion_access(request)
+        if access_response is not None:
+            return access_response
+
+        ram = self.get_object()
+        status_obj, error_response = _get_conversion_status_or_response(
+            request.data.get("status_id"),
+            "Ewe",
+        )
+        if error_response:
+            return error_response
+
+        conflicts = _ram_to_ewe_conflicts(ram)
+        if conflicts["has_conflicts"] and not _is_truthy_filter_value(request.data.get("confirm_delete_conflicts")):
+            return Response(
+                {
+                    "error": _format_conversion_conflict_warning(conflicts),
+                    "conflicts": conflicts,
+                    "requires_conflict_confirmation": True,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        tag_number = ram.tag.tag_number
+        ewe, deleted_info = _convert_between_ewe_and_ram(
+            ram,
+            Ewe,
+            "Ewe",
+            status_obj,
+            _delete_ram_to_ewe_conflicts,
+        )
+        _log_ewe_ram_conversion(request, tag_number, "баранчика", "ярку", status_obj, deleted_info)
+
+        return Response(
+            {
+                "status": "Баранчик преобразован в ярку",
+                "new_ewe": EweSerializer(ewe).data,
+                "redirect_url": f"/animals/ewe/{tag_number}/info/",
+                "deleted": deleted_info,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get"], url_path="family_tree")
     def family_tree(self, request, pk=None):
@@ -1075,7 +1463,7 @@ class EweViewSet(AnimalBaseViewSet):
             search_filter = (
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
-                | Q(rshn_tag__icontains=search)
+                | _build_icontains_multi_filter("rshn_tag", search)
                 | Q(place__sheepfold__icontains=search)
             )
             
@@ -1094,7 +1482,15 @@ class EweViewSet(AnimalBaseViewSet):
     def to_sheep(self, request, pk=None):
         try:
             ewe = self.get_object()
+            tag_number = ewe.tag.tag_number
             sheep = ewe.to_sheep()
+            _log_conversion(
+                request,
+                tag_number,
+                "ярки",
+                "овцематку",
+                "Ярка преобразована в овцематку",
+            )
             return Response(
                 {
                     "status": "Ярка преобразована в овцематку",
@@ -1103,6 +1499,58 @@ class EweViewSet(AnimalBaseViewSet):
             )
         except Exception as e:
             return self.handle_exception(e)
+
+    @action(detail=True, methods=["get"], url_path="to_ram_preview")
+    def to_ram_preview(self, request, pk=None):
+        access_response = _require_ewe_ram_conversion_access(request)
+        if access_response is not None:
+            return access_response
+        return _conversion_preview_response(self.get_object(), source_type="ewe", target_type="ram")
+
+    @action(detail=True, methods=["post"], url_path="to_ram")
+    def to_ram(self, request, pk=None):
+        access_response = _require_ewe_ram_conversion_access(request)
+        if access_response is not None:
+            return access_response
+
+        ewe = self.get_object()
+        status_obj, error_response = _get_conversion_status_or_response(
+            request.data.get("status_id"),
+            "Ram",
+        )
+        if error_response:
+            return error_response
+
+        conflicts = _ewe_to_ram_conflicts(ewe)
+        if conflicts["has_conflicts"] and not _is_truthy_filter_value(request.data.get("confirm_delete_conflicts")):
+            return Response(
+                {
+                    "error": _format_conversion_conflict_warning(conflicts),
+                    "conflicts": conflicts,
+                    "requires_conflict_confirmation": True,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        tag_number = ewe.tag.tag_number
+        ram, deleted_info = _convert_between_ewe_and_ram(
+            ewe,
+            Ram,
+            "Ram",
+            status_obj,
+            _delete_ewe_to_ram_conflicts,
+        )
+        _log_ewe_ram_conversion(request, tag_number, "ярки", "баранчика", status_obj, deleted_info)
+
+        return Response(
+            {
+                "status": "Ярка преобразована в баранчика",
+                "new_ram": RamSerializer(ram).data,
+                "redirect_url": f"/animals/ram/{tag_number}/info/",
+                "deleted": deleted_info,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get"], url_path="family_tree")
     def family_tree(self, request, pk=None):
@@ -1394,7 +1842,7 @@ class SheepViewSet(AnimalBaseViewSet):
             search_filter = (
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
-                | Q(rshn_tag__icontains=search)
+                | _build_icontains_multi_filter("rshn_tag", search)
                 | Q(place__sheepfold__icontains=search)
             )
             
@@ -1758,6 +2206,53 @@ def _active_lambing_mother_filter(mother, mother_type):
     return Q(ewe=mother)
 
 
+def _active_group_at_place(place, exclude_group_id=None):
+    if not place:
+        return None
+
+    queryset = (
+        LambingGroup.objects.filter(is_active=True)
+        .select_related("maker__tag", "maker__place", "ram__tag", "ram__place")
+        .filter(Q(maker__place=place) | Q(ram__place=place))
+    )
+    if exclude_group_id:
+        queryset = queryset.exclude(pk=exclude_group_id)
+    return queryset.first()
+
+
+def _format_group_place_conflict(group, place):
+    father_tag = group.get_father_tag() or "-"
+    return (
+        f"В выбранной овчарне уже есть активная группа "
+        f"№{group.id} с отцом {father_tag}: {place.sheepfold}"
+    )
+
+
+def _move_animal_to_place_with_history(animal, target_place):
+    if not animal or not target_place or animal.place_id == target_place.id:
+        return False
+
+    old_place = animal.place
+    animal.place = target_place
+    animal.save(update_fields=["place"])
+    if animal.tag:
+        PlaceMovement.objects.create(
+            tag=animal.tag,
+            old_place=old_place,
+            new_place=target_place,
+        )
+    return True
+
+
+def _move_group_animals_to_place(father, mothers, target_place):
+    moved_count = 0
+    animals = [father] + [mother for mother, _ in mothers]
+    for animal in animals:
+        if _move_animal_to_place_with_history(animal, target_place):
+            moved_count += 1
+    return moved_count
+
+
 def _get_group_statuses():
     return get_group_statuses()
 
@@ -1807,12 +2302,16 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(
                 _build_case_variants_filter("sheep__tag__tag_number", mother_tag)
                 | _build_case_variants_filter("ewes__tag__tag_number", mother_tag)
+                | _build_icontains_multi_filter("sheep__rshn_tag", mother_tag)
+                | _build_icontains_multi_filter("ewes__rshn_tag", mother_tag)
             )
 
         if father_tag:
             queryset = queryset.filter(
                 _build_case_variants_filter("maker__tag__tag_number", father_tag)
                 | _build_case_variants_filter("ram__tag__tag_number", father_tag)
+                | _build_icontains_multi_filter("maker__rshn_tag", father_tag)
+                | _build_icontains_multi_filter("ram__rshn_tag", father_tag)
             )
 
         return queryset.distinct()
@@ -1826,6 +2325,17 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             father_tag_number = (request.data.get("father_tag_number") or "").strip()
             mother_tag_numbers = request.data.get("mother_tag_numbers") or []
             note = (request.data.get("note") or "").strip()
+            place_id = request.data.get("place_id") or request.data.get("target_place_id")
+            target_place = None
+
+            if place_id:
+                try:
+                    target_place = Place.objects.get(pk=place_id)
+                except (TypeError, ValueError, Place.DoesNotExist):
+                    return Response(
+                        {"error": "Выбранная овчарня/отсек не найдены"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             if not father_tag_number:
                 return Response(
@@ -1869,6 +2379,14 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             ).exists():
                 return Response(
                     {"error": f"Баран {father_tag_number} уже находится в группе"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            group_place = target_place or father.place
+            place_conflict = _active_group_at_place(group_place)
+            if place_conflict:
+                return Response(
+                    {"error": _format_group_place_conflict(place_conflict, group_place)},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -1924,6 +2442,10 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     _set_animal_status(mother, statuses["mother_in_group"])
                 _set_animal_status(father, statuses["father_in_group"])
 
+                moved_count = 0
+                if target_place:
+                    moved_count = _move_group_animals_to_place(father, mothers, target_place)
+
             try:
                 from .models_user_log import UserActionLog
                 from django.contrib.auth.models import AnonymousUser
@@ -1934,6 +2456,11 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         for mother, _ in mothers
                         if mother.tag
                     ]
+                    movement_text = (
+                        f"; перемещено в {target_place.sheepfold}: {moved_count}"
+                        if target_place
+                        else ""
+                    )
                     UserActionLog.objects.create(
                         user=request.user,
                         action_type="Постановка в группу",
@@ -1943,6 +2470,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                             f"Поставлена группа: отец {father_tag_number}; "
                             f"матери: {', '.join(mother_tags)}; "
                             f"дата: {placement_date.strftime('%d.%m.%Y')}"
+                            f"{movement_text}"
                         ),
                     )
             except Exception as log_error:
@@ -1953,6 +2481,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     "success": "Группа создана",
                     "created_count": 1,
                     "mothers_count": len(mothers),
+                    "moved_count": moved_count,
                     "group": self.get_serializer(group).data,
                 },
                 status=status.HTTP_201_CREATED,
@@ -2398,6 +2927,8 @@ class LambingViewSet(viewsets.ModelViewSet):
             mother_filter = (
                 build_case_variants_q('sheep__tag__tag_number', mother_tag) |
                 build_case_variants_q('ewe__tag__tag_number', mother_tag) |
+                _build_icontains_multi_filter('sheep__rshn_tag', mother_tag) |
+                _build_icontains_multi_filter('ewe__rshn_tag', mother_tag) |
                 build_case_variants_q('mother_tag_text', mother_tag)
             )
             queryset = queryset.filter(mother_filter)
@@ -2405,7 +2936,9 @@ class LambingViewSet(viewsets.ModelViewSet):
         if father_tag:
             father_filter = (
                 build_case_variants_q('maker__tag__tag_number', father_tag) |
-                build_case_variants_q('ram__tag__tag_number', father_tag)
+                build_case_variants_q('ram__tag__tag_number', father_tag) |
+                _build_icontains_multi_filter('maker__rshn_tag', father_tag) |
+                _build_icontains_multi_filter('ram__rshn_tag', father_tag)
             )
             queryset = queryset.filter(father_filter)
         
@@ -3544,6 +4077,7 @@ class AnimalDetailView(TemplateView):
             context["can_convert_to_maker"] = (
                 self.model is Ram and animal.is_older_than_two_years()
             )
+            context["can_convert_ewe_ram"] = _can_convert_ewe_ram(self.request.user)
         except self.model.DoesNotExist:
             raise Http404(f"{self.model._meta.verbose_name.capitalize()} не найден")
         return context
@@ -3783,7 +4317,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             search_filter = (
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
-                | Q(rshn_tag__icontains=search)
+                | _build_icontains_multi_filter("rshn_tag", search)
                 | Q(place__sheepfold__icontains=search)
             )
 
@@ -4006,12 +4540,44 @@ def _build_case_variants_filter(field_name, value):
     return combined_q
 
 
+def _build_icontains_multi_filter(field_name, value):
+    combined_q = Q()
+    for term in _split_multi_search_terms(value):
+        combined_q |= Q(**{f"{field_name}__icontains": term})
+    return combined_q
+
+
+def _get_tag_ids_by_rshn_search(search):
+    rshn_filter = _build_icontains_multi_filter("rshn_tag", search)
+    if not rshn_filter:
+        return []
+
+    tag_ids = set()
+    for model, _ in COMMON_ANIMAL_TYPE_MAP.values():
+        tag_ids.update(
+            model.objects.filter(rshn_filter, tag__isnull=False).values_list("tag_id", flat=True)
+        )
+    return list(tag_ids)
+
+
+def _build_tag_or_rshn_relation_filter(tag_relation_name, search):
+    search_filter = _build_case_variants_filter(f"{tag_relation_name}__tag_number", search)
+    rshn_tag_ids = _get_tag_ids_by_rshn_search(search)
+    if rshn_tag_ids:
+        search_filter |= Q(**{f"{tag_relation_name}_id__in": rshn_tag_ids})
+    return search_filter
+
+
 def _matches_multi_search(value, search):
     terms = [term.lower() for term in _split_multi_search_terms(search)]
     if not terms:
         return True
     text = str(value or "").lower()
     return any(term in text for term in terms)
+
+
+def _matches_tag_or_rshn_search(tag_number, rshn_tag, search):
+    return _matches_multi_search(tag_number, search) or _matches_multi_search(rshn_tag, search)
 
 
 def _format_dorper_display(animal):
@@ -4038,14 +4604,19 @@ def common_animals_api(request):
     search = request.query_params.get("search", "").strip()
     birth_date_from_raw = request.query_params.get("birth_date_from", "").strip()
     birth_date_to_raw = request.query_params.get("birth_date_to", "").strip()
+    date_otbivka_from_raw = request.query_params.get("date_otbivka_from", "").strip()
+    date_otbivka_to_raw = request.query_params.get("date_otbivka_to", "").strip()
     age_min_raw = request.query_params.get("age_min", "").strip()
     age_max_raw = request.query_params.get("age_max", "").strip()
+    weight_min_raw = request.query_params.get("weight_min", "").strip()
+    weight_max_raw = request.query_params.get("weight_max", "").strip()
     father_tag = request.query_params.get("father_tag", "").strip()
     mother_tag = request.query_params.get("mother_tag", "").strip()
     animal_type_filter = request.query_params.get("animal_type", "").strip().lower()
     status_filter = request.query_params.get("animal_status", "").strip()
     place_filter = request.query_params.get("place", "").strip()
     has_rshn_tag = request.query_params.get("has_rshn_tag", "").strip()
+    is_reject = request.query_params.get("is_reject", "").strip()
 
     page_raw = request.query_params.get("page", "1")
     page_size_raw = request.query_params.get("page_size", "10")
@@ -4075,6 +4646,20 @@ def common_animals_api(request):
         except ValueError:
             birth_date_to = None
 
+    date_otbivka_from = None
+    if date_otbivka_from_raw:
+        try:
+            date_otbivka_from = datetime.strptime(date_otbivka_from_raw, "%Y-%m-%d").date()
+        except ValueError:
+            date_otbivka_from = None
+
+    date_otbivka_to = None
+    if date_otbivka_to_raw:
+        try:
+            date_otbivka_to = datetime.strptime(date_otbivka_to_raw, "%Y-%m-%d").date()
+        except ValueError:
+            date_otbivka_to = None
+
     age_min = None
     if age_min_raw:
         try:
@@ -4095,7 +4680,7 @@ def common_animals_api(request):
         if search:
             search_filter = _build_case_variants_filter("tag__tag_number", search) | _build_case_variants_filter(
                 "animal_status__status_type", search
-            ) | Q(rshn_tag__icontains=search) | Q(place__sheepfold__icontains=search)
+            ) | _build_icontains_multi_filter("rshn_tag", search) | Q(place__sheepfold__icontains=search)
 
             if model_key == "maker":
                 search_filter |= Q(name__icontains=search)
@@ -4114,6 +4699,12 @@ def common_animals_api(request):
         if birth_date_to:
             queryset = queryset.filter(birth_date__lte=birth_date_to)
 
+        if date_otbivka_from:
+            queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
+
+        if date_otbivka_to:
+            queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
+
         if age_min is not None:
             queryset = queryset.filter(age__gte=age_min)
 
@@ -4128,6 +4719,11 @@ def common_animals_api(request):
 
         if _is_truthy_filter_value(has_rshn_tag):
             queryset = _filter_queryset_with_rshn_tag(queryset)
+
+        if _is_truthy_filter_value(is_reject):
+            queryset = queryset.filter(is_reject=True)
+
+        queryset = _filter_queryset_by_latest_weight(queryset, weight_min_raw, weight_max_raw)
 
         return queryset
 
@@ -4295,12 +4891,15 @@ def _get_young_stock_filtered_items(query_params):
     search = query_params.get("search", "").strip()
     birth_date_from = _parse_date_filter(query_params.get("birth_date_from"))
     birth_date_to = _parse_date_filter(query_params.get("birth_date_to"))
+    date_otbivka_from = _parse_date_filter(query_params.get("date_otbivka_from"))
+    date_otbivka_to = _parse_date_filter(query_params.get("date_otbivka_to"))
     age_min = _parse_decimal_filter(query_params.get("age_min"))
     age_max = _parse_decimal_filter(query_params.get("age_max"))
     father_tag = query_params.get("father_tag", "").strip()
     mother_tag = query_params.get("mother_tag", "").strip()
     animal_type_filter = query_params.get("animal_type", "").strip().lower()
     has_rshn_tag = query_params.get("has_rshn_tag", "").strip()
+    is_reject = query_params.get("is_reject", "").strip()
     cutoff_date = _get_young_stock_cutoff_date()
 
     if animal_type_filter:
@@ -4321,7 +4920,11 @@ def _get_young_stock_filtered_items(query_params):
         ).select_related("tag", "animal_status", "place")
 
         if search:
-            search_filter = _build_case_variants_filter("tag__tag_number", search) | Q(rshn_tag__icontains=search)
+            search_filter = (
+                _build_case_variants_filter("tag__tag_number", search)
+                | _build_icontains_multi_filter("rshn_tag", search)
+                | _build_case_variants_filter("animal_status__status_type", search)
+            )
             if animal_type == "maker":
                 search_filter |= Q(name__icontains=search)
             queryset = queryset.filter(search_filter)
@@ -4330,6 +4933,10 @@ def _get_young_stock_filtered_items(query_params):
             queryset = queryset.filter(birth_date__gte=birth_date_from)
         if birth_date_to:
             queryset = queryset.filter(birth_date__lte=birth_date_to)
+        if date_otbivka_from:
+            queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
+        if date_otbivka_to:
+            queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
         if age_min is not None:
             queryset = queryset.filter(age__gte=age_min)
         if age_max is not None:
@@ -4340,6 +4947,8 @@ def _get_young_stock_filtered_items(query_params):
             queryset = queryset.filter(_build_case_variants_filter("mother", mother_tag))
         if _is_truthy_filter_value(has_rshn_tag):
             queryset = _filter_queryset_with_rshn_tag(queryset)
+        if _is_truthy_filter_value(is_reject):
+            queryset = queryset.filter(is_reject=True)
 
         for animal in queryset:
             items.append((animal_type, type_label, animal))
@@ -4365,6 +4974,7 @@ def _build_young_stock_row(animal_type, type_label, animal):
         "weaning": _format_ewe_weaning(animal),
         "mother_tag": mother_tag,
         "mother_url": mother_url,
+        "is_reject": animal.is_reject,
     }
 
 
@@ -4645,6 +5255,14 @@ def _format_ewe_weaning(animal):
     return _format_weight_record_date_text(weight_record)
 
 
+def _format_scheduled_weighing(animal, months_after_birth, delta_days=15):
+    if not animal.birth_date:
+        return "-"
+    target_date = animal.birth_date + relativedelta(months=months_after_birth)
+    weight_record = _get_weight_record_near_date(animal.tag, target_date, delta_days=delta_days)
+    return _format_weight_record_date_text(weight_record)
+
+
 def _format_last_vet(animal):
     care_date, care_text = _get_last_vet_parts(animal)
     if not care_date:
@@ -4693,7 +5311,7 @@ def _split_sheep_last_lambing(animal):
     return lambing_date, f"{children_text}; м/р: {summary.get('dead_lambs_count', 0)}"
 
 
-def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None):
+def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None, row_fills=None):
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill
@@ -4738,9 +5356,19 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
+    row_fills = row_fills or {}
+
     for data_row_idx, data_row in enumerate(rows, start=row_index + 1):
+        fill_color = row_fills.get(data_row_idx - row_index - 1)
+        data_fill = (
+            PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+            if fill_color
+            else None
+        )
         for col_index, value in enumerate(data_row, start=1):
             _write_excel_cell(worksheet, data_row_idx, col_index, value)
+            if data_fill:
+                worksheet.cell(row=data_row_idx, column=col_index).fill = data_fill
 
     for col_index in range(1, len(headers) + 1):
         max_length = len(str(headers[col_index - 1]))
@@ -4996,16 +5624,14 @@ def journal_progeny(request):
         mother_filter = (
             _build_case_variants_q("sheep__tag__tag_number", mother_tag_search)
             | _build_case_variants_q("ewe__tag__tag_number", mother_tag_search)
+            | _build_icontains_multi_filter("sheep__rshn_tag", mother_tag_search)
+            | _build_icontains_multi_filter("ewe__rshn_tag", mother_tag_search)
             | _build_case_variants_q("mother_tag_text", mother_tag_search)
         )
         filtered_queryset = filtered_queryset.filter(mother_filter)
 
     if abortion_only:
         filtered_queryset = filtered_queryset.filter(
-            completion_type=Lambing.COMPLETION_EARLY_FAILURE
-        )
-    else:
-        filtered_queryset = filtered_queryset.exclude(
             completion_type=Lambing.COMPLETION_EARLY_FAILURE
         )
 
@@ -5065,6 +5691,8 @@ def journal_progeny(request):
             lambing
             for lambing in lambings
             if (
+                lambing.completion_type != Lambing.COMPLETION_EARLY_FAILURE
+                and
                 (lambing.number_of_lambs or 0) == 0
                 and (lambing.dead_lambs_count or 0) == 0
                 and not _get_lambing_grouped_children(lambing, children_map)["ewes"]
@@ -5163,6 +5791,7 @@ def journal_progeny(request):
                 "ewe_tag_links": ewe_tag_links,
                 "ram_tag_links": ram_tag_links,
                 "dead_count": dead_count,
+                "is_abortion": lambing.completion_type == Lambing.COMPLETION_EARLY_FAILURE,
             }
         )
 
@@ -5193,6 +5822,7 @@ def journal_progeny(request):
 
     if request.GET.get("export") == "1":
         export_rows = []
+        row_fills = {}
         for idx, row in enumerate(rows, start=1):
             export_rows.append(
                 [
@@ -5205,6 +5835,8 @@ def journal_progeny(request):
                     row["dead_count"],
                 ]
             )
+            if row.get("is_abortion"):
+                row_fills[idx - 1] = "FFF1F1"
 
         summary_lines = [
             f"Итого родившихся ярок: {totals['ewes_count']}",
@@ -5228,6 +5860,7 @@ def journal_progeny(request):
             headers=headers,
             rows=export_rows,
             summary_lines=summary_lines,
+            row_fills=row_fills,
         )
 
     paginator = Paginator(rows, 10)
@@ -5353,10 +5986,17 @@ def _build_group_unsuccessful_insemination_keys(groups):
     return keys
 
 
-def _passes_insemination_tag_filters(mother_tag, father_tag, mother_tag_search, father_tag_search):
-    if mother_tag_search and not _matches_multi_search(mother_tag, mother_tag_search):
+def _passes_insemination_tag_filters(
+    mother_tag,
+    father_tag,
+    mother_tag_search,
+    father_tag_search,
+    mother_rshn_tag="",
+    father_rshn_tag="",
+):
+    if mother_tag_search and not _matches_tag_or_rshn_search(mother_tag, mother_rshn_tag, mother_tag_search):
         return False
-    if father_tag_search and not _matches_multi_search(father_tag, father_tag_search):
+    if father_tag_search and not _matches_tag_or_rshn_search(father_tag, father_rshn_tag, father_tag_search):
         return False
     return True
 
@@ -5373,7 +6013,9 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
 
     rows = []
     for group in groups:
-        father_tag, father_url = _get_animal_link_data(group.get_father())
+        father = group.get_father()
+        father_tag, father_url = _get_animal_link_data(father)
+        father_rshn_tag = getattr(father, "rshn_tag", "") or ""
         mothers = [(mother, "sheep") for mother in group.sheep.all()]
         mothers.extend((mother, "ewe") for mother in group.ewes.all())
 
@@ -5387,6 +6029,8 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
                 father_tag,
                 mother_tag_search,
                 father_tag_search,
+                getattr(mother, "rshn_tag", "") or "",
+                father_rshn_tag,
             ):
                 continue
 
@@ -5414,11 +6058,15 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
         placement_date = _get_lambing_placement_date(lambing)
         mother_tag, mother_url = _get_mother_link_data(lambing)
         father_tag, father_url = _get_father_link_data(lambing)
+        mother = lambing.get_mother()
+        father = lambing.get_father()
         if not _passes_insemination_tag_filters(
             mother_tag,
             father_tag,
             mother_tag_search,
             father_tag_search,
+            getattr(mother, "rshn_tag", "") or "",
+            getattr(father, "rshn_tag", "") or "",
         ):
             continue
 
@@ -5642,6 +6290,17 @@ def export_to_excel(request):
         include_details = request.data.get('include_details', False)
         selected_animals = request.data.get('selected_animals', []) or []
         has_rshn_tag = request.data.get('has_rshn_tag', False)
+        search = str(request.data.get('search', '') or '').strip()
+        birth_date_from = _parse_date_filter(request.data.get('birth_date_from'))
+        birth_date_to = _parse_date_filter(request.data.get('birth_date_to'))
+        date_otbivka_from = _parse_date_filter(request.data.get('date_otbivka_from'))
+        date_otbivka_to = _parse_date_filter(request.data.get('date_otbivka_to'))
+        father_tag = str(request.data.get('father_tag', '') or '').strip()
+        mother_tag = str(request.data.get('mother_tag', '') or '').strip()
+        animal_status = request.data.get('animal_status', None)
+        place = request.data.get('place', None)
+        is_reject = request.data.get('is_reject', False)
+        common_animal_type = str(request.data.get('common_animal_type', '') or '').strip().lower()
         
         print(f"Параметры экспорта: type={animal_type}, limit={limit}, weight_min={weight_min}, weight_max={weight_max}, age_min={age_min}, age_max={age_max}, include_details={include_details}")
         
@@ -5663,16 +6322,50 @@ def export_to_excel(request):
 
         if animal_type == 'common':
             combined_animals = []
-            for type_key, model in model_map.items():
+            common_model_items = model_map.items()
+            if common_animal_type in model_map:
+                common_model_items = [(common_animal_type, model_map[common_animal_type])]
+
+            for type_key, model in common_model_items:
                 queryset = model.objects.filter(is_archived=False).select_related('tag', 'animal_status', 'place')
 
+                if search:
+                    search_filter = (
+                        _build_case_variants_filter("tag__tag_number", search)
+                        | _build_icontains_multi_filter("rshn_tag", search)
+                        | _build_case_variants_filter("animal_status__status_type", search)
+                    )
+                    if type_key == "maker":
+                        search_filter |= Q(name__icontains=search)
+                    queryset = queryset.filter(search_filter)
+
+                if animal_status:
+                    queryset = queryset.filter(animal_status_id=animal_status)
+                if place:
+                    queryset = queryset.filter(place_id=place)
+                if birth_date_from:
+                    queryset = queryset.filter(birth_date__gte=birth_date_from)
+                if birth_date_to:
+                    queryset = queryset.filter(birth_date__lte=birth_date_to)
+                if date_otbivka_from:
+                    queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
+                if date_otbivka_to:
+                    queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
                 if age_min is not None:
                     queryset = queryset.filter(age__gte=float(age_min))
                 if age_max is not None:
                     queryset = queryset.filter(age__lte=float(age_max))
+                if father_tag:
+                    queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
+                if mother_tag:
+                    queryset = queryset.filter(_build_case_variants_filter("mother", mother_tag))
 
                 if _is_truthy_filter_value(has_rshn_tag):
                     queryset = _filter_queryset_with_rshn_tag(queryset)
+                if _is_truthy_filter_value(is_reject):
+                    queryset = queryset.filter(is_reject=True)
+
+                queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
                 if selected_ids:
                     queryset = queryset.filter(tag_id__in=selected_ids)
@@ -5693,11 +6386,6 @@ def export_to_excel(request):
                 last_weight = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date').first()
                 weight_value = float(last_weight.weight) if last_weight else None
 
-                if weight_min is not None and (weight_value is None or weight_value < float(weight_min)):
-                    continue
-                if weight_max is not None and (weight_value is None or weight_value > float(weight_max)):
-                    continue
-
                 animals_list.append({
                     'animal': animal,
                     'animal_type': item['animal_type'],
@@ -5708,13 +6396,43 @@ def export_to_excel(request):
             model = model_map.get(animal_type, Maker)
             queryset = model.objects.filter(is_archived=False).select_related('tag', 'animal_status', 'place').order_by('-id')
 
+            if search:
+                search_filter = (
+                    _build_case_variants_filter("tag__tag_number", search)
+                    | _build_icontains_multi_filter("rshn_tag", search)
+                    | _build_case_variants_filter("animal_status__status_type", search)
+                )
+                if animal_type == "maker":
+                    search_filter |= Q(name__icontains=search)
+                queryset = queryset.filter(search_filter)
+
+            if animal_status:
+                queryset = queryset.filter(animal_status_id=animal_status)
+            if place:
+                queryset = queryset.filter(place_id=place)
+            if birth_date_from:
+                queryset = queryset.filter(birth_date__gte=birth_date_from)
+            if birth_date_to:
+                queryset = queryset.filter(birth_date__lte=birth_date_to)
+            if date_otbivka_from:
+                queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
+            if date_otbivka_to:
+                queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
             if age_min is not None:
                 queryset = queryset.filter(age__gte=float(age_min))
             if age_max is not None:
                 queryset = queryset.filter(age__lte=float(age_max))
+            if father_tag:
+                queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
+            if mother_tag:
+                queryset = queryset.filter(_build_case_variants_filter("mother", mother_tag))
 
             if _is_truthy_filter_value(has_rshn_tag):
                 queryset = _filter_queryset_with_rshn_tag(queryset)
+            if _is_truthy_filter_value(is_reject):
+                queryset = queryset.filter(is_reject=True)
+
+            queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
             if selected_ids:
                 queryset = queryset.filter(id__in=selected_ids)
@@ -5724,11 +6442,6 @@ def export_to_excel(request):
             for animal in queryset:
                 last_weight = WeightRecord.objects.filter(tag=animal.tag).order_by('-weight_date').first()
                 weight_value = float(last_weight.weight) if last_weight else None
-
-                if weight_min is not None and (weight_value is None or weight_value < float(weight_min)):
-                    continue
-                if weight_max is not None and (weight_value is None or weight_value > float(weight_max)):
-                    continue
 
                 animals_list.append({
                     'animal': animal,
@@ -5747,6 +6460,9 @@ def export_to_excel(request):
                 'Вес при рождении',
                 'Статус',
                 'Назначение',
+                'Первичное взвешивание',
+                'Вторичное взвешивание',
+                'Заключительное взвешивание',
                 'Овчарня',
                 'Дата последнего взвешивания',
                 'Последнее взвешивание',
@@ -5771,6 +6487,9 @@ def export_to_excel(request):
                     _format_ewe_birth_weight(animal),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
+                    _format_scheduled_weighing(animal, 3),
+                    _format_scheduled_weighing(animal, 5),
+                    _format_scheduled_weighing(animal, 10),
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
                     _format_weight_record_value(last_weight_record),
@@ -5787,6 +6506,9 @@ def export_to_excel(request):
                 'Дата рождения',
                 'Статус',
                 'Назначение',
+                'Первичное взвешивание',
+                'Вторичное взвешивание',
+                'Заключительное взвешивание',
                 'Овчарня',
                 'Дата последнего взвешивания',
                 'Последнее взвешивание',
@@ -5814,6 +6536,9 @@ def export_to_excel(request):
                     _format_date_for_excel(animal.birth_date),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
+                    _format_scheduled_weighing(animal, 3),
+                    _format_scheduled_weighing(animal, 5),
+                    _format_scheduled_weighing(animal, 10),
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
                     _format_weight_record_value(last_weight_record),
@@ -5840,6 +6565,12 @@ def export_to_excel(request):
             ]
             if animal_type == 'common':
                 headers.insert(1, 'Тип животного')
+            elif animal_type in ('maker', 'ram'):
+                assignment_index = headers.index('Назначение') + 1
+                headers[assignment_index:assignment_index] = [
+                    'Первичное взвешивание',
+                    'Вторичное взвешивание',
+                ]
             
             if animal_type == 'maker':
                 headers.extend(['Племенной статус', 'Рабочее состояние'])
@@ -5875,6 +6606,12 @@ def export_to_excel(request):
                         'sheep': 'Овцематка'
                     }
                     row_data.insert(1, type_labels.get(item.get('animal_type'), item.get('animal_type', '-')))
+                elif animal_type in ('maker', 'ram'):
+                    assignment_index = 7
+                    row_data[assignment_index:assignment_index] = [
+                        _format_scheduled_weighing(animal, 3),
+                        _format_scheduled_weighing(animal, 5),
+                    ]
                 
                 if animal_type == 'maker':
                     row_data.extend([
@@ -6671,16 +7408,20 @@ def get_all_tags(request):
         for model, type_name in animals_models:
             animals = model.objects.filter(is_archived=False).select_related('tag')
             if search:
-                animals = animals.filter(build_case_variants_q('tag__tag_number', search))
+                animals = animals.filter(
+                    build_case_variants_q('tag__tag_number', search)
+                    | _build_icontains_multi_filter('rshn_tag', search)
+                )
 
             for animal in animals:
                 if not animal.tag:
                     continue
                 tag_number = animal.tag.tag_number or ''
-                if search and not _matches_multi_search(tag_number, search):
+                if search and not _matches_tag_or_rshn_search(tag_number, animal.rshn_tag, search):
                     continue
                 tags_data.append({
                     'tag_number': tag_number,
+                    'rshn_tag': animal.rshn_tag or '',
                     'animal_type': type_name,
                     'is_active': True,
                     'display_name': f'{type_name} {tag_number}'
@@ -6690,16 +7431,20 @@ def get_all_tags(request):
         for model, type_name in animals_models:
             animals = model.objects.filter(is_archived=True).select_related('tag')
             if search:
-                animals = animals.filter(build_case_variants_q('tag__tag_number', search))
+                animals = animals.filter(
+                    build_case_variants_q('tag__tag_number', search)
+                    | _build_icontains_multi_filter('rshn_tag', search)
+                )
 
             for animal in animals:
                 if not animal.tag:
                     continue
                 tag_number = animal.tag.tag_number or ''
-                if search and not _matches_multi_search(tag_number, search):
+                if search and not _matches_tag_or_rshn_search(tag_number, animal.rshn_tag, search):
                     continue
                 tags_data.append({
                     'tag_number': tag_number,
+                    'rshn_tag': animal.rshn_tag or '',
                     'animal_type': type_name,
                     'is_active': False,
                     'display_name': f'{type_name} {tag_number} (архив)'
@@ -6817,24 +7562,18 @@ def get_inactive_mothers(request):
     """
     try:
         search = request.GET.get('search', '').strip()
+        include_busy = request.GET.get('include_busy', '').strip().lower() in ('1', 'true', 'yes')
         
-        # Получаем всех овцематок без активных окотов
-        sheep_query = Sheep.objects.filter(
-            is_archived=False
-        ).exclude(
-            lambings__is_active=True
-        ).exclude(
-            lambing_groups__is_active=True
-        ).select_related('tag', 'animal_status', 'place')
-        
-        # Получаем всех ярок без активных окотов
-        ewes_query = Ewe.objects.filter(
-            is_archived=False
-        ).exclude(
-            lambings__is_active=True
-        ).exclude(
-            lambing_groups__is_active=True
-        ).select_related('tag', 'animal_status', 'place')
+        sheep_query = Sheep.objects.filter(is_archived=False)
+        ewes_query = Ewe.objects.filter(is_archived=False)
+
+        if not include_busy:
+            # Для постановки в группу показываем только матерей без активных случек/групп.
+            sheep_query = sheep_query.exclude(lambings__is_active=True).exclude(lambing_groups__is_active=True)
+            ewes_query = ewes_query.exclude(lambings__is_active=True).exclude(lambing_groups__is_active=True)
+
+        sheep_query = sheep_query.select_related('tag', 'animal_status', 'place').distinct()
+        ewes_query = ewes_query.select_related('tag', 'animal_status', 'place').distinct()
         
         # Формируем единый список
         inactive_mothers = []
@@ -6843,6 +7582,7 @@ def get_inactive_mothers(request):
             inactive_mothers.append({
                 'id': sheep.id,
                 'tag_number': sheep.tag.tag_number if sheep.tag else '',
+                'rshn_tag': sheep.rshn_tag or '',
                 'animal_type': 'Овцематка',
                 'type_code': 'sheep',
                 'age': float(sheep.age) if sheep.age else 0,
@@ -6854,6 +7594,7 @@ def get_inactive_mothers(request):
             inactive_mothers.append({
                 'id': ewe.id,
                 'tag_number': ewe.tag.tag_number if ewe.tag else '',
+                'rshn_tag': ewe.rshn_tag or '',
                 'animal_type': 'Ярка',
                 'type_code': 'ewe',
                 'age': float(ewe.age) if ewe.age else 0,
@@ -6865,7 +7606,7 @@ def get_inactive_mothers(request):
         if search:
             inactive_mothers = [
                 mother for mother in inactive_mothers
-                if _matches_multi_search(mother['tag_number'], search)
+                if _matches_tag_or_rshn_search(mother['tag_number'], mother.get('rshn_tag'), search)
             ]
         
         # Сортируем по номеру бирки
@@ -6888,20 +7629,17 @@ def get_all_fathers(request):
     """
     try:
         search = request.GET.get('search', '').strip()
+        include_busy = request.GET.get('include_busy', '').strip().lower() in ('1', 'true', 'yes')
         
-        # Получаем всех баранов-производителей
-        makers_query = Maker.objects.filter(
-            is_archived=False
-        ).exclude(
-            lambing_groups_as_father__is_active=True
-        ).select_related('tag', 'animal_status', 'place')
-        
-        # Получаем всех баранчиков
-        rams_query = Ram.objects.filter(
-            is_archived=False
-        ).exclude(
-            lambing_groups_as_father__is_active=True
-        ).select_related('tag', 'animal_status', 'place')
+        makers_query = Maker.objects.filter(is_archived=False)
+        rams_query = Ram.objects.filter(is_archived=False)
+
+        if not include_busy:
+            makers_query = makers_query.exclude(lambing_groups_as_father__is_active=True)
+            rams_query = rams_query.exclude(lambing_groups_as_father__is_active=True)
+
+        makers_query = makers_query.select_related('tag', 'animal_status', 'place').distinct()
+        rams_query = rams_query.select_related('tag', 'animal_status', 'place').distinct()
         
         # Формируем единый список
         all_fathers = []
@@ -6910,6 +7648,7 @@ def get_all_fathers(request):
             all_fathers.append({
                 'id': maker.id,
                 'tag_number': maker.tag.tag_number if maker.tag else '',
+                'rshn_tag': maker.rshn_tag or '',
                 'name': maker.name,  # Добавляем поле имени
                 'animal_type': 'Баран-Производитель',
                 'type_code': 'maker',
@@ -6922,6 +7661,7 @@ def get_all_fathers(request):
             all_fathers.append({
                 'id': ram.id,
                 'tag_number': ram.tag.tag_number if ram.tag else '',
+                'rshn_tag': ram.rshn_tag or '',
                 'animal_type': 'Баранчик',
                 'type_code': 'ram',
                 'age': float(ram.age) if ram.age else 0,
@@ -6933,7 +7673,7 @@ def get_all_fathers(request):
         if search:
             all_fathers = [
                 father for father in all_fathers
-                if _matches_multi_search(father['tag_number'], search)
+                if _matches_tag_or_rshn_search(father['tag_number'], father.get('rshn_tag'), search)
             ]
         
         # Сортируем по номеру бирки
@@ -7252,6 +7992,8 @@ def lambings_export_excel(request):
         mother_filter = (
             _build_case_variants_q('sheep__tag__tag_number', mother_tag)
             | _build_case_variants_q('ewe__tag__tag_number', mother_tag)
+            | _build_icontains_multi_filter('sheep__rshn_tag', mother_tag)
+            | _build_icontains_multi_filter('ewe__rshn_tag', mother_tag)
             | _build_case_variants_q('mother_tag_text', mother_tag)
         )
         queryset = queryset.filter(mother_filter)
@@ -7260,6 +8002,8 @@ def lambings_export_excel(request):
         father_filter = (
             _build_case_variants_q('maker__tag__tag_number', father_tag)
             | _build_case_variants_q('ram__tag__tag_number', father_tag)
+            | _build_icontains_multi_filter('maker__rshn_tag', father_tag)
+            | _build_icontains_multi_filter('ram__rshn_tag', father_tag)
         )
         queryset = queryset.filter(father_filter)
 
@@ -7336,12 +8080,16 @@ def lambing_groups_export_excel(request):
         queryset = queryset.filter(
             _build_case_variants_q('sheep__tag__tag_number', mother_tag)
             | _build_case_variants_q('ewes__tag__tag_number', mother_tag)
+            | _build_icontains_multi_filter('sheep__rshn_tag', mother_tag)
+            | _build_icontains_multi_filter('ewes__rshn_tag', mother_tag)
         )
 
     if father_tag:
         queryset = queryset.filter(
             _build_case_variants_q('maker__tag__tag_number', father_tag)
             | _build_case_variants_q('ram__tag__tag_number', father_tag)
+            | _build_icontains_multi_filter('maker__rshn_tag', father_tag)
+            | _build_icontains_multi_filter('ram__rshn_tag', father_tag)
         )
 
     rows = []
@@ -7421,7 +8169,7 @@ def vet_list_export_excel(request):
     queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all().order_by(f'{sort_prefix}{sort_field}')
 
     if tag_search:
-        queryset = queryset.filter(_build_case_variants_filter('tag__tag_number', tag_search))
+        queryset = queryset.filter(_build_tag_or_rshn_relation_filter('tag', tag_search))
     if care_name:
         queryset = queryset.filter(veterinary_care__care_name=care_name)
     if medication:
@@ -7940,7 +8688,7 @@ def vet_list_api(request):
         
         # Применяем фильтры
         if tag_search:
-            queryset = queryset.filter(_build_case_variants_filter('tag__tag_number', tag_search))
+            queryset = queryset.filter(_build_tag_or_rshn_relation_filter('tag', tag_search))
         
         if care_name:
             queryset = queryset.filter(veterinary_care__care_name=care_name)
@@ -8210,6 +8958,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': maker.date_otbivka,
             'tag_number': maker.tag.tag_number,
+            'rshn_tag': maker.rshn_tag or '',
             'display_name': display_name,  # Добавляем поле для отображения
             'animal_type': 'maker',
             'birth_date': maker.birth_date,
@@ -8228,6 +8977,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': ram.date_otbivka,
             'tag_number': ram.tag.tag_number,
+            'rshn_tag': ram.rshn_tag or '',
             'display_name': ram.tag.tag_number,  # Для баранчиков просто бирка
             'animal_type': 'ram',
             'birth_date': ram.birth_date,
@@ -8246,6 +8996,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': ewe.date_otbivka,
             'tag_number': ewe.tag.tag_number,
+            'rshn_tag': ewe.rshn_tag or '',
             'display_name': ewe.tag.tag_number,  # Для ярок просто бирка
             'animal_type': 'ewe',
             'birth_date': ewe.birth_date,
@@ -8264,6 +9015,7 @@ def otbivka_api(request):
         animals.append({
             'date_otbivka': sheep.date_otbivka,
             'tag_number': sheep.tag.tag_number,
+            'rshn_tag': sheep.rshn_tag or '',
             'display_name': sheep.tag.tag_number,  # Для овцематок просто бирка
             'animal_type': 'sheep',
             'birth_date': sheep.birth_date,
@@ -8275,7 +9027,7 @@ def otbivka_api(request):
     if search_query:
         animals = [
             animal for animal in animals
-            if _matches_multi_search(animal['tag_number'], search_query)
+            if _matches_tag_or_rshn_search(animal['tag_number'], animal.get('rshn_tag'), search_query)
         ]
     
     # Сортировка по дате отбивки (сначала новые)
@@ -8291,6 +9043,7 @@ def otbivka_api(request):
         results.append({
             'date_otbivka': animal['date_otbivka'].strftime('%d.%m.%Y'),
             'tag_number': animal['tag_number'],
+            'rshn_tag': animal.get('rshn_tag', ''),
             'display_name': animal['display_name'],  # Добавляем display_name
             'animal_type': animal['animal_type'],
             'age_at_otbivka': animal['age_at_otbivka'],
@@ -8338,7 +9091,7 @@ def otbivka_export_excel(request):
         rows = []
         for animal in queryset:
             tag_number = animal.tag.tag_number if animal.tag else ''
-            if search_query and not _matches_multi_search(tag_number, search_query):
+            if search_query and not _matches_tag_or_rshn_search(tag_number, animal.rshn_tag, search_query):
                 continue
 
             rows.append(
@@ -8934,6 +9687,7 @@ def get_animals_without_otbivka(request):
             
             animals.append({
                 'tag_number': maker.tag.tag_number,
+                'rshn_tag': maker.rshn_tag or '',
                 'display_name': display_name,
                 'animal_type': 'Баран-Производитель',
                 'type_code': 'maker',
@@ -8944,6 +9698,7 @@ def get_animals_without_otbivka(request):
         for ram in rams:
             animals.append({
                 'tag_number': ram.tag.tag_number,
+                'rshn_tag': ram.rshn_tag or '',
                 'display_name': ram.tag.tag_number,
                 'animal_type': 'Баранчик',
                 'type_code': 'ram',
@@ -8954,6 +9709,7 @@ def get_animals_without_otbivka(request):
         for ewe in ewes:
             animals.append({
                 'tag_number': ewe.tag.tag_number,
+                'rshn_tag': ewe.rshn_tag or '',
                 'display_name': ewe.tag.tag_number,
                 'animal_type': 'Ярка',
                 'type_code': 'ewe',
@@ -8964,6 +9720,7 @@ def get_animals_without_otbivka(request):
         for sheep_animal in sheep:
             animals.append({
                 'tag_number': sheep_animal.tag.tag_number,
+                'rshn_tag': sheep_animal.rshn_tag or '',
                 'display_name': sheep_animal.tag.tag_number,
                 'animal_type': 'Овцематка',
                 'type_code': 'sheep',
@@ -8974,7 +9731,7 @@ def get_animals_without_otbivka(request):
         if search_query:
             animals = [
                 animal for animal in animals
-                if _matches_multi_search(animal['tag_number'], search_query)
+                if _matches_tag_or_rshn_search(animal['tag_number'], animal.get('rshn_tag'), search_query)
             ]
         
         # Ограничиваем до 100 результатов
@@ -9035,6 +9792,7 @@ def bulk_otbivka(request):
         moved_count = 0
         weight_records_count = 0
         errors = []
+        successful_tags = []
         
         for tag_number in animal_tags:
             try:
@@ -9096,9 +9854,44 @@ def bulk_otbivka(request):
                 set_mothers_not_inseminated_after_child_update(animal)
                 
                 updated_count += 1
+                successful_tags.append(animal.tag.tag_number)
                 
             except Exception as e:
                 errors.append(f'Ошибка обработки животного {tag_number}: {str(e)}')
+
+        if updated_count and getattr(request, "user", None) and request.user.is_authenticated:
+            try:
+                from .models_user_log import UserActionLog
+
+                details_parts = [
+                    f"Ковровая отбивка: дата {otbivka_date_obj.strftime('%d.%m.%Y')}",
+                    f"Животных обработано: {updated_count} из {len(animal_tags)}",
+                    f"весов добавлено/обновлено: {weight_records_count}",
+                    f"перемещено: {moved_count}",
+                ]
+                if target_place:
+                    details_parts.append(f"место назначения: {target_place.sheepfold}")
+                if successful_tags:
+                    details_parts.append(f"бирки: {_short_log_values(successful_tags, limit=20)}")
+                if errors:
+                    details_parts.append(f"ошибки: {'; '.join(errors)}")
+
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type="Ковровая отбивка",
+                    object_type="Отбивка",
+                    object_id=_short_log_values(successful_tags)[:100],
+                    description="; ".join(details_parts),
+                    additional_data={
+                        "method": request.method,
+                        "path": request.path,
+                        "status_code": 200,
+                        "animal_tags": _unique_log_values(successful_tags),
+                        "errors": errors,
+                    },
+                )
+            except Exception as log_error:
+                print(f'Ошибка логирования ковровой отбивки: {log_error}')
         
         return Response({
             'success': True,
@@ -9113,6 +9906,143 @@ def bulk_otbivka(request):
         return Response({
             'error': f'Ошибка при выполнении массовой отбивки: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def bulk_place_move(request):
+    """
+    Массовое перемещение животных между овчарнями/отсеками.
+    Сначала возвращает предупреждения по активным группам, если нет подтверждения.
+    """
+    animals_data = request.data.get('animals') or []
+    place_id = request.data.get('place_id')
+    confirm_group_place_move = bool(request.data.get('confirm_group_place_move'))
+    preview_only = bool(request.data.get('preview_only'))
+
+    if not place_id:
+        return Response({'error': 'Выберите место назначения'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not isinstance(animals_data, list) or not animals_data:
+        return Response({'error': 'Выберите животных для перемещения'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target_place = Place.objects.get(pk=place_id)
+    except (TypeError, ValueError, Place.DoesNotExist):
+        return Response({'error': 'Выбранная овчарня не найдена'}, status=status.HTTP_400_BAD_REQUEST)
+
+    model_by_type = {
+        'maker': Maker,
+        'ram': Ram,
+        'ewe': Ewe,
+        'sheep': Sheep,
+    }
+
+    resolved_animals = []
+    errors = []
+    warnings = []
+    seen_keys = set()
+
+    for item in animals_data:
+        animal_type = str(item.get('animal_type') or '').strip()
+        tag_number = str(item.get('tag_number') or '').strip()
+        key = (animal_type, tag_number.lower())
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        model = model_by_type.get(animal_type)
+        if not model:
+            errors.append(f'Неизвестный тип животного для бирки {tag_number or "-"}')
+            continue
+
+        try:
+            animal = model.objects.select_related('tag', 'place').get(tag__tag_number=tag_number)
+        except model.DoesNotExist:
+            errors.append(f'Животное {tag_number or "-"} не найдено')
+            continue
+
+        if animal.is_archived:
+            errors.append(f'Животное {tag_number} находится в архиве')
+            continue
+
+        if animal.place_id == target_place.id:
+            warnings.append(f'Животное {tag_number} уже находится в месте «{target_place.sheepfold}»')
+            continue
+
+        group_warning = build_group_place_warning(animal, target_place)
+        if group_warning and not confirm_group_place_move:
+            warnings.append(group_warning)
+
+        resolved_animals.append(animal)
+
+    if errors:
+        return Response({'error': '\n'.join(errors), 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if preview_only:
+        return Response({
+            'success': True,
+            'preview': True,
+            'movable_count': len(resolved_animals),
+            'warnings': warnings,
+        })
+
+    if warnings and not confirm_group_place_move:
+        return Response({
+            'requires_confirmation': True,
+            'warnings': warnings,
+            'error': 'Есть предупреждения по перемещению животных',
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    moved_count = 0
+    moved_tags = []
+    with transaction.atomic():
+        for animal in resolved_animals:
+            if animal.place_id == target_place.id:
+                continue
+
+            old_place = animal.place
+            animal.place = target_place
+            animal.save(update_fields=['place'])
+            PlaceMovement.objects.create(
+                tag=animal.tag,
+                old_place=old_place,
+                new_place=target_place,
+            )
+            moved_count += 1
+            moved_tags.append(animal.tag.tag_number if animal.tag else '-')
+
+    if moved_count:
+        try:
+            from .models_user_log import UserActionLog
+            from django.contrib.auth.models import AnonymousUser
+
+            if not isinstance(request.user, AnonymousUser):
+                UserActionLog.objects.create(
+                    user=request.user,
+                    action_type='Перемещение животных',
+                    object_type='Перемещение',
+                    object_id=_short_log_values(moved_tags)[:100],
+                    description=(
+                        f'Перемещено животных: {moved_count}; '
+                        f'место: {target_place.sheepfold}; '
+                        f'бирки: {_short_log_values(moved_tags, limit=20)}'
+                    ),
+                    additional_data={
+                        "method": request.method,
+                        "path": request.path,
+                        "status_code": 200,
+                        "animal_tags": _unique_log_values(moved_tags),
+                    },
+                )
+        except Exception as log_error:
+            print(f'Ошибка логирования перемещения животных: {log_error}')
+
+    return Response({
+        'success': True,
+        'moved_count': moved_count,
+        'warnings': warnings,
+    })
 
 
 @api_view(['POST'])
@@ -9206,10 +10136,7 @@ def bulk_vaccination(request):
         if getattr(request, "user", None) and request.user.is_authenticated:
             from .models_user_log import UserActionLog
 
-            object_id = ", ".join(successful_tags[:8])
-            if len(successful_tags) > 8:
-                object_id = f"{object_id}, ... (+{len(successful_tags) - 8})"
-            object_id = object_id[:100]
+            object_id = _short_log_values(successful_tags)[:100]
 
             care_label = (
                 veterinary_care.medication
@@ -9222,7 +10149,7 @@ def bulk_vaccination(request):
                 f"Животных обработано: {updated_count} из {len(animal_tags)}",
             ]
             if successful_tags:
-                details_parts.append(f"Бирки: {', '.join(successful_tags)}")
+                details_parts.append(f"Бирки: {_short_log_values(successful_tags, limit=20)}")
             if errors:
                 details_parts.append(f"Ошибки: {'; '.join(errors)}")
 

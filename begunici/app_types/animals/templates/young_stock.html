@@ -21,7 +21,7 @@
                         </div>
                         <div class="col-lg-7">
                             <div class="input-group">
-                                <input type="text" id="young-stock-search" class="form-control" placeholder="Поиск по бирке...">
+                                <input type="text" id="young-stock-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performYoungStockSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleYoungStockAdditionalFilters()">Доп. фильтры</button>
                             </div>
@@ -62,6 +62,22 @@
                                             <option value="ewe">Ярки</option>
                                             <option value="sheep">Овцематки</option>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1 align-items-end">
+                                    <div class="col-md-3">
+                                        <label for="young-stock-date-otbivka-from-filter" class="form-label small mb-1">Отбивка с</label>
+                                        <input type="date" id="young-stock-date-otbivka-from-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="young-stock-date-otbivka-to-filter" class="form-label small mb-1">Отбивка по</label>
+                                        <input type="date" id="young-stock-date-otbivka-to-filter" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="form-check mb-1">
+                                            <input type="checkbox" id="young-stock-is-reject-filter" class="form-check-input">
+                                            <label for="young-stock-is-reject-filter" class="form-check-label small">Назначение: Брак</label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

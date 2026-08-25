@@ -89,9 +89,9 @@
                             <input type="date" id="otbivka-date-to" class="form-control">
                         </div>
                         <div class="col-xl-4 col-lg-6">
-                            <label for="otbivka-search" class="form-label">Поиск по бирке:</label>
+                            <label for="otbivka-search" class="form-label">Поиск по бирке / РСХН:</label>
                             <input type="text" id="otbivka-search" class="form-control" 
-                                   placeholder="Введите номер бирки...">
+                                   placeholder="Введите бирку или РСХН...">
                         </div>
                         <div class="col-xl-2 col-lg-3 d-flex align-items-end">
                             <button type="button" class="btn btn-primary w-100" onclick="performOtbivkaSearch()">
@@ -141,13 +141,13 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control" id="animalsSearch" placeholder="Введите номер бирки для поиска...">
+                        <input type="text" class="form-control" id="animalsSearch" placeholder="Введите бирку или РСХН для поиска...">
                         <button class="btn btn-primary" type="button" id="searchAnimalsBtn">Поиск</button>
                     </div>
                 </div>
                 <div id="animals-list" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-muted text-center py-3">
-                        Введите номер бирки и нажмите "Поиск" для отображения результатов
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
                     </div>
                 </div>
                 <div id="selected-animals-weights-section" class="mt-3" style="display: none;">

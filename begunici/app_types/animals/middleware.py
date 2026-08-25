@@ -21,6 +21,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
         "/api/archive/act-preview/",
         "/api/check-kinship/",
         "/api/health/",
+        "/scanner/read/api/",
         "/favicon.ico",
         "/robots.txt",
     )
@@ -69,6 +70,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if any(part in request.path for part in self.TECHNICAL_PATH_PARTS):
             return False
 
+        if self._is_non_audit_request(request):
+            return False
+
         method = request.method.upper()
         if method not in self.MUTATING_METHODS and not self._is_action_get_request(
             request
@@ -80,29 +84,36 @@ class UserActionLogMiddleware(MiddlewareMixin):
 
         return True
 
+    def _is_non_audit_request(self, request):
+        """Do not log read-only helper requests in the user audit trail."""
+        path = request.path
+
+        if request.GET.get("export") == "1":
+            return True
+
+        readonly_path_parts = (
+            "/export-excel/",
+            "/export-detail-excel/",
+            "/api/kinship-pairs/export-excel/",
+            "/api/import/",
+            "/api/archive/act/",
+            "/api/acts/",
+            "/veterinary/api/export-cares/",
+            "/scanner/export/",
+        )
+        if any(part in path for part in readonly_path_parts):
+            # Import confirm is a mutating action, but it writes its own business log.
+            if "/api/import/" in path and path.rstrip("/").endswith("/confirm"):
+                return False
+            return True
+
+        return False
+
     def _is_action_get_request(self, request):
         if request.method.upper() != "GET":
             return False
 
-        path = request.path
-        if request.GET.get("export") == "1":
-            return True
-
-        if "/export-detail-excel/" in path:
-            return True
-
-        export_paths = (
-            "/veterinary/api/export-cares/",
-            "/animals/api/export-excel/",
-            "/animals/api/otbivka/export-excel/",
-            "/animals/api/vet-list/export-excel/",
-            "/animals/api/lambings/export-excel/",
-            "/animals/api/lambing-groups/export-excel/",
-            "/animals/api/archive/export-excel/",
-            "/animals/api/archive/act/",
-            "/animals/api/kinship-pairs/export-excel/",
-        )
-        return any(export_path in path for export_path in export_paths)
+        return False
 
     def _is_handled_elsewhere(self, request):
         method = request.method.upper()
@@ -156,6 +167,17 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if method == "POST" and "/animals/" in path and "/restore/" in path:
             return True
 
+        # Conversions are logged with business-level details.
+        if (
+            method == "POST"
+            and "/animals/" in path
+            and any(
+                conversion_path in path
+                for conversion_path in ["/to_maker/", "/to_sheep/", "/to_ewe/", "/to_ram/"]
+            )
+        ):
+            return True
+
         # Animal delete endpoints are logged in viewsets.
         if (
             method == "DELETE"
@@ -172,6 +194,20 @@ class UserActionLogMiddleware(MiddlewareMixin):
                 lambing_path in path
                 for lambing_path in ["/bulk-create-lambings/", "/complete/", "/complete-with-children/"]
             )
+        ):
+            return True
+
+        # Import confirmations and bulk operations have explicit logs when data changes.
+        if method == "POST" and "/animals/api/import/" in path:
+            return True
+
+        if method == "POST" and any(
+            bulk_path in path
+            for bulk_path in [
+                "/animals/api/bulk-place-move/",
+                "/animals/api/bulk-otbivka/",
+                "/animals/api/bulk-vaccination/",
+            ]
         ):
             return True
 

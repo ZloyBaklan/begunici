@@ -90,6 +90,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Баран-Производитель',
                 'tag_number': maker.tag.tag_number if maker.tag else 'Нет бирки',
+                'rshn_tag': maker.rshn_tag or '',
                 'display_name': display_name,
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
                 'age': maker.age
@@ -99,6 +100,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Баранчик',
                 'tag_number': ram.tag.tag_number if ram.tag else 'Нет бирки',
+                'rshn_tag': ram.rshn_tag or '',
                 'display_name': ram.tag.tag_number if ram.tag else 'Нет бирки',
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
                 'age': ram.age
@@ -108,6 +110,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Ярка',
                 'tag_number': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
+                'rshn_tag': ewe.rshn_tag or '',
                 'display_name': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
                 'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
                 'age': ewe.age
@@ -117,6 +120,7 @@ def get_animals_by_place(request, place_id):
             animals.append({
                 'type': 'Овцематка',
                 'tag_number': s.tag.tag_number if s.tag else 'Нет бирки',
+                'rshn_tag': s.rshn_tag or '',
                 'display_name': s.tag.tag_number if s.tag else 'Нет бирки',
                 'status': s.animal_status.status_type if s.animal_status else 'Нет статуса',
                 'age': s.age

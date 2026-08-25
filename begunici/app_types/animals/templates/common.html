@@ -104,27 +104,55 @@
                         </div>
                         <div class="col-md-6">
                             <div class="input-group">
-                                <input type="text" id="common-search" class="form-control" placeholder="Поиск животных...">
+                                <input type="text" id="common-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performCommonSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleCommonAdditionalFilters()">Доп. фильтры</button>
                             </div>
                             <div id="common-advanced-filters" class="mt-2" style="display: none;">
-                                <div class="row g-2">
-                                    <div class="col-md-3">
-                                        <label for="common-birth-date-from" class="form-label small mb-1">Рождение с</label>
-                                        <input type="date" id="common-birth-date-from" class="form-control form-control-sm">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label for="common-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                                <input type="date" id="common-birth-date-from" class="form-control form-control-sm">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="common-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                                <input type="date" id="common-birth-date-to" class="form-control form-control-sm">
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 mt-1">
+                                            <div class="col-6">
+                                                <label for="common-date-otbivka-from-filter" class="form-label small mb-1">Отбивка с</label>
+                                                <input type="date" id="common-date-otbivka-from-filter" class="form-control form-control-sm">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="common-date-otbivka-to-filter" class="form-label small mb-1">Отбивка по</label>
+                                                <input type="date" id="common-date-otbivka-to-filter" class="form-control form-control-sm">
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="col-md-3">
-                                        <label for="common-birth-date-to" class="form-label small mb-1">Рождение по</label>
-                                        <input type="date" id="common-birth-date-to" class="form-control form-control-sm">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label for="common-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
-                                        <input type="number" id="common-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label for="common-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
-                                        <input type="number" id="common-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    <div class="col-md-6">
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label for="common-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                                <input type="number" id="common-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="common-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                                <input type="number" id="common-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 mt-1">
+                                            <div class="col-6">
+                                                <label for="common-weight-min-filter" class="form-label small mb-1">Вес от, кг</label>
+                                                <input type="number" id="common-weight-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="common-weight-max-filter" class="form-label small mb-1">Вес до, кг</label>
+                                                <input type="number" id="common-weight-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="row g-2 mt-1">
@@ -145,6 +173,15 @@
                                             <option value="ewe">Ярки</option>
                                             <option value="sheep">Овцематки</option>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1 align-items-end">
+                                    <div class="col-md-3" id="common-has-rshn-tag-filter-slot"></div>
+                                    <div class="col-md-3">
+                                        <div class="form-check mb-1">
+                                            <input type="checkbox" id="common-is-reject-filter" class="form-check-input">
+                                            <label for="common-is-reject-filter" class="form-check-label small">Назначение: Брак</label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -234,28 +271,6 @@
                             <label class="form-check-label" for="filter-limit-enabled">Экспортировать первые N животных</label>
                         </div>
                         <input type="number" id="filter-limit" class="form-control mt-2" placeholder="Количество" min="1" disabled>
-                    </div>
-
-                    <div class="mb-3" id="filter-weight-section">
-                        <div class="form-check">
-                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input export-checkbox">
-                            <label class="form-check-label" for="filter-weight-enabled">Фильтр по весу (кг)</label>
-                        </div>
-                        <div class="row mt-2">
-                            <div class="col-6"><input type="number" id="filter-weight-min" class="form-control" placeholder="От" step="0.1" disabled></div>
-                            <div class="col-6"><input type="number" id="filter-weight-max" class="form-control" placeholder="До" step="0.1" disabled></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3" id="filter-age-section">
-                        <div class="form-check">
-                            <input type="checkbox" id="filter-age-enabled" class="form-check-input export-checkbox">
-                            <label class="form-check-label" for="filter-age-enabled">Фильтр по возрасту (месяцы)</label>
-                        </div>
-                        <div class="row mt-2">
-                            <div class="col-6"><input type="number" id="filter-age-min" class="form-control" placeholder="От" step="0.1" disabled></div>
-                            <div class="col-6"><input type="number" id="filter-age-max" class="form-control" placeholder="До" step="0.1" disabled></div>
-                        </div>
                     </div>
 
                     <div class="mb-3" id="include-details-section">

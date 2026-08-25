@@ -84,14 +84,23 @@
                 <!-- Навигация -->
                 <div class="card mb-4">
                     <div class="card-body">
-                        <div class="d-flex gap-2">
-                            <button id="analytics-button" type="button" class="btn btn-info">Аналитика</button>
-                            <button id="export-button" type="button" class="btn btn-outline-success" onclick="openAnimalExportModal()">Экспорт</button>
-                            {% if animal_type == 'ewe' %}
-                            <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцематку</button>
-                            {% endif %}
-                            {% if animal_type == 'ram' and can_convert_to_maker %}
-                            <button id="convert-to-maker-button" type="button" onclick="openConvertRamToMakerModal()" class="btn btn-warning">Преобразовать в барана-производителя</button>
+                        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button id="analytics-button" type="button" class="btn btn-info">Аналитика</button>
+                                <button id="export-button" type="button" class="btn btn-outline-success" onclick="openAnimalExportModal()">Экспорт</button>
+                                {% if animal_type == 'ewe' %}
+                                <button id="convert-to-sheep-button" type="button" onclick="convertEweToSheep()" class="btn btn-warning">Преобразовать в овцематку</button>
+                                {% endif %}
+                                {% if animal_type == 'ram' and can_convert_to_maker %}
+                                <button id="convert-to-maker-button" type="button" onclick="openConvertRamToMakerModal()" class="btn btn-warning">Преобразовать в барана-производителя</button>
+                                {% endif %}
+                            </div>
+                            {% if can_convert_ewe_ram %}
+                                {% if animal_type == 'ewe' %}
+                                <button id="convert-ewe-ram-button" type="button" onclick="openEweRamConversionModal()" class="btn btn-danger ms-auto">Преобразовать в баранчика</button>
+                                {% elif animal_type == 'ram' %}
+                                <button id="convert-ewe-ram-button" type="button" onclick="openEweRamConversionModal()" class="btn btn-danger ms-auto">Преобразовать в ярку</button>
+                                {% endif %}
                             {% endif %}
                         </div>
                     </div>
@@ -456,6 +465,45 @@
 
     </div>
 </div>
+
+<!-- Модальное окно преобразования ярка ↔ баранчик -->
+<div class="modal fade" id="eweRamConversionModal" tabindex="-1" aria-labelledby="eweRamConversionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="eweRamConversionModalLabel">Преобразование животного</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="ewe-ram-conversion-warning" class="alert alert-warning" style="display: none;"></div>
+
+                <div class="mb-3">
+                    <label for="ewe-ram-target-status" class="form-label">Статус после преобразования:</label>
+                    <select id="ewe-ram-target-status" class="form-select"></select>
+                </div>
+
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="ewe-ram-confirm-convert">
+                    <label class="form-check-label" for="ewe-ram-confirm-convert">
+                        Подтверждаю преобразование животного
+                    </label>
+                </div>
+
+                <div class="form-check mb-2" id="ewe-ram-confirm-conflicts-row" style="display: none;">
+                    <input class="form-check-input" type="checkbox" id="ewe-ram-confirm-conflicts">
+                    <label class="form-check-label" for="ewe-ram-confirm-conflicts">
+                        Подтверждаю удаление несовместимых окотов/групп
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" onclick="submitEweRamConversion()">Преобразовать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Модальное окно экспорта в Excel -->
 <div class="modal fade" id="animalExportModal" tabindex="-1" aria-labelledby="animalExportModalLabel" aria-hidden="true">
     <div class="modal-dialog">

@@ -43,6 +43,11 @@ CSRF_TRUSTED_ORIGINS = _split_csv(
     )
 )
 
+SCANNER_AGENT_URL = config(
+    "SCANNER_AGENT_URL",
+    default="http://host.docker.internal:8765/read",
+)
+
 
 # Application definition
 

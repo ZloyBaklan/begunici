@@ -28,14 +28,23 @@ export function addRshnPresenceFilter(containerId, checkboxId) {
         return;
     }
 
+    const checkboxHtml = `
+        <div class="form-check mb-1">
+            <input type="checkbox" id="${checkboxId}" class="form-check-input">
+            <label for="${checkboxId}" class="form-check-label small">Наличие бирки РСХН</label>
+        </div>
+    `;
+    const slot = document.getElementById(`${checkboxId}-slot`);
+    if (slot) {
+        slot.innerHTML = checkboxHtml;
+        return;
+    }
+
     const row = document.createElement('div');
     row.className = 'row g-2 mt-2';
     row.innerHTML = `
         <div class="col-md-12">
-            <div class="form-check">
-                <input type="checkbox" id="${checkboxId}" class="form-check-input">
-                <label for="${checkboxId}" class="form-check-label">Наличие бирки РСХН</label>
-            </div>
+            ${checkboxHtml}
         </div>
     `;
     container.appendChild(row);
@@ -238,6 +247,7 @@ export function getApiErrorMessage(errorData, fallback = 'Не удалось в
     }
 
     const messages = Object.entries(errorData)
+        .filter(([field]) => field !== 'requires_confirmation')
         .map(([field, value]) => {
             const message = stringifyApiErrorValue(value, field);
             if (!message) return '';
@@ -269,7 +279,10 @@ export async function apiRequest(url, method = 'GET', body) {
             if (contentType && contentType.includes('application/json')) {
                 const errorData = await response.json();
                 console.error(`Ошибка API [${response.status}]:`, errorData);
-                throw new Error(getApiErrorMessage(errorData));
+                const error = new Error(getApiErrorMessage(errorData));
+                error.data = errorData;
+                error.status = response.status;
+                throw error;
             } else {
                 // Если не JSON, читаем как текст для отладки
                 const errorText = await response.text();

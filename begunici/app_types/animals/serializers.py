@@ -4,6 +4,7 @@ from django.db import models
 from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 from .models import (
     ARCHIVE_STATUS_NAMES,
     Maker,
@@ -13,6 +14,7 @@ from .models import (
     Lambing,
     LambingGroup,
     AnimalBase,
+    AnimalNoteHistory,
     CalendarNote,
     ArchiveAct,
     build_unsuccessful_insemination_mother_warning,
@@ -38,6 +40,7 @@ from begunici.app_types.veterinary.vet_serializers import (
     StatusHistorySerializer,
 )
 from .status_logic import (
+    build_group_place_warning,
     get_animal_status_validation_error,
     set_mothers_not_inseminated_after_child_update,
 )
@@ -301,10 +304,14 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_add_weight_record = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_group_key = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    confirm_group_place_move = serializers.BooleanField(write_only=True, required=False, default=False)
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
     unsuccessful_insemination_warning = serializers.SerializerMethodField()
+    primary_weighing_display = serializers.SerializerMethodField()
+    secondary_weighing_display = serializers.SerializerMethodField()
+    final_weighing_display = serializers.SerializerMethodField()
 
     class Meta:
         model = AnimalBase
@@ -582,6 +589,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         # Извлекаем дату статуса если она передана
         status_date = validated_data.pop("status_date", None)
+        confirm_group_place_move = bool(validated_data.pop("confirm_group_place_move", False))
         archive_act_field_names = {
             "act_number",
             "archive_act_date",
@@ -843,6 +851,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         # Проверяем, изменится ли место
         new_place = validated_data.get('place')
         place_will_change = new_place and old_place != new_place
+        if place_will_change and not confirm_group_place_move:
+            group_place_warning = build_group_place_warning(instance, new_place)
+            if group_place_warning:
+                raise serializers.ValidationError({
+                    "place_id": group_place_warning,
+                    "requires_confirmation": True,
+                })
         
         # Если статус изменится и передана дата, пропускаем автоматическое создание StatusHistory
         skip_status_history = status_will_change and status_date is not None
@@ -1008,6 +1023,29 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         """Возвращает возраст в новом формате 'X мес. (Y сут.)'"""
         return obj.get_age_display()
 
+    def _get_scheduled_weighing_display(self, obj, months_after_birth):
+        if not obj.birth_date:
+            return "-"
+
+        target_date = obj.birth_date + relativedelta(months=months_after_birth)
+        weight_record = _get_weight_record_near_date(obj.tag, target_date, delta_days=15)
+        return _format_weight_record_with_date(weight_record)
+
+    def get_primary_weighing_display(self, obj):
+        return self._get_scheduled_weighing_display(obj, 3)
+
+    def get_secondary_weighing_display(self, obj):
+        return self._get_scheduled_weighing_display(obj, 5)
+
+    def get_final_weighing_display(self, obj):
+        return self._get_scheduled_weighing_display(obj, 10)
+
+
+
+class AnimalNoteHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AnimalNoteHistory
+        fields = ["id", "tag", "old_note", "new_note", "change_date"]
 
 
 class MakerSerializer(AnimalBaseSerializer):

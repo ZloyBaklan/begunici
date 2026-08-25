@@ -3,6 +3,11 @@
 {% block title %}Журнал: Приплод{% endblock %}
 
 {% block content %}
+<style>
+    .progeny-abortion-row > * {
+        background-color: #fff1f1 !important;
+    }
+</style>
 <div class="container mt-4">
     <div class="d-flex align-items-center gap-2 mb-3">
         <h1 class="mb-0 order-2">Журнал: Приплод</h1>
@@ -57,8 +62,8 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label for="mother_tag" class="form-label">Бирка матери</label>
-                    <input type="text" class="form-control" id="mother_tag" name="mother_tag" value="{{ selected_mother_tag }}">
+                    <label for="mother_tag" class="form-label">Бирка / РСХН матери</label>
+                    <input type="text" class="form-control" id="mother_tag" name="mother_tag" value="{{ selected_mother_tag }}" placeholder="Введите бирку или РСХН">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label d-none d-md-block">&nbsp;</label>
@@ -124,7 +129,7 @@
                     </thead>
                     <tbody>
                         {% for row in page_obj %}
-                            <tr>
+                            <tr{% if row.is_abortion %} class="progeny-abortion-row"{% endif %}>
                                 <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
                                 <td>
                                     {% if row.mother_url %}

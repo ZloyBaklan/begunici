@@ -363,7 +363,7 @@ async function showSelectAnimalsModal() {
     document.getElementById('animalsSearch').value = '';
     document.getElementById('animals-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
     weightsStepVisible = selectedAnimalsData.size > 0;
@@ -381,7 +381,7 @@ async function searchAnimals() {
     if (!search) {
         document.getElementById('animals-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;

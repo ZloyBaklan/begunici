@@ -4,6 +4,8 @@ import { apiRequest, getApiErrorMessage, getCSRFToken } from "./utils.js";
 let selectedMothers = new Set(); // Для хранения ID выбранных матерей
 let selectedMothersData = new Map(); // Для хранения полной информации о выбранных матерях
 let selectedFather = null;
+let fatherDropdownOptions = new Map();
+let kinshipFatherDropdownOptions = new Map();
 let activeGroupsById = new Map();
 let selectedGroupAddMothers = new Set();
 let selectedGroupAddMothersData = new Map();
@@ -21,6 +23,30 @@ let groupDateTo = '';
 let groupMotherTagFilter = '';
 let groupFatherTagFilter = '';
 const managementViewStorageKey = 'lambingsManagementView';
+
+function getPlaceSortKey(placeName) {
+    const numbers = String(placeName || '').match(/\d+/g) || [];
+    return [
+        numbers[0] ? Number(numbers[0]) : Number.MAX_SAFE_INTEGER,
+        numbers[1] ? Number(numbers[1]) : Number.MAX_SAFE_INTEGER,
+        String(placeName || '')
+    ];
+}
+
+function sortPlacesBySheepfold(places) {
+    return [...places].sort((left, right) => {
+        const leftKey = getPlaceSortKey(left.sheepfold);
+        const rightKey = getPlaceSortKey(right.sheepfold);
+
+        if (leftKey[0] !== rightKey[0]) {
+            return leftKey[0] - rightKey[0];
+        }
+        if (leftKey[1] !== rightKey[1]) {
+            return leftKey[1] - rightKey[1];
+        }
+        return leftKey[2].localeCompare(rightKey[2], 'ru');
+    });
+}
 
 function getSavedManagementView() {
     try {
@@ -61,6 +87,207 @@ function switchLambingManagementView(view) {
     }
 
     saveManagementView(selectedView);
+}
+
+function getFatherDisplayName(animal) {
+    if (!animal) {
+        return '';
+    }
+    if (animal.display_name) {
+        return animal.display_name;
+    }
+    if (animal.type_code === 'maker' && animal.name) {
+        return `${animal.name}(${animal.tag_number})`;
+    }
+    return animal.tag_number || '';
+}
+
+function getFatherOptionLabel(animal) {
+    const displayName = getFatherDisplayName(animal);
+    const typeName = animal?.animal_type || (animal?.type_code === 'maker' ? 'Баран-Производитель' : 'Баранчик');
+    const statusText = animal?.status ? ` - ${animal.status}` : '';
+    return `${displayName} (${typeName})${statusText}`;
+}
+
+function setSelectedFatherFromAnimal(animal, options = {}) {
+    if (!animal || !animal.tag_number) {
+        selectedFather = null;
+        const display = document.getElementById('selected-father-display');
+        if (display) {
+            display.textContent = 'Не выбран';
+            display.className = 'mt-2 text-muted';
+        }
+        if (options.syncSelect !== false) {
+            const select = document.getElementById('father-select');
+            if (select) {
+                select.value = '';
+            }
+        }
+        checkAutoKinship();
+        return;
+    }
+
+    selectedFather = {
+        tag_number: animal.tag_number,
+        type: animal.type_code,
+        tag: animal.tag_number,
+        display_name: getFatherDisplayName(animal)
+    };
+
+    const display = document.getElementById('selected-father-display');
+    if (display) {
+        const typeText = selectedFather.type === 'maker' ? 'Баран-Производитель' : 'Баранчик';
+        display.textContent = `${selectedFather.display_name} (${typeText})`;
+        display.className = 'mt-2 text-success';
+    }
+
+    if (options.syncSelect !== false) {
+        const select = document.getElementById('father-select');
+        if (select) {
+            select.value = selectedFather.tag_number;
+        }
+    }
+
+    checkAutoKinship();
+}
+
+function setSelectedKinshipFatherFromAnimal(animal, options = {}) {
+    if (!animal || !animal.tag_number) {
+        selectedKinshipFather = null;
+        const display = document.getElementById('kinship-father-display');
+        if (display) {
+            display.textContent = 'Не выбран';
+            display.className = 'mt-2 text-muted';
+        }
+        if (options.syncSelect !== false) {
+            const select = document.getElementById('kinship-father-select');
+            if (select) {
+                select.value = '';
+            }
+        }
+        updateKinshipCheckButton();
+        resetKinshipResult();
+        return;
+    }
+
+    selectedKinshipFather = {
+        tag_number: animal.tag_number,
+        type: animal.type_code,
+        tag: animal.tag_number,
+        display_name: getFatherDisplayName(animal)
+    };
+
+    const display = document.getElementById('kinship-father-display');
+    if (display) {
+        const typeText = selectedKinshipFather.type === 'maker' ? 'Баран-Производитель' : 'Баранчик';
+        display.textContent = `${selectedKinshipFather.display_name} (${typeText})`;
+        display.className = 'mt-2 text-success';
+    }
+
+    if (options.syncSelect !== false) {
+        const select = document.getElementById('kinship-father-select');
+        if (select) {
+            select.value = selectedKinshipFather.tag_number;
+        }
+    }
+
+    updateKinshipCheckButton();
+    resetKinshipResult();
+}
+
+async function loadFatherSelectOptions() {
+    const select = document.getElementById('father-select');
+    if (!select) {
+        return;
+    }
+
+    select.innerHTML = '<option value="">Загрузка производителей...</option>';
+    select.disabled = true;
+    fatherDropdownOptions = new Map();
+
+    try {
+        const fathers = await apiRequest('/animals/api/all-fathers/');
+        select.innerHTML = '<option value="">Выберите производителя</option>';
+
+        (fathers || []).filter(father => father.type_code === 'maker').forEach(father => {
+            if (!father.tag_number) {
+                return;
+            }
+            fatherDropdownOptions.set(father.tag_number, father);
+            const option = document.createElement('option');
+            option.value = father.tag_number;
+            option.textContent = getFatherOptionLabel(father);
+            select.appendChild(option);
+        });
+
+        if (!fatherDropdownOptions.size) {
+            select.innerHTML = '<option value="">Нет свободных производителей</option>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки производителей:', error);
+        select.innerHTML = '<option value="">Ошибка загрузки производителей</option>';
+    } finally {
+        select.disabled = !fatherDropdownOptions.size;
+    }
+}
+
+async function loadKinshipFatherSelectOptions() {
+    const select = document.getElementById('kinship-father-select');
+    if (!select) {
+        return;
+    }
+
+    select.innerHTML = '<option value="">Загрузка производителей...</option>';
+    select.disabled = true;
+    kinshipFatherDropdownOptions = new Map();
+
+    try {
+        const fathers = await apiRequest('/animals/api/all-fathers/?include_busy=1');
+        select.innerHTML = '<option value="">Выберите производителя</option>';
+
+        (fathers || []).filter(father => father.type_code === 'maker').forEach(father => {
+            if (!father.tag_number) {
+                return;
+            }
+            kinshipFatherDropdownOptions.set(father.tag_number, father);
+            const option = document.createElement('option');
+            option.value = father.tag_number;
+            option.textContent = getFatherOptionLabel(father);
+            select.appendChild(option);
+        });
+
+        if (!kinshipFatherDropdownOptions.size) {
+            select.innerHTML = '<option value="">Производители не найдены</option>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки производителей для подбора пар:', error);
+        select.innerHTML = '<option value="">Ошибка загрузки производителей</option>';
+    } finally {
+        select.disabled = !kinshipFatherDropdownOptions.size;
+    }
+}
+
+async function loadGroupPlaceOptions() {
+    const select = document.getElementById('group-place-select');
+    if (!select) {
+        return;
+    }
+
+    try {
+        const response = await apiRequest('/veterinary/api/place/?page_size=500');
+        const places = response.results || response || [];
+        select.innerHTML = '<option value="">Без перемещения</option>';
+
+        sortPlacesBySheepfold(places).forEach(place => {
+            const option = document.createElement('option');
+            option.value = place.id;
+            option.textContent = place.sheepfold;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки овчарен для постановки в группу:', error);
+        select.innerHTML = '<option value="">Не удалось загрузить овчарни</option>';
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -116,6 +343,25 @@ document.addEventListener('DOMContentLoaded', function() {
     // Загружаем активные группы и случки
     loadActiveGroups();
     loadActiveLambings();
+    loadFatherSelectOptions();
+    loadKinshipFatherSelectOptions();
+    loadGroupPlaceOptions();
+
+    const fatherSelect = document.getElementById('father-select');
+    if (fatherSelect) {
+        fatherSelect.addEventListener('change', function() {
+            const animal = fatherDropdownOptions.get(this.value);
+            setSelectedFatherFromAnimal(animal, { syncSelect: false });
+        });
+    }
+
+    const kinshipFatherSelect = document.getElementById('kinship-father-select');
+    if (kinshipFatherSelect) {
+        kinshipFatherSelect.addEventListener('change', function() {
+            const animal = kinshipFatherDropdownOptions.get(this.value);
+            setSelectedKinshipFatherFromAnimal(animal, { syncSelect: false });
+        });
+    }
     
     // Обработчики поиска для модальных окон
     const searchMothersBtn = document.getElementById('searchMothersBtn');
@@ -527,7 +773,7 @@ function showAddMothersToGroupModal(groupId) {
     document.getElementById('groupAddMothersSearch').value = '';
     document.getElementById('group-add-mothers-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения доступных ярок/овцематок
+            Введите бирку или РСХН и нажмите "Поиск" для отображения доступных ярок/овцематок
         </div>
     `;
 
@@ -541,7 +787,7 @@ async function searchGroupAddMothers() {
     if (!search) {
         document.getElementById('group-add-mothers-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;
@@ -1013,7 +1259,7 @@ async function showSelectMothersModal() {
     document.getElementById('mothersSearch').value = '';
     document.getElementById('mothers-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
     
@@ -1073,7 +1319,7 @@ async function showSelectFatherModal() {
     document.getElementById('fathersSearch').value = '';
     document.getElementById('fathers-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
     
@@ -1088,7 +1334,7 @@ async function searchMothers() {
     if (!search) {
         document.getElementById('mothers-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;
@@ -1209,7 +1455,7 @@ async function searchFathers() {
     if (!search) {
         document.getElementById('fathers-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;
@@ -1323,32 +1569,25 @@ function confirmFatherSelection() {
     const labelText = label.textContent.trim();
     // Извлекаем только имя/бирку до первой скобки с типом животного
     const displayName = labelText.split(' (')[0];
-    
-    selectedFather = {
+
+    setSelectedFatherFromAnimal({
         tag_number: checkedRadio.value,
-        type: checkedRadio.dataset.type,
-        tag: checkedRadio.dataset.tag,
+        type_code: checkedRadio.dataset.type,
+        animal_type: checkedRadio.dataset.type === 'maker' ? 'Баран-Производитель' : 'Баранчик',
         display_name: displayName
-    };
-    
-    // Обновляем отображение
-    const display = document.getElementById('selected-father-display');
-    const typeText = selectedFather.type === 'maker' ? 'Баран-Производитель' : 'Баранчик';
-    display.textContent = `${selectedFather.display_name} (${typeText})`;
-    display.className = 'mt-2 text-success';
+    });
     
     // Закрываем модальное окно
     const modal = bootstrap.Modal.getInstance(document.getElementById('selectFatherModal'));
     modal.hide();
-    
-    // Запускаем автоматическую проверку родства
-    checkAutoKinship();
 }
 
 // Постановка выбранных животных в группу
 async function createMultipleLambings() {
     const placementDate = document.getElementById('lambing-start-date').value;
     const note = document.getElementById('group-lambing-note').value.trim();
+    const placeSelect = document.getElementById('group-place-select');
+    const placeId = placeSelect ? placeSelect.value : '';
     
     // Валидация
     if (!placementDate) {
@@ -1373,10 +1612,16 @@ async function createMultipleLambings() {
             mother_tag_numbers: window.selectedMothersForLambing.map(m => m.tag_number),
             note: note || ''
         };
+        if (placeId) {
+            data.place_id = placeId;
+        }
         
         const response = await apiRequest('/animals/lambing-group/', 'POST', data);
         
         let message = `Группа создана. Матерей в группе: ${response.mothers_count || 0}`;
+        if (response.moved_count) {
+            message += `\nПеремещено животных: ${response.moved_count}`;
+        }
         if (response.errors && response.errors.length > 0) {
             message += `\n\nОшибки:\n${response.errors.join('\n')}`;
         }
@@ -1412,9 +1657,18 @@ function resetForm() {
     
     document.getElementById('selected-father-display').textContent = 'Не выбран';
     document.getElementById('selected-father-display').className = 'mt-2 text-muted';
+    const fatherSelect = document.getElementById('father-select');
+    if (fatherSelect) {
+        fatherSelect.value = '';
+    }
+    const groupPlaceSelect = document.getElementById('group-place-select');
+    if (groupPlaceSelect) {
+        groupPlaceSelect.value = '';
+    }
     
     // Скрываем блок автоматической проверки родства
     document.getElementById('auto-kinship-result').style.display = 'none';
+    loadFatherSelectOptions();
 }
 
 // Показать модальное окно завершения окота
@@ -1984,10 +2238,12 @@ async function confirmGroupImport() {
         const createdGroups = data.created_groups_count || 0;
         const updatedGroups = data.updated_groups_count || 0;
         const addedMothers = data.added_mothers_count || 0;
+        const movedAnimals = data.moved_count || 0;
+        const movedText = movedAnimals ? `; перемещено животных: ${movedAnimals}` : '';
         renderImportResult(
             'group-import-result',
             data,
-            `Импорт завершен. Новых групп: ${createdGroups}; обновлено групп: ${updatedGroups}; добавлено матерей: ${addedMothers}`
+            `Импорт завершен. Новых групп: ${createdGroups}; обновлено групп: ${updatedGroups}; добавлено матерей: ${addedMothers}${movedText}`
         );
         loadActiveGroups();
         loadActiveLambings();
@@ -2059,7 +2315,7 @@ async function showSelectKinshipFatherModal() {
     document.getElementById('kinshipFathersSearch').value = '';
     document.getElementById('kinship-fathers-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
 
@@ -2071,7 +2327,7 @@ async function showSelectKinshipMotherModal() {
     document.getElementById('kinshipMothersSearch').value = '';
     document.getElementById('kinship-mothers-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
 
@@ -2085,7 +2341,7 @@ async function searchKinshipFathers() {
     if (!search) {
         document.getElementById('kinship-fathers-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;
@@ -2101,7 +2357,7 @@ async function searchKinshipFathers() {
     `;
 
     try {
-        const response = await apiRequest(`/animals/api/all-fathers/?search=${encodeURIComponent(search)}`);
+        const response = await apiRequest(`/animals/api/all-fathers/?search=${encodeURIComponent(search)}&include_busy=1`);
         const fathers = response || [];
 
         const fathersList = document.getElementById('kinship-fathers-list');
@@ -2161,7 +2417,7 @@ async function searchKinshipMothers() {
     if (!search) {
         document.getElementById('kinship-mothers-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;
@@ -2179,7 +2435,7 @@ async function searchKinshipMothers() {
     `;
 
     try {
-        const response = await apiRequest(`/animals/api/inactive-mothers/?search=${encodeURIComponent(search)}`);
+        const response = await apiRequest(`/animals/api/inactive-mothers/?search=${encodeURIComponent(search)}&include_busy=1`);
         const mothers = response || [];
 
         const mothersList = document.getElementById('kinship-mothers-list');
@@ -2323,20 +2579,12 @@ function confirmKinshipFatherSelection() {
     const labelText = label.textContent.trim();
     const displayName = labelText.split(' (')[0];
 
-    selectedKinshipFather = {
+    setSelectedKinshipFatherFromAnimal({
         tag_number: checkedRadio.value,
-        type: checkedRadio.dataset.type,
-        tag: checkedRadio.dataset.tag,
+        type_code: checkedRadio.dataset.type,
+        animal_type: checkedRadio.dataset.type === 'maker' ? 'Баран-Производитель' : 'Баранчик',
         display_name: displayName
-    };
-
-    const display = document.getElementById('kinship-father-display');
-    const typeText = selectedKinshipFather.type === 'maker' ? 'Баран-Производитель' : 'Баранчик';
-    display.textContent = `${selectedKinshipFather.display_name} (${typeText})`;
-    display.className = 'mt-2 text-success';
-
-    updateKinshipCheckButton();
-    resetKinshipResult();
+    });
 
     const modal = bootstrap.Modal.getInstance(document.getElementById('selectKinshipFatherModal'));
     modal.hide();

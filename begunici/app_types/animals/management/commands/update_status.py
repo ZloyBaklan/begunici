@@ -178,6 +178,10 @@ class Command(BaseCommand):
         if self._has_active_lambing_as_mother(animal):
             return STATUS_INSEMINATED, "есть активная случка после снятия барана"
 
+        current_status_name = animal.animal_status.status_type if animal.animal_status else None
+        if isinstance(animal, Ewe) and current_status_name == STATUS_REPAIR:
+            return STATUS_REPAIR, "ручной статус Ремонт у ярки сохраняется"
+
         latest_lambing = self._latest_completed_lambing_as_mother(animal)
         if not latest_lambing:
             return STATUS_NOT_INSEMINATED, "нет активных и завершенных окотов"

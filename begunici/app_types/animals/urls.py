@@ -68,6 +68,7 @@ from .views import (
     kinship_pairs_export_excel,
     get_animals_without_otbivka,
     bulk_otbivka,
+    bulk_place_move,
     bulk_vaccination,
     journals_menu,
     journal_progeny,
@@ -239,6 +240,26 @@ urlpatterns = [
         name="sheep-place-history",
     ),
     path(
+        "maker/<str:tag_number>/note_history/",
+        MakerViewSet.as_view({"get": "note_history"}),
+        name="maker-note-history",
+    ),
+    path(
+        "ram/<str:tag_number>/note_history/",
+        RamViewSet.as_view({"get": "note_history"}),
+        name="ram-note-history",
+    ),
+    path(
+        "ewe/<str:tag_number>/note_history/",
+        EweViewSet.as_view({"get": "note_history"}),
+        name="ewe-note-history",
+    ),
+    path(
+        "sheep/<str:tag_number>/note_history/",
+        SheepViewSet.as_view({"get": "note_history"}),
+        name="sheep-note-history",
+    ),
+    path(
         "maker/<str:tag_number>/restore/",
         MakerViewSet.as_view({"post": "restore"}),
         name="maker-restore",
@@ -343,6 +364,7 @@ urlpatterns = [
     # API для ковровой отбивки
     path("api/animals-without-otbivka/", get_animals_without_otbivka, name="animals-without-otbivka"),  # Животные без отбивки
     path("api/bulk-otbivka/", bulk_otbivka, name="bulk-otbivka"),  # Массовая отбивка
+    path("api/bulk-place-move/", bulk_place_move, name="bulk-place-move"),  # Массовое перемещение животных
     
     # API для ковровой вакцинации
     path("api/bulk-vaccination/", bulk_vaccination, name="bulk-vaccination"),  # Массовая вакцинация

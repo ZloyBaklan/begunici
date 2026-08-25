@@ -139,16 +139,16 @@ function displayLogs(logs) {
                 let links = [];
                 log.animal_link_info.pair_tags.forEach(tagInfo => {
                     if (tagInfo.url_type) {
-                        links.push(`<a href="/animals/${tagInfo.url_type}/${tagInfo.tag}/info/" target="_blank" class="text-decoration-none">${tagInfo.tag}</a>`);
+                        links.push(`<a href="/animals/${tagInfo.url_type}/${encodeURIComponent(tagInfo.tag)}/info/" target="_blank" class="text-decoration-none">${escapeHtml(tagInfo.tag)}</a>`);
                     } else {
-                        links.push(tagInfo.tag);
+                        links.push(escapeHtml(tagInfo.tag));
                     }
                 });
                 objectIdCell = links.join(', ');
             } else {
                 // Используем информацию о животном из API для одиночной бирки
                 const animalType = log.animal_link_info.url_type;
-                objectIdCell = `<a href="/animals/${animalType}/${log.object_id}/info/" target="_blank" class="text-decoration-none">${log.object_id}</a>`;
+                objectIdCell = `<a href="/animals/${animalType}/${encodeURIComponent(log.object_id)}/info/" target="_blank" class="text-decoration-none">${escapeHtml(log.object_id)}</a>`;
             }
         } else if (log.object_id && log.object_type && ['Производитель', 'Баран-Производитель', 'Баран', 'Баранчик', 'Ярка', 'Овца', 'Овцематка'].includes(log.object_type)) {
             // Старая логика для обратной совместимости
@@ -163,15 +163,17 @@ function displayLogs(logs) {
             };
             const animalType = animalTypeMap[log.object_type];
             if (animalType) {
-                objectIdCell = `<a href="/animals/${animalType}/${log.object_id}/info/" target="_blank" class="text-decoration-none">${log.object_id}</a>`;
+                objectIdCell = `<a href="/animals/${animalType}/${encodeURIComponent(log.object_id)}/info/" target="_blank" class="text-decoration-none">${escapeHtml(log.object_id)}</a>`;
             }
+        } else {
+            objectIdCell = escapeHtml(objectIdCell);
         }
         
         row.innerHTML = `
-            <td>${log.timestamp}</td>
-            <td><span class="badge bg-primary">${log.user}</span></td>
-            <td>${log.action}</td>
-            <td>${log.object_type || '-'}</td>
+            <td>${escapeHtml(log.timestamp)}</td>
+            <td><span class="badge bg-primary">${escapeHtml(log.user)}</span></td>
+            <td>${escapeHtml(log.action)}</td>
+            <td>${escapeHtml(log.object_type || '-')}</td>
             <td>${objectIdCell}</td>
             <td>${renderExpandableDetails(log.details || '', log.id)}</td>
         `;

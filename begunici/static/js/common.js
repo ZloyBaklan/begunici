@@ -104,12 +104,17 @@ function getCommonFiltersFromInputs() {
         search: document.getElementById("common-search")?.value || "",
         birth_date_from: document.getElementById("common-birth-date-from")?.value || "",
         birth_date_to: document.getElementById("common-birth-date-to")?.value || "",
+        date_otbivka_from: document.getElementById("common-date-otbivka-from-filter")?.value || "",
+        date_otbivka_to: document.getElementById("common-date-otbivka-to-filter")?.value || "",
         age_min: document.getElementById("common-age-min-filter")?.value || "",
         age_max: document.getElementById("common-age-max-filter")?.value || "",
+        weight_min: document.getElementById("common-weight-min-filter")?.value || "",
+        weight_max: document.getElementById("common-weight-max-filter")?.value || "",
         father_tag: document.getElementById("common-father-tag-filter")?.value || "",
         mother_tag: document.getElementById("common-mother-tag-filter")?.value || "",
         animal_type: document.getElementById("common-animal-type-filter")?.value || "",
         has_rshn_tag: getCheckboxFilterValue("common-has-rshn-tag-filter"),
+        is_reject: getCheckboxFilterValue("common-is-reject-filter"),
     };
 }
 
@@ -121,12 +126,17 @@ function initializeCommonFiltersFromUrl() {
         search: urlParams.get("search") || "",
         birth_date_from: urlParams.get("birth_date_from") || "",
         birth_date_to: urlParams.get("birth_date_to") || "",
+        date_otbivka_from: urlParams.get("date_otbivka_from") || "",
+        date_otbivka_to: urlParams.get("date_otbivka_to") || "",
         age_min: urlParams.get("age_min") || "",
         age_max: urlParams.get("age_max") || "",
+        weight_min: urlParams.get("weight_min") || "",
+        weight_max: urlParams.get("weight_max") || "",
         father_tag: urlParams.get("father_tag") || "",
         mother_tag: urlParams.get("mother_tag") || "",
         animal_type: urlParams.get("animal_type") || "",
         has_rshn_tag: urlParams.get("has_rshn_tag") || "",
+        is_reject: urlParams.get("is_reject") || "",
     };
 
     const searchInput = document.getElementById("common-search");
@@ -138,11 +148,23 @@ function initializeCommonFiltersFromUrl() {
     const birthDateToInput = document.getElementById("common-birth-date-to");
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
 
+    const dateOtbivkaFromInput = document.getElementById("common-date-otbivka-from-filter");
+    if (dateOtbivkaFromInput) dateOtbivkaFromInput.value = filters.date_otbivka_from;
+
+    const dateOtbivkaToInput = document.getElementById("common-date-otbivka-to-filter");
+    if (dateOtbivkaToInput) dateOtbivkaToInput.value = filters.date_otbivka_to;
+
     const ageMinInput = document.getElementById("common-age-min-filter");
     if (ageMinInput) ageMinInput.value = filters.age_min;
 
     const ageMaxInput = document.getElementById("common-age-max-filter");
     if (ageMaxInput) ageMaxInput.value = filters.age_max;
+
+    const weightMinInput = document.getElementById("common-weight-min-filter");
+    if (weightMinInput) weightMinInput.value = filters.weight_min;
+
+    const weightMaxInput = document.getElementById("common-weight-max-filter");
+    if (weightMaxInput) weightMaxInput.value = filters.weight_max;
 
     const fatherTagInput = document.getElementById("common-father-tag-filter");
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
@@ -154,8 +176,9 @@ function initializeCommonFiltersFromUrl() {
     if (animalTypeInput) animalTypeInput.value = filters.animal_type;
 
     setCheckboxFilterValue("common-has-rshn-tag-filter", filters.has_rshn_tag);
+    setCheckboxFilterValue("common-is-reject-filter", filters.is_reject);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject) {
         const filtersBlock = document.getElementById("common-advanced-filters");
         if (filtersBlock) {
             filtersBlock.style.display = "block";
@@ -325,7 +348,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...filters };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "weight_min", "weight_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject"];
 
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
@@ -347,12 +370,17 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         if (currentFilters.search) params.set("search", currentFilters.search);
         if (currentFilters.birth_date_from) params.set("birth_date_from", currentFilters.birth_date_from);
         if (currentFilters.birth_date_to) params.set("birth_date_to", currentFilters.birth_date_to);
+        if (currentFilters.date_otbivka_from) params.set("date_otbivka_from", currentFilters.date_otbivka_from);
+        if (currentFilters.date_otbivka_to) params.set("date_otbivka_to", currentFilters.date_otbivka_to);
         if (currentFilters.age_min) params.set("age_min", currentFilters.age_min);
         if (currentFilters.age_max) params.set("age_max", currentFilters.age_max);
+        if (currentFilters.weight_min) params.set("weight_min", currentFilters.weight_min);
+        if (currentFilters.weight_max) params.set("weight_max", currentFilters.weight_max);
         if (currentFilters.father_tag) params.set("father_tag", currentFilters.father_tag);
         if (currentFilters.mother_tag) params.set("mother_tag", currentFilters.mother_tag);
         if (currentFilters.animal_type) params.set("animal_type", currentFilters.animal_type);
         if (currentFilters.has_rshn_tag) params.set("has_rshn_tag", currentFilters.has_rshn_tag);
+        if (currentFilters.is_reject) params.set("is_reject", currentFilters.is_reject);
 
         currentPage = page;
         const response = await apiRequest(`/animals/api/common/?${params.toString()}`);
@@ -396,7 +424,7 @@ function renderCommonAnimals(animals) {
         );
 
         rows.push(`
-            <tr>
+            <tr class="${animal.is_reject ? "table-warning" : ""}">
                 <td>
                     <input type="checkbox"
                            class="select-common"

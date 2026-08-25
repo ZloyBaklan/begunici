@@ -88,12 +88,82 @@ def _normalize_rshn(value):
     return f"RU{normalized[2:].lower()}"
 
 
-def _animal_payload(type_key, type_label, route_name, animal):
+def _place_payload(place):
+    numbers = [int(value) for value in re.findall(r"\d+", place.sheepfold or "")]
+    return {
+        "id": place.id,
+        "sheepfold": place.sheepfold,
+        "barn_number": numbers[0] if len(numbers) >= 1 else None,
+        "section_number": numbers[1] if len(numbers) >= 2 else None,
+    }
+
+
+def _normalize_optional_place_id(value):
+    if value in (None, ""):
+        return None
+    try:
+        place_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Не выбраны овчарня и отсек") from exc
+    if place_id <= 0:
+        raise ValueError("Не выбраны овчарня и отсек")
+    return place_id
+
+
+def _animal_basic_info(type_key, type_label, animal):
+    dorper = None
+    if animal.dorper_percentage is not None:
+        percentage = float(animal.dorper_percentage)
+        dorper = f"{percentage:g}%"
+        if animal.is_manual_dorper:
+            dorper += "*"
+
+    father_data = animal.get_father_display()
+    mother_data = animal.get_mother_display()
+    last_weight = (
+        WeightRecord.objects.filter(tag=animal.tag)
+        .order_by("-weight_date", "-id")
+        .first()
+    )
+
+    return {
+        "tag_number": animal.tag.tag_number,
+        "animal_type": type_label,
+        "status": animal.animal_status.status_type if animal.animal_status else None,
+        "age": animal.get_age_display(),
+        "working_condition": (
+            getattr(animal, "working_condition", None) if type_key == "maker" else None
+        ),
+        "place": animal.place.sheepfold if animal.place else None,
+        "dorper": dorper,
+        "purpose": "Брак" if animal.is_reject else None,
+        "mother": mother_data.get("tag_number") if mother_data else None,
+        "father": (
+            father_data.get("display_name") or father_data.get("tag_number")
+            if father_data
+            else None
+        ),
+        "rshn_tag": animal.rshn_tag,
+        "name": getattr(animal, "name", None) if type_key == "maker" else None,
+        "date_otbivka": animal.date_otbivka.isoformat() if animal.date_otbivka else None,
+        "last_weight": (
+            {
+                "weight": str(last_weight.weight),
+                "date": last_weight.weight_date.isoformat(),
+            }
+            if last_weight
+            else None
+        ),
+        "note": animal.note,
+    }
+
+
+def _animal_payload(type_key, type_label, route_name, animal, *, include_basic_info=False):
     place = animal.place.sheepfold if animal.place else None
     display_name = animal.tag.tag_number
     if type_key == "maker" and getattr(animal, "name", None):
         display_name = f"{animal.name}({animal.tag.tag_number})"
-    return {
+    payload = {
         "tag_number": animal.tag.tag_number,
         "display_name": display_name,
         "animal_type": type_key,
@@ -111,6 +181,38 @@ def _animal_payload(type_key, type_label, route_name, animal):
             kwargs={"tag_number": animal.tag.tag_number},
         ),
     }
+    if include_basic_info:
+        payload["basic_info"] = _animal_basic_info(type_key, type_label, animal)
+    return payload
+
+
+def _move_animal_to_place(model, animal, new_place):
+    if new_place is None or animal.place_id == new_place.id:
+        return False, animal.place
+
+    old_place = animal.place
+    model.objects.filter(pk=animal.pk).update(place=new_place)
+    PlaceMovement.objects.create(
+        tag=animal.tag,
+        old_place=old_place,
+        new_place=new_place,
+    )
+    animal.place = new_place
+    return True, old_place
+
+
+def _log_automatic_movement(request, type_label, animal, old_place, new_place, reason):
+    _log_scales_action(
+        request,
+        action_type="Перемещение животного",
+        object_type=type_label,
+        object_id=animal.tag.tag_number,
+        description=(
+            f"Бирка {animal.tag.tag_number}: "
+            f"{old_place.sheepfold if old_place else 'место не указано'} -> "
+            f"{new_place.sheepfold}; {reason}"
+        ),
+    )
 
 
 def _active_animals(search="", *, with_rshn=False, limit=100):
@@ -191,7 +293,13 @@ def _find_archived_by_rshn(rshn_tag, *, lock=False):
 @permission_classes([ScalesServicePermission])
 def animals(request):
     results = [
-        _animal_payload(type_key, type_label, route_name, animal)
+        _animal_payload(
+            type_key,
+            type_label,
+            route_name,
+            animal,
+            include_basic_info=True,
+        )
         for type_key, type_label, route_name, animal in _active_animals(
             request.query_params.get("search", "")
         )
@@ -223,7 +331,23 @@ def bindings(request):
     except ValueError as exc:
         return _error(str(exc), "invalid_rshn", status.HTTP_400_BAD_REQUEST)
 
+    try:
+        place_id = _normalize_optional_place_id(request.data.get("place_id"))
+    except ValueError as exc:
+        return _error(str(exc), "place_required", status.HTTP_400_BAD_REQUEST)
+
     with transaction.atomic():
+        new_place = None
+        if place_id is not None:
+            try:
+                new_place = Place.objects.select_for_update().get(pk=place_id)
+            except Place.DoesNotExist:
+                return _error(
+                    "Выбранные овчарня и отсек не найдены",
+                    "place_not_found",
+                    status.HTTP_404_NOT_FOUND,
+                )
+
         selected = _find_active_by_tag(tag_number, lock=True)
         if selected is None:
             return _error(
@@ -328,8 +452,33 @@ def bindings(request):
                 description="; ".join(details),
             )
 
+        was_moved, old_place = _move_animal_to_place(model, animal, new_place)
+        if was_moved:
+            _log_automatic_movement(
+                request,
+                type_label,
+                animal,
+                old_place,
+                new_place,
+                "после привязки чипа",
+            )
+
     payload = _animal_payload(type_key, type_label, route_name, animal)
-    payload.update({"created": not was_unchanged, "rebound": bool(force)})
+    payload.update(
+        {
+            "created": not was_unchanged,
+            "rebound": bool(force),
+            "movement": (
+                {
+                    "moved": was_moved,
+                    "skipped": not was_moved,
+                    "place": _place_payload(new_place),
+                }
+                if new_place
+                else None
+            ),
+        }
+    )
     return Response(
         payload,
         status=status.HTTP_200_OK if was_unchanged else status.HTTP_201_CREATED,
@@ -363,7 +512,13 @@ def identification(request):
     return Response(
         {
             "found": True,
-            **_animal_payload(type_key, type_label, route_name, animal),
+            **_animal_payload(
+                type_key,
+                type_label,
+                route_name,
+                animal,
+                include_basic_info=True,
+            ),
         }
     )
 
@@ -376,7 +531,7 @@ def places(request):
     return Response(
         {
             "results": [
-                {"id": place.id, "sheepfold": place.sheepfold}
+                _place_payload(place)
                 for place in sorted_places
             ]
         }
@@ -388,14 +543,6 @@ def places(request):
 @permission_classes([ScalesServicePermission])
 def weights(request):
     tag_number = str(request.data.get("tag_number", "")).strip()
-    active_animal = _find_active_by_tag(tag_number)
-    if active_animal is None:
-        return _error(
-            "Активное животное с такой биркой не найдено",
-            "animal_not_found",
-            status.HTTP_404_NOT_FOUND,
-        )
-
     try:
         weight = Decimal(str(request.data.get("weight", "")).replace(",", "."))
         if not weight.is_finite():
@@ -410,9 +557,33 @@ def weights(request):
             status.HTTP_400_BAD_REQUEST,
         )
 
-    animal = active_animal[4]
+    try:
+        place_id = _normalize_optional_place_id(request.data.get("place_id"))
+    except ValueError as exc:
+        return _error(str(exc), "place_required", status.HTTP_400_BAD_REQUEST)
+
     weight_date = timezone.localdate()
     with transaction.atomic():
+        new_place = None
+        if place_id is not None:
+            try:
+                new_place = Place.objects.select_for_update().get(pk=place_id)
+            except Place.DoesNotExist:
+                return _error(
+                    "Выбранные овчарня и отсек не найдены",
+                    "place_not_found",
+                    status.HTTP_404_NOT_FOUND,
+                )
+
+        active_animal = _find_active_by_tag(tag_number, lock=True)
+        if active_animal is None:
+            return _error(
+                "Активное животное с такой биркой не найдено",
+                "animal_not_found",
+                status.HTTP_404_NOT_FOUND,
+            )
+        _type_key, type_label, model, _route_name, animal = active_animal
+
         same_day_records = (
             WeightRecord.objects.select_for_update()
             .filter(tag=animal.tag, weight_date=weight_date)
@@ -457,6 +628,17 @@ def weights(request):
                 ),
             )
 
+        was_moved, old_place = _move_animal_to_place(model, animal, new_place)
+        if was_moved:
+            _log_automatic_movement(
+                request,
+                type_label,
+                animal,
+                old_place,
+                new_place,
+                "после взвешивания",
+            )
+
     return Response(
         {
             "id": record.id,
@@ -464,6 +646,15 @@ def weights(request):
             "weight": str(record.weight),
             "weight_date": record.weight_date.isoformat(),
             "updated": was_updated,
+            "movement": (
+                {
+                    "moved": was_moved,
+                    "skipped": not was_moved,
+                    "place": _place_payload(new_place),
+                }
+                if new_place
+                else None
+            ),
         },
         status=status.HTTP_200_OK if was_updated else status.HTTP_201_CREATED,
     )
@@ -569,6 +760,6 @@ def movements(request):
         {
             "moved": moved,
             "skipped": skipped,
-            "place": {"id": new_place.id, "sheepfold": new_place.sheepfold},
+            "place": _place_payload(new_place),
         }
     )

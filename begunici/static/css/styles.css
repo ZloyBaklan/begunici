@@ -200,6 +200,69 @@ th {
     margin: 0 0 20px;
 }
 
+.place-map-action-card {
+    max-width: 1180px;
+    margin: 0 auto 24px;
+    padding: 22px;
+    border: 1px solid #d7dde3;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 10px 28px rgba(33, 37, 41, 0.08);
+}
+
+.place-map-action-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e8ecef;
+}
+
+.place-map-action-card-header h3 {
+    margin: 0;
+    color: #2b3035;
+    font-size: 1.25rem;
+}
+
+.place-map-action-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.place-map-action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.place-map-selection-display {
+    margin-top: 10px;
+    line-height: 1.4;
+}
+
+.place-map-action-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+
+@media (max-width: 768px) {
+    .place-map-action-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .place-map-action-footer {
+        justify-content: stretch;
+    }
+
+    .place-map-action-footer .btn {
+        width: 100%;
+    }
+}
+
 .housing-standards-card {
     max-width: 1180px;
     margin: 0 auto 24px;

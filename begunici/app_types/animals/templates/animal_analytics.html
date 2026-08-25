@@ -114,6 +114,32 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- История примечаний -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">История примечаний</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Дата</th>
+                                        <th>Было</th>
+                                        <th>Стало</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="note-history"></tbody>
+                            </table>
+                        </div>
+                        <div id="note-pagination" class="pagination-container mt-3">
+                            <button id="note-history-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
+                            <span id="note-history-page-numbers"></span>
+                            <button id="note-history-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="col-lg-6">
@@ -253,6 +279,12 @@
 
 #weight-chart-card.expanded .weight-chart-container {
     height: 500px;
+}
+
+.note-history-text {
+    max-width: 260px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 </style>
 {% endblock %}

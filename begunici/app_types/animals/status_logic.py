@@ -24,7 +24,7 @@ from .models import (
 ANIMAL_TYPE_STATUS_RULES = {
     "Maker": {STATUS_FATTENING, STATUS_IN_GROUP, STATUS_REPAIR},
     "Ram": {STATUS_FATTENING, STATUS_REPAIR},
-    "Ewe": {STATUS_UNDEFINED, STATUS_NOT_INSEMINATED, STATUS_INSEMINATED},
+    "Ewe": {STATUS_UNDEFINED, STATUS_NOT_INSEMINATED, STATUS_INSEMINATED, STATUS_REPAIR},
     "Sheep": {STATUS_INSEMINATED, STATUS_LAMBED, STATUS_NOT_INSEMINATED},
 }
 
@@ -116,6 +116,49 @@ def get_group_statuses():
     found = {key: get_status_by_name(name) for key, name in required.items()}
     missing = [name for key, name in required.items() if not found[key]]
     return found, missing
+
+
+def get_active_group_for_animal(animal):
+    if not animal:
+        return None
+
+    queryset = (
+        LambingGroup.objects.filter(is_active=True)
+        .select_related("maker__tag", "maker__place", "ram__tag", "ram__place")
+    )
+
+    if isinstance(animal, Maker):
+        return queryset.filter(maker=animal).first()
+    if isinstance(animal, Ram):
+        return queryset.filter(ram=animal).first()
+    if isinstance(animal, Sheep):
+        return queryset.filter(sheep=animal).first()
+    if isinstance(animal, Ewe):
+        return queryset.filter(ewes=animal).first()
+    return None
+
+
+def get_group_place(group):
+    father = group.get_father() if group else None
+    return father.place if father else None
+
+
+def build_group_place_warning(animal, target_place=None):
+    group = get_active_group_for_animal(animal)
+    if not group:
+        return None
+
+    group_place = get_group_place(group)
+    if target_place and group_place and target_place.id == group_place.id:
+        return None
+
+    tag_number = animal.tag.tag_number if getattr(animal, "tag", None) else "-"
+    father_tag = group.get_father_tag() or "-"
+    group_place_text = group_place.sheepfold if group_place else "место группы не указано"
+    return (
+        f"{tag_number} находится в группе с бараном-производителем/баранчиком "
+        f"{father_tag} в месте «{group_place_text}». Перемещение нежелательно"
+    )
 
 
 def get_default_child_status():

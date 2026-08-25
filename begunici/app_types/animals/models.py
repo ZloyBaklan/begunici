@@ -140,6 +140,10 @@ class AnimalBase(models.Model):
     def status_history(self):
         return self.tag.status_history.all()
 
+    @property
+    def note_history(self):
+        return self.tag.note_history.all()
+
     # Расчет возраста
     def calculate_age(self):
         if self.birth_date:
@@ -363,6 +367,7 @@ class AnimalBase(models.Model):
         is_new = self.pk is None  # Проверяем, создаётся ли новый объект
         old_place = None
         old_status = None
+        old_note = None
         
         # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
         skip_status_history = kwargs.pop('skip_status_history', False)
@@ -391,6 +396,7 @@ class AnimalBase(models.Model):
                 old_instance = self.__class__.objects.get(pk=self.pk)
                 old_place = old_instance.place
                 old_status = old_instance.animal_status
+                old_note = old_instance.note
             except self.__class__.DoesNotExist:
                 pass  # old_place и old_status останутся None
 
@@ -401,6 +407,15 @@ class AnimalBase(models.Model):
         if not is_new and self.animal_status and old_status != self.animal_status and not skip_status_history:
             StatusHistory.objects.create(
                 tag=self.tag, old_status=old_status, new_status=self.animal_status
+            )
+
+        old_note_normalized = (old_note or "").strip()
+        new_note_normalized = (self.note or "").strip()
+        if not is_new and self.tag and old_note_normalized != new_note_normalized:
+            AnimalNoteHistory.objects.create(
+                tag=self.tag,
+                old_note=old_note or "",
+                new_note=self.note or "",
             )
 
 
@@ -466,6 +481,31 @@ class ArchiveAct(models.Model):
 
     def __str__(self):
         return f"Акт {self.act_number or 'без номера'}: {self.tag.tag_number}"
+
+
+class AnimalNoteHistory(models.Model):
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="note_history",
+        verbose_name="Бирка",
+        db_index=True,
+    )
+    old_note = models.TextField(verbose_name="Было", blank=True, default="")
+    new_note = models.TextField(verbose_name="Стало", blank=True, default="")
+    change_date = models.DateTimeField(
+        verbose_name="Дата изменения",
+        default=timezone.now,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ["-change_date", "-id"]
+        verbose_name = "История примечания"
+        verbose_name_plural = "История примечаний"
+
+    def __str__(self):
+        return f"{self.tag.tag_number}: примечание изменено {self.change_date}"
 
 
 class Maker(AnimalBase):

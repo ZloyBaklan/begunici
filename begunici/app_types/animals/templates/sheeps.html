@@ -83,27 +83,55 @@
                         </div>
                         <div class="col-md-6">
                             <div class="input-group">
-                                <input type="text" id="sheep-search" class="form-control" placeholder="Поиск овцематок...">
+                                <input type="text" id="sheep-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performSheepSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleSheepAdditionalFilters()">Доп. фильтры</button>
                             </div>
                             <div id="sheep-advanced-filters" class="mt-2" style="display: none;">
-                                <div class="row g-2">
-                                    <div class="col-md-3">
-                                        <label for="sheep-birth-date-from" class="form-label small mb-1">Рождение с</label>
-                                        <input type="date" id="sheep-birth-date-from" class="form-control form-control-sm">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label for="sheep-birth-date-from" class="form-label small mb-1">Рождение с</label>
+                                                <input type="date" id="sheep-birth-date-from" class="form-control form-control-sm">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="sheep-birth-date-to" class="form-label small mb-1">Рождение по</label>
+                                                <input type="date" id="sheep-birth-date-to" class="form-control form-control-sm">
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 mt-1">
+                                            <div class="col-6">
+                                                <label for="sheep-date-otbivka-from-filter" class="form-label small mb-1">Отбивка с</label>
+                                                <input type="date" id="sheep-date-otbivka-from-filter" class="form-control form-control-sm">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="sheep-date-otbivka-to-filter" class="form-label small mb-1">Отбивка по</label>
+                                                <input type="date" id="sheep-date-otbivka-to-filter" class="form-control form-control-sm">
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="col-md-3">
-                                        <label for="sheep-birth-date-to" class="form-label small mb-1">Рождение по</label>
-                                        <input type="date" id="sheep-birth-date-to" class="form-control form-control-sm">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label for="sheep-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
-                                        <input type="number" id="sheep-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label for="sheep-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
-                                        <input type="number" id="sheep-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                    <div class="col-md-6">
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label for="sheep-age-min-filter" class="form-label small mb-1">Возраст от, мес.</label>
+                                                <input type="number" id="sheep-age-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="sheep-age-max-filter" class="form-label small mb-1">Возраст до, мес.</label>
+                                                <input type="number" id="sheep-age-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 mt-1">
+                                            <div class="col-6">
+                                                <label for="sheep-weight-min-filter" class="form-label small mb-1">Вес от, кг</label>
+                                                <input type="number" id="sheep-weight-min-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                            <div class="col-6">
+                                                <label for="sheep-weight-max-filter" class="form-label small mb-1">Вес до, кг</label>
+                                                <input type="number" id="sheep-weight-max-filter" class="form-control form-control-sm" min="0" step="0.1">
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="row g-2 mt-1">
@@ -114,6 +142,15 @@
                                     <div class="col-md-6">
                                         <label for="sheep-mother-tag-filter" class="form-label small mb-1">Бирка матери</label>
                                         <input type="text" id="sheep-mother-tag-filter" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-1 align-items-end">
+                                    <div class="col-md-3" id="sheep-has-rshn-tag-filter-slot"></div>
+                                    <div class="col-md-3">
+                                        <div class="form-check mb-1">
+                                            <input type="checkbox" id="sheep-is-reject-filter" class="form-check-input">
+                                            <label for="sheep-is-reject-filter" class="form-check-label small">Назначение: Брак</label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -139,6 +176,9 @@
                                     <th width="9%">Дата рождения</th>
                                     <th width="9%">Статус</th>
                                     <th width="6%">Назначение</th>
+                                    <th width="12%">Первичное взвешивание</th>
+                                    <th width="12%">Вторичное взвешивание</th>
+                                    <th width="12%">Заключительное взвешивание</th>
                                     <th width="12%">Овчарня</th>
                                     <th width="13%">Последнее взвешивание</th>
                                     <th width="14%">Последнее осеменение</th>
@@ -221,52 +261,6 @@
                             </label>
                         </div>
                         <input type="number" id="filter-limit" class="form-control mt-2" placeholder="Количество" min="1" disabled>
-                    </div>
-                    
-                    <!-- Фильтр по весу -->
-                    <div class="mb-3" id="filter-weight-section">
-                        <div class="form-check">
-                            <input type="checkbox" id="filter-weight-enabled" class="form-check-input export-checkbox">
-                            <label class="form-check-label" for="filter-weight-enabled">
-                                Фильтр по весу (кг)
-                            </label>
-                        </div>
-                        <div class="row mt-2">
-                            <div class="col-6">
-                                <input type="number" id="filter-weight-min" class="form-control" placeholder="От" step="0.1" disabled>
-                            </div>
-                            <div class="col-6">
-                                <input type="number" id="filter-weight-max" class="form-control" placeholder="До" step="0.1" disabled>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Фильтр по возрасту -->
-                    <div class="mb-3" id="filter-age-section">
-                        <div class="form-check">
-                            <input type="checkbox" id="filter-age-enabled" class="form-check-input export-checkbox">
-                            <label class="form-check-label" for="filter-age-enabled">
-                                Фильтр по возрасту (месяцы)
-                            </label>
-                        </div>
-                        <div class="row mt-2">
-                            <div class="col-6">
-                                <input type="number" id="filter-age-min" class="form-control" placeholder="От" step="0.1" disabled>
-                            </div>
-                            <div class="col-6">
-                                <input type="number" id="filter-age-max" class="form-control" placeholder="До" step="0.1" disabled>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Включить детали -->
-                    <div class="mb-3" id="include-details-section">
-                        <div class="form-check">
-                            <input type="checkbox" id="include-details" class="form-check-input export-checkbox">
-                            <label class="form-check-label" for="include-details">
-                                Включить родителей, детей и историю (вес, ветобработки)
-                            </label>
-                        </div>
                     </div>
                 </div>
             </div>

@@ -77,11 +77,16 @@ function getMakerFiltersFromInputs() {
         search: document.getElementById('maker-search')?.value || '',
         birth_date_from: document.getElementById('maker-birth-date-from')?.value || '',
         birth_date_to: document.getElementById('maker-birth-date-to')?.value || '',
+        date_otbivka_from: document.getElementById('maker-date-otbivka-from-filter')?.value || '',
+        date_otbivka_to: document.getElementById('maker-date-otbivka-to-filter')?.value || '',
         age_min: document.getElementById('maker-age-min-filter')?.value || '',
         age_max: document.getElementById('maker-age-max-filter')?.value || '',
+        weight_min: document.getElementById('maker-weight-min-filter')?.value || '',
+        weight_max: document.getElementById('maker-weight-max-filter')?.value || '',
         father_tag: document.getElementById('maker-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('maker-mother-tag-filter')?.value || '',
-        has_rshn_tag: getCheckboxFilterValue('maker-has-rshn-tag-filter')
+        has_rshn_tag: getCheckboxFilterValue('maker-has-rshn-tag-filter'),
+        is_reject: getCheckboxFilterValue('maker-is-reject-filter')
     };
 }
 
@@ -93,11 +98,16 @@ function initializeMakerFiltersFromUrl() {
         search: urlParams.get('search') || '',
         birth_date_from: urlParams.get('birth_date_from') || '',
         birth_date_to: urlParams.get('birth_date_to') || '',
+        date_otbivka_from: urlParams.get('date_otbivka_from') || '',
+        date_otbivka_to: urlParams.get('date_otbivka_to') || '',
         age_min: urlParams.get('age_min') || '',
         age_max: urlParams.get('age_max') || '',
+        weight_min: urlParams.get('weight_min') || '',
+        weight_max: urlParams.get('weight_max') || '',
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || '',
-        has_rshn_tag: urlParams.get('has_rshn_tag') || ''
+        has_rshn_tag: urlParams.get('has_rshn_tag') || '',
+        is_reject: urlParams.get('is_reject') || ''
     };
 
     const searchInput = document.getElementById('maker-search');
@@ -106,17 +116,26 @@ function initializeMakerFiltersFromUrl() {
     if (birthDateFromInput) birthDateFromInput.value = filters.birth_date_from;
     const birthDateToInput = document.getElementById('maker-birth-date-to');
     if (birthDateToInput) birthDateToInput.value = filters.birth_date_to;
+    const dateOtbivkaFromInput = document.getElementById('maker-date-otbivka-from-filter');
+    if (dateOtbivkaFromInput) dateOtbivkaFromInput.value = filters.date_otbivka_from;
+    const dateOtbivkaToInput = document.getElementById('maker-date-otbivka-to-filter');
+    if (dateOtbivkaToInput) dateOtbivkaToInput.value = filters.date_otbivka_to;
     const ageMinInput = document.getElementById('maker-age-min-filter');
     if (ageMinInput) ageMinInput.value = filters.age_min;
     const ageMaxInput = document.getElementById('maker-age-max-filter');
     if (ageMaxInput) ageMaxInput.value = filters.age_max;
+    const weightMinInput = document.getElementById('maker-weight-min-filter');
+    if (weightMinInput) weightMinInput.value = filters.weight_min;
+    const weightMaxInput = document.getElementById('maker-weight-max-filter');
+    if (weightMaxInput) weightMaxInput.value = filters.weight_max;
     const fatherTagInput = document.getElementById('maker-father-tag-filter');
     if (fatherTagInput) fatherTagInput.value = filters.father_tag;
     const motherTagInput = document.getElementById('maker-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
     setCheckboxFilterValue('maker-has-rshn-tag-filter', filters.has_rshn_tag);
+    setCheckboxFilterValue('maker-is-reject-filter', filters.is_reject);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject) {
         const filtersBlock = document.getElementById('maker-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -262,7 +281,7 @@ async function fetchMakers(page = 1, filters = {}) {
         
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'age_min', 'age_max', 'father_tag', 'mother_tag', 'has_rshn_tag'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -299,11 +318,23 @@ async function fetchMakers(page = 1, filters = {}) {
         if (currentFilters.birth_date_to) {
             params.append('birth_date_to', currentFilters.birth_date_to);
         }
+        if (currentFilters.date_otbivka_from) {
+            params.append('date_otbivka_from', currentFilters.date_otbivka_from);
+        }
+        if (currentFilters.date_otbivka_to) {
+            params.append('date_otbivka_to', currentFilters.date_otbivka_to);
+        }
         if (currentFilters.age_min) {
             params.append('age_min', currentFilters.age_min);
         }
         if (currentFilters.age_max) {
             params.append('age_max', currentFilters.age_max);
+        }
+        if (currentFilters.weight_min) {
+            params.append('weight_min', currentFilters.weight_min);
+        }
+        if (currentFilters.weight_max) {
+            params.append('weight_max', currentFilters.weight_max);
         }
         if (currentFilters.father_tag) {
             params.append('father_tag', currentFilters.father_tag);
@@ -313,6 +344,9 @@ async function fetchMakers(page = 1, filters = {}) {
         }
         if (currentFilters.has_rshn_tag) {
             params.append('has_rshn_tag', currentFilters.has_rshn_tag);
+        }
+        if (currentFilters.is_reject) {
+            params.append('is_reject', currentFilters.is_reject);
         }
         
         currentPage = page;
@@ -351,7 +385,7 @@ function renderMakers(makers, startIndex = null) {
         // Если startIndex не передан, используем стандартную пагинацию
         const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
         
-        const row = `<tr>
+        const row = `<tr class="${maker.is_reject ? 'table-warning' : ''}">
             <td>
                 <input type="checkbox" 
                 class="select-maker"  
@@ -367,6 +401,8 @@ function renderMakers(makers, startIndex = null) {
             <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
             <td>${maker.dorper_display || '-'}</td>
             <td>${maker.is_reject ? 'Брак' : '-'}</td>
+            <td>${maker.primary_weighing_display || '-'}</td>
+            <td>${maker.secondary_weighing_display || '-'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 
                 ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
                 : 'Нет записей'}</td>
@@ -910,7 +946,3 @@ function clearFilters() {
 }
 
 window.clearFilters = clearFilters;
-
-
-
-

@@ -2,6 +2,8 @@ import { apiRequest, getApiErrorMessage, getCSRFToken } from "./utils.js";
 
 let currentBarnStats = null;
 let showEmptySections = false;
+let carpetMoveSelectedAnimalKeys = new Set();
+let carpetMoveSelectedAnimalsData = new Map();
 
 document.addEventListener('DOMContentLoaded', function () {
     loadBarnsSelector();
@@ -20,6 +22,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 displayBarnFromStatistics(currentBarnStats);
             }
         });
+    }
+
+    const carpetMovePlaceSelect = document.getElementById('carpet-move-place');
+    if (carpetMovePlaceSelect) {
+        carpetMovePlaceSelect.addEventListener('change', refreshCarpetMoveWarnings);
+    }
+
+    const carpetMoveSearchInput = document.getElementById('carpet-move-animals-search');
+    if (carpetMoveSearchInput) {
+        carpetMoveSearchInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchCarpetMoveAnimals();
+            }
+        });
+    }
+
+    const carpetMoveSearchButton = document.getElementById('carpet-move-animals-search-button');
+    if (carpetMoveSearchButton) {
+        carpetMoveSearchButton.addEventListener('click', searchCarpetMoveAnimals);
     }
 });
 
@@ -46,6 +68,378 @@ function formatSectionCount(value) {
         return '0';
     }
     return `${numberValue}`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getPlaceSortParts(place) {
+    const text = String(place?.sheepfold || '');
+    const match = text.match(/Овчарня\s+(\d+)\s+Отсек\s+(\d+)/i);
+    if (!match) {
+        return [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, text];
+    }
+    return [Number(match[1]), Number(match[2]), text];
+}
+
+function sortPlacesBySheepfold(places) {
+    return [...places].sort((left, right) => {
+        const leftParts = getPlaceSortParts(left);
+        const rightParts = getPlaceSortParts(right);
+        return (
+            leftParts[0] - rightParts[0]
+            || leftParts[1] - rightParts[1]
+            || leftParts[2].localeCompare(rightParts[2], 'ru')
+        );
+    });
+}
+
+async function populatePlaceSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    select.disabled = true;
+    select.innerHTML = '<option value="">Загрузка мест...</option>';
+
+    try {
+        const places = await loadAllPages('/veterinary/api/place/?page_size=100');
+        select.innerHTML = '<option value="">Выберите место...</option>';
+        sortPlacesBySheepfold(places).forEach(place => {
+            const option = document.createElement('option');
+            option.value = place.id;
+            option.textContent = place.sheepfold;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки мест:', error);
+        select.innerHTML = '<option value="">Не удалось загрузить места</option>';
+    } finally {
+        select.disabled = false;
+    }
+}
+
+function getCarpetMoveAnimalKey(typeCode, tagNumber) {
+    return `${typeCode}:${tagNumber}`;
+}
+
+function getCarpetMoveSelectedAnimalsArray() {
+    return Array.from(carpetMoveSelectedAnimalsData.values()).map(animal => ({
+        animal_type: animal.type_code,
+        tag_number: animal.tag_number,
+    }));
+}
+
+function updateCarpetMoveSelectedDisplay() {
+    const display = document.getElementById('carpet-move-selected-display');
+    if (!display) return;
+
+    const selectedAnimals = Array.from(carpetMoveSelectedAnimalsData.values());
+    if (selectedAnimals.length === 0) {
+        display.textContent = 'Не выбрано';
+        display.className = 'place-map-selection-display text-muted';
+        return;
+    }
+
+    const tags = selectedAnimals.map(animal => animal.tag_number);
+    const visibleTags = tags.slice(0, 20).join(', ');
+    const tail = tags.length > 20 ? `, ... (+${tags.length - 20})` : '';
+    display.textContent = `Выбрано: ${selectedAnimals.length} (${visibleTags}${tail})`;
+    display.className = 'place-map-selection-display text-success';
+}
+
+function renderCarpetMoveResult(data, title, alertClass = null) {
+    const resultBlock = document.getElementById('carpet-move-warning-result');
+    if (!resultBlock) return;
+
+    const warnings = data.warnings || [];
+    const errors = data.errors || [];
+    const hasIssues = warnings.length > 0 || errors.length > 0;
+    const resultClass = alertClass || (hasIssues ? 'alert-warning' : 'alert-success');
+    const issueItems = []
+        .concat(errors.map(error => `<li>${escapeHtml(error)}</li>`))
+        .concat(warnings.map(warning => `<li>${escapeHtml(warning)}</li>`))
+        .join('');
+
+    resultBlock.className = `alert ${resultClass}`;
+    resultBlock.style.display = 'block';
+    resultBlock.innerHTML = `
+        <div class="fw-semibold mb-1">${escapeHtml(title)}</div>
+        ${data.movable_count !== undefined ? `<div>К перемещению: ${data.movable_count || 0}</div>` : ''}
+        ${data.moved_count !== undefined ? `<div>Перемещено: ${data.moved_count || 0}</div>` : ''}
+        ${issueItems ? `<hr><ul class="mb-0">${issueItems}</ul>` : ''}
+    `;
+}
+
+function setCarpetMoveSubmitEnabled(enabled) {
+    const submitButton = document.getElementById('carpet-move-submit');
+    if (submitButton) {
+        submitButton.disabled = !enabled;
+    }
+}
+
+async function refreshCarpetMoveWarnings() {
+    const placeId = document.getElementById('carpet-move-place')?.value;
+    const selectedAnimals = getCarpetMoveSelectedAnimalsArray();
+    const resultBlock = document.getElementById('carpet-move-warning-result');
+
+    setCarpetMoveSubmitEnabled(false);
+
+    if (!selectedAnimals.length || !placeId) {
+        if (resultBlock) {
+            resultBlock.style.display = 'none';
+            resultBlock.innerHTML = '';
+        }
+        return;
+    }
+
+    renderCarpetMoveResult({ movable_count: selectedAnimals.length }, 'Проверяем предупреждения...', 'alert-info');
+
+    try {
+        const data = await requestBulkPlaceMove(selectedAnimals, placeId, false, true);
+        const movableCount = data.movable_count || 0;
+        const warnings = data.warnings || [];
+        const title = warnings.length
+            ? 'Есть предупреждения. Перемещение всё равно можно выполнить.'
+            : 'Предупреждений нет';
+        renderCarpetMoveResult(data, title);
+        setCarpetMoveSubmitEnabled(movableCount > 0);
+    } catch (error) {
+        renderCarpetMoveResult(
+            { errors: [error.message || 'Не удалось проверить перемещение'] },
+            'Ошибка проверки',
+            'alert-warning'
+        );
+    }
+}
+
+async function toggleCarpetPlaceMoveCard() {
+    const card = document.getElementById('carpet-place-move-card');
+    const toggleButton = document.getElementById('carpet-place-move-toggle');
+    if (!card) return;
+
+    const shouldShow = card.style.display === 'none' || !card.style.display;
+    card.style.display = shouldShow ? 'block' : 'none';
+    if (toggleButton) {
+        toggleButton.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+    }
+
+    if (shouldShow) {
+        await populatePlaceSelect('carpet-move-place');
+        updateCarpetMoveSelectedDisplay();
+        await refreshCarpetMoveWarnings();
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function openCarpetMoveAnimalsModal() {
+    const modal = document.getElementById('carpet-move-animals-modal');
+    const searchInput = document.getElementById('carpet-move-animals-search');
+    const list = document.getElementById('carpet-move-animals-list');
+
+    if (searchInput) searchInput.value = '';
+    if (list) {
+        list.innerHTML = `
+            <div class="text-muted text-center py-3">
+                Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
+            </div>
+        `;
+    }
+    if (modal) modal.style.display = 'block';
+}
+
+function closeCarpetMoveAnimalsModal() {
+    const modal = document.getElementById('carpet-move-animals-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function createCarpetMoveAnimalItem(animal) {
+    const key = getCarpetMoveAnimalKey(animal.type_code, animal.tag_number);
+    const item = document.createElement('div');
+    item.className = 'form-check mb-2';
+
+    const rshnText = animal.rshn_tag ? `; РСХН: ${escapeHtml(animal.rshn_tag)}` : '';
+    item.innerHTML = `
+        <input
+            class="form-check-input carpet-move-animal-checkbox"
+            type="checkbox"
+            value="${escapeHtml(key)}"
+            data-type="${escapeHtml(animal.type_code)}"
+            data-tag="${escapeHtml(animal.tag_number)}"
+            data-label="${escapeHtml(animal.animal_type)}"
+            data-status="${escapeHtml(animal.status || '')}"
+            data-rshn="${escapeHtml(animal.rshn_tag || '')}"
+        >
+        <label class="form-check-label">
+            ${escapeHtml(animal.tag_number)} (${escapeHtml(animal.animal_type)}) - ${escapeHtml(animal.status || '-')}${rshnText}
+        </label>
+    `;
+
+    return item;
+}
+
+function saveCarpetMoveAnimalSelectionFromModal() {
+    const checkboxes = document.querySelectorAll('.carpet-move-animal-checkbox');
+    checkboxes.forEach(checkbox => {
+        const key = checkbox.value;
+        if (checkbox.checked) {
+            carpetMoveSelectedAnimalKeys.add(key);
+            carpetMoveSelectedAnimalsData.set(key, {
+                type_code: checkbox.dataset.type,
+                tag_number: checkbox.dataset.tag,
+                animal_type: checkbox.dataset.label,
+                status: checkbox.dataset.status,
+                rshn_tag: checkbox.dataset.rshn,
+            });
+        } else {
+            carpetMoveSelectedAnimalKeys.delete(key);
+            carpetMoveSelectedAnimalsData.delete(key);
+        }
+    });
+}
+
+function restoreCarpetMoveAnimalSelectionInModal() {
+    const checkboxes = document.querySelectorAll('.carpet-move-animal-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = carpetMoveSelectedAnimalKeys.has(checkbox.value);
+    });
+}
+
+async function searchCarpetMoveAnimals() {
+    const searchInput = document.getElementById('carpet-move-animals-search');
+    const list = document.getElementById('carpet-move-animals-list');
+    const search = (searchInput?.value || '').trim();
+
+    if (!list) return;
+
+    if (!search) {
+        list.innerHTML = `
+            <div class="text-muted text-center py-3">
+                Введите бирку или РСХН для поиска
+            </div>
+        `;
+        return;
+    }
+
+    saveCarpetMoveAnimalSelectionFromModal();
+    list.innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Поиск...</span>
+            </div>
+            <div class="mt-2">Поиск животных...</div>
+        </div>
+    `;
+
+    try {
+        const animals = await apiRequest(
+            `/animals/api/animals-without-otbivka/?include_with_otbivka=1&search=${encodeURIComponent(search)}`
+        );
+        const limitedAnimals = (animals || []).slice(0, 100);
+        list.innerHTML = '';
+
+        if (limitedAnimals.length === 0) {
+            list.innerHTML = '<div class="text-center text-muted">Животные не найдены</div>';
+            return;
+        }
+
+        const groups = [
+            ['maker', 'Бараны-производители'],
+            ['ram', 'Баранчики'],
+            ['ewe', 'Ярки'],
+            ['sheep', 'Овцематки'],
+        ];
+
+        groups.forEach(([typeCode, title]) => {
+            const groupAnimals = limitedAnimals.filter(animal => animal.type_code === typeCode);
+            if (!groupAnimals.length) return;
+
+            const header = document.createElement('h6');
+            header.textContent = title;
+            header.className = 'mt-3 mb-2 text-primary';
+            list.appendChild(header);
+
+            groupAnimals.forEach(animal => {
+                list.appendChild(createCarpetMoveAnimalItem(animal));
+            });
+        });
+
+        if ((animals || []).length > 100) {
+            const info = document.createElement('div');
+            info.className = 'text-muted text-center mt-2 small';
+            info.textContent = `Показано первых 100 из ${animals.length} результатов`;
+            list.appendChild(info);
+        }
+
+        restoreCarpetMoveAnimalSelectionInModal();
+    } catch (error) {
+        console.error('Ошибка поиска животных для коврового перемещения:', error);
+        list.innerHTML = '<div class="text-danger text-center py-3">Ошибка поиска</div>';
+    }
+}
+
+async function confirmCarpetMoveAnimalsSelection() {
+    saveCarpetMoveAnimalSelectionFromModal();
+    updateCarpetMoveSelectedDisplay();
+    closeCarpetMoveAnimalsModal();
+    await refreshCarpetMoveWarnings();
+}
+
+async function clearCarpetMoveSelection() {
+    carpetMoveSelectedAnimalKeys.clear();
+    carpetMoveSelectedAnimalsData.clear();
+    updateCarpetMoveSelectedDisplay();
+    await refreshCarpetMoveWarnings();
+}
+
+async function refreshVisibleBarnMap() {
+    const titleElement = document.getElementById('selected-barn-title');
+    const match = titleElement?.textContent?.match(/Овчарня (\d+)/);
+    if (match) {
+        await loadSpecificBarn(parseInt(match[1]));
+    } else {
+        await loadBarnsSelector();
+    }
+}
+
+async function executeCarpetPlaceMove() {
+    const placeId = document.getElementById('carpet-move-place')?.value;
+    const selectedAnimals = getCarpetMoveSelectedAnimalsArray();
+
+    if (!selectedAnimals.length) {
+        alert('Выберите животных для перемещения');
+        return;
+    }
+    if (!placeId) {
+        alert('Выберите овчарню и отсек');
+        return;
+    }
+
+    if (!confirm(`Переместить выбранных животных: ${selectedAnimals.length}?`)) {
+        return;
+    }
+
+    setCarpetMoveSubmitEnabled(false);
+    try {
+        const data = await requestBulkPlaceMove(selectedAnimals, placeId, true, false);
+        renderCarpetMoveResult(data, `Перемещение завершено. Перемещено: ${data.moved_count || 0}`);
+        carpetMoveSelectedAnimalKeys.clear();
+        carpetMoveSelectedAnimalsData.clear();
+        updateCarpetMoveSelectedDisplay();
+        await refreshVisibleBarnMap();
+    } catch (error) {
+        renderCarpetMoveResult(
+            { errors: [error.message || 'Не удалось выполнить перемещение'] },
+            'Ошибка перемещения',
+            'alert-warning'
+        );
+        setCarpetMoveSubmitEnabled(true);
+    }
 }
 
 function renderMonthStatsBlock(title, monthStats) {
@@ -426,7 +820,8 @@ async function loadAndShowAnimalsModal(animalType, placeId, sectionName) {
         const formattedAnimals = filteredAnimals.map(animal => ({
             id: animal.tag_number, // Используем номер бирки как ID
             tag: { tag_number: animal.tag_number },
-            display_name: animal.display_name || animal.tag_number // Добавляем display_name
+            display_name: animal.display_name || animal.tag_number, // Добавляем display_name
+            rshn_tag: animal.rshn_tag || ''
         }));
         
         // Показываем модальное окно
@@ -647,8 +1042,10 @@ function showAnimalsModal(animalType, animals, sectionName, placeId) {
         
         const tagNumber = animal.tag ? animal.tag.tag_number : 'Нет бирки';
         const displayName = animal.display_name || tagNumber;
+        const rshnTag = animal.rshn_tag || '';
         animalDiv.dataset.tagNumber = String(tagNumber).toLocaleLowerCase('ru-RU');
         animalDiv.dataset.displayName = String(displayName).toLocaleLowerCase('ru-RU');
+        animalDiv.dataset.rshnTag = String(rshnTag).toLocaleLowerCase('ru-RU');
         
         // Создаем чекбокс для каждого животного
         const checkbox = document.createElement('input');
@@ -706,8 +1103,9 @@ function filterAnimalsModalList() {
     animalItems.forEach(item => {
         const tagNumber = item.dataset.tagNumber || '';
         const displayName = item.dataset.displayName || '';
+        const rshnTag = item.dataset.rshnTag || '';
         const isVisible = searchTerms.length === 0 || searchTerms.some(term => (
-            tagNumber.includes(term) || displayName.includes(term)
+            tagNumber.includes(term) || displayName.includes(term) || rshnTag.includes(term)
         ));
 
         item.style.display = isVisible ? '' : 'none';
@@ -838,27 +1236,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Показать диалог выбора места для перемещения
 async function showMoveAnimalsDialog() {
     try {
-        // Загружаем список доступных мест с page_size=100 для получения всех мест
-        const response = await apiRequest('/veterinary/api/place/?page_size=100');
-        const select = document.getElementById('destination-place');
-        
-        // Обрабатываем пагинированный ответ
-        const places = response.results || response;
-        
-        if (!Array.isArray(places)) {
-            console.error('Ожидался массив мест, получено:', places);
-            alert('Ошибка: неверный формат данных мест');
-            return;
-        }
-        
-        // Очищаем и заполняем список мест
-        select.innerHTML = '<option value="">Выберите место...</option>';
-        places.forEach(place => {
-            const option = document.createElement('option');
-            option.value = place.id;
-            option.textContent = place.sheepfold;
-            select.appendChild(option);
-        });
+        await populatePlaceSelect('destination-place');
 
         const downloadActCheckbox = document.getElementById('download-transfer-act');
         if (downloadActCheckbox) {
@@ -920,6 +1298,123 @@ async function downloadManualTransferAct(animals, oldPlaceId, newPlaceId) {
     window.URL.revokeObjectURL(url);
 }
 
+async function requestBulkPlaceMove(animals, destinationPlaceId, confirmGroupPlaceMove = false, previewOnly = false) {
+    return apiRequest('/animals/api/bulk-place-move/', 'POST', {
+        animals,
+        place_id: parseInt(destinationPlaceId),
+        confirm_group_place_move: confirmGroupPlaceMove,
+        preview_only: previewOnly,
+    });
+}
+
+async function uploadPlaceImport(action) {
+    const fileInput = document.getElementById('place-import-file');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        throw new Error('Выберите файл импорта');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`/animals/api/import/place/${action}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        const error = new Error(getApiErrorMessage(data));
+        error.data = data;
+        error.status = response.status;
+        throw error;
+    }
+    return data;
+}
+
+function renderPlaceImportResult(data, title) {
+    const resultBlock = document.getElementById('place-import-result');
+    if (!resultBlock) return;
+
+    const errors = data.errors || [];
+    const warnings = data.warnings || [];
+    const hasIssues = errors.length > 0 || warnings.length > 0;
+    const issueItems = []
+        .concat(errors.map(error => `<li>${escapeHtml(error)}</li>`))
+        .concat(warnings.map(warning => `<li>${escapeHtml(warning)}</li>`))
+        .join('');
+
+    resultBlock.className = `alert ${hasIssues ? 'alert-warning' : 'alert-success'}`;
+    resultBlock.style.display = 'block';
+    resultBlock.innerHTML = `
+        <div class="fw-semibold mb-1">${escapeHtml(title)}</div>
+        <div>Готово к перемещению: ${data.valid_count || 0}</div>
+        ${data.moved_count !== undefined ? `<div>Перемещено: ${data.moved_count || 0}</div>` : ''}
+        ${issueItems ? `<hr><div class="fw-semibold mb-1">Проверка файла:</div><ul class="mb-0">${issueItems}</ul>` : ''}
+    `;
+}
+
+function openPlaceImportModal() {
+    const modal = document.getElementById('place-import-modal');
+    const fileInput = document.getElementById('place-import-file');
+    const resultBlock = document.getElementById('place-import-result');
+    const confirmBtn = document.getElementById('place-import-confirm-btn');
+
+    if (fileInput) fileInput.value = '';
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (resultBlock) {
+        resultBlock.style.display = 'none';
+        resultBlock.innerHTML = '';
+    }
+    if (modal) modal.style.display = 'block';
+}
+
+function closePlaceImportModal() {
+    const modal = document.getElementById('place-import-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function previewPlaceImport() {
+    const confirmBtn = document.getElementById('place-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadPlaceImport('preview');
+        renderPlaceImportResult(data, 'Файл перемещений прочитан');
+        if (confirmBtn) confirmBtn.disabled = !data.can_confirm;
+    } catch (error) {
+        renderPlaceImportResult({ valid_count: 0, errors: [error.message] }, 'Ошибка чтения файла');
+    }
+}
+
+async function confirmPlaceImport() {
+    if (!confirm('Подтвердить импорт перемещений? Строки с ошибками будут пропущены, предупреждения не мешают перемещению.')) {
+        return;
+    }
+
+    const confirmBtn = document.getElementById('place-import-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const data = await uploadPlaceImport('confirm');
+        renderPlaceImportResult(data, `Импорт завершен. Перемещено: ${data.moved_count || 0}`);
+
+        const titleElement = document.getElementById('selected-barn-title');
+        const match = titleElement?.textContent?.match(/Овчарня (\d+)/);
+        if (match) {
+            await loadSpecificBarn(parseInt(match[1]));
+        } else {
+            await loadBarnsSelector();
+        }
+    } catch (error) {
+        renderPlaceImportResult({ valid_count: 0, errors: [error.message] }, 'Ошибка импорта');
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
 // Перемещение выбранных животных
 async function moveSelectedAnimals() {
     const selectedCheckboxes = document.querySelectorAll('.animal-checkbox:checked');
@@ -944,27 +1439,38 @@ async function moveSelectedAnimals() {
         new Set(Array.from(selectedCheckboxes).map((checkbox) => checkbox.dataset.oldPlaceId).filter(Boolean))
     );
 
+    if (oldPlaceIds.length === 1 && String(oldPlaceIds[0]) === String(destinationPlaceId)) {
+        alert('Выбранные животные уже находятся в этом отсеке');
+        return;
+    }
+
     if (shouldDownloadTransferAct && oldPlaceIds.length !== 1) {
         alert('Не удалось определить исходный отсек для акта перемещения.');
         return;
     }
 
-    
     try {
-        // Перемещаем каждое животное
-        const movePromises = Array.from(selectedCheckboxes).map(async (checkbox) => {
-            const animalType = checkbox.dataset.animalType;
-            const tagNumber = checkbox.dataset.tagNumber;
-            
-            return apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', {
-                place_id: parseInt(destinationPlaceId)
-            });
-        });
-        
-        // Ждем завершения всех операций
-        await Promise.all(movePromises);
+        let moveResult;
+        try {
+            moveResult = await requestBulkPlaceMove(selectedAnimalsForAct, destinationPlaceId, false);
+        } catch (error) {
+            if (error?.data?.requires_confirmation) {
+                const warnings = error.data.warnings || [];
+                const warningText = warnings.length
+                    ? warnings.map((warning, index) => `${index + 1}. ${warning}`).join('\n')
+                    : error.message;
+                if (!confirm(`${warningText}\n\nПродолжить перемещение этих животных?`)) {
+                    return;
+                }
+                moveResult = await requestBulkPlaceMove(selectedAnimalsForAct, destinationPlaceId, true);
+            } else {
+                throw error;
+            }
+        }
 
-        if (shouldDownloadTransferAct) {
+        const movedCount = moveResult?.moved_count || 0;
+
+        if (shouldDownloadTransferAct && movedCount > 0) {
             try {
                 await downloadManualTransferAct(selectedAnimalsForAct, oldPlaceIds[0], destinationPlaceId);
             } catch (downloadError) {
@@ -973,7 +1479,10 @@ async function moveSelectedAnimals() {
             }
         }
         
-        alert('Животные успешно перемещены!');
+        const warningText = (moveResult?.warnings || []).length
+            ? `\n\nПредупреждения:\n${moveResult.warnings.join('\n')}`
+            : '';
+        alert(`Животные успешно перемещены: ${movedCount}${warningText}`);
         
         // Закрываем модальные окна
         closeMoveModal();
@@ -1007,5 +1516,15 @@ window.closeAnimalsModal = closeAnimalsModal;
 window.closeMoveModal = closeMoveModal;
 window.toggleHousingStandardsCard = toggleHousingStandardsCard;
 window.closeHousingStandardsCard = closeHousingStandardsCard;
+window.toggleCarpetPlaceMoveCard = toggleCarpetPlaceMoveCard;
+window.openCarpetMoveAnimalsModal = openCarpetMoveAnimalsModal;
+window.closeCarpetMoveAnimalsModal = closeCarpetMoveAnimalsModal;
+window.confirmCarpetMoveAnimalsSelection = confirmCarpetMoveAnimalsSelection;
+window.clearCarpetMoveSelection = clearCarpetMoveSelection;
+window.executeCarpetPlaceMove = executeCarpetPlaceMove;
+window.openPlaceImportModal = openPlaceImportModal;
+window.closePlaceImportModal = closePlaceImportModal;
+window.previewPlaceImport = previewPlaceImport;
+window.confirmPlaceImport = confirmPlaceImport;
 window.showMoveAnimalsDialog = showMoveAnimalsDialog;
 window.moveSelectedAnimals = moveSelectedAnimals;

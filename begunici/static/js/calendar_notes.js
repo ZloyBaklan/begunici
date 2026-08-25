@@ -747,7 +747,7 @@ function showTagModal() {
     document.getElementById('tagSearch').value = '';
     document.getElementById('tagsList').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите номер бирки и нажмите "Поиск" для отображения результатов
+            Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
         </div>
     `;
     
@@ -780,7 +780,7 @@ async function filterTags() {
     if (!search) {
         document.getElementById('tagsList').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите номер бирки для поиска
+                Введите бирку или РСХН для поиска
             </div>
         `;
         return;

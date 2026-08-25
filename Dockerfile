@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     python3-dev \
     libpq-dev \
+    libudev-dev \
+    libusb-1.0-0-dev \
     locales \
     && rm -rf /var/lib/apt/lists/*
 

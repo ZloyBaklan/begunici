@@ -105,12 +105,15 @@ function getYoungStockFiltersFromInputs() {
         search: document.getElementById("young-stock-search")?.value || "",
         birth_date_from: document.getElementById("young-stock-birth-date-from")?.value || "",
         birth_date_to: document.getElementById("young-stock-birth-date-to")?.value || "",
+        date_otbivka_from: document.getElementById("young-stock-date-otbivka-from-filter")?.value || "",
+        date_otbivka_to: document.getElementById("young-stock-date-otbivka-to-filter")?.value || "",
         age_min: document.getElementById("young-stock-age-min-filter")?.value || "",
         age_max: document.getElementById("young-stock-age-max-filter")?.value || "",
         father_tag: document.getElementById("young-stock-father-tag-filter")?.value || "",
         mother_tag: document.getElementById("young-stock-mother-tag-filter")?.value || "",
         animal_type: document.getElementById("young-stock-animal-type-filter")?.value || "",
         has_rshn_tag: getCheckboxFilterValue("young-stock-has-rshn-tag-filter"),
+        is_reject: getCheckboxFilterValue("young-stock-is-reject-filter"),
     };
 }
 
@@ -122,18 +125,23 @@ function initializeYoungStockFiltersFromUrl() {
         search: urlParams.get("search") || "",
         birth_date_from: urlParams.get("birth_date_from") || "",
         birth_date_to: urlParams.get("birth_date_to") || "",
+        date_otbivka_from: urlParams.get("date_otbivka_from") || "",
+        date_otbivka_to: urlParams.get("date_otbivka_to") || "",
         age_min: urlParams.get("age_min") || "",
         age_max: urlParams.get("age_max") || "",
         father_tag: urlParams.get("father_tag") || "",
         mother_tag: urlParams.get("mother_tag") || "",
         animal_type: urlParams.get("animal_type") || "",
         has_rshn_tag: urlParams.get("has_rshn_tag") || "",
+        is_reject: urlParams.get("is_reject") || "",
     };
 
     const inputs = {
         search: "young-stock-search",
         birth_date_from: "young-stock-birth-date-from",
         birth_date_to: "young-stock-birth-date-to",
+        date_otbivka_from: "young-stock-date-otbivka-from-filter",
+        date_otbivka_to: "young-stock-date-otbivka-to-filter",
         age_min: "young-stock-age-min-filter",
         age_max: "young-stock-age-max-filter",
         father_tag: "young-stock-father-tag-filter",
@@ -147,8 +155,9 @@ function initializeYoungStockFiltersFromUrl() {
     });
 
     setCheckboxFilterValue("young-stock-has-rshn-tag-filter", filters.has_rshn_tag);
+    setCheckboxFilterValue("young-stock-is-reject-filter", filters.is_reject);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject) {
         const filtersBlock = document.getElementById("young-stock-advanced-filters");
         if (filtersBlock) filtersBlock.style.display = "block";
     }
@@ -166,7 +175,7 @@ async function fetchYoungStock(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...(filters || {}) };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject"];
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
             currentFilters[key] = value;
@@ -210,7 +219,7 @@ function renderYoungStock(animals) {
         const selectionKey = getSelectionKey(animal.animal_type, tagNumber);
 
         return `
-            <tr>
+            <tr class="${animal.is_reject ? "table-warning" : ""}">
                 <td>
                     <input type="checkbox"
                            class="select-young-stock"

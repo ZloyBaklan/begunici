@@ -578,7 +578,7 @@ function showSelectAnimalsForVaccinationModal() {
     }
     document.getElementById('animals-vaccination-list').innerHTML = `
         <div class="text-muted text-center py-3">
-            Введите бирку или выберите овчарню и нажмите "Поиск"
+            Введите бирку, РСХН или выберите овчарню и нажмите "Поиск"
         </div>
     `;
     
@@ -594,7 +594,7 @@ async function searchAnimalsForVaccination() {
     if (!search && !placeId) {
         document.getElementById('animals-vaccination-list').innerHTML = `
             <div class="text-muted text-center py-3">
-                Введите бирку или выберите овчарню
+                Введите бирку, РСХН или выберите овчарню
             </div>
         `;
         return;

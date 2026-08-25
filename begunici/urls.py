@@ -22,6 +22,11 @@ from django.views.generic import RedirectView
 from .views import index, internal_login  # Импортируем view для главной страницы
 from begunici.app_types.veterinary.vet_views import places_map  # Импортируем view для карты овчарен
 from begunici.app_types.animals.views_admin import admin_panel, admin_logs_api  # Импортируем admin views
+from begunici.app_types.animals.views_scanner import (
+    scanner_export_excel,
+    scanner_page,
+    scanner_read_api,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора Django
@@ -34,6 +39,9 @@ urlpatterns = [
     # Панель администратора для логов
     path("admin-panel/", admin_panel, name="admin_panel"),  # Панель администратора
     path("admin-panel/logs/api/", admin_logs_api, name="admin_logs_api"),  # API для логов
+    path("scanner/", scanner_page, name="scanner"),  # Страница сканера
+    path("scanner/read/api/", scanner_read_api, name="scanner_read_api"),  # Чтение данных сканера
+    path("scanner/export/", scanner_export_excel, name="scanner_export_excel"),  # Экспорт данных сканера
     path(
         "site/",
         include(("begunici.app_types.public_site.urls", "public_site"), namespace="public_site"),

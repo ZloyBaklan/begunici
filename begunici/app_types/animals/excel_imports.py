@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 from openpyxl import load_workbook
@@ -28,6 +29,7 @@ from begunici.app_types.veterinary.vet_serializers import (
 from .models import Ewe, Lambing, LambingGroup, Maker, Ram, Sheep
 from .models_user_log import UserActionLog
 from .status_logic import (
+    build_group_place_warning,
     get_group_statuses,
     set_animal_status,
     set_mothers_not_inseminated_after_child_update,
@@ -38,12 +40,14 @@ IMPORT_TEMPLATE_FILENAMES = {
     "vet": "import_vet.xlsx",
     "otbivka": "import_otbivka.xlsx",
     "group": "import_group.xlsx",
+    "place": "import_place.xlsx",
 }
 
 IMPORT_TYPE_LABELS = {
     "vet": "ветобработок",
     "otbivka": "отбивки",
     "group": "групп осеменения",
+    "place": "перемещений по овчарням",
 }
 
 
@@ -268,6 +272,77 @@ def _resolve_place(barn_number, section_number):
     raise ValueError(f"Овчарня {barn_number} Отсек {section_number} не найдена")
 
 
+def _same_place(left, right):
+    left_id = left.id if left else None
+    right_id = right.id if right else None
+    return left_id == right_id
+
+
+def _active_group_at_place(place, exclude_group_id=None):
+    if not place:
+        return None
+
+    queryset = (
+        LambingGroup.objects.filter(is_active=True)
+        .select_related("maker__tag", "maker__place", "ram__tag", "ram__place")
+        .filter(Q(maker__place=place) | Q(ram__place=place))
+    )
+    if exclude_group_id:
+        queryset = queryset.exclude(pk=exclude_group_id)
+    return queryset.first()
+
+
+def _format_group_place_conflict(group, place):
+    return (
+        f"В овчарне {place.sheepfold} уже есть активная группа "
+        f"№{group.id} с отцом {group.get_father_tag() or '-'}"
+    )
+
+
+def _validate_group_place_consistency(group_place_requests, group_key, target_place):
+    if group_key not in group_place_requests:
+        group_place_requests[group_key] = target_place
+        return None
+
+    previous_place = group_place_requests[group_key]
+    if _same_place(previous_place, target_place):
+        return None
+
+    previous_text = previous_place.sheepfold if previous_place else "не указано"
+    current_text = target_place.sheepfold if target_place else "не указано"
+    return (
+        "Для одной группы овчарня и отсек должны быть заполнены одинаково "
+        f"во всех строках: было «{previous_text}», сейчас «{current_text}»"
+    )
+
+
+def _move_animal_to_place_with_history(animal, target_place):
+    if not animal or not target_place or animal.place_id == target_place.id:
+        return False
+
+    old_place = animal.place
+    animal.place = target_place
+    animal.save(update_fields=["place"])
+    if animal.tag:
+        PlaceMovement.objects.create(
+            tag=animal.tag,
+            old_place=old_place,
+            new_place=target_place,
+        )
+    return True
+
+
+def _move_group_to_place_with_history(group, target_place):
+    moved_count = 0
+    father = group.get_father()
+    if _move_animal_to_place_with_history(father, target_place):
+        moved_count += 1
+    for mother in group.get_mothers():
+        if _move_animal_to_place_with_history(mother, target_place):
+            moved_count += 1
+    return moved_count
+
+
 def _read_workbook_from_request(request):
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
@@ -306,16 +381,37 @@ def _short_tags(tags, limit=8):
     return f"{', '.join(tags[:limit])}, ... (+{len(tags) - limit})"
 
 
+def _unique_preserve_order(values):
+    result = []
+    seen = set()
+    for value in values:
+        value = str(value or "").strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
+
+
 def _log_import(request, action_type, object_type, tags, description):
     user = getattr(request, "user", None)
     if not user or not getattr(user, "is_authenticated", False):
         return
+    unique_tags = _unique_preserve_order(tags)
     UserActionLog.objects.create(
         user=user,
         action_type=action_type,
         object_type=object_type,
-        object_id=_short_tags(tags)[:100],
+        object_id=_short_tags(unique_tags)[:100],
         description=description,
+        additional_data={
+            "method": request.method,
+            "path": request.path,
+            "animal_tags": unique_tags,
+        },
     )
 
 
@@ -403,6 +499,8 @@ def _parse_vet_import(workbook):
 def _apply_vet_import(request, valid_rows):
     created = 0
     tags = []
+    care_labels = []
+    care_dates = []
     errors = []
 
     for item in valid_rows:
@@ -424,14 +522,24 @@ def _apply_vet_import(request, valid_rows):
         serializer.save()
         created += 1
         tags.append(item["tag"])
+        care_labels.append(f"№{item['care'].id} {_care_label(item['care'])}")
+        care_dates.append(item["care_date"].strftime("%d.%m.%Y"))
 
     if created:
+        unique_tags = _unique_preserve_order(tags)
+        unique_cares = _unique_preserve_order(care_labels)
+        unique_dates = _unique_preserve_order(care_dates)
         _log_import(
             request,
             "Импорт ветобработок",
             "Ветобработка",
-            tags,
-            f"Импортировано ветобработок: {created}; бирки: {_short_tags(tags)}",
+            unique_tags,
+            (
+                f"Импортировано ветобработок: {created}; "
+                f"даты: {_short_tags(unique_dates, limit=6)}; "
+                f"обработки: {_short_tags(unique_cares, limit=5)}; "
+                f"бирки: {_short_tags(unique_tags, limit=20)}"
+            ),
         )
 
     return {"created_count": created, "errors": errors}
@@ -492,6 +600,8 @@ def _apply_otbivka_import(request, valid_rows):
     weight_count = 0
     moved_count = 0
     tags = []
+    updated_dates = []
+    moved_places = []
     errors = []
 
     for item in valid_rows:
@@ -540,27 +650,141 @@ def _apply_otbivka_import(request, valid_rows):
                 new_place=target_place,
             )
             moved_count += 1
+            moved_places.append(target_place.sheepfold)
 
         set_mothers_not_inseminated_after_child_update(animal)
         updated += 1
         tags.append(animal.tag.tag_number)
+        updated_dates.append(item["otbivka_date"].strftime("%d.%m.%Y"))
 
     if updated:
+        unique_tags = _unique_preserve_order(tags)
+        dates = _unique_preserve_order(updated_dates)
+        places = _unique_preserve_order(moved_places)
         _log_import(
             request,
             "Импорт отбивки",
             "Отбивка",
-            tags,
+            unique_tags,
             (
                 f"Импортирована отбивка: {updated}; "
+                f"даты: {_short_tags(dates, limit=6)}; "
                 f"весов добавлено/обновлено: {weight_count}; "
-                f"перемещено: {moved_count}; бирки: {_short_tags(tags)}"
+                f"перемещено: {moved_count}; "
+                f"места: {_short_tags(places, limit=6) if places else '-'}; "
+                f"бирки: {_short_tags(unique_tags, limit=20)}"
             ),
         )
 
     return {
         "updated_count": updated,
         "weight_records_count": weight_count,
+        "moved_count": moved_count,
+        "errors": errors,
+    }
+
+
+def _parse_place_import(workbook):
+    sheet = workbook.active
+    errors = []
+    warnings = []
+    valid_rows = []
+    seen_tags = set()
+
+    for row_number, values in _iter_rows(sheet, 3):
+        tag_value, barn_value, section_value = values
+        tag_text = _clean_text(tag_value)
+
+        try:
+            barn_number = _parse_int(barn_value, "Овчарня")
+            section_number = _parse_int(section_value, "Отсек")
+            target_place = _resolve_place(barn_number, section_number)
+        except ValueError as exc:
+            _add_row_error(errors, row_number, str(exc))
+            continue
+
+        animal, _, animal_error = _find_active_animal_by_tag(tag_text)
+        if animal_error:
+            _add_row_error(errors, row_number, animal_error)
+            continue
+
+        normalized_tag = animal.tag.tag_number.lower()
+        if normalized_tag in seen_tags:
+            _add_row_error(errors, row_number, "Дубль бирки в загруженном файле")
+            continue
+        seen_tags.add(normalized_tag)
+
+        if animal.place_id == target_place.id:
+            warnings.append({
+                "row": row_number,
+                "message": (
+                    f"Животное {animal.tag.tag_number} уже находится "
+                    f"в месте «{target_place.sheepfold}»"
+                ),
+            })
+            continue
+
+        group_warning = build_group_place_warning(animal, target_place)
+        if group_warning:
+            warnings.append({
+                "row": row_number,
+                "message": group_warning,
+            })
+
+        valid_rows.append({
+            "row": row_number,
+            "tag": animal.tag.tag_number,
+            "animal": animal,
+            "target_place": target_place,
+        })
+
+    return valid_rows, errors, warnings
+
+
+def _apply_place_import(request, valid_rows):
+    moved_count = 0
+    tags = []
+    place_counts = defaultdict(int)
+    errors = []
+
+    for item in valid_rows:
+        animal = item["animal"]
+        target_place = item["target_place"]
+
+        if animal.place_id == target_place.id:
+            continue
+
+        old_place = animal.place
+        animal.place = target_place
+        animal.save(update_fields=["place"])
+        PlaceMovement.objects.create(
+            tag=animal.tag,
+            old_place=old_place,
+            new_place=target_place,
+        )
+        moved_count += 1
+        tags.append(animal.tag.tag_number)
+        place_counts[target_place.sheepfold] += 1
+
+    if moved_count:
+        unique_tags = _unique_preserve_order(tags)
+        places_text = ", ".join(
+            f"{place}: {count}"
+            for place, count in sorted(place_counts.items())
+        )
+        _log_import(
+            request,
+            "Импорт перемещений по овчарням",
+            "Перемещение",
+            unique_tags,
+            (
+                f"Импорт перемещений по овчарням: перемещено животных: {moved_count}; "
+                f"места назначения: {places_text}; "
+                f"бирки: {_short_tags(unique_tags, limit=20)}"
+            ),
+        )
+
+    return {
         "moved_count": moved_count,
         "errors": errors,
     }
@@ -573,18 +797,23 @@ def _parse_group_import(workbook):
     valid_rows = []
     planned_mothers = set()
     planned_new_group_dates = {}
+    planned_group_place_requests = {}
+    planned_effective_places = {}
 
     statuses, missing_statuses = get_group_statuses()
     if missing_statuses:
         return [], [{"row": 0, "message": "Не найдены статусы: " + ", ".join(missing_statuses)}], []
 
-    for row_number, values in _iter_rows(sheet, 3):
-        mother_tag_value, father_tag_value, date_value = values
+    for row_number, values in _iter_rows(sheet, 5):
+        mother_tag_value, father_tag_value, date_value, barn_value, section_value = values
         mother_tag_text = _clean_text(mother_tag_value)
         father_tag_text = _clean_text(father_tag_value)
 
         try:
             placement_date = _parse_import_date(date_value, "Дата постановки в группу")
+            barn_number = _parse_optional_int(barn_value, "Овчарня")
+            section_number = _parse_optional_int(section_value, "Отсек")
+            target_place = _resolve_place(barn_number, section_number)
         except ValueError as exc:
             _add_row_error(errors, row_number, str(exc))
             continue
@@ -625,6 +854,38 @@ def _parse_group_import(workbook):
         new_group_key = None
         if active_father_group:
             existing_group_id = active_father_group.id
+            group_key = ("existing", existing_group_id)
+            place_error = _validate_group_place_consistency(
+                planned_group_place_requests,
+                group_key,
+                target_place,
+            )
+            if place_error:
+                _add_row_error(errors, row_number, place_error)
+                continue
+
+            current_group_place = father.place
+            if target_place and current_group_place and current_group_place.id != target_place.id:
+                _add_row_error(
+                    errors,
+                    row_number,
+                    (
+                        f"Отец {father.tag.tag_number} уже находится в группе "
+                        f"№{active_father_group.id} в {current_group_place.sheepfold}; "
+                        f"в файле указано другое место: {target_place.sheepfold}"
+                    ),
+                )
+                continue
+
+            effective_place = target_place or current_group_place
+            place_conflict = _active_group_at_place(
+                effective_place,
+                exclude_group_id=active_father_group.id,
+            )
+            if place_conflict:
+                _add_row_error(errors, row_number, _format_group_place_conflict(place_conflict, effective_place))
+                continue
+
             if active_father_group.placement_date != placement_date:
                 warnings.append({
                     "row": row_number,
@@ -636,6 +897,16 @@ def _parse_group_import(workbook):
                 })
         else:
             new_group_key = (father_type, father.id)
+            group_key = ("new", father_type, father.id)
+            place_error = _validate_group_place_consistency(
+                planned_group_place_requests,
+                group_key,
+                target_place,
+            )
+            if place_error:
+                _add_row_error(errors, row_number, place_error)
+                continue
+
             previous_date = planned_new_group_dates.get(new_group_key)
             if previous_date and previous_date != placement_date:
                 _add_row_error(
@@ -649,6 +920,26 @@ def _parse_group_import(workbook):
                 continue
             planned_new_group_dates[new_group_key] = placement_date
 
+            effective_place = target_place or father.place
+            place_conflict = _active_group_at_place(effective_place)
+            if place_conflict:
+                _add_row_error(errors, row_number, _format_group_place_conflict(place_conflict, effective_place))
+                continue
+
+            if effective_place:
+                previous_group_key = planned_effective_places.get(effective_place.id)
+                if previous_group_key and previous_group_key != new_group_key:
+                    _add_row_error(
+                        errors,
+                        row_number,
+                        (
+                            f"В файле уже запланирована другая новая группа в месте "
+                            f"{effective_place.sheepfold}"
+                        ),
+                    )
+                    continue
+                planned_effective_places[effective_place.id] = new_group_key
+
         planned_mothers.add(normalized_mother_tag)
         valid_rows.append({
             "row": row_number,
@@ -659,6 +950,7 @@ def _parse_group_import(workbook):
             "placement_date": placement_date,
             "existing_group_id": existing_group_id,
             "new_group_key": new_group_key,
+            "target_place": target_place,
         })
 
     return valid_rows, errors, warnings
@@ -679,12 +971,15 @@ def _apply_group_import(request, valid_rows):
     group_mothers = defaultdict(list)
     errors = []
     added_mothers_count = 0
+    moved_count = 0
+    moved_existing_groups = set()
 
     for item in valid_rows:
         mother = item["mother"]
         mother_type = item["mother_type"]
         father = item["father"]
         father_type = item["father_type"]
+        target_place = item.get("target_place")
 
         if _active_group_mother_query(mother, mother_type).exists():
             errors.append({
@@ -698,10 +993,43 @@ def _apply_group_import(request, valid_rows):
             if not group:
                 group = LambingGroup.objects.get(pk=item["existing_group_id"])
                 existing_groups[group.id] = group
+
+            if target_place:
+                current_group_place = group.get_father().place if group.get_father() else None
+                if current_group_place and current_group_place.id != target_place.id:
+                    errors.append({
+                        "row": item["row"],
+                        "message": (
+                            f"Группа №{group.id} находится в {current_group_place.sheepfold}; "
+                            f"в файле указано другое место: {target_place.sheepfold}"
+                        ),
+                    })
+                    continue
+
+                place_conflict = _active_group_at_place(target_place, exclude_group_id=group.id)
+                if place_conflict:
+                    errors.append({
+                        "row": item["row"],
+                        "message": _format_group_place_conflict(place_conflict, target_place),
+                    })
+                    continue
+
+                if group.id not in moved_existing_groups:
+                    moved_count += _move_group_to_place_with_history(group, target_place)
+                    moved_existing_groups.add(group.id)
         else:
             key = item["new_group_key"]
             group = created_groups.get(key)
             if not group:
+                effective_place = target_place or father.place
+                place_conflict = _active_group_at_place(effective_place)
+                if place_conflict:
+                    errors.append({
+                        "row": item["row"],
+                        "message": _format_group_place_conflict(place_conflict, effective_place),
+                    })
+                    continue
+
                 group_data = {
                     "placement_date": item["placement_date"],
                     "note": "",
@@ -713,12 +1041,16 @@ def _apply_group_import(request, valid_rows):
                 group = LambingGroup.objects.create(**group_data)
                 created_groups[key] = group
                 set_animal_status(father, statuses["father_in_group"])
+                if target_place and _move_animal_to_place_with_history(father, target_place):
+                    moved_count += 1
 
         if mother_type == "sheep":
             group.sheep.add(mother)
         else:
             group.ewes.add(mother)
         set_animal_status(mother, statuses["mother_in_group"])
+        if target_place and _move_animal_to_place_with_history(mother, target_place):
+            moved_count += 1
         group_mothers[group.id].append(mother.tag.tag_number)
         added_mothers_count += 1
 
@@ -732,7 +1064,8 @@ def _apply_group_import(request, valid_rows):
             (
                 f"Создана группа №{group.id}: отец {group.get_father_tag()}; "
                 f"матери: {_short_tags(mother_tags, limit=20)}; "
-                f"дата: {group.placement_date.strftime('%d.%m.%Y')}"
+                f"дата: {group.placement_date.strftime('%d.%m.%Y')}; "
+                f"место: {group.get_father().place.sheepfold if group.get_father() and group.get_father().place else '-'}"
             ),
         )
 
@@ -747,7 +1080,9 @@ def _apply_group_import(request, valid_rows):
             [group.get_father_tag()] + mother_tags,
             (
                 f"В группу №{group.id} добавлены матери: {_short_tags(mother_tags, limit=20)}; "
-                f"отец {group.get_father_tag()}; дата постановки группы: {group.placement_date.strftime('%d.%m.%Y')}"
+                f"отец {group.get_father_tag()}; "
+                f"дата постановки группы: {group.placement_date.strftime('%d.%m.%Y')}; "
+                f"место: {group.get_father().place.sheepfold if group.get_father() and group.get_father().place else '-'}"
             ),
         )
 
@@ -755,6 +1090,7 @@ def _apply_group_import(request, valid_rows):
         "created_groups_count": len(created_groups),
         "updated_groups_count": len([group_id for group_id, mothers in group_mothers.items() if group_id in existing_groups and mothers]),
         "added_mothers_count": added_mothers_count,
+        "moved_count": moved_count,
         "errors": errors,
     }
 
@@ -764,6 +1100,8 @@ def _parse_import(import_type, workbook):
         return _parse_vet_import(workbook)
     if import_type == "otbivka":
         return _parse_otbivka_import(workbook)
+    if import_type == "place":
+        return _parse_place_import(workbook)
     if import_type == "group":
         return _parse_group_import(workbook)
     raise ValueError("Неизвестный тип импорта")
@@ -774,6 +1112,8 @@ def _apply_import(import_type, request, valid_rows):
         return _apply_vet_import(request, valid_rows)
     if import_type == "otbivka":
         return _apply_otbivka_import(request, valid_rows)
+    if import_type == "place":
+        return _apply_place_import(request, valid_rows)
     if import_type == "group":
         return _apply_group_import(request, valid_rows)
     raise ValueError("Неизвестный тип импорта")
