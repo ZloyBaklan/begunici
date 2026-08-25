@@ -125,8 +125,7 @@ def _load_hid_module():
         import hid
     except ImportError as exc:
         raise ScannerError(
-            "Библиотека для работы со сканером не установлена. "
-            "Установите зависимость hidapi и перезапустите сервер."
+            "Библиотека для работы со сканером не установлена"
         ) from exc
     return hid
 
@@ -214,8 +213,7 @@ def _read_scanner_history_hid(max_records=MAX_HISTORY_RECORDS):
     path = _find_mi03_device_path(hid)
     if path is None:
         raise ScannerError(
-            "Сканер DEJ-380 не найден. Проверьте, что он подключен "
-            "и доступен серверу, на котором запущен Django."
+            "Сканер DEJ-380 не найден"
         )
 
     dev = hid.device()
@@ -276,21 +274,20 @@ def _read_scanner_history_agent(max_records=MAX_HISTORY_RECORDS):
         )
     except requests.RequestException as exc:
         raise ScannerError(
-            "Локальный мост сканера не отвечает. "
-            "Запустите scanner_agent.py на компьютере, к которому подключен сканер."
+            "Сканер не отвечает"
         ) from exc
 
     try:
         payload = response.json()
     except ValueError as exc:
-        raise ScannerError("Локальный мост сканера вернул некорректный ответ.") from exc
+        raise ScannerError("Сканер вернул некорректный ответ") from exc
 
     if response.status_code >= 400:
-        raise ScannerError(payload.get("error") or "Локальный мост не прочитал сканер.")
+        raise ScannerError(payload.get("error") or "Сканер не прочитал данные.")
 
     raw_records = payload.get("records") or payload.get("results") or []
     if not isinstance(raw_records, list):
-        raise ScannerError("Локальный мост вернул записи в некорректном формате.")
+        raise ScannerError("Сканер вернул записи в некорректном формате")
 
     records = []
     for item in raw_records:
