@@ -328,7 +328,7 @@ async function loadVetList() {
             expiry_date_from: document.getElementById('expiry-date-from').value,
             expiry_date_to: document.getElementById('expiry-date-to').value,
             is_hidden: document.getElementById('is-hidden-filter').value,
-            sort_by: 'id',
+            sort_by: 'date_of_care',
             sort_order: 'desc'
         });
         
@@ -363,7 +363,7 @@ function exportVetListToExcel() {
         expiry_date_from: document.getElementById('expiry-date-from').value,
         expiry_date_to: document.getElementById('expiry-date-to').value,
         is_hidden: document.getElementById('is-hidden-filter').value,
-        sort_by: 'id',
+        sort_by: 'date_of_care',
         sort_order: 'desc'
     });
 

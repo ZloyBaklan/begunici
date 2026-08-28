@@ -3038,6 +3038,71 @@ class LambingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            if not isinstance(lambs_data, list):
+                return Response(
+                    {"error": "Некорректный список ягнят"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            all_veterinary_care_ids = set()
+            for index, lamb_data in enumerate(lambs_data, start=1):
+                if not isinstance(lamb_data, dict):
+                    return Response(
+                        {"error": f"Некорректные данные ягненка №{index}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                raw_veterinary_care_ids = lamb_data.get('veterinary_care_ids') or []
+                if isinstance(raw_veterinary_care_ids, str):
+                    raw_veterinary_care_ids = [
+                        part.strip()
+                        for part in raw_veterinary_care_ids.split(',')
+                        if part.strip()
+                    ]
+                if not isinstance(raw_veterinary_care_ids, list):
+                    return Response(
+                        {"error": f"Некорректный список ветобработок для ягненка {lamb_data.get('tag_number', index)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                parsed_veterinary_care_ids = []
+                for raw_care_id in raw_veterinary_care_ids:
+                    try:
+                        care_id = int(raw_care_id)
+                    except (TypeError, ValueError):
+                        return Response(
+                            {"error": f"Некорректная ветобработка для ягненка {lamb_data.get('tag_number', index)}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if care_id <= 0:
+                        return Response(
+                            {"error": f"Некорректная ветобработка для ягненка {lamb_data.get('tag_number', index)}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if care_id not in parsed_veterinary_care_ids:
+                        parsed_veterinary_care_ids.append(care_id)
+                        all_veterinary_care_ids.add(care_id)
+
+                lamb_data['_parsed_veterinary_care_ids'] = parsed_veterinary_care_ids
+
+            veterinary_cares_by_id = VeterinaryCare.objects.in_bulk(all_veterinary_care_ids)
+            missing_veterinary_care_ids = sorted(all_veterinary_care_ids - set(veterinary_cares_by_id.keys()))
+            if missing_veterinary_care_ids:
+                return Response(
+                    {
+                        "error": (
+                            "Выбранные ветобработки не найдены: "
+                            + ", ".join(str(care_id) for care_id in missing_veterinary_care_ids)
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Сохраняем дату обработки как полдень, чтобы дата не смещалась при timezone-конвертации.
+            lamb_veterinary_datetime = timezone.make_aware(
+                datetime.combine(actual_date, datetime.min.time().replace(hour=12))
+            )
+
             target_mother_status = _get_required_status(
                 STATUS_LAMBED if number_of_lambs > 0 else STATUS_NOT_INSEMINATED
             )
@@ -3069,6 +3134,7 @@ class LambingViewSet(viewsets.ModelViewSet):
             father = lambing.get_father()
             default_child_status = get_default_child_status()
             default_ram_child_status = _get_required_status(STATUS_FATTENING)
+            created_veterinary_records_count = 0
             
             for lamb_data in lambs_data:
                 try:
@@ -3157,10 +3223,27 @@ class LambingViewSet(viewsets.ModelViewSet):
                         )
                         child.weight_records.add(weight_record)
 
+                    child_veterinary_records_count = 0
+                    veterinary_note = (lamb_data.get('veterinary_note') or '').strip()
+                    for care_id in lamb_data.get('_parsed_veterinary_care_ids', []):
+                        veterinary_care = veterinary_cares_by_id[care_id]
+                        veterinary_record = Veterinary.objects.create(
+                            tag=tag,
+                            veterinary_care=veterinary_care,
+                            date_of_care=lamb_veterinary_datetime,
+                            duration_days=veterinary_care.default_duration_days,
+                            comments=veterinary_note,
+                        )
+                        child.veterinary_history.add(veterinary_record)
+                        child_veterinary_records_count += 1
+
+                    created_veterinary_records_count += child_veterinary_records_count
+
                     created_children.append({
                         'tag_number': tag.tag_number,
                         'type': tag.animal_type,
-                        'gender': lamb_data['gender']
+                        'gender': lamb_data['gender'],
+                        'veterinary_records_count': child_veterinary_records_count,
                     })
                     
                 except Exception as child_error:
@@ -3210,6 +3293,7 @@ class LambingViewSet(viewsets.ModelViewSet):
             return Response({
                 "success": "Окот завершен",
                 "created_children": created_children,
+                "created_veterinary_records_count": created_veterinary_records_count,
                 "lambing": LambingSerializer(lambing).data
             }, status=status.HTTP_200_OK)
             
@@ -8156,17 +8240,20 @@ def vet_list_export_excel(request):
     expiry_date_from = _parse_filter_date(request.GET.get('expiry_date_from', ''))
     expiry_date_to = _parse_filter_date(request.GET.get('expiry_date_to', ''))
     is_hidden = request.GET.get('is_hidden', '')
-    sort_by = request.GET.get('sort_by', 'id').strip()
+    sort_by = request.GET.get('sort_by', 'date_of_care').strip()
     sort_order = request.GET.get('sort_order', 'desc').strip().lower()
 
     sort_fields_map = {
         'id': 'id',
         'date_of_care': 'date_of_care',
     }
-    sort_field = sort_fields_map.get(sort_by, 'id')
+    sort_field = sort_fields_map.get(sort_by, 'date_of_care')
     sort_prefix = '' if sort_order == 'asc' else '-'
+    order_fields = [f'{sort_prefix}{sort_field}']
+    if sort_field != 'id':
+        order_fields.append(f'{sort_prefix}id')
 
-    queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all().order_by(f'{sort_prefix}{sort_field}')
+    queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all().order_by(*order_fields)
 
     if tag_search:
         queryset = queryset.filter(_build_tag_or_rshn_relation_filter('tag', tag_search))
@@ -8667,7 +8754,7 @@ def vet_list_api(request):
         expiry_date_from = request.GET.get('expiry_date_from', '')
         expiry_date_to = request.GET.get('expiry_date_to', '')
         is_hidden = request.GET.get('is_hidden', '')
-        sort_by = request.GET.get('sort_by', 'id').strip()
+        sort_by = request.GET.get('sort_by', 'date_of_care').strip()
         sort_order = request.GET.get('sort_order', 'desc').strip().lower()
         
         # Параметры пагинации
@@ -8679,12 +8766,15 @@ def vet_list_api(request):
             'id': 'id',
             'date_of_care': 'date_of_care',
         }
-        sort_field = sort_fields_map.get(sort_by, 'id')
+        sort_field = sort_fields_map.get(sort_by, 'date_of_care')
         sort_prefix = '' if sort_order == 'asc' else '-'
+        order_fields = [f'{sort_prefix}{sort_field}']
+        if sort_field != 'id':
+            order_fields.append(f'{sort_prefix}id')
 
         queryset = Veterinary.objects.select_related(
             'tag', 'veterinary_care'
-        ).all().order_by(f'{sort_prefix}{sort_field}')
+        ).all().order_by(*order_fields)
         
         # Применяем фильтры
         if tag_search:

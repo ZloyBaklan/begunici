@@ -2508,10 +2508,68 @@ function generateLambForms(count) {
 
 // Создание формы для одного ягненка
 const lambStatusesByAnimalType = {};
+let lambVeterinaryCareOptions = null;
+let lambVeterinaryCareControlCounter = 0;
+
+async function getLambVeterinaryCareOptions() {
+    if (lambVeterinaryCareOptions === null) {
+        const response = await apiRequest('/animals/api/vet-filter-options/', 'GET');
+        lambVeterinaryCareOptions = response.care_options || [];
+    }
+    return lambVeterinaryCareOptions;
+}
+
+async function loadVeterinaryCaresForLamb(formElement) {
+    const menu = formElement.querySelector('.lamb-vet-menu');
+    if (!menu) return;
+
+    menu.innerHTML = '<div class="dropdown-item-text text-muted small">Загрузка обработок...</div>';
+
+    try {
+        const careOptions = await getLambVeterinaryCareOptions();
+        menu.innerHTML = '';
+
+        if (!careOptions.length) {
+            menu.innerHTML = '<div class="dropdown-item-text text-muted small">Ветобработки не найдены</div>';
+            return;
+        }
+
+        careOptions.forEach(careOption => {
+            const item = document.createElement('label');
+            item.className = 'dropdown-item lamb-vet-option';
+            item.innerHTML = `
+                <input class="form-check-input me-2 lamb-vet-care-checkbox" type="checkbox" value="${careOption.id}">
+                <span></span>
+            `;
+            item.querySelector('span').textContent = careOption.label;
+            item.querySelector('input').addEventListener('change', () => updateLambVeterinaryCareSummary(formElement));
+            menu.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки ветобработок для ягненка:', error);
+        menu.innerHTML = '<div class="dropdown-item-text text-danger small">Ошибка загрузки ветобработок</div>';
+    }
+}
+
+function updateLambVeterinaryCareSummary(formElement) {
+    const selectedCount = formElement.querySelectorAll('.lamb-vet-care-checkbox:checked').length;
+    const summary = formElement.querySelector('.lamb-vet-summary');
+    const button = formElement.querySelector('.lamb-vet-toggle');
+
+    if (summary) {
+        summary.textContent = selectedCount ? `Выбрано обработок: ${selectedCount}` : 'Ветобработки не выбраны';
+        summary.classList.toggle('text-success', selectedCount > 0);
+        summary.classList.toggle('text-muted', selectedCount === 0);
+    }
+    if (button) {
+        button.textContent = selectedCount ? `Ветобработки: ${selectedCount}` : 'Выбрать ветобработки';
+    }
+}
 
 function createLambForm(index) {
     const div = document.createElement('div');
     div.className = 'lamb-form';
+    const veterinaryDropdownId = `lamb-vet-dropdown-${++lambVeterinaryCareControlCounter}`;
     div.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6>Ягненок ${index}</h6>
@@ -2559,6 +2617,25 @@ function createLambForm(index) {
             <label>Примечание:</label>
             <textarea class="lamb-note" rows="2" placeholder="Дополнительная информация"></textarea>
         </div>
+
+        <div class="form-row lamb-vet-row">
+            <div class="form-group">
+                <label>Ветобработки при окоте:</label>
+                <div class="dropdown lamb-vet-dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle w-100 lamb-vet-toggle" type="button" id="${veterinaryDropdownId}" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                        Выбрать ветобработки
+                    </button>
+                    <div class="dropdown-menu lamb-vet-menu w-100 p-2" aria-labelledby="${veterinaryDropdownId}">
+                        <div class="dropdown-item-text text-muted small">Загрузка обработок...</div>
+                    </div>
+                </div>
+                <small class="form-text lamb-vet-summary text-muted">Ветобработки не выбраны</small>
+            </div>
+            <div class="form-group">
+                <label>Примечание к ветобработкам:</label>
+                <textarea class="lamb-vet-note" rows="3" placeholder="Необязательно"></textarea>
+            </div>
+        </div>
     `;
 
     const genderSelect = div.querySelector('.lamb-gender');
@@ -2569,6 +2646,7 @@ function createLambForm(index) {
     // Загружаем статусы и места для этой формы
     loadStatusesForLamb(div);
     loadPlacesForLamb(div);
+    loadVeterinaryCaresForLamb(div);
 
     return div;
 }
@@ -2806,6 +2884,10 @@ async function completeLambingWithChildren() {
                 const place = form.querySelector('.lamb-place').value;
                 const note = form.querySelector('.lamb-note').value.trim();
                 const liveWeightRaw = form.querySelector('.lamb-live-weight')?.value?.trim();
+                const veterinaryCareIds = Array.from(form.querySelectorAll('.lamb-vet-care-checkbox:checked'))
+                    .map(checkbox => parseInt(checkbox.value, 10))
+                    .filter(Number.isInteger);
+                const veterinaryNote = form.querySelector('.lamb-vet-note')?.value?.trim() || '';
                 let liveWeight = null;
 
                 if (liveWeightRaw) {
@@ -2827,7 +2909,9 @@ async function completeLambingWithChildren() {
                     animal_status_id: status ? parseInt(status) : null,
                     place_id: place ? parseInt(place) : null,
                     note: note || '',
-                    live_weight: liveWeight
+                    live_weight: liveWeight,
+                    veterinary_care_ids: veterinaryCareIds,
+                    veterinary_note: veterinaryNote
                 });
             }
         }
@@ -2841,7 +2925,7 @@ async function completeLambingWithChildren() {
             lambs: lambsData
         };
 
-        await apiRequest(`/animals/lambing/${lambingId}/complete-with-children/`, 'POST', completionData);
+        const response = await apiRequest(`/animals/lambing/${lambingId}/complete-with-children/`, 'POST', completionData);
 
         // Формируем сообщение об успехе
         let successMessage = 'Окот успешно завершен!';
@@ -2849,6 +2933,9 @@ async function completeLambingWithChildren() {
             successMessage += ` Создано ${lambsData.length} ягнят.`;
         } else if (lambsCount > 0) {
             successMessage += ` Зафиксировано ${lambsCount} ягнят (без создания записей).`;
+        }
+        if ((response.created_veterinary_records_count || 0) > 0) {
+            successMessage += ` Добавлено ветобработок: ${response.created_veterinary_records_count}.`;
         }
 
         alert(successMessage);
