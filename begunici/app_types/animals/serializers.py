@@ -509,6 +509,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_add_weight_record",
             "archive_act_download",
             "archive_act_group_key",
+            "confirm_group_place_move",
         ):
             validated_data.pop(service_field, None)
 
