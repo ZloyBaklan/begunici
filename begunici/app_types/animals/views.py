@@ -3006,6 +3006,11 @@ class LambingViewSet(viewsets.ModelViewSet):
             dead_lambs_count = request.data.get('dead_lambs_count', 0)
             note = request.data.get('note', '')
             lambs_data = request.data.get('lambs', [])
+            use_common_place = _is_truthy_filter_value(request.data.get('use_common_place'))
+            use_common_veterinary_care = _is_truthy_filter_value(
+                request.data.get('use_common_veterinary_care')
+            )
+            common_veterinary_note = (request.data.get('common_veterinary_note') or '').strip()
             
             if not actual_date_str:
                 return Response(
@@ -3044,7 +3049,64 @@ class LambingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            common_place = None
+            if use_common_place:
+                common_place_id = request.data.get('common_place_id')
+                if not common_place_id:
+                    return Response(
+                        {"error": "Выберите общую овчарню"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                try:
+                    common_place = Place.objects.get(pk=common_place_id)
+                except (TypeError, ValueError, Place.DoesNotExist):
+                    return Response(
+                        {"error": "Выбранная общая овчарня не найдена"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            def parse_veterinary_care_ids(raw_value, lamb_label):
+                if raw_value in (None, '', []):
+                    return []
+                if isinstance(raw_value, str):
+                    raw_value = [
+                        part.strip()
+                        for part in raw_value.split(',')
+                        if part.strip()
+                    ]
+                if not isinstance(raw_value, list):
+                    raise ValueError(f"Некорректный список ветобработок для {lamb_label}")
+
+                parsed_ids = []
+                for raw_care_id in raw_value:
+                    try:
+                        care_id = int(raw_care_id)
+                    except (TypeError, ValueError):
+                        raise ValueError(f"Некорректная ветобработка для {lamb_label}")
+                    if care_id <= 0:
+                        raise ValueError(f"Некорректная ветобработка для {lamb_label}")
+                    if care_id not in parsed_ids:
+                        parsed_ids.append(care_id)
+                return parsed_ids
+
             all_veterinary_care_ids = set()
+            try:
+                common_veterinary_care_ids = parse_veterinary_care_ids(
+                    request.data.get('common_veterinary_care_ids') or [],
+                    "всех детей",
+                )
+            except ValueError as exc:
+                return Response(
+                    {"error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if use_common_veterinary_care and lambs_data and not common_veterinary_care_ids:
+                return Response(
+                    {"error": "Выберите общие ветобработки для детей"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            all_veterinary_care_ids.update(common_veterinary_care_ids)
+
             for index, lamb_data in enumerate(lambs_data, start=1):
                 if not isinstance(lamb_data, dict):
                     return Response(
@@ -3052,38 +3114,26 @@ class LambingViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                raw_veterinary_care_ids = lamb_data.get('veterinary_care_ids') or []
-                if isinstance(raw_veterinary_care_ids, str):
-                    raw_veterinary_care_ids = [
-                        part.strip()
-                        for part in raw_veterinary_care_ids.split(',')
-                        if part.strip()
-                    ]
-                if not isinstance(raw_veterinary_care_ids, list):
+                try:
+                    parsed_veterinary_care_ids = (
+                        common_veterinary_care_ids
+                        if use_common_veterinary_care
+                        else parse_veterinary_care_ids(
+                            lamb_data.get('veterinary_care_ids') or [],
+                            f"ягненка {lamb_data.get('tag_number', index)}",
+                        )
+                    )
+                except ValueError as exc:
                     return Response(
-                        {"error": f"Некорректный список ветобработок для ягненка {lamb_data.get('tag_number', index)}"},
+                        {"error": str(exc)},
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                parsed_veterinary_care_ids = []
-                for raw_care_id in raw_veterinary_care_ids:
-                    try:
-                        care_id = int(raw_care_id)
-                    except (TypeError, ValueError):
-                        return Response(
-                            {"error": f"Некорректная ветобработка для ягненка {lamb_data.get('tag_number', index)}"},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    if care_id <= 0:
-                        return Response(
-                            {"error": f"Некорректная ветобработка для ягненка {lamb_data.get('tag_number', index)}"},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    if care_id not in parsed_veterinary_care_ids:
-                        parsed_veterinary_care_ids.append(care_id)
-                        all_veterinary_care_ids.add(care_id)
+                all_veterinary_care_ids.update(parsed_veterinary_care_ids)
 
                 lamb_data['_parsed_veterinary_care_ids'] = parsed_veterinary_care_ids
+                if use_common_veterinary_care:
+                    lamb_data['veterinary_note'] = common_veterinary_note
 
             veterinary_cares_by_id = VeterinaryCare.objects.in_bulk(all_veterinary_care_ids)
             missing_veterinary_care_ids = sorted(all_veterinary_care_ids - set(veterinary_cares_by_id.keys()))
@@ -3128,6 +3178,9 @@ class LambingViewSet(viewsets.ModelViewSet):
                 mother = sheep
 
             _set_animal_status(mother, target_mother_status)
+            moved_mother_to_common_place = False
+            if common_place:
+                moved_mother_to_common_place = _move_animal_to_place_with_history(mother, common_place)
             
             # Создаем детей, если они указаны
             created_children = []
@@ -3174,7 +3227,7 @@ class LambingViewSet(viewsets.ModelViewSet):
                             mother=mother.tag if mother else None,
                             father=father.tag if father else None,
                             animal_status=default_ram_child_status,
-                            place_id=lamb_data.get('place_id'),
+                            place_id=common_place.id if common_place else lamb_data.get('place_id'),
                             note=lamb_data.get('note', '')
                         )
                         tag.animal_type = 'Ram'
@@ -3207,7 +3260,7 @@ class LambingViewSet(viewsets.ModelViewSet):
                             mother=mother.tag if mother else None,
                             father=father.tag if father else None,
                             animal_status=selected_child_status,
-                            place_id=lamb_data.get('place_id'),
+                            place_id=common_place.id if common_place else lamb_data.get('place_id'),
                             note=lamb_data.get('note', '')
                         )
                         tag.animal_type = 'Ewe'
@@ -3294,6 +3347,7 @@ class LambingViewSet(viewsets.ModelViewSet):
                 "success": "Окот завершен",
                 "created_children": created_children,
                 "created_veterinary_records_count": created_veterinary_records_count,
+                "moved_mother_to_common_place": moved_mother_to_common_place,
                 "lambing": LambingSerializer(lambing).data
             }, status=status.HTTP_200_OK)
             
