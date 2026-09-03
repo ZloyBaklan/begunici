@@ -43,6 +43,30 @@ function getApiErrorFieldLabel(field) {
     return API_ERROR_FIELD_LABELS[field] || String(field).replaceAll('_', ' ');
 }
 
+function getPlaceSortKey(placeName) {
+    const numbers = String(placeName || '').match(/\d+/g) || [];
+    return [
+        numbers[0] ? Number(numbers[0]) : Number.MAX_SAFE_INTEGER,
+        numbers[1] ? Number(numbers[1]) : Number.MAX_SAFE_INTEGER,
+        String(placeName || '')
+    ];
+}
+
+function sortPlacesBySheepfold(places) {
+    return [...places].sort((left, right) => {
+        const leftKey = getPlaceSortKey(left.sheepfold);
+        const rightKey = getPlaceSortKey(right.sheepfold);
+
+        if (leftKey[0] !== rightKey[0]) {
+            return leftKey[0] - rightKey[0];
+        }
+        if (leftKey[1] !== rightKey[1]) {
+            return leftKey[1] - rightKey[1];
+        }
+        return leftKey[2].localeCompare(rightKey[2], 'ru');
+    });
+}
+
 function translateApiErrorText(message) {
     const text = String(message || '').trim();
     const translations = {
@@ -2365,6 +2389,7 @@ function updateCompletionMode() {
         submitButton.classList.toggle('btn-warning', isEarlyFailure);
         submitButton.classList.toggle('btn-danger', isUnsuccessful);
     }
+    updateCommonLambCompletionControls();
 }
 
 // Завершить окот
@@ -2394,6 +2419,7 @@ async function completeLambing(lambingId) {
     }
     window.currentCompletionMode = 'normal';
     resetUnsuccessfulInseminationWarning();
+    resetCommonLambCompletionControls();
 
     // Инициализируем состояние чекбокса и контейнера форм
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
@@ -2407,6 +2433,8 @@ async function completeLambing(lambingId) {
 
     // Генерируем формы для ягнят
     generateLambForms(1);
+    loadCommonLambPlaceOptions();
+    loadCommonLambVeterinaryCares();
 
     // Добавляем обработчик для чекбокса создания ягнят
     createLambsCheckbox.addEventListener('change', function() {
@@ -2420,6 +2448,7 @@ async function completeLambing(lambingId) {
             // Не создаем записи - скрываем формы
             lambsFormsContainer.style.display = 'none';
         }
+        updateCommonLambCompletionControls();
     });
 
     // Добавляем обработчик для изменения количества ягнят
@@ -2429,6 +2458,7 @@ async function completeLambing(lambingId) {
             const count = parseInt(this.value) || 0;
             generateLambForms(count);
         }
+        updateCommonLambCompletionControls();
     });
 
     // Показываем модальное окно
@@ -2504,12 +2534,22 @@ function generateLambForms(count) {
         const lambForm = createLambForm(i);
         container.appendChild(lambForm);
     }
+    updateCommonLambCompletionControls();
 }
 
 // Создание формы для одного ягненка
 const lambStatusesByAnimalType = {};
 let lambVeterinaryCareOptions = null;
 let lambVeterinaryCareControlCounter = 0;
+let lambPlacesOptions = null;
+
+async function getLambPlacesOptions() {
+    if (lambPlacesOptions === null) {
+        const response = await apiRequest('/veterinary/api/place/?page_size=500', 'GET');
+        lambPlacesOptions = sortPlacesBySheepfold(response.results || response || []);
+    }
+    return lambPlacesOptions;
+}
 
 async function getLambVeterinaryCareOptions() {
     if (lambVeterinaryCareOptions === null) {
@@ -2545,6 +2585,8 @@ async function loadVeterinaryCaresForLamb(formElement) {
             item.querySelector('input').addEventListener('change', () => updateLambVeterinaryCareSummary(formElement));
             menu.appendChild(item);
         });
+        updateLambVeterinaryCareSummary(formElement);
+        updateCommonLambCompletionControls();
     } catch (error) {
         console.error('Ошибка загрузки ветобработок для ягненка:', error);
         menu.innerHTML = '<div class="dropdown-item-text text-danger small">Ошибка загрузки ветобработок</div>';
@@ -2564,6 +2606,129 @@ function updateLambVeterinaryCareSummary(formElement) {
     if (button) {
         button.textContent = selectedCount ? `Ветобработки: ${selectedCount}` : 'Выбрать ветобработки';
     }
+}
+
+function getSelectedVeterinaryCareIds(container) {
+    return Array.from(container.querySelectorAll('.lamb-vet-care-checkbox:checked'))
+        .map(checkbox => parseInt(checkbox.value, 10))
+        .filter(Number.isInteger);
+}
+
+function isCommonLambPlaceEnabled() {
+    return Boolean(document.getElementById('common-lamb-place-checkbox')?.checked);
+}
+
+function isCommonLambVeterinaryEnabled() {
+    return Boolean(document.getElementById('common-lamb-vet-checkbox')?.checked);
+}
+
+function updateCommonLambCompletionControls() {
+    const isNormalCompletion = !isEarlyFailureMode()
+        && !isUnsuccessfulInseminationMode()
+        && !Boolean(window.currentCompletionIsFather);
+    const commonOptions = document.getElementById('completion-common-options');
+    const commonPlaceCheckbox = document.getElementById('common-lamb-place-checkbox');
+    const commonPlaceSelect = document.getElementById('common-lamb-place-select');
+    const commonVetCheckbox = document.getElementById('common-lamb-vet-checkbox');
+    const commonVetControl = document.getElementById('common-lamb-vet-control');
+    const commonVetToggle = commonVetControl?.querySelector('.lamb-vet-toggle');
+    const commonVetNote = document.getElementById('common-lamb-vet-note');
+
+    if (commonOptions) {
+        commonOptions.style.display = isNormalCompletion ? '' : 'none';
+    }
+
+    const commonPlaceEnabled = isNormalCompletion && Boolean(commonPlaceCheckbox?.checked);
+    const commonVetEnabled = isNormalCompletion && Boolean(commonVetCheckbox?.checked);
+
+    if (commonPlaceCheckbox) {
+        commonPlaceCheckbox.disabled = !isNormalCompletion;
+    }
+    if (commonPlaceSelect) {
+        commonPlaceSelect.disabled = !commonPlaceEnabled;
+    }
+    if (commonVetCheckbox) {
+        commonVetCheckbox.disabled = !isNormalCompletion;
+    }
+    if (commonVetToggle) {
+        commonVetToggle.disabled = !commonVetEnabled;
+    }
+    if (commonVetNote) {
+        commonVetNote.disabled = !commonVetEnabled;
+    }
+    commonVetControl?.querySelectorAll('.lamb-vet-care-checkbox').forEach(checkbox => {
+        checkbox.disabled = !commonVetEnabled;
+    });
+
+    document.querySelectorAll('.lamb-form .lamb-place').forEach(select => {
+        select.disabled = commonPlaceEnabled;
+    });
+    document.querySelectorAll('.lamb-form .lamb-vet-toggle').forEach(button => {
+        button.disabled = commonVetEnabled;
+    });
+    document.querySelectorAll('.lamb-form .lamb-vet-care-checkbox').forEach(checkbox => {
+        checkbox.disabled = commonVetEnabled;
+    });
+    document.querySelectorAll('.lamb-form .lamb-vet-note').forEach(textarea => {
+        textarea.disabled = commonVetEnabled;
+    });
+}
+
+async function loadCommonLambPlaceOptions() {
+    const select = document.getElementById('common-lamb-place-select');
+    if (!select) return;
+
+    try {
+        const places = await getLambPlacesOptions();
+        select.innerHTML = '<option value="">Выберите место</option>';
+        places.forEach(place => {
+            const option = document.createElement('option');
+            option.value = place.id;
+            option.textContent = place.sheepfold;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки общей овчарни для окота:', error);
+        select.innerHTML = '<option value="">Ошибка загрузки овчарен</option>';
+    } finally {
+        updateCommonLambCompletionControls();
+    }
+}
+
+async function loadCommonLambVeterinaryCares() {
+    const control = document.getElementById('common-lamb-vet-control');
+    if (!control) return;
+
+    await loadVeterinaryCaresForLamb(control);
+    updateCommonLambCompletionControls();
+}
+
+function resetCommonLambCompletionControls() {
+    const commonPlaceCheckbox = document.getElementById('common-lamb-place-checkbox');
+    const commonPlaceSelect = document.getElementById('common-lamb-place-select');
+    const commonVetCheckbox = document.getElementById('common-lamb-vet-checkbox');
+    const commonVetControl = document.getElementById('common-lamb-vet-control');
+    const commonVetNote = document.getElementById('common-lamb-vet-note');
+
+    if (commonPlaceCheckbox) {
+        commonPlaceCheckbox.checked = false;
+    }
+    if (commonPlaceSelect) {
+        commonPlaceSelect.value = '';
+    }
+    if (commonVetCheckbox) {
+        commonVetCheckbox.checked = false;
+    }
+    if (commonVetNote) {
+        commonVetNote.value = '';
+    }
+    commonVetControl?.querySelectorAll('.lamb-vet-care-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    if (commonVetControl) {
+        updateLambVeterinaryCareSummary(commonVetControl);
+    }
+    updateCommonLambCompletionControls();
 }
 
 function createLambForm(index) {
@@ -2706,9 +2871,7 @@ async function loadStatusesForLamb(formElement) {
 // Загрузка мест для формы ягненка
 async function loadPlacesForLamb(formElement) {
     try {
-        const response = await apiRequest('/veterinary/api/place/?page_size=100');
-        // API возвращает пагинированные данные, берем массив из results
-        const places = response.results || response;
+        const places = await getLambPlacesOptions();
 
         if (!Array.isArray(places)) {
             console.error('Ожидался массив мест для ягненка, получено:', places);
@@ -2716,13 +2879,16 @@ async function loadPlacesForLamb(formElement) {
         }
 
         const select = formElement.querySelector('.lamb-place');
+        if (!select) return;
 
+        select.innerHTML = '<option value="">Выберите место</option>';
         places.forEach(place => {
             const option = document.createElement('option');
             option.value = place.id;
             option.textContent = place.sheepfold;
             select.appendChild(option);
         });
+        updateCommonLambCompletionControls();
     } catch (error) {
         console.error('Ошибка загрузки мест для ягненка:', error);
     }
@@ -2739,6 +2905,7 @@ function removeLambForm(button) {
         const title = form.querySelector('h6');
         title.textContent = `Ягненок ${index + 1}`;
     });
+    updateCommonLambCompletionControls();
 }
 
 // Обработчик изменения количества ягнят
@@ -2753,6 +2920,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (count >= 0 && count <= 10) {
                 generateLambForms(count);
             }
+            updateCommonLambCompletionControls();
         });
     }
 
@@ -2774,6 +2942,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 container.style.display = 'none';
                 lambsCountInput.disabled = true;
             }
+            updateCommonLambCompletionControls();
         });
     }
 
@@ -2789,6 +2958,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setCompletionMode(event.target.checked ? 'unsuccessful_insemination' : 'normal');
         });
     }
+    ['common-lamb-place-checkbox', 'common-lamb-vet-checkbox'].forEach((id) => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) {
+            checkbox.addEventListener('change', updateCommonLambCompletionControls);
+        }
+    });
 });
 
 // Завершить окот (для отцов - баранов-производителей и баранчиков)
@@ -2818,6 +2993,7 @@ async function completeFatherLambing(lambingId) {
     }
     window.currentCompletionMode = 'normal';
     resetUnsuccessfulInseminationWarning();
+    resetCommonLambCompletionControls();
     const createLambsCheckbox = document.getElementById('create-lambs-checkbox');
     if (createLambsCheckbox) {
         createLambsCheckbox.checked = false;
@@ -2829,6 +3005,8 @@ async function completeFatherLambing(lambingId) {
         lambsCreationSection.style.display = 'none';
     }
     updateCompletionMode();
+    loadCommonLambPlaceOptions();
+    loadCommonLambVeterinaryCares();
 
     // Показываем модальное окно
     const modal = new bootstrap.Modal(document.getElementById('completeLambingModal'));
@@ -2853,6 +3031,17 @@ async function completeLambingWithChildren() {
     const deadLambsCount = parseInt(document.getElementById('dead-lambs-count')?.value || '0') || 0;
     const lambingNote = document.getElementById('completion-lambing-note').value;
     const createLambs = document.getElementById('create-lambs-checkbox') ? document.getElementById('create-lambs-checkbox').checked : false;
+    const commonPlaceEnabled = isCommonLambPlaceEnabled() && !Boolean(window.currentCompletionIsFather);
+    const commonVeterinaryEnabled = isCommonLambVeterinaryEnabled() && !Boolean(window.currentCompletionIsFather);
+    const commonPlaceRaw = document.getElementById('common-lamb-place-select')?.value || '';
+    const commonPlaceId = commonPlaceEnabled && commonPlaceRaw ? parseInt(commonPlaceRaw, 10) : null;
+    const commonVeterinaryControl = document.getElementById('common-lamb-vet-control');
+    const commonVeterinaryNote = document.getElementById('common-lamb-vet-note')?.value?.trim() || '';
+    const commonVeterinaryCareIds = (
+        commonVeterinaryEnabled && commonVeterinaryControl
+            ? getSelectedVeterinaryCareIds(commonVeterinaryControl)
+            : []
+    );
 
     if (!actualDate) {
         alert('Пожалуйста, укажите дату фактических родов');
@@ -2861,6 +3050,16 @@ async function completeLambingWithChildren() {
 
     if (lambsCount < 0 || deadLambsCount < 0) {
         alert('Количество живых и мертвых ягнят не может быть отрицательным');
+        return;
+    }
+
+    if (commonPlaceEnabled && !commonPlaceId) {
+        alert('Выберите общую овчарню');
+        return;
+    }
+
+    if (commonVeterinaryEnabled && createLambs && lambsCount > 0 && commonVeterinaryCareIds.length === 0) {
+        alert('Выберите общие ветобработки для детей');
         return;
     }
 
@@ -2884,10 +3083,12 @@ async function completeLambingWithChildren() {
                 const place = form.querySelector('.lamb-place').value;
                 const note = form.querySelector('.lamb-note').value.trim();
                 const liveWeightRaw = form.querySelector('.lamb-live-weight')?.value?.trim();
-                const veterinaryCareIds = Array.from(form.querySelectorAll('.lamb-vet-care-checkbox:checked'))
-                    .map(checkbox => parseInt(checkbox.value, 10))
-                    .filter(Number.isInteger);
-                const veterinaryNote = form.querySelector('.lamb-vet-note')?.value?.trim() || '';
+                const veterinaryCareIds = commonVeterinaryEnabled
+                    ? commonVeterinaryCareIds
+                    : getSelectedVeterinaryCareIds(form);
+                const veterinaryNote = commonVeterinaryEnabled
+                    ? commonVeterinaryNote
+                    : (form.querySelector('.lamb-vet-note')?.value?.trim() || '');
                 let liveWeight = null;
 
                 if (liveWeightRaw) {
@@ -2907,7 +3108,7 @@ async function completeLambingWithChildren() {
                     gender: gender,
                     tag_number: tag,
                     animal_status_id: status ? parseInt(status) : null,
-                    place_id: place ? parseInt(place) : null,
+                    place_id: commonPlaceEnabled ? commonPlaceId : (place ? parseInt(place) : null),
                     note: note || '',
                     live_weight: liveWeight,
                     veterinary_care_ids: veterinaryCareIds,
@@ -2922,6 +3123,11 @@ async function completeLambingWithChildren() {
             number_of_lambs: lambsCount,
             dead_lambs_count: deadLambsCount,
             note: lambingNote,
+            use_common_place: commonPlaceEnabled,
+            common_place_id: commonPlaceEnabled ? commonPlaceId : null,
+            use_common_veterinary_care: commonVeterinaryEnabled,
+            common_veterinary_care_ids: commonVeterinaryEnabled ? commonVeterinaryCareIds : [],
+            common_veterinary_note: commonVeterinaryEnabled ? commonVeterinaryNote : '',
             lambs: lambsData
         };
 
@@ -2936,6 +3142,9 @@ async function completeLambingWithChildren() {
         }
         if ((response.created_veterinary_records_count || 0) > 0) {
             successMessage += ` Добавлено ветобработок: ${response.created_veterinary_records_count}.`;
+        }
+        if (response.moved_mother_to_common_place) {
+            successMessage += ' Мать переведена в общую овчарню.';
         }
 
         alert(successMessage);

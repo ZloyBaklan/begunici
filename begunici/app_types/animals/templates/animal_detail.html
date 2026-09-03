@@ -585,6 +585,44 @@
                         <input type="number" id="lambs-count" class="form-control" min="0" max="10" value="1">
                     </div>
 
+                    <div class="mb-3 completion-common-options" id="completion-common-options">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="completion-common-option">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="common-lamb-place-checkbox">
+                                        <label class="form-check-label" for="common-lamb-place-checkbox">
+                                            Общая овчарня
+                                        </label>
+                                    </div>
+                                    <select class="form-select" id="common-lamb-place-select" disabled>
+                                        <option value="">Выберите место</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="completion-common-option" id="common-lamb-vet-control">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="common-lamb-vet-checkbox">
+                                        <label class="form-check-label" for="common-lamb-vet-checkbox">
+                                            Ветобработки для детей
+                                        </label>
+                                    </div>
+                                    <div class="dropdown lamb-vet-dropdown">
+                                        <button class="btn btn-outline-secondary dropdown-toggle w-100 lamb-vet-toggle" type="button" id="common-lamb-vet-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" disabled>
+                                            Выбрать ветобработки
+                                        </button>
+                                        <div class="dropdown-menu lamb-vet-menu w-100 p-2" aria-labelledby="common-lamb-vet-toggle">
+                                            <div class="dropdown-item-text text-muted small">Загрузка обработок...</div>
+                                        </div>
+                                    </div>
+                                    <small class="form-text lamb-vet-summary text-muted">Ветобработки не выбраны</small>
+                                    <textarea id="common-lamb-vet-note" class="form-control mt-2" rows="2" placeholder="Примечание к ветобработкам (необязательно)" disabled></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-3" id="dead-lambs-count-field">
                         <label class="form-label">Количество мертвых ягнят:</label>
                         <input type="number" id="dead-lambs-count" class="form-control" min="0" max="10" value="0">
@@ -752,6 +790,18 @@
     margin-top: 0.25rem;
     padding: 0;
     width: 1em;
+}
+
+.completion-common-option {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    height: 100%;
+    padding: 12px;
+}
+
+.completion-common-option .form-check {
+    padding-left: 1.5rem;
 }
 
 .remove-lamb-btn {
