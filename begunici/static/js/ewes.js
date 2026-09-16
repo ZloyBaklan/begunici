@@ -498,6 +498,22 @@ function toggleDeleteButton() {
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
 }
 
+function clearSelectedEwes() {
+    selectedEwes.clear();
+    saveSelectedEwes();
+
+    document.querySelectorAll('.select-ewe').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleDeleteButton();
+}
+
 // Функция для удаления выбранных записей
 async function deleteSelectedEwes() {
     const selectedTags = Array.from(selectedEwes);
@@ -830,6 +846,7 @@ window.closeArchiveModal = closeArchiveModal;
 window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedEwes = deleteSelectedEwes;
+window.clearSelectedEwes = clearSelectedEwes;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectEwe = toggleSelectEwe;
 window.toggleDeleteButton = toggleDeleteButton;

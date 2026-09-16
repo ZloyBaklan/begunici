@@ -382,7 +382,7 @@ function formatLastInsemination(insemination) {
         return '-';
     }
 
-    return `${escapeHtml(insemination.date)}: ${formatLinkedTag(insemination.father_tag, insemination.father_url)}`;
+    return `${escapeHtml(formatDateToOutput(insemination.date))}: ${formatLinkedTag(insemination.father_tag, insemination.father_url)}`;
 }
 
 function formatLastLambingSummary(summary) {
@@ -391,7 +391,7 @@ function formatLastLambingSummary(summary) {
     }
 
     if (summary.is_early_failure) {
-        return `${escapeHtml(summary.date)}: Досрочно завершен`;
+        return `${escapeHtml(formatDateToOutput(summary.date))}: Досрочно завершен`;
     }
 
     const children = Array.isArray(summary.children) ? summary.children : [];
@@ -400,7 +400,7 @@ function formatLastLambingSummary(summary) {
         : 'детей: 0';
     const deadCount = Number.isFinite(Number(summary.dead_lambs_count)) ? Number(summary.dead_lambs_count) : 0;
 
-    return `${escapeHtml(summary.date)}: ${childrenText}; м/р: ${deadCount}`;
+    return `${escapeHtml(formatDateToOutput(summary.date))}: ${childrenText}; м/р: ${deadCount}`;
 }
 
 function formatLastVetTreatment(veterinaryHistory) {
@@ -632,6 +632,22 @@ function toggleDeleteButton() {
     const hasSelection = selectedSheeps.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
+}
+
+function clearSelectedSheeps() {
+    selectedSheeps.clear();
+    saveSelectedSheeps();
+
+    document.querySelectorAll('.select-sheep').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleDeleteButton();
 }
 
 // Функция для удаления выбранных записей
@@ -879,6 +895,7 @@ window.closeArchiveModal = closeArchiveModal;
 window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedSheeps = deleteSelectedSheeps;
+window.clearSelectedSheeps = clearSelectedSheeps;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectSheep = toggleSelectSheep;
 window.toggleDeleteButton = toggleDeleteButton;

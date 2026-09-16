@@ -404,7 +404,7 @@ function renderMakers(makers, startIndex = null) {
             <td>${maker.primary_weighing_display || '-'}</td>
             <td>${maker.secondary_weighing_display || '-'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 
-                ? `${maker.weight_records[0].weight_date}: ${maker.weight_records[0].weight} кг` 
+                ? `${formatDateToOutput(maker.weight_records[0].weight_date)}: ${maker.weight_records[0].weight} кг`
                 : 'Нет записей'}</td>
             <td>${formatLastVetTreatment(maker.veterinary_history)}</td>
             <td>${maker.working_condition || 'Нет данных'}</td>
@@ -525,6 +525,22 @@ function toggleDeleteButton() {
     const hasSelection = selectedMakers.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
+}
+
+function clearSelectedMakers() {
+    selectedMakers.clear();
+    saveSelectedMakers();
+
+    document.querySelectorAll('.select-maker').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleDeleteButton();
 }
 
 // Обновление состояния чекбоксов при загрузке страницы
@@ -878,6 +894,7 @@ async function applyArchiveStatus() {
 // Экспортируем функции для глобального доступа
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedMakers = deleteSelectedMakers;
+window.clearSelectedMakers = clearSelectedMakers;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectMaker = toggleSelectMaker;
 window.toggleDeleteButton = toggleDeleteButton;

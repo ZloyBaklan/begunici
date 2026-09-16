@@ -2,6 +2,13 @@ import { apiRequest } from "./utils.js";
 
 let weightChartInstance = null;
 let maleFertilityInitialized = false;
+const BODY_CONDITION_LABELS = {
+    1: 'кахексия (истощение)',
+    2: 'ниже средней',
+    3: 'средняя',
+    4: 'выше средней',
+    5: 'высшая (ожирение)',
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
     const analyticsDetail = document.getElementById("analytics-detail");
@@ -29,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadStatusHistory(animalType, tagNumber);
         await loadPlaceHistory(animalType, tagNumber);
         await loadNoteHistory(animalType, tagNumber);
+        await loadBodyConditionHistory(animalType, tagNumber);
         await initializeMaleFertilityCard(animalType, tagNumber);
         
         // Обработчик чекбокса для скрытия архивных детей
@@ -401,6 +409,13 @@ function formatNoteValue(value) {
     return text ? escapeHtml(text) : 'Не указано';
 }
 
+function getBodyConditionLabel(index, label) {
+    if (label) {
+        return escapeHtml(label);
+    }
+    return BODY_CONDITION_LABELS[Number(index)] || '-';
+}
+
 async function loadNoteHistory(animalType, tagNumber, page = 1) {
     try {
         const response = await apiRequest(`/animals/${animalType}/${tagNumber}/note_history/?page=${page}&page_size=${analyticsPageSize}`);
@@ -448,6 +463,48 @@ async function loadNoteHistory(animalType, tagNumber, page = 1) {
         renderPageNumbers(pageNumbers, page, totalPages, (p) => loadNoteHistory(animalType, tagNumber, p));
     } catch (error) {
         console.error('Ошибка загрузки истории примечаний:', error);
+    }
+}
+
+async function loadBodyConditionHistory(animalType, tagNumber, page = 1) {
+    try {
+        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/body_condition_history/?page=${page}&page_size=${analyticsPageSize}`);
+        const historyList = document.getElementById('body-condition-history-list');
+        const prevButton = document.getElementById('body-condition-prev');
+        const nextButton = document.getElementById('body-condition-next');
+        const pageNumbers = document.getElementById('body-condition-page-numbers');
+
+        if (!historyList || !prevButton || !nextButton || !pageNumbers) {
+            return;
+        }
+
+        historyList.innerHTML = '';
+        const records = response.results || response || [];
+
+        if (records.length > 0) {
+            records.forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${record.measurement_date ? new Date(record.measurement_date).toLocaleDateString('ru-RU') : '-'}</td>
+                    <td>${record.condition_index || '-'}</td>
+                    <td>${getBodyConditionLabel(record.condition_index, record.condition_label)}</td>
+                    <td>${formatNoteValue(record.note)}</td>
+                `;
+                historyList.appendChild(row);
+            });
+        } else {
+            historyList.innerHTML = '<tr><td colspan="4">Нет истории упитанности</td></tr>';
+        }
+
+        prevButton.disabled = !response.previous;
+        nextButton.disabled = !response.next;
+        prevButton.onclick = () => loadBodyConditionHistory(animalType, tagNumber, page - 1);
+        nextButton.onclick = () => loadBodyConditionHistory(animalType, tagNumber, page + 1);
+
+        const totalPages = Math.ceil((response.count || records.length) / analyticsPageSize);
+        renderPageNumbers(pageNumbers, page, totalPages, (p) => loadBodyConditionHistory(animalType, tagNumber, p));
+    } catch (error) {
+        console.error('Ошибка загрузки истории упитанности:', error);
     }
 }
 

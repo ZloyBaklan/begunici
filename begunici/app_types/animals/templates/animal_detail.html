@@ -68,6 +68,15 @@
     color: #dc3545;
 }
 
+.actual-lambing-date {
+    color: #198754;
+    font-weight: 600;
+}
+
+.actual-lambing-row {
+    margin-top: 10px;
+}
+
 .no-lambings {
     color: #6c757d;
     font-style: italic;
@@ -219,18 +228,34 @@
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-12">
-                                <label for="vet-treatment-select" class="form-label">Обработка:</label>
-                                <select id="vet-treatment-select" class="form-select">
-                                    <option value="">Выберите обработку</option>
-                                </select>
+                                <label for="animal-vet-treatment-toggle" class="form-label">Обработка:</label>
+                                <div id="animal-vet-treatment-control">
+                                    <div class="dropdown animal-vet-dropdown">
+                                        <button class="btn btn-outline-secondary dropdown-toggle w-100 animal-vet-toggle" type="button" id="animal-vet-treatment-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                                            Выбрать ветобработки
+                                        </button>
+                                        <div class="dropdown-menu animal-vet-menu w-100 p-2" aria-labelledby="animal-vet-treatment-toggle">
+                                            <div class="dropdown-item-text text-muted small">Загрузка обработок...</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-12">
-                                <div class="bg-light p-2 rounded">
-                                    <p class="mb-1" id="treatment-class"><strong>Класс:</strong> -</p>
-                                    <p class="mb-1" id="treatment-type"><strong>Тип:</strong> -</p>
-                                    <p class="mb-1" id="treatment-medicine"><strong>Препарат:</strong> -</p>
-                                    <p class="mb-1" id="treatment-description"><strong>Цель:</strong> -</p>
-                                    <p class="mb-0" id="treatment-duration"><strong>Срок действия:</strong> -</p>
+                                <div id="animal-vet-details-block" class="bg-light p-2 rounded animal-vet-details" style="display: none;">
+                                    <div id="treatment-details-table-wrap" class="table-responsive" style="display: none;">
+                                        <table class="table table-sm table-bordered align-middle mb-0 animal-vet-details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Класс</th>
+                                                    <th>Тип</th>
+                                                    <th>Препарат</th>
+                                                    <th>Цель</th>
+                                                    <th>Срок действия</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="treatment-details-body"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -278,10 +303,16 @@
                                     <select id="place" class="form-select"></select>
                                 </div>
                                 <div class="col-md-6 d-flex align-items-end">
-                                    <div class="form-check mb-2">
-                                        <input type="checkbox" id="is_reject" class="form-check-input" {% if animal.is_reject %}checked{% endif %}>
-                                        <label for="is_reject" class="form-check-label">Назначение: Брак</label>
-                                        <span id="reject-warning-display" class="text-warning small ms-2"></span>
+                                    <div class="mb-2">
+                                        <div class="form-check">
+                                            <input type="checkbox" id="is_reject" class="form-check-input" {% if animal.is_reject %}checked{% endif %}>
+                                            <label for="is_reject" class="form-check-label">Назначение: Брак</label>
+                                            <span id="reject-warning-display" class="text-warning small ms-2"></span>
+                                        </div>
+                                        <div class="form-check mt-2">
+                                            <input type="checkbox" id="needs_retagging" class="form-check-input" {% if animal.needs_retagging %}checked{% endif %}>
+                                            <label for="needs_retagging" class="form-check-label">Необходимо перебиркование</label>
+                                        </div>
                                     </div>
                                 </div>
                                 {% if animal_type == 'maker' %}
@@ -360,6 +391,61 @@
                             </div>
                             <div class="col-12">
                                 <button type="button" onclick="updateParents()" class="btn btn-primary">Обновить родителей</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4" id="body-condition-card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Упитанность</h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mb-3">Последнее измерение</h6>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-borderless mb-0">
+                                <tr>
+                                    <th width="35%">Индекс</th>
+                                    <td id="body-condition-latest-index">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Расшифровка</th>
+                                    <td id="body-condition-latest-label">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Дата</th>
+                                    <td id="body-condition-latest-date">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Примечание</th>
+                                    <td id="body-condition-latest-note" style="word-wrap: break-word; max-width: 300px;">-</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <h6 class="mb-3">Добавить запись</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="body-condition-index" class="form-label">Индекс:</label>
+                                <select id="body-condition-index" class="form-select">
+                                    <option value="">Выберите индекс</option>
+                                    <option value="1">1 - кахексия (истощение)</option>
+                                    <option value="2">2 - ниже средней</option>
+                                    <option value="3">3 - средняя</option>
+                                    <option value="4">4 - выше средней</option>
+                                    <option value="5">5 - высшая (ожирение)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="body-condition-date" class="form-label">Дата:</label>
+                                <input type="date" id="body-condition-date" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <label for="body-condition-note" class="form-label">Примечание:</label>
+                                <textarea id="body-condition-note" rows="2" placeholder="Примечание (необязательно)" class="form-control"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="addBodyConditionRecord()" class="btn btn-success">Добавить</button>
                             </div>
                         </div>
                     </div>
@@ -756,7 +842,8 @@
     font-size: 14px;
 }
 
-.lamb-vet-menu {
+.lamb-vet-menu,
+.animal-vet-menu {
     max-height: 260px;
     overflow-y: auto;
 }
@@ -769,27 +856,51 @@
     margin-bottom: 12px;
 }
 
-.lamb-vet-toggle {
+.lamb-vet-toggle,
+.animal-vet-toggle {
     text-align: left;
 }
 
-.lamb-vet-toggle::after {
+.lamb-vet-toggle::after,
+.animal-vet-toggle::after {
     float: right;
     margin-top: 0.65em;
 }
 
-.lamb-vet-option {
+.lamb-vet-option,
+.animal-vet-option {
     align-items: flex-start;
     display: flex;
     white-space: normal;
 }
 
-.lamb-vet-option .form-check-input {
+.lamb-vet-option .form-check-input,
+.animal-vet-option .form-check-input {
     flex: 0 0 auto;
     height: 1em;
     margin-top: 0.25rem;
     padding: 0;
     width: 1em;
+}
+
+.animal-vet-details-table {
+    background: #fff;
+    font-size: 0.9rem;
+}
+
+.animal-vet-details-table th {
+    background: #eef3f7;
+    color: #495057;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.animal-vet-details-table td {
+    min-width: 120px;
+}
+
+.animal-vet-details-table td:nth-child(4) {
+    min-width: 220px;
 }
 
 .completion-common-option {

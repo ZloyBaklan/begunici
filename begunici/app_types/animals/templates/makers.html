@@ -98,7 +98,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="input-group">
-                                <input type="text" id="maker-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу...">
+                                <input type="text" id="maker-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу, овчарне...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performMakerSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleMakerAdditionalFilters()">Доп. фильтры</button>
                             </div>
@@ -218,6 +218,9 @@
                             {% endif %}
                             <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">
                                 Перенести в архив
+                            </button>
+                            <button id="clear-selected-button" class="btn btn-outline-secondary btn-sm" onclick="clearSelectedMakers()">
+                                Очистить выбор
                             </button>
                         </div>
                     </div>

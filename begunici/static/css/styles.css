@@ -470,33 +470,133 @@ th {
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 2px solid #dee2e6;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .barn-header h2 {
     margin: 0;
     color: #333;
     font-size: 1.5em;
+    min-width: 0;
 }
 
 .show-empty-sections-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     margin: 0;
     color: #333;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     user-select: none;
+    white-space: nowrap;
+}
+
+.barn-export-button {
+    margin-left: auto;
+    margin-right: 16px;
+    white-space: nowrap;
 }
 
 .show-empty-sections-toggle input {
     margin: 0;
 }
 
+.modal-content.place-map-export-modal-content {
+    max-width: 680px;
+    width: min(92vw, 680px);
+}
+
+.place-map-export-modal-content h2 {
+    margin-bottom: 10px;
+    font-size: 1.45rem;
+}
+
+.place-map-export-modal-content .export-filters {
+    margin: 12px 0;
+}
+
+.place-map-export-modal-content .filter-group {
+    margin: 10px 0;
+    padding: 12px;
+}
+
+.place-map-export-filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.place-map-export-modal-content .filter-group .place-map-export-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: #495057;
+    cursor: pointer;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.place-map-export-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 6px;
+    max-height: 230px;
+    overflow-y: auto;
+}
+
+.place-map-export-types {
+    max-height: none;
+}
+
+.place-map-export-modal-content .filter-group .place-map-export-section-option {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    padding: 7px 10px;
+    border: 1px solid #dce2e8;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+}
+
+.place-map-export-section-option input {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.place-map-export-section-count {
+    margin-left: auto;
+    color: #6c757d;
+    font-size: 0.9em;
+}
+
+@media (max-width: 900px) {
+    .barn-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .barn-export-button {
+        margin-left: 0;
+        margin-right: 0;
+    }
+}
+
 #back-to-list {
     padding: 8px 16px;
     font-size: 14px;
+    white-space: nowrap;
 }
 
 .no-barns {
@@ -861,6 +961,28 @@ th {
 
 .modal-close:hover {
     background-color: #0056b3;
+}
+
+#archive-modal .modal-dialog {
+    width: min(780px, calc(100vw - 32px));
+    max-width: 780px;
+    margin: 1.75rem auto;
+}
+
+#archive-modal .modal-content {
+    width: 100%;
+    max-width: none;
+    text-align: left;
+}
+
+#archive-modal .modal-body,
+#archive-modal .form-label,
+#archive-modal .archive-extra-weight-title {
+    text-align: left;
+}
+
+#archive-modal .archive-extra-weight-card {
+    background-color: #fff;
 }
 
 /* Стили для главной страницы - статистика */

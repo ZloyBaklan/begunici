@@ -28,8 +28,17 @@ from .views import (
     RamDetailView,
     EweDetailView,
     SheepDetailView,
+    dashboard_plan_parameters,
     dashboard_statistics,
     yearly_statistics,
+    tags_management,
+    temporary_tags_api,
+    temporary_tag_delete_api,
+    retagging_animals_api,
+    retagging_search_animals_api,
+    retagging_mark_api,
+    retagging_unmark_api,
+    retagging_change_tag_api,
     get_all_tags,
     get_all_statuses,
     export_to_excel,
@@ -280,6 +289,7 @@ urlpatterns = [
         name="sheep-restore",
     ),
     path("api/dashboard-statistics/", dashboard_statistics, name="dashboard-statistics"),  # API статистики
+    path("api/dashboard-plan-parameters/", dashboard_plan_parameters, name="dashboard-plan-parameters"),
     path("api/yearly-statistics/", yearly_statistics, name="yearly-statistics"),  # API годовой статистики
     path("api/all-tags/", get_all_tags, name="all-tags"),  # API всех бирок
     path("api/all-statuses/", get_all_statuses, name="all-statuses"),  # API всех статусов
@@ -291,6 +301,7 @@ urlpatterns = [
         name="export-animal-detail-excel",
     ),
     path("main/", animals, name="animals"),  # Главная страница
+    path("tags/", tags_management, name="tags-management"),
     path("common/", common_animals, name="common"),  # Общая страница животных
     path("young-stock/", young_stock, name="young-stock"),
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
@@ -316,6 +327,13 @@ urlpatterns = [
     path("api/young-stock/", young_stock_api, name="young-stock-api"),
     path("api/young-stock/export-excel/", young_stock_export_excel, name="young-stock-export-excel"),
     path("api/archive/act-preview/", archive_act_preview, name="archive-act-preview"),
+    path("api/tags/temporary/", temporary_tags_api, name="temporary-tags-api"),
+    path("api/tags/temporary/<int:tag_id>/", temporary_tag_delete_api, name="temporary-tag-delete-api"),
+    path("api/tags/retagging/", retagging_animals_api, name="retagging-animals-api"),
+    path("api/tags/retagging/search/", retagging_search_animals_api, name="retagging-search-animals-api"),
+    path("api/tags/retagging/mark/", retagging_mark_api, name="retagging-mark-api"),
+    path("api/tags/retagging/unmark/", retagging_unmark_api, name="retagging-unmark-api"),
+    path("api/tags/retagging/change/", retagging_change_tag_api, name="retagging-change-tag-api"),
     path("api/acts/archive/", archive_acts_api, name="archive-acts-api"),
     path("api/archive/act/<str:animal_type>/<str:tag_number>/", archive_act_download, name="archive-act-download"),
     path("api/acts/transfer/", transfer_acts_api, name="transfer-acts-api"),

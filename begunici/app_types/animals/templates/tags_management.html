@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Бирки{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Бирки</h1>
+
+    <div class="tags-management-selector barns-selector">
+        <div class="barns-list tags-management-buttons">
+            <button
+                type="button"
+                class="barn-selector-card tags-management-card active"
+                id="temporary-tags-tab"
+            >
+                Временные бирки
+            </button>
+            <button
+                type="button"
+                class="barn-selector-card tags-management-card"
+                id="retagging-tab"
+            >
+                Перебиркование
+            </button>
+        </div>
+    </div>
+
+    <div id="tags-message" class="alert d-none" role="alert"></div>
+
+    <section id="temporary-tags-section">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Создать временную бирку</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-8">
+                        <label for="temporary-tag-input" class="form-label">Бирка</label>
+                        <input type="text" id="temporary-tag-input" class="form-control" placeholder="Введите номер временной бирки">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button" class="btn btn-success w-100" id="create-temporary-tag-btn">Создать временную бирку</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Временные бирки</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>Бирка</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="temporary-tags-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="retagging-section" style="display: none;">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Добавить к перебиркованию</h5>
+            </div>
+            <div class="card-body">
+                <button type="button" class="btn btn-success" id="open-add-retagging-modal-btn">Добавить животное</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Перебиркование</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>Тип животного</th>
+                                <th>Бирка</th>
+                                <th>Статус</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="retagging-animals-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="modal fade" id="addRetaggingAnimalModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить к перебиркованию</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="retagging-animal-search" placeholder="Введите бирку или РСХН для поиска...">
+                    <button class="btn btn-primary" type="button" id="search-retagging-animal-btn">Поиск</button>
+                </div>
+                <div id="retagging-animal-search-results" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="confirm-add-retagging-animal-btn">Добавить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="retagAnimalModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Перебирковать животное</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3" id="retag-animal-description"></p>
+                <label for="new-tag-number-input" class="form-label">Новая бирка</label>
+                <input type="text" id="new-tag-number-input" class="form-control" placeholder="Введите новую бирку">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="confirm-retag-animal-btn">Перебирковать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="{% static 'js/tags_management.js' %}"></script>
+
+<style>
+.tags-management-selector {
+    margin: 16px 0 20px;
+}
+
+.tags-management-buttons {
+    justify-content: flex-start;
+    gap: 12px;
+    margin-bottom: 0;
+    padding: 0;
+}
+
+.tags-management-card {
+    color: #0d1b2a;
+    font: inherit;
+    min-width: 190px;
+    max-width: none;
+    padding: 10px 18px;
+    font-weight: 600;
+}
+
+.tags-management-card.active {
+    background-color: #007bff;
+    color: #fff;
+    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+@media (max-width: 767.98px) {
+    .tags-management-buttons {
+        gap: 8px;
+    }
+
+    .tags-management-card {
+        width: 100%;
+        max-width: none;
+    }
+}
+</style>
+{% endblock %}

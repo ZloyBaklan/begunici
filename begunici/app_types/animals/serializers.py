@@ -15,6 +15,7 @@ from .models import (
     LambingGroup,
     AnimalBase,
     AnimalNoteHistory,
+    SheepBodyConditionRecord,
     CalendarNote,
     ArchiveAct,
     build_unsuccessful_insemination_mother_warning,
@@ -58,7 +59,7 @@ def _format_weight_kg(value):
 def _format_weight_record_with_date(record):
     if not record:
         return "-"
-    return f"{record.weight_date.strftime('%Y-%m-%d')}: {_format_weight_kg(record.weight)}"
+    return f"{record.weight_date.strftime('%d.%m.%Y')}: {_format_weight_kg(record.weight)}"
 
 
 def _get_weight_record_near_date(tag, target_date, delta_days=5):
@@ -78,6 +79,33 @@ def _get_weight_record_near_date(tag, target_date, delta_days=5):
         key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, record.id),
         default=None,
     )
+
+
+ARCHIVE_FATNESS_LEGACY_TO_INDEX = {
+    "н/ср": 2,
+    "ср": 3,
+    "выс": 5,
+}
+
+
+def _normalize_archive_fatness_index(value):
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip()
+    if normalized in ARCHIVE_FATNESS_LEGACY_TO_INDEX:
+        return ARCHIVE_FATNESS_LEGACY_TO_INDEX[normalized]
+    try:
+        index = int(normalized)
+    except (TypeError, ValueError):
+        return None
+    return index if index in SheepBodyConditionRecord.CONDITION_LABELS else None
+
+
+def _format_archive_fatness_for_log(value):
+    index = _normalize_archive_fatness_index(value)
+    if not index:
+        return value or "Не указано"
+    return f"{index} - {SheepBodyConditionRecord.CONDITION_LABELS[index]}"
 
 
 def _get_animal_detail_url(animal):
@@ -304,6 +332,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_add_weight_record = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_group_key = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    archive_act_fatness_changed = serializers.BooleanField(write_only=True, required=False, default=False)
     confirm_group_place_move = serializers.BooleanField(write_only=True, required=False, default=False)
     
     # Поле для отображения кровности по основной породе с форматированием
@@ -312,6 +341,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     primary_weighing_display = serializers.SerializerMethodField()
     secondary_weighing_display = serializers.SerializerMethodField()
     final_weighing_display = serializers.SerializerMethodField()
+    latest_body_condition = serializers.SerializerMethodField()
 
     class Meta:
         model = AnimalBase
@@ -340,6 +370,15 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             return ""
         count = get_current_unsuccessful_insemination_count_for_mother(obj)
         return build_unsuccessful_insemination_mother_warning(count)
+
+    def get_latest_body_condition(self, obj):
+        record = (
+            SheepBodyConditionRecord.objects
+            .filter(tag=obj.tag)
+            .order_by("-measurement_date", "-id")
+            .first()
+        )
+        return SheepBodyConditionRecordSerializer(record).data if record else None
 
     @staticmethod
     def _format_dorper_log_value(value, is_manual):
@@ -473,7 +512,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return attrs
 
     def validate_birth_date(self, value):
-        if value > timezone.now().date():
+        if value > timezone.localdate():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
         return value
     
@@ -485,7 +524,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return value
 
     def validate_date_otbivka(self, value):
-        if value and value > timezone.now().date():
+        if value and value > timezone.localdate():
             raise serializers.ValidationError("Дата отбивки не может быть в будущем.")
         return value
 
@@ -509,6 +548,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_add_weight_record",
             "archive_act_download",
             "archive_act_group_key",
+            "archive_act_fatness_changed",
             "confirm_group_place_move",
         ):
             validated_data.pop(service_field, None)
@@ -603,6 +643,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             "archive_act_add_weight_record",
             "archive_act_download",
             "archive_act_group_key",
+            "archive_act_fatness_changed",
         }
         archive_act_fields_submitted = any(
             field_name in getattr(self, "initial_data", {})
@@ -613,6 +654,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         archive_act_date = validated_data.pop("archive_act_date", None)
         archive_act_live_weight = validated_data.pop("archive_act_live_weight", None)
         archive_act_fatness = (validated_data.pop("archive_act_fatness", "") or "").strip()
+        archive_act_fatness_index = _normalize_archive_fatness_index(archive_act_fatness)
+        archive_act_fatness_changed = bool(validated_data.pop("archive_act_fatness_changed", False))
+        if archive_act_fatness and archive_act_fatness_index is None:
+            raise serializers.ValidationError({
+                "archive_act_fatness": "Укажите упитанность по шкале от 1 до 5."
+            })
+        archive_act_fatness = str(archive_act_fatness_index) if archive_act_fatness_index else ""
         archive_act_diagnosis = (validated_data.pop("archive_act_diagnosis", "") or "").strip()
         archive_act_worker_name = (validated_data.pop("archive_act_worker_name", "") or "").strip()
         archive_act_weight_date = validated_data.pop("archive_act_weight_date", None)
@@ -759,6 +807,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'working_condition_date': 'Дата рабочего состояния',
             'carcass_weight': 'Вес туши (кг)',
             'is_reject': 'Назначение',
+            'needs_retagging': 'Необходимо перебиркование',
         }
         
         for field, display_name in field_names.items():
@@ -766,8 +815,12 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 old_value = getattr(instance, field, None)
                 new_value = validated_data[field]
                 if old_value != new_value:
-                    old_str = str(old_value) if old_value else 'Не указано'
-                    new_str = str(new_value) if new_value else 'Не указано'
+                    if isinstance(old_value, bool) or isinstance(new_value, bool):
+                        old_str = 'Да' if old_value else 'Нет'
+                        new_str = 'Да' if new_value else 'Нет'
+                    else:
+                        old_str = str(old_value) if old_value else 'Не указано'
+                        new_str = str(new_value) if new_value else 'Не указано'
                     if len(old_str) > 30:
                         old_str = old_str[:30] + '...'
                     if len(new_str) > 30:
@@ -793,7 +846,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 )
             if "archive_act_fatness" in initial_data:
                 archive_act_details.append(
-                    f"Упитанность: {archive_act_fatness or 'Не указано'}"
+                    f"Упитанность: {_format_archive_fatness_for_log(archive_act_fatness)}"
                 )
             if "archive_act_death_reason" in initial_data:
                 archive_act_details.append(
@@ -909,6 +962,28 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     "download_on_archive": archive_act_download,
                 },
             )
+            if (
+                archive_act_fatness_index
+                and status_date
+            ):
+                latest_body_condition = (
+                    SheepBodyConditionRecord.objects
+                    .filter(tag=instance.tag)
+                    .order_by("-measurement_date", "-id")
+                    .first()
+                )
+                should_create_body_condition = (
+                    archive_act_fatness_changed
+                    or latest_body_condition is None
+                    or latest_body_condition.condition_index != archive_act_fatness_index
+                )
+                if should_create_body_condition:
+                    SheepBodyConditionRecord.objects.create(
+                        tag=instance.tag,
+                        condition_index=archive_act_fatness_index,
+                        measurement_date=status_date,
+                        note="Добавлено при архивировании",
+                    )
             if status_will_change:
                 set_mothers_not_inseminated_after_child_update(instance)
 
@@ -1047,6 +1122,34 @@ class AnimalNoteHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = AnimalNoteHistory
         fields = ["id", "tag", "old_note", "new_note", "change_date"]
+
+
+class SheepBodyConditionRecordSerializer(serializers.ModelSerializer):
+    condition_index = serializers.IntegerField(min_value=1, max_value=5)
+    condition_label = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = SheepBodyConditionRecord
+        fields = [
+            "id",
+            "tag",
+            "condition_index",
+            "condition_label",
+            "measurement_date",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = ["id", "tag", "condition_label", "created_at"]
+
+    def validate_measurement_date(self, value):
+        if value and value > timezone.localdate():
+            raise serializers.ValidationError("Дата измерения не может быть в будущем.")
+        return value
+
+    def validate_condition_index(self, value):
+        if value not in SheepBodyConditionRecord.CONDITION_LABELS:
+            raise serializers.ValidationError("Индекс упитанности должен быть от 1 до 5.")
+        return value
 
 
 class MakerSerializer(AnimalBaseSerializer):

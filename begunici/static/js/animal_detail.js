@@ -20,9 +20,11 @@ const API_ERROR_FIELD_LABELS = {
     archive_act_weight_date: 'Дата дополнительного веса',
     birth_date: 'Дата рождения',
     carcass_weight: 'Вес туши',
+    condition_index: 'Индекс упитанности',
     dead_lambs_count: 'Мертвые ягнята',
     dorper_percentage: 'Кровность по основной породе',
     father: 'Отец',
+    measurement_date: 'Дата измерения',
     mother: 'Мать',
     non_field_errors: 'Общая ошибка',
     note: 'Примечание',
@@ -369,6 +371,43 @@ function formatDateToShortOutput(dateString) {
     return date.toLocaleDateString('ru-RU');
 }
 
+const SHEEP_BODY_CONDITION_LABELS = {
+    1: 'кахексия (истощение)',
+    2: 'ниже средней',
+    3: 'средняя',
+    4: 'выше средней',
+    5: 'высшая (ожирение)',
+};
+
+function getSheepBodyConditionLabel(index) {
+    const normalizedIndex = Number(index);
+    return SHEEP_BODY_CONDITION_LABELS[normalizedIndex] || '-';
+}
+
+function renderLatestBodyCondition(record) {
+    const indexElement = document.getElementById('body-condition-latest-index');
+    const labelElement = document.getElementById('body-condition-latest-label');
+    const dateElement = document.getElementById('body-condition-latest-date');
+    const noteElement = document.getElementById('body-condition-latest-note');
+
+    if (!indexElement || !labelElement || !dateElement || !noteElement) {
+        return;
+    }
+
+    if (!record) {
+        indexElement.textContent = '-';
+        labelElement.textContent = '-';
+        dateElement.textContent = '-';
+        noteElement.textContent = '-';
+        return;
+    }
+
+    indexElement.textContent = record.condition_index || '-';
+    labelElement.textContent = record.condition_label || getSheepBodyConditionLabel(record.condition_index);
+    dateElement.textContent = formatDateToShortOutput(record.measurement_date);
+    noteElement.textContent = record.note || '-';
+}
+
 function parseDateOnlyToLocal(dateString) {
     if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
         return null;
@@ -434,6 +473,11 @@ async function loadAnimalDetails(animalType, tagNumber) {
             rejectField.checked = Boolean(animal.is_reject);
         }
 
+        const retaggingField = document.getElementById('needs_retagging');
+        if (retaggingField) {
+            retaggingField.checked = Boolean(animal.needs_retagging);
+        }
+
         const rejectDisplay = document.getElementById('reject-display');
         const rejectWarningDisplay = document.getElementById('reject-warning-display');
         const warningText = animal.unsuccessful_insemination_warning || '';
@@ -447,6 +491,12 @@ async function loadAnimalDetails(animalType, tagNumber) {
 
         document.getElementById('note').value = animal.note || '';
         updateCarcassWeightDisplay(animal);
+        renderLatestBodyCondition(animal.latest_body_condition);
+
+        const bodyConditionDateInput = document.getElementById('body-condition-date');
+        if (bodyConditionDateInput && !bodyConditionDateInput.value) {
+            bodyConditionDateInput.value = getTodayInputValue();
+        }
 
         console.log('Загружаем дополнительные данные (статусы, места, вес, ветобработки)...');
         await Promise.all([
@@ -458,6 +508,68 @@ async function loadAnimalDetails(animalType, tagNumber) {
         console.log('Все дополнительные данные загружены');
     } catch (error) {
         console.error('Ошибка загрузки барана-производителя:', error);
+    }
+}
+
+
+async function loadLatestBodyCondition(animalType, tagNumber) {
+    if (!animalType || !tagNumber) {
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/animals/${animalType}/${tagNumber}/body_condition_history/?page=1&page_size=1`, 'GET');
+        const records = response.results || response || [];
+        renderLatestBodyCondition(records[0] || null);
+    } catch (error) {
+        console.error('Ошибка загрузки упитанности:', error);
+    }
+}
+
+async function addBodyConditionRecord() {
+    const animalDetail = document.getElementById('animal-detail');
+    const tagNumber = animalDetail?.dataset.tagNumber;
+    const animalType = animalDetail?.dataset.animalType;
+
+    if (!animalType || !tagNumber) {
+        alert('Не удалось определить животное для добавления упитанности.');
+        return;
+    }
+
+    const indexInput = document.getElementById('body-condition-index');
+    const dateInput = document.getElementById('body-condition-date');
+    const noteInput = document.getElementById('body-condition-note');
+
+    const conditionIndex = Number(indexInput?.value || 0);
+    const measurementDate = dateInput?.value || '';
+    const note = noteInput?.value || '';
+
+    if (!conditionIndex || conditionIndex < 1 || conditionIndex > 5) {
+        alert('Выберите индекс упитанности от 1 до 5.');
+        return;
+    }
+
+    if (!measurementDate) {
+        alert('Укажите дату измерения упитанности.');
+        return;
+    }
+
+    try {
+        await apiRequest(`/animals/${animalType}/${tagNumber}/body_condition/`, 'POST', {
+            condition_index: conditionIndex,
+            measurement_date: measurementDate,
+            note,
+        });
+
+        if (indexInput) indexInput.value = '';
+        if (noteInput) noteInput.value = '';
+        if (dateInput) dateInput.value = getTodayInputValue();
+
+        await loadLatestBodyCondition(animalType, tagNumber);
+        alert('Запись упитанности добавлена.');
+    } catch (error) {
+        console.error('Ошибка добавления упитанности:', error);
+        alert('Ошибка при добавлении упитанности: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -617,6 +729,7 @@ async function saveAnimalDetails() {
         rshn_tag: document.getElementById('rshn_tag').value || null,
         date_otbivka: document.getElementById('date_otbivka').value || null,
         is_reject: Boolean(document.getElementById('is_reject')?.checked),
+        needs_retagging: Boolean(document.getElementById('needs_retagging')?.checked),
     };
 
     if (animalStatusValue) {
@@ -934,35 +1047,84 @@ async function addWeightRecord() {
 }
 
 
+let animalVeterinaryTreatments = [];
+
+function getVetTreatmentLabel(treatment) {
+    const medicationText = (treatment?.medication || '').trim() || 'Не указан препарат';
+    const purposeText = (treatment?.purpose || '').trim() || 'Не указана цель';
+    return `${medicationText} — ${purposeText}`;
+}
+
+function formatVetTreatmentDuration(durationDays) {
+    const days = Number(durationDays || 0);
+    return days === 0 ? 'Бессрочно' : `${days} дней`;
+}
+
+function getSelectedAnimalVetTreatmentIds() {
+    return Array.from(document.querySelectorAll('.animal-vet-care-checkbox:checked'))
+        .map(checkbox => parseInt(checkbox.value, 10))
+        .filter(Number.isInteger);
+}
+
+function getSelectedAnimalVetTreatments() {
+    const selectedIds = new Set(getSelectedAnimalVetTreatmentIds());
+    return animalVeterinaryTreatments.filter(treatment => selectedIds.has(Number(treatment.id)));
+}
+
+function updateAnimalVetTreatmentSummary() {
+    const selectedTreatments = getSelectedAnimalVetTreatments();
+    const selectedCount = selectedTreatments.length;
+    const button = document.getElementById('animal-vet-treatment-toggle');
+
+    if (button) {
+        button.textContent = selectedCount ? `Ветобработки: ${selectedCount}` : 'Выбрать ветобработки';
+    }
+
+    displayTreatmentDetails();
+}
+
+function resetAnimalVetTreatmentSelection() {
+    document.querySelectorAll('.animal-vet-care-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    updateAnimalVetTreatmentSummary();
+}
+
 async function addVetRecord() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
-    const animalType = animalDetail.dataset.animalType;
-    const treatmentId = document.getElementById('vet-treatment-select').value;
+    const treatmentIds = getSelectedAnimalVetTreatmentIds();
     const careDate = document.getElementById('vet-treatment-date').value;
 
-    if (!treatmentId || !careDate) {
-        alert('Выберите обработку и укажите дату.');
+    if (treatmentIds.length === 0 || !careDate) {
+        alert('Выберите хотя бы одну обработку и укажите дату.');
         return;
     }
 
-    const data = {
-        tag_write: tagNumber,
-        veterinary_care_write: parseInt(treatmentId),
-        date_of_care: careDate,
-        comments: document.getElementById('vet-treatment-comments').value || ''
-    };
-
-    console.log('Отправляемые данные:', data);
+    const comments = document.getElementById('vet-treatment-comments').value || '';
+    let createdCount = 0;
+    let currentTreatmentId = null;
 
     try {
-        console.log('Отправляем запрос на добавление ветобработки...');
-        const result = await apiRequest('/veterinary/api/veterinary/', 'POST', data);
-        console.log('Ветобработка успешно добавлена, ответ сервера:', result);
-        alert('Ветобработка добавлена!');
+        for (const treatmentId of treatmentIds) {
+            currentTreatmentId = treatmentId;
+            const data = {
+                tag_write: tagNumber,
+                veterinary_care_write: treatmentId,
+                date_of_care: careDate,
+                comments
+            };
+
+            console.log('Отправляемые данные ветобработки:', data);
+            const result = await apiRequest('/veterinary/api/veterinary/', 'POST', data);
+            createdCount += 1;
+            console.log('Ветобработка успешно добавлена, ответ сервера:', result);
+        }
+
+        alert(createdCount === 1 ? 'Ветобработка добавлена!' : `Добавлено ветобработок: ${createdCount}.`);
 
         // Очищаем форму после успешного добавления
-        document.getElementById('vet-treatment-select').value = '';
+        resetAnimalVetTreatmentSelection();
         document.getElementById('vet-treatment-date').value = '';
         document.getElementById('vet-treatment-comments').value = '';
         displayTreatmentDetails(); // Очищаем отображение деталей
@@ -971,15 +1133,18 @@ async function addVetRecord() {
         await loadCurrentVetTreatments(); // Обновляем таблицу текущих ветобработок
     } catch (error) {
         console.error('Ошибка добавления ветобработки:', error);
+        if (createdCount > 0) {
+            await loadCurrentVetTreatments();
+        }
 
-        // Проверяем, является ли это ошибкой уникальности
+        const currentTreatment = animalVeterinaryTreatments.find(treatment => Number(treatment.id) === currentTreatmentId);
+        const treatmentName = currentTreatment ? getVetTreatmentLabel(currentTreatment) : 'выбранная обработка';
+        const partialText = createdCount > 0 ? `\n\nДо ошибки уже добавлено обработок: ${createdCount}. Таблица обновлена.` : '';
+
         if (error.message && error.message.includes('unique set')) {
-            const selectedOption = document.getElementById('vet-treatment-select').options[document.getElementById('vet-treatment-select').selectedIndex];
-            const treatmentName = selectedOption ? selectedOption.textContent : 'выбранная обработка';
-
             alert(`Ошибка: Для этого животного уже существует запись "${treatmentName}" на дату ${careDate}.\n\nВыберите другую дату или другой тип обработки.`);
         } else {
-            alert(`Ошибка при добавлении ветобработки: ${error.message || 'Неизвестная ошибка'}`);
+            alert(`Ошибка при добавлении обработки "${treatmentName}": ${error.message || 'Неизвестная ошибка'}${partialText}`);
         }
     }
 }
@@ -1004,58 +1169,71 @@ async function loadVetTreatments() {
             return;
         }
 
-        const select = document.getElementById('vet-treatment-select');
-        select.innerHTML = '<option value="">Выберите обработку</option>'; // Очистка списка
+        animalVeterinaryTreatments = treatments;
+        const menu = document.querySelector('#animal-vet-treatment-control .animal-vet-menu');
+        if (!menu) return;
+        menu.innerHTML = '';
+
+        if (treatments.length === 0) {
+            menu.innerHTML = '<div class="dropdown-item-text text-muted small">Ветобработки не найдены</div>';
+            updateAnimalVetTreatmentSummary();
+            return;
+        }
 
         treatments.forEach(treatment => {
-            const option = document.createElement('option');
-            option.value = treatment.id; // ID обработки
-            const medicationText = (treatment.medication || '').trim() || 'Не указан препарат';
-            const purposeText = (treatment.purpose || '').trim() || 'Не указана цель';
-            option.textContent = `${medicationText} — ${purposeText}`;
-
-            // Сохраняем дополнительные данные обработки
-            option.dataset.type = treatment.care_name || 'Не указан';
-            option.dataset.class = treatment.care_type || 'Не указан';
-            option.dataset.medication = treatment.medication || 'Не указан';
-            option.dataset.purpose = treatment.purpose || 'Нет цели';
-            option.dataset.defaultDuration = treatment.default_duration_days || '0';
-            select.appendChild(option);
+            const item = document.createElement('label');
+            item.className = 'dropdown-item animal-vet-option';
+            item.innerHTML = `
+                <input class="form-check-input me-2 animal-vet-care-checkbox" type="checkbox" value="${treatment.id}">
+                <span></span>
+            `;
+            item.querySelector('span').textContent = getVetTreatmentLabel(treatment);
+            item.querySelector('input').addEventListener('change', updateAnimalVetTreatmentSummary);
+            menu.appendChild(item);
         });
 
-        select.addEventListener('change', displayTreatmentDetails);
+        updateAnimalVetTreatmentSummary();
     } catch (error) {
         console.error('Ошибка загрузки ветобработок:', error);
+        const menu = document.querySelector('#animal-vet-treatment-control .animal-vet-menu');
+        if (menu) {
+            menu.innerHTML = '<div class="dropdown-item-text text-danger small">Ошибка загрузки ветобработок</div>';
+        }
     }
 }
 
 function displayTreatmentDetails() {
-    const select = document.getElementById('vet-treatment-select');
-    const selectedOption = select.options[select.selectedIndex];
+    const selectedTreatments = getSelectedAnimalVetTreatments();
+    const detailsBlock = document.getElementById('animal-vet-details-block');
+    const tableWrap = document.getElementById('treatment-details-table-wrap');
+    const tableBody = document.getElementById('treatment-details-body');
 
-    if (selectedOption.value) {
-        // Отображаем данные обработки
-        document.getElementById('treatment-type').innerHTML = `<strong>Тип:</strong> ${selectedOption.dataset.type || '-'}`;
-        document.getElementById('treatment-class').innerHTML = `<strong>Класс:</strong> ${selectedOption.dataset.class || '-'}`;
-        document.getElementById('treatment-medicine').innerHTML = `<strong>Препарат:</strong> ${selectedOption.dataset.medication || '-'}`;
-        document.getElementById('treatment-description').innerHTML = `<strong>Цель:</strong> ${selectedOption.dataset.purpose || '-'}`;
+    if (!detailsBlock || !tableWrap || !tableBody) return;
 
-        // Отображаем срок действия
-        const durationDays = selectedOption.dataset.defaultDuration || '0';
-        let durationText = '';
-        if (durationDays === '0') {
-            durationText = 'Бессрочно';
-        } else {
-            durationText = `${durationDays} дней`;
-        }
-        document.getElementById('treatment-duration').innerHTML = `<strong>Срок действия:</strong> ${durationText}`;
+    tableBody.innerHTML = '';
+
+    if (selectedTreatments.length > 0) {
+        detailsBlock.style.display = '';
+        tableWrap.style.display = '';
+
+        selectedTreatments.forEach(treatment => {
+            const row = document.createElement('tr');
+            [
+                treatment.care_type || 'Не указан',
+                treatment.care_name || 'Не указан',
+                treatment.medication || 'Не указан',
+                treatment.purpose || 'Нет цели',
+                formatVetTreatmentDuration(treatment.default_duration_days),
+            ].forEach(value => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+            tableBody.appendChild(row);
+        });
     } else {
-        // Очищаем отображение если ничего не выбрано
-        document.getElementById('treatment-type').innerHTML = '<strong>Тип:</strong> -';
-        document.getElementById('treatment-class').innerHTML = '<strong>Класс:</strong> -';
-        document.getElementById('treatment-description').innerHTML = '<strong>Цель:</strong> -';
-        document.getElementById('treatment-medicine').innerHTML = '<strong>Препарат:</strong> -';
-        document.getElementById('treatment-duration').innerHTML = '<strong>Срок действия:</strong> -';
+        detailsBlock.style.display = 'none';
+        tableWrap.style.display = 'none';
     }
 }
 
@@ -2101,8 +2279,13 @@ function createLambingCard(lambing, isActive) {
                 <div>
                     <strong>Планируемые роды:</strong>
                     <span class="planned-date">${plannedDate}</span>
+                    ${actualDate ? `
+                        <div class="actual-lambing-row">
+                            <strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong>
+                            <span class="actual-lambing-date">${actualDate}</span>
+                        </div>
+                    ` : ''}
                 </div>
-                ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
                 ${isEarlyFailure ? `
                     <div style="grid-column: 2;">
                         <strong>Статус завершения:</strong> Досрочно завершен (неудача)
@@ -2177,8 +2360,13 @@ function createFatherLambingCard(lambing) {
                 <div>
                     <strong>Планируемые роды:</strong>
                     <span class="planned-date">${plannedDate}</span>
+                    ${actualDate ? `
+                        <div class="actual-lambing-row">
+                            <strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong>
+                            <span class="actual-lambing-date">${actualDate}</span>
+                        </div>
+                    ` : ''}
                 </div>
-                ${actualDate ? `<div><strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong> ${actualDate}</div>` : ''}
                 ${isEarlyFailure ? `
                     <div style="grid-column: 2;">
                         <strong>Статус завершения:</strong> Досрочно завершен (неудача)
@@ -2523,6 +2711,7 @@ window.showCreateLambingForm = showCreateLambingForm;
 window.hideCreateLambingForm = hideCreateLambingForm;
 window.createLambing = createLambing;
 window.completeLambing = completeLambing;
+window.addBodyConditionRecord = addBodyConditionRecord;
 // ===== ФУНКЦИИ ДЛЯ ЗАВЕРШЕНИЯ ОКОТА С СОЗДАНИЕМ ДЕТЕЙ =====
 
 // Генерация форм для ягнят
@@ -2612,6 +2801,16 @@ function getSelectedVeterinaryCareIds(container) {
     return Array.from(container.querySelectorAll('.lamb-vet-care-checkbox:checked'))
         .map(checkbox => parseInt(checkbox.value, 10))
         .filter(Number.isInteger);
+}
+
+const INCOMPLETE_LAMB_DATA_WARNING = 'Желательно заполнить данные о родившихся ягнятах. Вы уверены, что хотите завершить окот без заполнения этих данных?';
+
+function getCompleteLambForms() {
+    return Array.from(document.querySelectorAll('.lamb-form')).filter(form => {
+        const gender = form.querySelector('.lamb-gender')?.value;
+        const tag = form.querySelector('.lamb-tag')?.value?.trim();
+        return Boolean(gender && tag);
+    });
 }
 
 function isCommonLambPlaceEnabled() {
@@ -3058,7 +3257,18 @@ async function completeLambingWithChildren() {
         return;
     }
 
-    if (commonVeterinaryEnabled && createLambs && lambsCount > 0 && commonVeterinaryCareIds.length === 0) {
+    const completeLambForms = createLambs && lambsCount > 0 ? getCompleteLambForms() : [];
+    if (completeLambForms.length > lambsCount) {
+        alert(`Количество заполненных карточек ягнят (${completeLambForms.length}) больше указанного количества живых ягнят (${lambsCount})`);
+        return;
+    }
+
+    const hasIncompleteLiveLambData = lambsCount > 0 && (!createLambs || completeLambForms.length < lambsCount);
+    if (hasIncompleteLiveLambData && !confirm(INCOMPLETE_LAMB_DATA_WARNING)) {
+        return;
+    }
+
+    if (commonVeterinaryEnabled && createLambs && completeLambForms.length > 0 && commonVeterinaryCareIds.length === 0) {
         alert('Выберите общие ветобработки для детей');
         return;
     }
@@ -3068,15 +3278,7 @@ async function completeLambingWithChildren() {
         let lambsData = [];
 
         if (createLambs && lambsCount > 0) {
-            const lambForms = document.querySelectorAll('.lamb-form');
-
-            // Проверяем, что количество форм соответствует количеству ягнят
-            if (lambForms.length !== lambsCount) {
-                alert(`Количество форм ягнят (${lambForms.length}) не соответствует указанному количеству (${lambsCount})`);
-                return;
-            }
-
-            for (let form of lambForms) {
+            for (let form of completeLambForms) {
                 const gender = form.querySelector('.lamb-gender').value;
                 const tag = form.querySelector('.lamb-tag').value.trim();
                 const status = form.querySelector('.lamb-status').value;
@@ -3097,11 +3299,6 @@ async function completeLambingWithChildren() {
                         alert('Живой вес ягненка должен быть неотрицательным числом');
                         return;
                     }
-                }
-
-                if (!gender || !tag) {
-                    alert('Пожалуйста, заполните тип животного и бирку для всех ягнят');
-                    return;
                 }
 
                 lambsData.push({

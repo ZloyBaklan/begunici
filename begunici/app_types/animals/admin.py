@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Maker, Ram, Ewe, Sheep, Lambing
+from .models import Maker, Ram, Ewe, Sheep, Lambing, SheepBodyConditionRecord
 
 admin.site.register(Maker)
 admin.site.register(Ram)
@@ -32,3 +32,4 @@ class SheepAdmin(admin.ModelAdmin):
 # Регистрируем модель с кастомным админом
 admin.site.register(Sheep, SheepAdmin)
 admin.site.register(Ewe, EweAdmin)
+admin.site.register(SheepBodyConditionRecord)

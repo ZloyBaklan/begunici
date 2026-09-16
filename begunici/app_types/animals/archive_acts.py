@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from begunici.app_types.veterinary.vet_models import StatusHistory, Tag, WeightRecord
 
-from .models import ArchiveAct, Ewe, Maker, Ram, Sheep
+from .models import ArchiveAct, Ewe, Maker, Ram, Sheep, SheepBodyConditionRecord
 
 
 ARCHIVE_ACT_TEMPLATES = {
@@ -207,11 +207,51 @@ def format_weight_record_display(record):
     return f"{record.weight_date.strftime('%d.%m.%Y')}: {format_weight_display(record.weight)}"
 
 
+LEGACY_FATNESS_TO_CONDITION = {
+    "н/ср": 2,
+    "ср": 3,
+    "выс": 5,
+}
+
+
+def parse_body_condition_index(value):
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip()
+    if normalized in LEGACY_FATNESS_TO_CONDITION:
+        return LEGACY_FATNESS_TO_CONDITION[normalized]
+    try:
+        index = int(normalized)
+    except (TypeError, ValueError):
+        return None
+    return index if index in SheepBodyConditionRecord.CONDITION_LABELS else None
+
+
+def format_body_condition_display(index):
+    index = parse_body_condition_index(index)
+    if not index:
+        return "-"
+    return f"{index} - {SheepBodyConditionRecord.CONDITION_LABELS[index]}"
+
+
+def get_latest_body_condition_record(tag):
+    if not tag:
+        return None
+    return (
+        SheepBodyConditionRecord.objects
+        .filter(tag=tag)
+        .order_by("-measurement_date", "-id")
+        .first()
+    )
+
+
 def build_archive_act_preview_item(animal, status_name=None):
     status_name = status_name or (animal.animal_status.status_type if animal.animal_status else "")
     archive_date = get_archive_status_date(animal) or timezone.now().date()
     latest_weight_record = get_latest_live_weight_record(animal.tag)
     live_weight = latest_weight_record.weight if latest_weight_record else None
+    latest_body_condition = get_latest_body_condition_record(animal.tag)
+    latest_body_condition_index = latest_body_condition.condition_index if latest_body_condition else None
     animal_type = animal.get_animal_type()
     return {
         "animal_type": animal_type,
@@ -223,6 +263,13 @@ def build_archive_act_preview_item(animal, status_name=None):
         "live_weight": format_weight_value(live_weight),
         "latest_weight_date": latest_weight_record.weight_date.strftime("%Y-%m-%d") if latest_weight_record else None,
         "latest_weight_display": format_weight_record_display(latest_weight_record),
+        "latest_body_condition_index": latest_body_condition_index,
+        "latest_body_condition_label": latest_body_condition.condition_label if latest_body_condition else "",
+        "latest_body_condition_display": (
+            format_body_condition_display(latest_body_condition_index)
+            if latest_body_condition
+            else "-"
+        ),
         "status_name": status_name,
         "reason": get_archive_act_template_config(status_name)["reason"] if get_archive_act_template_config(status_name) else "",
     }
@@ -267,7 +314,7 @@ def get_archive_act_context(animal, user=None, act=None):
         "act_number": (act.act_number if act else "") or get_act_number_from_note(animal.note),
         "act_date": act.act_date if act else None,
         "live_weight": live_weight,
-        "fatness": (act.fatness if act else "") or "",
+        "fatness": format_body_condition_display((act.fatness if act else "") or ""),
         "diagnosis": (act.diagnosis if act else "") or "",
         "responsible_person": responsible_person or (act.worker_name if act else "") or "",
         "animal_group": "овцы",

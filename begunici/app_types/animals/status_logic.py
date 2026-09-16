@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import date
 
 from django.db.models import Q
@@ -41,6 +42,8 @@ ANIMAL_TYPE_LABELS = {
     "Ewe": "ярка",
     "Sheep": "овцематка",
 }
+
+LAMBED_STATUS_MISSING_CHILDREN_GRACE_MONTHS = 5
 
 
 def get_status_by_name(status_name):
@@ -182,6 +185,40 @@ def get_lambing_children(lambing):
     return children
 
 
+def add_calendar_months(source_date, months):
+    month_index = source_date.month - 1 + months
+    target_year = source_date.year + month_index // 12
+    target_month = month_index % 12 + 1
+    target_day = min(source_date.day, monthrange(target_year, target_month)[1])
+    return source_date.replace(year=target_year, month=target_month, day=target_day)
+
+
+def is_lambing_old_enough_to_close_missing_children(lambing, as_of_date=None):
+    if not lambing or not lambing.actual_lambing_date:
+        return False
+
+    as_of_date = as_of_date or date.today()
+    close_date = add_calendar_months(
+        lambing.actual_lambing_date,
+        LAMBED_STATUS_MISSING_CHILDREN_GRACE_MONTHS,
+    )
+    return as_of_date >= close_date
+
+
+def can_close_lambed_status_by_lambing_children(lambing, children, as_of_date=None):
+    live_count = lambing.number_of_lambs or 0
+    if live_count <= 0:
+        return False
+
+    if not all(child.date_otbivka or child.is_archived for child in children):
+        return False
+
+    if len(children) >= live_count:
+        return True
+
+    return is_lambing_old_enough_to_close_missing_children(lambing, as_of_date)
+
+
 def mother_has_active_reproduction(mother):
     if not mother:
         return False
@@ -253,10 +290,7 @@ def set_mother_not_inseminated_if_ready(mother):
         return False
 
     children = get_lambing_children(latest_lambing)
-    if len(children) < (latest_lambing.number_of_lambs or 0):
-        return False
-
-    if not all(child.date_otbivka or child.is_archived for child in children):
+    if not can_close_lambed_status_by_lambing_children(latest_lambing, children):
         return False
 
     return set_animal_status(mother, get_status_by_name(STATUS_NOT_INSEMINATED))

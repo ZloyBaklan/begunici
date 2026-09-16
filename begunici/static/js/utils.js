@@ -313,16 +313,23 @@ export async function apiRequest(url, method = 'GET', body) {
 
 export function formatDateToOutput(dateString) {
     if (!dateString) return '-';
+
+    const value = String(dateString);
+
+    // Уже готовый пользовательский формат.
+    if (value.match(/^\d{2}\.\d{2}\.\d{4}$/)) {
+        return value;
+    }
     
     // Если дата в формате YYYY-MM-DD, просто переформатируем
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-');
+    if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = value.split('-');
         return `${day}.${month}.${year}`;
     }
     
     // Если дата содержит время (например, "2026-01-12T21:00:00Z"), обрабатываем с учетом московского времени
-    if (dateString.includes('T')) {
-        const date = new Date(dateString);
+    if (value.includes('T')) {
+        const date = new Date(value);
         
         // Преобразуем в московское время
         const moscowOffset = 3 * 60; // Москва UTC+3 в минутах
@@ -337,7 +344,11 @@ export function formatDateToOutput(dateString) {
     }
     
     // Для других форматов используем стандартную обработку
-    const date = new Date(dateString);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
     const day = String(date.getUTCDate()).padStart(2, '0');
     const month = String(date.getUTCMonth() + 1).padStart(2, '0');
     const year = date.getUTCFullYear();

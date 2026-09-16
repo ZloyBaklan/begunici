@@ -21,14 +21,14 @@
                         Последняя запись о весе: -
                     </div>
 
-                    <div id="archive-extra-weight-fields" class="border rounded p-3 mt-3">
-                        <div class="fw-semibold mb-2">При необходимости можно внести дополнительную запись о весе:</div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
+                    <div id="archive-extra-weight-fields" class="archive-extra-weight-card border rounded p-3 mt-3">
+                        <div class="archive-extra-weight-title fw-semibold mb-2">При необходимости можно внести дополнительную запись о весе:</div>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-sm-6">
                                 <label for="archive-act-weight-date" class="form-label">Дата взвешивания:</label>
                                 <input type="date" id="archive-act-weight-date" class="form-control">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-sm-6">
                                 <label for="archive-act-live-weight" class="form-label">Живой вес (кг):</label>
                                 <input type="number" id="archive-act-live-weight" class="form-control" step="0.1" min="0" placeholder="Необязательно">
                             </div>
@@ -50,9 +50,12 @@
                             <div class="col-md-6">
                                 <label for="archive-act-fatness" class="form-label">Упитанность:</label>
                                 <select id="archive-act-fatness" class="form-select" required>
-                                    <option value="ср">ср</option>
-                                    <option value="н/ср">н/ср</option>
-                                    <option value="выс">выс</option>
+                                    <option value="">Выберите упитанность</option>
+                                    <option value="1">1 - кахексия (истощение)</option>
+                                    <option value="2">2 - ниже средней</option>
+                                    <option value="3">3 - средняя</option>
+                                    <option value="4">4 - выше средней</option>
+                                    <option value="5">5 - высшая (ожирение)</option>
                                 </select>
                             </div>
                             <div class="col-md-6" id="archive-act-death-reason-group" style="display: none;">

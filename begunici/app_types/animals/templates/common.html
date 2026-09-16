@@ -104,7 +104,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="input-group">
-                                <input type="text" id="common-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу...">
+                                <input type="text" id="common-search" class="form-control" placeholder="Поиск по бирке, бирке РСХН, статусу, овчарне...">
                                 <button class="btn btn-outline-primary" type="button" onclick="performCommonSearch()">Поиск</button>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleCommonAdditionalFilters()">Доп. фильтры</button>
                             </div>
@@ -225,6 +225,7 @@
                             <button id="delete-selected-button" class="btn btn-outline-danger btn-sm" onclick="deleteSelectedAnimals()">Удалить выбранные</button>
                             {% endif %}
                             <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">Перенести в архив</button>
+                            <button id="clear-selected-button" class="btn btn-outline-secondary btn-sm" onclick="clearSelectedAnimals()">Очистить выбор</button>
                         </div>
                     </div>
 

@@ -227,6 +227,9 @@
                 <input type="checkbox" id="show-empty-sections-checkbox">
                 Показать пустые отсеки
             </label>
+            <button type="button" class="btn btn-outline-success barn-export-button" onclick="openPlaceMapExportModal()">
+                Экспорт
+            </button>
         </div>
         <div id="barn-content">
             <!-- Здесь будет отображаться выбранная овчарня -->
@@ -363,6 +366,65 @@
                 </div>
 
                 <div id="place-import-result" class="mt-3" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="place-map-export-modal" class="modal" style="display: none;">
+        <div class="modal-content export-modal-content place-map-export-modal-content">
+            <span class="close" onclick="closePlaceMapExportModal()">&times;</span>
+            <h2>Экспорт животных из отсеков</h2>
+
+            <div class="export-filters">
+                <div class="filter-group">
+                    <div class="place-map-export-filter-header">
+                        <label class="mb-0">Непустые отсеки:</label>
+                        <label class="place-map-export-select-all">
+                            <input type="checkbox" id="place-map-export-select-all" checked>
+                            Выбрать все
+                        </label>
+                    </div>
+                    <div id="place-map-export-sections" class="place-map-export-sections"></div>
+                </div>
+
+                <div class="filter-group">
+                    <div class="place-map-export-filter-header">
+                        <label class="mb-0">Тип животных:</label>
+                        <label class="place-map-export-select-all">
+                            <input type="checkbox" id="place-map-export-type-select-all" checked>
+                            Выбрать все
+                        </label>
+                    </div>
+                    <div id="place-map-export-animal-types" class="place-map-export-sections place-map-export-types">
+                        <label class="place-map-export-section-option">
+                            <input type="checkbox" class="place-map-export-animal-type-checkbox" value="maker" checked>
+                            <span>Бараны-производители</span>
+                        </label>
+                        <label class="place-map-export-section-option">
+                            <input type="checkbox" class="place-map-export-animal-type-checkbox" value="ram" checked>
+                            <span>Баранчики</span>
+                        </label>
+                        <label class="place-map-export-section-option">
+                            <input type="checkbox" class="place-map-export-animal-type-checkbox" value="ewe" checked>
+                            <span>Ярки</span>
+                        </label>
+                        <label class="place-map-export-section-option">
+                            <input type="checkbox" class="place-map-export-animal-type-checkbox" value="sheep" checked>
+                            <span>Овцематки</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="place-map-export-result" class="alert alert-warning" style="display: none;"></div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" id="place-map-export-submit" class="btn btn-success" onclick="performPlaceMapExport()">
+                    Экспортировать
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closePlaceMapExportModal()">
+                    Отмена
+                </button>
             </div>
         </div>
     </div>

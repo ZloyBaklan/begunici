@@ -109,6 +109,13 @@ function getFatherOptionLabel(animal) {
     return `${displayName} (${typeName})${statusText}`;
 }
 
+function showOldFatherWarningIfNeeded(animal) {
+    const warningText = animal?.old_father_warning || '';
+    if (warningText) {
+        alert(warningText);
+    }
+}
+
 function setSelectedFatherFromAnimal(animal, options = {}) {
     if (!animal || !animal.tag_number) {
         selectedFather = null;
@@ -131,7 +138,9 @@ function setSelectedFatherFromAnimal(animal, options = {}) {
         tag_number: animal.tag_number,
         type: animal.type_code,
         tag: animal.tag_number,
-        display_name: getFatherDisplayName(animal)
+        display_name: getFatherDisplayName(animal),
+        first_group_placement_date: animal.first_group_placement_date || null,
+        old_father_warning: animal.old_father_warning || ''
     };
 
     const display = document.getElementById('selected-father-display');
@@ -148,6 +157,7 @@ function setSelectedFatherFromAnimal(animal, options = {}) {
         }
     }
 
+    showOldFatherWarningIfNeeded(animal);
     checkAutoKinship();
 }
 
@@ -174,7 +184,9 @@ function setSelectedKinshipFatherFromAnimal(animal, options = {}) {
         tag_number: animal.tag_number,
         type: animal.type_code,
         tag: animal.tag_number,
-        display_name: getFatherDisplayName(animal)
+        display_name: getFatherDisplayName(animal),
+        first_group_placement_date: animal.first_group_placement_date || null,
+        old_father_warning: animal.old_father_warning || ''
     };
 
     const display = document.getElementById('kinship-father-display');
@@ -191,6 +203,7 @@ function setSelectedKinshipFatherFromAnimal(animal, options = {}) {
         }
     }
 
+    showOldFatherWarningIfNeeded(animal);
     updateKinshipCheckButton();
     resetKinshipResult();
 }
@@ -1557,6 +1570,11 @@ function createFatherItem(animal) {
             ${displayName} (${animal.animal_type}) - ${animal.status}
         </label>
     `;
+    const radio = item.querySelector('.father-radio');
+    if (radio) {
+        radio.dataset.firstGroupPlacementDate = animal.first_group_placement_date || '';
+        radio.dataset.oldFatherWarning = animal.old_father_warning || '';
+    }
     
     return item;
 }
@@ -1580,7 +1598,9 @@ function confirmFatherSelection() {
         tag_number: checkedRadio.value,
         type_code: checkedRadio.dataset.type,
         animal_type: checkedRadio.dataset.type === 'maker' ? 'Баран-Производитель' : 'Баранчик',
-        display_name: displayName
+        display_name: displayName,
+        first_group_placement_date: checkedRadio.dataset.firstGroupPlacementDate || null,
+        old_father_warning: checkedRadio.dataset.oldFatherWarning || ''
     });
     
     // Закрываем модальное окно
@@ -1927,6 +1947,16 @@ function getSelectedVeterinaryCareIds(container) {
         .filter(Number.isInteger);
 }
 
+const INCOMPLETE_LAMB_DATA_WARNING = 'Желательно заполнить данные о родившихся ягнятах. Вы уверены, что хотите завершить окот без заполнения этих данных?';
+
+function getCompleteLambForms() {
+    return Array.from(document.querySelectorAll('.lamb-form')).filter(form => {
+        const gender = form.querySelector('.lamb-gender')?.value;
+        const tag = form.querySelector('.lamb-tag')?.value?.trim();
+        return Boolean(gender && tag);
+    });
+}
+
 function isCommonLambPlaceEnabled() {
     return Boolean(document.getElementById('common-lamb-place-checkbox')?.checked);
 }
@@ -2258,7 +2288,18 @@ async function completeLambingWithChildren() {
         return;
     }
 
-    if (commonVeterinaryEnabled && createLambs && lambsCount > 0 && commonVeterinaryCareIds.length === 0) {
+    const completeLambForms = createLambs && lambsCount > 0 ? getCompleteLambForms() : [];
+    if (completeLambForms.length > lambsCount) {
+        alert(`Количество заполненных карточек ягнят (${completeLambForms.length}) больше указанного количества живых ягнят (${lambsCount})`);
+        return;
+    }
+
+    const hasIncompleteLiveLambData = lambsCount > 0 && (!createLambs || completeLambForms.length < lambsCount);
+    if (hasIncompleteLiveLambData && !confirm(INCOMPLETE_LAMB_DATA_WARNING)) {
+        return;
+    }
+
+    if (commonVeterinaryEnabled && createLambs && completeLambForms.length > 0 && commonVeterinaryCareIds.length === 0) {
         alert('Выберите общие ветобработки для детей');
         return;
     }
@@ -2268,9 +2309,7 @@ async function completeLambingWithChildren() {
         let lambsData = [];
         
         if (createLambs && lambsCount > 0) {
-            const lambForms = document.querySelectorAll('.lamb-form');
-            
-            for (let form of lambForms) {
+            for (let form of completeLambForms) {
                 const gender = form.querySelector('.lamb-gender').value;
                 const tag = form.querySelector('.lamb-tag').value.trim();
                 const status = form.querySelector('.lamb-status').value;
@@ -2291,11 +2330,6 @@ async function completeLambingWithChildren() {
                         alert('Живой вес ягненка должен быть неотрицательным числом');
                         return;
                     }
-                }
-                
-                if (!gender || !tag) {
-                    alert('Пожалуйста, заполните тип животного и бирку для всех ягнят');
-                    return;
                 }
                 
                 lambsData.push({
@@ -2770,6 +2804,11 @@ function createKinshipFatherItem(animal) {
             ${displayName} (${animal.animal_type}) - ${animal.status}
         </label>
     `;
+    const radio = item.querySelector('.kinship-father-radio');
+    if (radio) {
+        radio.dataset.firstGroupPlacementDate = animal.first_group_placement_date || '';
+        radio.dataset.oldFatherWarning = animal.old_father_warning || '';
+    }
 
     return item;
 }
@@ -2846,7 +2885,9 @@ function confirmKinshipFatherSelection() {
         tag_number: checkedRadio.value,
         type_code: checkedRadio.dataset.type,
         animal_type: checkedRadio.dataset.type === 'maker' ? 'Баран-Производитель' : 'Баранчик',
-        display_name: displayName
+        display_name: displayName,
+        first_group_placement_date: checkedRadio.dataset.firstGroupPlacementDate || null,
+        old_father_warning: checkedRadio.dataset.oldFatherWarning || ''
     });
 
     const modal = bootstrap.Modal.getInstance(document.getElementById('selectKinshipFatherModal'));

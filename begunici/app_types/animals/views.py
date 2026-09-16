@@ -8,7 +8,7 @@ from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Min, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from decimal import Decimal
@@ -35,6 +35,9 @@ from .models import (
     LambingGroup,
     AnimalBase,
     AnimalNoteHistory,
+    SheepBodyConditionRecord,
+    TemporaryTag,
+    DashboardPlanParameter,
     ArchiveAct,
     CalendarNote,
     ShiftTransferNote,
@@ -57,6 +60,7 @@ from .serializers import (
     ArchiveAnimalSerializer,
     UniversalChildSerializer,
     AnimalNoteHistorySerializer,
+    SheepBodyConditionRecordSerializer,
     CalendarNoteSerializer,
     build_sheep_last_insemination_data,
     build_sheep_last_lambing_summary,
@@ -641,6 +645,59 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         serializer = AnimalNoteHistorySerializer(note_history, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="body_condition")
+    def add_body_condition(self, request, pk=None):
+        animal = self.get_object()
+        serializer = SheepBodyConditionRecordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = serializer.save(tag=animal.tag)
+
+        from .models_user_log import UserActionLog
+        from django.contrib.auth.models import AnonymousUser
+
+        if not isinstance(request.user, AnonymousUser):
+            type_labels = {
+                "Maker": "Баран-Производитель",
+                "Ram": "Баранчик",
+                "Ewe": "Ярка",
+                "Sheep": "Овцематка",
+            }
+            animal_type = type_labels.get(animal.get_animal_type(), animal.get_animal_type())
+            date_str = record.measurement_date.strftime("%d.%m.%Y")
+            UserActionLog.objects.create(
+                user=request.user,
+                action_type="Добавление упитанности",
+                object_type="Упитанность",
+                object_id=animal.tag.tag_number,
+                description=(
+                    f"Добавлена упитанность: индекс {record.condition_index} "
+                    f"({record.condition_label}); Дата: {date_str}; "
+                    f"Животное: {animal_type} {animal.tag.tag_number}"
+                ),
+            )
+
+        return Response(
+            SheepBodyConditionRecordSerializer(record).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get"], url_path="body_condition_history")
+    def body_condition_history(self, request, pk=None):
+        animal = self.get_object()
+        records = (
+            SheepBodyConditionRecord.objects
+            .filter(tag=animal.tag)
+            .order_by("-measurement_date", "-id")
+        )
+
+        page = self.paginate_queryset(records)
+        if page is not None:
+            serializer = SheepBodyConditionRecordSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = SheepBodyConditionRecordSerializer(records, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class MakerViewSet(AnimalBaseViewSet):
     queryset = Maker.objects.filter(is_archived=False).select_related(
@@ -667,7 +724,7 @@ class MakerViewSet(AnimalBaseViewSet):
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
                 | _build_icontains_multi_filter("rshn_tag", search)
-                | Q(place__sheepfold__icontains=search)
+                | _build_case_variants_filter("place__sheepfold", search)
                 | Q(name__icontains=search)
             )
             
@@ -1062,7 +1119,7 @@ class RamViewSet(AnimalBaseViewSet):
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
                 | _build_icontains_multi_filter("rshn_tag", search)
-                | Q(place__sheepfold__icontains=search)
+                | _build_case_variants_filter("place__sheepfold", search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -1464,7 +1521,7 @@ class EweViewSet(AnimalBaseViewSet):
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
                 | _build_icontains_multi_filter("rshn_tag", search)
-                | Q(place__sheepfold__icontains=search)
+                | _build_case_variants_filter("place__sheepfold", search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -1843,7 +1900,7 @@ class SheepViewSet(AnimalBaseViewSet):
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
                 | _build_icontains_multi_filter("rshn_tag", search)
-                | Q(place__sheepfold__icontains=search)
+                | _build_case_variants_filter("place__sheepfold", search)
             )
             
             queryset = queryset.filter(search_filter)
@@ -4456,7 +4513,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
                 _build_case_variants_filter("tag__tag_number", search)
                 | _build_case_variants_filter("animal_status__status_type", search)
                 | _build_icontains_multi_filter("rshn_tag", search)
-                | Q(place__sheepfold__icontains=search)
+                | _build_case_variants_filter("place__sheepfold", search)
             )
 
         def apply_filters(queryset):
@@ -4818,7 +4875,7 @@ def common_animals_api(request):
         if search:
             search_filter = _build_case_variants_filter("tag__tag_number", search) | _build_case_variants_filter(
                 "animal_status__status_type", search
-            ) | _build_icontains_multi_filter("rshn_tag", search) | Q(place__sheepfold__icontains=search)
+            ) | _build_icontains_multi_filter("rshn_tag", search) | _build_case_variants_filter("place__sheepfold", search)
 
             if model_key == "maker":
                 search_filter |= Q(name__icontains=search)
@@ -6390,6 +6447,321 @@ def journal_shift_transfer(request):
     return render(request, "journal_shift_transfer.html", context)
 
 
+ANIMAL_RETAGGING_CONFIG = {
+    "maker": {
+        "model": Maker,
+        "label": "Баран-производитель",
+        "detail_route": "animals:maker-detail",
+    },
+    "ram": {
+        "model": Ram,
+        "label": "Баранчик",
+        "detail_route": "animals:ram-detail",
+    },
+    "ewe": {
+        "model": Ewe,
+        "label": "Ярка",
+        "detail_route": "animals:ewe-detail",
+    },
+    "sheep": {
+        "model": Sheep,
+        "label": "Овцематка",
+        "detail_route": "animals:sheep-detail",
+    },
+}
+
+
+def tags_management(request):
+    return render(request, "tags_management.html")
+
+
+def _log_tag_action(request, action_type, object_type, object_id, description):
+    from django.contrib.auth.models import AnonymousUser
+    from .models_user_log import UserActionLog
+
+    if isinstance(request.user, AnonymousUser):
+        return
+
+    UserActionLog.objects.create(
+        user=request.user,
+        action_type=action_type,
+        object_type=object_type,
+        object_id=object_id,
+        description=description,
+    )
+
+
+def _get_animal_detail_url_for_type(animal_type, tag_number):
+    config = ANIMAL_RETAGGING_CONFIG.get(animal_type)
+    if not config:
+        return "#"
+    return reverse(config["detail_route"], kwargs={"tag_number": tag_number})
+
+
+def _format_retagging_display_name(animal, animal_type):
+    if animal_type == "maker" and getattr(animal, "name", None):
+        return f"{animal.name}({animal.tag.tag_number})"
+    return animal.tag.tag_number
+
+
+def _build_retagging_animal_payload(animal, animal_type):
+    tag_number = animal.tag.tag_number if animal.tag else ""
+    config = ANIMAL_RETAGGING_CONFIG[animal_type]
+    return {
+        "id": animal.id,
+        "animal_type": animal_type,
+        "animal_type_label": config["label"],
+        "tag_number": tag_number,
+        "display_name": _format_retagging_display_name(animal, animal_type),
+        "status": animal.animal_status.status_type if animal.animal_status else "-",
+        "place": animal.place.sheepfold if animal.place else "-",
+        "url": _get_animal_detail_url_for_type(animal_type, tag_number),
+    }
+
+
+def _find_active_animal_for_retagging(animal_type, tag_number):
+    config = ANIMAL_RETAGGING_CONFIG.get(str(animal_type or "").strip().lower())
+    if not config:
+        return None, None
+    animal = (
+        config["model"].objects
+        .filter(is_archived=False, tag__tag_number__iexact=str(tag_number or "").strip())
+        .select_related("tag", "animal_status", "place")
+        .first()
+    )
+    return animal, config
+
+
+def _validate_tag_number_for_retagging(tag_number, current_tag=None):
+    tag_number = str(tag_number or "").strip()
+    if not tag_number:
+        return None, "Укажите бирку"
+    if any(char.isspace() for char in tag_number):
+        return None, "Бирка не должна содержать пробелы"
+
+    existing_tags = Tag.objects.filter(tag_number__iexact=tag_number)
+    if current_tag is not None:
+        existing_tags = existing_tags.exclude(pk=current_tag.pk)
+    if existing_tags.exists():
+        return None, f"Бирка {tag_number} уже есть у животного"
+    if TemporaryTag.objects.filter(tag_number__iexact=tag_number).exists():
+        return None, f"Бирка {tag_number} уже есть во временных бирках"
+    return tag_number, None
+
+
+def _update_text_tag_references(old_tag_number, new_tag_number):
+    updated = {
+        "mother": 0,
+        "father": 0,
+        "lambing_mother_text": 0,
+    }
+    for model in (Maker, Ram, Ewe, Sheep):
+        updated["mother"] += model.objects.filter(mother__iexact=old_tag_number).update(mother=new_tag_number)
+        updated["father"] += model.objects.filter(father__iexact=old_tag_number).update(father=new_tag_number)
+    updated["lambing_mother_text"] = (
+        Lambing.objects
+        .filter(mother_tag_text__iexact=old_tag_number)
+        .update(mother_tag_text=new_tag_number)
+    )
+    return updated
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def temporary_tags_api(request):
+    if request.method == "GET":
+        tags = TemporaryTag.objects.select_related("created_by").order_by("tag_number")
+        return Response([
+            {
+                "id": tag.id,
+                "tag_number": tag.tag_number,
+                "created_at": tag.created_at,
+                "created_by": tag.created_by.username if tag.created_by else "-",
+            }
+            for tag in tags
+        ], status=status.HTTP_200_OK)
+
+    tag_number, error = _validate_tag_number_for_retagging(request.data.get("tag_number"))
+    if error:
+        return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+    tag = TemporaryTag.objects.create(
+        tag_number=tag_number,
+        created_by=request.user if request.user and request.user.is_authenticated else None,
+    )
+    _log_tag_action(
+        request,
+        "Создание временной бирки",
+        "Временная бирка",
+        tag.tag_number,
+        f"Создана временная бирка: {tag.tag_number}",
+    )
+    return Response({
+        "id": tag.id,
+        "tag_number": tag.tag_number,
+        "created_at": tag.created_at,
+        "created_by": tag.created_by.username if tag.created_by else "-",
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(["DELETE"])
+@permission_classes([AllowAny])
+def temporary_tag_delete_api(request, tag_id):
+    tag = TemporaryTag.objects.filter(pk=tag_id).first()
+    if not tag:
+        return Response({"error": "Временная бирка не найдена"}, status=status.HTTP_404_NOT_FOUND)
+
+    tag_number = tag.tag_number
+    tag.delete()
+    _log_tag_action(
+        request,
+        "Удаление временной бирки",
+        "Временная бирка",
+        tag_number,
+        f"Удалена временная бирка: {tag_number}",
+    )
+    return Response({"success": True}, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def retagging_animals_api(request):
+    animals = []
+    for animal_type, config in ANIMAL_RETAGGING_CONFIG.items():
+        queryset = (
+            config["model"].objects
+            .filter(is_archived=False, needs_retagging=True)
+            .select_related("tag", "animal_status", "place")
+        )
+        for animal in queryset:
+            animals.append(_build_retagging_animal_payload(animal, animal_type))
+
+    animals.sort(key=lambda item: item["tag_number"])
+    return Response(animals, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def retagging_search_animals_api(request):
+    search = request.GET.get("search", "").strip()
+    animals = []
+
+    if not search:
+        return Response([], status=status.HTTP_200_OK)
+
+    for animal_type, config in ANIMAL_RETAGGING_CONFIG.items():
+        queryset = (
+            config["model"].objects
+            .filter(is_archived=False)
+            .select_related("tag", "animal_status", "place")
+        )
+        for animal in queryset:
+            tag_number = animal.tag.tag_number if animal.tag else ""
+            display_name = _format_retagging_display_name(animal, animal_type)
+            if (
+                _matches_tag_or_rshn_search(tag_number, animal.rshn_tag, search)
+                or search.lower() in display_name.lower()
+                or (animal.animal_status and search.lower() in animal.animal_status.status_type.lower())
+            ):
+                animals.append(_build_retagging_animal_payload(animal, animal_type))
+
+    animals.sort(key=lambda item: (item["animal_type_label"], item["tag_number"]))
+    return Response(animals[:50], status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def retagging_mark_api(request):
+    animal_type = request.data.get("animal_type")
+    tag_number = request.data.get("tag_number")
+    animal, config = _find_active_animal_for_retagging(animal_type, tag_number)
+    if not animal:
+        return Response({"error": "Активное животное не найдено"}, status=status.HTTP_404_NOT_FOUND)
+
+    animal.needs_retagging = True
+    animal.save(update_fields=["needs_retagging"])
+    _log_tag_action(
+        request,
+        "Добавление в перебиркование",
+        config["label"],
+        animal.tag.tag_number,
+        f"Животное добавлено в список перебиркования: {config['label']} {animal.tag.tag_number}",
+    )
+    return Response(_build_retagging_animal_payload(animal, str(animal_type).strip().lower()), status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def retagging_unmark_api(request):
+    animal_type = request.data.get("animal_type")
+    tag_number = request.data.get("tag_number")
+    animal, config = _find_active_animal_for_retagging(animal_type, tag_number)
+    if not animal:
+        return Response({"error": "Активное животное не найдено"}, status=status.HTTP_404_NOT_FOUND)
+
+    animal.needs_retagging = False
+    animal.save(update_fields=["needs_retagging"])
+    _log_tag_action(
+        request,
+        "Удаление из перебиркования",
+        config["label"],
+        animal.tag.tag_number,
+        f"Животное убрано из списка перебиркования: {config['label']} {animal.tag.tag_number}",
+    )
+    return Response(_build_retagging_animal_payload(animal, str(animal_type).strip().lower()), status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def retagging_change_tag_api(request):
+    animal_type = request.data.get("animal_type")
+    tag_number = request.data.get("tag_number")
+    new_tag_number_raw = request.data.get("new_tag_number")
+    animal_type_key = str(animal_type or "").strip().lower()
+    animal, config = _find_active_animal_for_retagging(animal_type_key, tag_number)
+    if not animal:
+        return Response({"error": "Активное животное не найдено"}, status=status.HTTP_404_NOT_FOUND)
+
+    old_tag_number = animal.tag.tag_number
+    new_tag_number, error = _validate_tag_number_for_retagging(new_tag_number_raw, current_tag=animal.tag)
+    if error:
+        return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+    if old_tag_number.lower() == new_tag_number.lower():
+        return Response({"error": "Новая бирка совпадает с текущей"}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        tag = Tag.objects.select_for_update().get(pk=animal.tag_id)
+        tag.tag_number = new_tag_number
+        tag.save(update_fields=["tag_number"])
+
+        # AnimalBase.save() also saves the cached tag object. A direct update avoids
+        # overwriting the new tag number with the old cached relation.
+        config["model"].objects.filter(pk=animal.pk).update(needs_retagging=False)
+        animal.needs_retagging = False
+
+        updated_references = _update_text_tag_references(old_tag_number, new_tag_number)
+
+    _log_tag_action(
+        request,
+        "Перебиркование животного",
+        config["label"],
+        new_tag_number,
+        (
+            f"Перебирковано животное: {config['label']} {old_tag_number} → {new_tag_number}; "
+            f"обновлено ссылок: мать {updated_references['mother']}, "
+            f"отец {updated_references['father']}, исторические матери {updated_references['lambing_mother_text']}"
+        ),
+    )
+
+    animal.refresh_from_db()
+    animal.tag.refresh_from_db()
+    return Response({
+        "old_tag_number": old_tag_number,
+        "new_tag_number": new_tag_number,
+        "animal": _build_retagging_animal_payload(animal, animal_type_key),
+    }, status=status.HTTP_200_OK)
+
+
 # API для экспорта в Excel
 
 @api_view(['POST'])
@@ -6472,6 +6844,7 @@ def export_to_excel(request):
                         _build_case_variants_filter("tag__tag_number", search)
                         | _build_icontains_multi_filter("rshn_tag", search)
                         | _build_case_variants_filter("animal_status__status_type", search)
+                        | _build_case_variants_filter("place__sheepfold", search)
                     )
                     if type_key == "maker":
                         search_filter |= Q(name__icontains=search)
@@ -6539,6 +6912,7 @@ def export_to_excel(request):
                     _build_case_variants_filter("tag__tag_number", search)
                     | _build_icontains_multi_filter("rshn_tag", search)
                     | _build_case_variants_filter("animal_status__status_type", search)
+                    | _build_case_variants_filter("place__sheepfold", search)
                 )
                 if animal_type == "maker":
                     search_filter |= Q(name__icontains=search)
@@ -7168,6 +7542,511 @@ def export_animal_detail_excel(request, animal_type, tag_number):
     return response
 
 
+DASHBOARD_PLAN_WEIGHT_ROWS = [
+    ("birth_weight", "Вес при рождении", "0"),
+    ("weight_3m", "3 мес", "3"),
+    ("weight_4m", "4 мес", "4"),
+    ("weight_5m", "5 мес", "5"),
+    ("weight_6m", "6 мес", "6"),
+    ("weight_7m", "7 мес", "7"),
+    ("weight_8m", "8 мес", "8"),
+    ("weight_9m", "9 мес", "9"),
+    ("weight_10m", "10 мес", "10"),
+    ("weight_11m", "11 мес", "11"),
+    ("weight_12m", "12 мес", "12"),
+]
+
+DASHBOARD_PLAN_DEFAULTS = {
+    "ram_birth_weight": "3.5",
+    "ewe_birth_weight": "3.2",
+    "ram_weight_3m": "29",
+    "ewe_weight_3m": "27",
+    "ram_weight_4m": "32",
+    "ewe_weight_4m": "29",
+    "ram_weight_5m": "36",
+    "ewe_weight_5m": "33",
+    "ram_weight_6m": "40",
+    "ewe_weight_6m": "36",
+    "ram_weight_7m": "44",
+    "ewe_weight_7m": "40",
+    "ram_weight_8m": "48",
+    "ewe_weight_8m": "44",
+    "ram_weight_9m": "52",
+    "ewe_weight_9m": "48",
+    "ram_weight_10m": "55",
+    "ewe_weight_10m": "50",
+    "ram_weight_11m": "58",
+    "ewe_weight_11m": "52",
+    "ram_weight_12m": "60",
+    "ewe_weight_12m": "54",
+    "weaned_lambs_per_100_mothers": "180",
+    "survival_to_weaning_percent": "94",
+    "ewe_culling_percent": "25",
+    "ewe_weight_365d": "50",
+    "ewe_weight_300d": "45",
+    "ram_weight_210d": "48",
+    "daily_gain_before_weaning": "200",
+    "daily_gain_after_weaning": "115",
+}
+
+def _get_dashboard_plan_definitions():
+    definitions = []
+    order = 1
+    for key_part, label, _months in DASHBOARD_PLAN_WEIGHT_ROWS:
+        definitions.append({
+            "key": f"ram_{key_part}",
+            "label": f"{label}, баранчики, кг",
+            "default": DASHBOARD_PLAN_DEFAULTS[f"ram_{key_part}"],
+            "sort_order": order,
+            "actual_decimals": 1,
+        })
+        order += 1
+        definitions.append({
+            "key": f"ewe_{key_part}",
+            "label": f"{label}, ярочки, кг",
+            "default": DASHBOARD_PLAN_DEFAULTS[f"ewe_{key_part}"],
+            "sort_order": order,
+            "actual_decimals": 1,
+        })
+        order += 1
+
+    extra_rows = [
+        ("weaned_lambs_per_100_mothers", "Выход живых ягнят к отбивке на 100 маток, гол", 1),
+        ("survival_to_weaning_percent", "Сохранность до отбивки, %", 1),
+        ("ewe_culling_percent", "Выбраковка овцематок, %", 1),
+        ("ewe_weight_365d", "Вес ярочек в 365 дней, кг", 1),
+        ("ewe_weight_300d", "Вес ярочек в 300 дней, кг", 1),
+        ("ram_weight_210d", "Вес баранчиков в 210 дней, кг", 1),
+        ("daily_gain_before_weaning", "с/сут до отбивки, г", 0),
+        ("daily_gain_after_weaning", "с/сут после отбивки, г", 0),
+    ]
+    for key, label, actual_decimals in extra_rows:
+        definitions.append({
+            "key": key,
+            "label": label,
+            "default": DASHBOARD_PLAN_DEFAULTS[key],
+            "sort_order": order,
+            "actual_decimals": actual_decimals,
+        })
+        order += 1
+
+    return definitions
+
+
+def _format_dashboard_decimal(value, decimal_places=None):
+    if value is None:
+        return "-"
+    try:
+        decimal_value = Decimal(str(value))
+    except Exception:
+        return "-"
+
+    if decimal_places is not None:
+        quant = Decimal("1") if decimal_places == 0 else Decimal("1").scaleb(-decimal_places)
+        decimal_value = decimal_value.quantize(quant)
+
+    text = format(decimal_value, "f").rstrip("0").rstrip(".")
+    return (text or "0").replace(".", ",")
+
+
+def _parse_dashboard_plan_decimal(value):
+    text = str(value or "").strip().replace(",", ".").replace("*", "")
+    if not text:
+        raise ValueError("значение не заполнено")
+    parsed_value = Decimal(text)
+    if parsed_value < 0:
+        raise ValueError("значение не может быть отрицательным")
+    return parsed_value.quantize(Decimal("0.01"))
+
+
+def _ensure_dashboard_plan_parameters():
+    definitions = _get_dashboard_plan_definitions()
+    by_key = {definition["key"]: definition for definition in definitions}
+    for definition in definitions:
+        parameter, created = DashboardPlanParameter.objects.get_or_create(
+            key=definition["key"],
+            defaults={
+                "label": definition["label"],
+                "plan_value": Decimal(definition["default"]),
+                "sort_order": definition["sort_order"],
+            },
+        )
+        updates = []
+        if parameter.label != definition["label"]:
+            parameter.label = definition["label"]
+            updates.append("label")
+        if parameter.sort_order != definition["sort_order"]:
+            parameter.sort_order = definition["sort_order"]
+            updates.append("sort_order")
+        if created:
+            continue
+        if updates:
+            parameter.save(update_fields=updates + ["updated_at"])
+    return by_key
+
+
+def _get_dashboard_animals_for_year(models_to_read, year):
+    animals = []
+    for model in models_to_read:
+        animals.extend(
+            list(
+                model.objects.filter(birth_date__year=year)
+                .select_related("tag")
+                .order_by("birth_date", "id")
+            )
+        )
+    return animals
+
+
+def _get_dashboard_animals_with_birth_date(models_to_read):
+    animals = []
+    for model in models_to_read:
+        animals.extend(
+            list(
+                model.objects.filter(birth_date__isnull=False)
+                .select_related("tag")
+                .order_by("birth_date", "id")
+            )
+        )
+    return animals
+
+
+def _get_dashboard_weights_by_tag(tag_ids):
+    weights_by_tag = defaultdict(list)
+    if not tag_ids:
+        return weights_by_tag
+
+    for record in WeightRecord.objects.filter(tag_id__in=tag_ids).order_by("tag_id", "weight_date", "id"):
+        weights_by_tag[record.tag_id].append(record)
+    return weights_by_tag
+
+
+def _find_dashboard_weight_near_date(records, target_date, delta_days):
+    if not records or not target_date:
+        return None
+
+    start_date = target_date - timedelta(days=delta_days)
+    end_date = target_date + timedelta(days=delta_days)
+    candidates = [
+        record for record in records
+        if start_date <= record.weight_date <= end_date
+    ]
+    return min(
+        candidates,
+        key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, record.id),
+        default=None,
+    )
+
+
+def _average_dashboard_weight(animals, weights_by_tag, target_date_getter, delta_days):
+    weights = []
+    for animal in animals:
+        target_date = target_date_getter(animal)
+        if not target_date:
+            continue
+        record = _find_dashboard_weight_near_date(
+            weights_by_tag.get(animal.tag_id, []),
+            target_date,
+            delta_days,
+        )
+        if record and record.weight is not None:
+            weights.append(Decimal(record.weight))
+
+    if not weights:
+        return None
+    return sum(weights, Decimal("0")) / Decimal(len(weights))
+
+
+def _average_dashboard_weight_for_year(animals, weights_by_tag, target_date_getter, delta_days, year, cutoff_date):
+    def target_date_in_year(animal):
+        target_date = target_date_getter(animal)
+        if not target_date or target_date.year != year or target_date > cutoff_date:
+            return None
+        return target_date
+
+    return _average_dashboard_weight(animals, weights_by_tag, target_date_in_year, delta_days)
+
+
+def _count_weaned_dashboard_animals(animals):
+    return sum(1 for animal in animals if animal.date_otbivka)
+
+
+def _calculate_dashboard_daily_gain(animals, weights_by_tag, after_weaning=False):
+    gains = []
+    for animal in animals:
+        if not animal.birth_date or not animal.date_otbivka:
+            continue
+
+        birth_record = _find_dashboard_weight_near_date(
+            weights_by_tag.get(animal.tag_id, []),
+            animal.birth_date,
+            10,
+        )
+        weaning_record = _find_dashboard_weight_near_date(
+            weights_by_tag.get(animal.tag_id, []),
+            animal.date_otbivka,
+            5,
+        )
+        if not weaning_record or not weaning_record.weight:
+            continue
+
+        if after_weaning:
+            later_records = [
+                record for record in weights_by_tag.get(animal.tag_id, [])
+                if record.weight_date > animal.date_otbivka
+            ]
+            if not later_records:
+                continue
+            latest_record = later_records[-1]
+            days = (latest_record.weight_date - animal.date_otbivka).days
+            start_weight = Decimal(weaning_record.weight)
+            end_weight = Decimal(latest_record.weight)
+        else:
+            if not birth_record or not birth_record.weight:
+                continue
+            days = (animal.date_otbivka - animal.birth_date).days
+            start_weight = Decimal(birth_record.weight)
+            end_weight = Decimal(weaning_record.weight)
+
+        if days <= 0 or end_weight < start_weight:
+            continue
+        gains.append((end_weight - start_weight) * Decimal("1000") / Decimal(days))
+
+    if not gains:
+        return None
+    return sum(gains, Decimal("0")) / Decimal(len(gains))
+
+
+def _get_dashboard_mother_key(lambing):
+    if lambing.sheep_id:
+        return ("sheep", lambing.sheep_id)
+    if lambing.ewe_id:
+        return ("ewe", lambing.ewe_id)
+    mother_tag = (lambing.mother_tag_text or "").strip().lower()
+    if mother_tag:
+        return ("text", mother_tag)
+    return None
+
+
+def _calculate_dashboard_plan_actuals(year):
+    today = timezone.localdate()
+    year_end = date(year, 12, 31)
+    cutoff_date = min(today, year_end)
+    male_weight_animals = _get_dashboard_animals_with_birth_date([Ram])
+    female_weight_animals = _get_dashboard_animals_with_birth_date([Ewe])
+    all_weight_animals = male_weight_animals + female_weight_animals
+    children_born_in_year = _get_dashboard_animals_for_year([Ram, Ewe], year)
+    tag_ids = [
+        animal.tag_id for animal in (all_weight_animals + children_born_in_year)
+        if animal.tag_id
+    ]
+    weights_by_tag = _get_dashboard_weights_by_tag(tag_ids)
+
+    actuals = {}
+    for key_part, _label, months_text in DASHBOARD_PLAN_WEIGHT_ROWS:
+        if key_part == "birth_weight":
+            target_getter = lambda animal: animal.birth_date
+            delta_days = 10
+        else:
+            months = int(months_text)
+            target_getter = lambda animal, months=months: (
+                animal.birth_date + relativedelta(months=months)
+                if animal.birth_date else None
+            )
+            delta_days = 15
+
+        actuals[f"ram_{key_part}"] = _average_dashboard_weight_for_year(
+            male_weight_animals,
+            weights_by_tag,
+            target_getter,
+            delta_days,
+            year,
+            cutoff_date,
+        )
+        actuals[f"ewe_{key_part}"] = _average_dashboard_weight_for_year(
+            female_weight_animals,
+            weights_by_tag,
+            target_getter,
+            delta_days,
+            year,
+            cutoff_date,
+        )
+
+    actuals["ewe_weight_365d"] = _average_dashboard_weight_for_year(
+        female_weight_animals,
+        weights_by_tag,
+        lambda animal: animal.birth_date + timedelta(days=365) if animal.birth_date else None,
+        15,
+        year,
+        cutoff_date,
+    )
+    actuals["ewe_weight_300d"] = _average_dashboard_weight_for_year(
+        female_weight_animals,
+        weights_by_tag,
+        lambda animal: animal.birth_date + timedelta(days=300) if animal.birth_date else None,
+        15,
+        year,
+        cutoff_date,
+    )
+    actuals["ram_weight_210d"] = _average_dashboard_weight_for_year(
+        male_weight_animals,
+        weights_by_tag,
+        lambda animal: animal.birth_date + timedelta(days=210) if animal.birth_date else None,
+        15,
+        year,
+        cutoff_date,
+    )
+
+    normal_lambings = list(
+        Lambing.objects.filter(
+            is_active=False,
+            completion_type=Lambing.COMPLETION_NORMAL,
+            actual_lambing_date__year=year,
+        )
+        .select_related("sheep__tag", "ewe__tag")
+        .order_by("actual_lambing_date", "id")
+    )
+    live_born_count = sum(lambing.number_of_lambs or 0 for lambing in normal_lambings)
+    mother_keys = {
+        key for key in (_get_dashboard_mother_key(lambing) for lambing in normal_lambings)
+        if key
+    }
+    weaned_count = _count_weaned_dashboard_animals(children_born_in_year)
+    actuals["weaned_lambs_per_100_mothers"] = (
+        Decimal(weaned_count) * Decimal("100") / Decimal(len(mother_keys))
+        if mother_keys else None
+    )
+    actuals["survival_to_weaning_percent"] = (
+        Decimal(weaned_count) * Decimal("100") / Decimal(live_born_count)
+        if live_born_count else None
+    )
+
+    active_sheep_count = Sheep.objects.filter(is_archived=False).count()
+    reject_sheep_count = Sheep.objects.filter(is_archived=False, is_reject=True).count()
+    actuals["ewe_culling_percent"] = (
+        Decimal(reject_sheep_count) * Decimal("100") / Decimal(active_sheep_count)
+        if active_sheep_count else None
+    )
+
+    actuals["daily_gain_before_weaning"] = _calculate_dashboard_daily_gain(
+        children_born_in_year,
+        weights_by_tag,
+        after_weaning=False,
+    )
+    actuals["daily_gain_after_weaning"] = _calculate_dashboard_daily_gain(
+        children_born_in_year,
+        weights_by_tag,
+        after_weaning=True,
+    )
+    return actuals
+
+
+def _get_dashboard_actual_class(actual_value, plan_value, decimal_places=None):
+    if actual_value is None or plan_value in (None, 0):
+        return ""
+
+    try:
+        actual_decimal = Decimal(actual_value)
+        plan_decimal = Decimal(plan_value)
+    except Exception:
+        return ""
+
+    if plan_decimal <= 0:
+        return ""
+
+    if decimal_places is not None:
+        quant = Decimal("1") if decimal_places == 0 else Decimal("1").scaleb(-decimal_places)
+        actual_decimal = actual_decimal.quantize(quant)
+        plan_decimal = plan_decimal.quantize(quant)
+
+    if actual_decimal >= plan_decimal:
+        return "plan-actual-good"
+    if actual_decimal >= plan_decimal * Decimal("0.9"):
+        return "plan-actual-warning"
+    return "plan-actual-danger"
+
+
+def _build_dashboard_plan_payload(year):
+    definitions_by_key = _ensure_dashboard_plan_parameters()
+    actuals = _calculate_dashboard_plan_actuals(year)
+    parameters_by_key = {
+        parameter.key: parameter
+        for parameter in DashboardPlanParameter.objects.filter(key__in=definitions_by_key.keys())
+    }
+
+    rows = []
+    for definition in sorted(definitions_by_key.values(), key=lambda item: item["sort_order"]):
+        parameter = parameters_by_key.get(definition["key"])
+        plan_value = parameter.plan_value if parameter else Decimal(definition["default"])
+        actual_value = actuals.get(definition["key"])
+        rows.append({
+            "key": definition["key"],
+            "label": definition["label"],
+            "plan_value": _format_dashboard_decimal(plan_value),
+            "plan_display": _format_dashboard_decimal(plan_value),
+            "actual_display": _format_dashboard_decimal(
+                actual_value,
+                definition["actual_decimals"],
+            ),
+            "actual_class": _get_dashboard_actual_class(
+                actual_value,
+                plan_value,
+                definition["actual_decimals"],
+            ),
+            "suffix": "",
+        })
+
+    return {
+        "year": year,
+        "parameters": rows,
+    }
+
+
+@api_view(["GET", "POST"])
+def dashboard_plan_parameters(request):
+    try:
+        year = int(request.GET.get("year") or timezone.localdate().year)
+    except (TypeError, ValueError):
+        return Response({"error": "Неверный формат года"}, status=status.HTTP_400_BAD_REQUEST)
+
+    definitions_by_key = _ensure_dashboard_plan_parameters()
+    if request.method == "POST":
+        values = request.data.get("values") or {}
+        if not isinstance(values, dict):
+            return Response(
+                {"error": "Передайте значения плана в объекте values."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        errors = {}
+        parsed_values = {}
+        for key, raw_value in values.items():
+            if key not in definitions_by_key:
+                errors[key] = "Неизвестный параметр плана."
+                continue
+            try:
+                parsed_values[key] = _parse_dashboard_plan_decimal(raw_value)
+            except Exception as exc:
+                errors[key] = f"Некорректное значение: {exc}"
+
+        if errors:
+            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            for key, plan_value in parsed_values.items():
+                definition = definitions_by_key[key]
+                DashboardPlanParameter.objects.update_or_create(
+                    key=key,
+                    defaults={
+                        "label": definition["label"],
+                        "plan_value": plan_value,
+                        "sort_order": definition["sort_order"],
+                    },
+                )
+
+    return Response(_build_dashboard_plan_payload(year))
+
+
 @api_view(['GET'])
 def dashboard_statistics(request):
     """
@@ -7776,13 +8655,34 @@ def get_all_fathers(request):
             makers_query = makers_query.exclude(lambing_groups_as_father__is_active=True)
             rams_query = rams_query.exclude(lambing_groups_as_father__is_active=True)
 
-        makers_query = makers_query.select_related('tag', 'animal_status', 'place').distinct()
-        rams_query = rams_query.select_related('tag', 'animal_status', 'place').distinct()
+        makers_query = (
+            makers_query
+            .select_related('tag', 'animal_status', 'place')
+            .annotate(first_group_placement_date=Min('lambing_groups_as_father__placement_date'))
+            .distinct()
+        )
+        rams_query = (
+            rams_query
+            .select_related('tag', 'animal_status', 'place')
+            .annotate(first_group_placement_date=Min('lambing_groups_as_father__placement_date'))
+            .distinct()
+        )
         
         # Формируем единый список
         all_fathers = []
+        today = timezone.localdate()
+        old_father_threshold = today - relativedelta(years=2)
+
+        def build_father_age_warning(first_placement_date):
+            if first_placement_date and first_placement_date < old_father_threshold:
+                return (
+                    "Баран-производитель/баранчик старый - "
+                    "С момента первой постановки барана-производителя/баранчика прошлое более двух лет"
+                )
+            return ""
         
         for maker in makers_query:
+            first_placement_date = maker.first_group_placement_date
             all_fathers.append({
                 'id': maker.id,
                 'tag_number': maker.tag.tag_number if maker.tag else '',
@@ -7792,10 +8692,13 @@ def get_all_fathers(request):
                 'type_code': 'maker',
                 'age': float(maker.age) if maker.age else 0,
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
-                'place': maker.place.sheepfold if maker.place else 'Нет места'
+                'place': maker.place.sheepfold if maker.place else 'Нет места',
+                'first_group_placement_date': first_placement_date.isoformat() if first_placement_date else None,
+                'old_father_warning': build_father_age_warning(first_placement_date),
             })
         
         for ram in rams_query:
+            first_placement_date = ram.first_group_placement_date
             all_fathers.append({
                 'id': ram.id,
                 'tag_number': ram.tag.tag_number if ram.tag else '',
@@ -7804,7 +8707,9 @@ def get_all_fathers(request):
                 'type_code': 'ram',
                 'age': float(ram.age) if ram.age else 0,
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
-                'place': ram.place.sheepfold if ram.place else 'Нет места'
+                'place': ram.place.sheepfold if ram.place else 'Нет места',
+                'first_group_placement_date': first_placement_date.isoformat() if first_placement_date else None,
+                'old_father_warning': build_father_age_warning(first_placement_date),
             })
         
         # Применяем поиск без учета регистра если указан

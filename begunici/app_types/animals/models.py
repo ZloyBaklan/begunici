@@ -83,6 +83,12 @@ class AnimalBase(models.Model):
         help_text="Отдельная отметка назначения животного, не статус.",
         db_index=True,
     )
+    needs_retagging = models.BooleanField(
+        default=False,
+        verbose_name="Необходимо перебиркование",
+        help_text="Животное включено в список на перебиркование.",
+        db_index=True,
+    )
     is_archived = models.BooleanField(default=False, verbose_name="В архиве", db_index=True)
     carcass_weight = models.DecimalField(
         max_digits=6,
@@ -423,9 +429,11 @@ class ArchiveAct(models.Model):
     """Данные для формирования акта архивирования животного."""
 
     FATNESS_CHOICES = [
-        ("ср", "ср"),
-        ("н/ср", "н/ср"),
-        ("выс", "выс"),
+        ("1", "1 - кахексия (истощение)"),
+        ("2", "2 - ниже средней"),
+        ("3", "3 - средняя"),
+        ("4", "4 - выше средней"),
+        ("5", "5 - высшая (ожирение)"),
     ]
 
     tag = models.ForeignKey(
@@ -506,6 +514,98 @@ class AnimalNoteHistory(models.Model):
 
     def __str__(self):
         return f"{self.tag.tag_number}: примечание изменено {self.change_date}"
+
+
+class SheepBodyConditionRecord(models.Model):
+    CONDITION_LABELS = {
+        1: "кахексия (истощение)",
+        2: "ниже средней",
+        3: "средняя",
+        4: "выше средней",
+        5: "высшая (ожирение)",
+    }
+    CONDITION_CHOICES = [(index, label) for index, label in CONDITION_LABELS.items()]
+
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="sheep_body_condition_records",
+        verbose_name="Бирка",
+        db_index=True,
+    )
+    condition_index = models.PositiveSmallIntegerField(
+        choices=CONDITION_CHOICES,
+        verbose_name="Индекс упитанности",
+        db_index=True,
+    )
+    measurement_date = models.DateField(
+        verbose_name="Дата измерения",
+        default=timezone.now,
+        db_index=True,
+    )
+    note = models.TextField(blank=True, default="", verbose_name="Примечание")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+
+    class Meta:
+        ordering = ["-measurement_date", "-id"]
+        verbose_name = "Запись упитанности овцематки"
+        verbose_name_plural = "История упитанности овцематок"
+        indexes = [
+            models.Index(fields=["tag", "-measurement_date"], name="sheep_bcs_tag_date_idx"),
+        ]
+
+    @property
+    def condition_label(self):
+        return self.CONDITION_LABELS.get(self.condition_index, "")
+
+    def __str__(self):
+        return f"{self.tag.tag_number}: упитанность {self.condition_index} ({self.measurement_date})"
+
+
+class TemporaryTag(models.Model):
+    tag_number = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Временная бирка",
+        db_index=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Создано")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Создал",
+    )
+
+    class Meta:
+        ordering = ["tag_number"]
+        verbose_name = "Временная бирка"
+        verbose_name_plural = "Временные бирки"
+
+    def save(self, *args, **kwargs):
+        if self.tag_number:
+            self.tag_number = self.tag_number.strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.tag_number
+
+
+class DashboardPlanParameter(models.Model):
+    key = models.CharField(max_length=100, unique=True, db_index=True, verbose_name="Ключ")
+    label = models.CharField(max_length=255, verbose_name="Параметр")
+    plan_value = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="План")
+    sort_order = models.PositiveIntegerField(default=0, verbose_name="Порядок")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        verbose_name = "Плановый параметр"
+        verbose_name_plural = "Плановые параметры"
+
+    def __str__(self):
+        return f"{self.label}: {self.plan_value}"
 
 
 class Maker(AnimalBase):

@@ -328,7 +328,7 @@ function renderRams(rams, startIndex = null) {
             <td>${ram.primary_weighing_display || '-'}</td>
             <td>${ram.secondary_weighing_display || '-'}</td>
             <td>${ram.weight_records && ram.weight_records.length > 0 
-                ? `${ram.weight_records[0].weight_date}: ${ram.weight_records[0].weight} кг` 
+                ? `${formatDateToOutput(ram.weight_records[0].weight_date)}: ${ram.weight_records[0].weight} кг`
                 : 'Нет записей'}</td>
             <td>${formatLastVetTreatment(ram.veterinary_history)}</td>
             <td>${ram.rshn_tag || '-'}</td>
@@ -496,6 +496,22 @@ function toggleDeleteButton() {
     const hasSelection = selectedRams.size > 0;
 
     selectedActionsDiv.style.display = hasSelection ? 'block' : 'none';
+}
+
+function clearSelectedRams() {
+    selectedRams.clear();
+    saveSelectedRams();
+
+    document.querySelectorAll('.select-ram').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleDeleteButton();
 }
 
 // Функция для удаления выбранных записей
@@ -830,6 +846,7 @@ window.closeArchiveModal = closeArchiveModal;
 window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedRams = deleteSelectedRams;
+window.clearSelectedRams = clearSelectedRams;
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectRam = toggleSelectRam;
 window.toggleDeleteButton = toggleDeleteButton;

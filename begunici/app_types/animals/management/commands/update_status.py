@@ -22,7 +22,11 @@ from ...models import (
     STATUS_REPAIR,
     STATUS_UNDEFINED,
 )
-from ...status_logic import get_lambing_children, is_young_child_without_weaning
+from ...status_logic import (
+    can_close_lambed_status_by_lambing_children,
+    get_lambing_children,
+    is_young_child_without_weaning,
+)
 
 
 class Command(BaseCommand):
@@ -195,11 +199,16 @@ class Command(BaseCommand):
 
         children = get_lambing_children(latest_lambing)
         if len(children) < live_count:
+            if can_close_lambed_status_by_lambing_children(latest_lambing, children, self.today):
+                return STATUS_NOT_INSEMINATED, (
+                    f"найдено детей {len(children)} из {live_count}; найденные дети отбиты "
+                    "или архивированы, с окота прошло 5 месяцев"
+                )
             return STATUS_LAMBED, (
                 f"последний окот с живыми ягнятами; найдено детей {len(children)} из {live_count}"
             )
 
-        if all(child.date_otbivka or child.is_archived for child in children):
+        if can_close_lambed_status_by_lambing_children(latest_lambing, children, self.today):
             return STATUS_NOT_INSEMINATED, "все дети последнего окота отбиты или архивированы"
 
         return STATUS_LAMBED, "есть живые дети последнего окота без отбивки/архива"

@@ -10,7 +10,8 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.views.generic import TemplateView
 from rest_framework.exceptions import ValidationError
-from datetime import datetime, timedelta
+from django.db.models import Q
+from datetime import date, datetime, timedelta
 from calendar import monthrange
 from .vet_models import (
     Veterinary,
@@ -46,6 +47,15 @@ def place_natural_sort_key(place):
     return (barn_number, section_number, (place.sheepfold or "").lower())
 
 
+def _build_text_case_variants_filter(field_name, value):
+    combined_q = Q()
+    for term in [part.strip() for part in str(value or "").split(",") if part.strip()]:
+        variants = {term, term.lower(), term.upper(), term.title()}
+        for variant in variants:
+            combined_q |= Q(**{f"{field_name}__contains": variant})
+    return combined_q
+
+
 def places_map(request):
     """
     Представление для карты овчарен
@@ -63,6 +73,247 @@ def export_feed_plan_excel(request):
         return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     except RuntimeError as exc:
         return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+PLACE_MAP_EXCEL_DATE_FORMAT = "dd.mm.yyyy"
+
+
+def _coerce_place_map_excel_date(value):
+    if not value or value == "-":
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    return None
+
+
+def _write_place_map_excel_cell(worksheet, row_index, column_index, value):
+    parsed_date = _coerce_place_map_excel_date(value)
+    cell = worksheet.cell(
+        row=row_index,
+        column=column_index,
+        value=parsed_date or value,
+    )
+    if parsed_date:
+        cell.number_format = PLACE_MAP_EXCEL_DATE_FORMAT
+    return cell
+
+
+def _format_place_map_dorper_display(animal):
+    if animal.dorper_percentage is None:
+        return None
+
+    percentage = float(animal.dorper_percentage)
+    formatted = f"{int(percentage)}%" if percentage == int(percentage) else f"{percentage:g}%"
+    if getattr(animal, "is_manual_dorper", False):
+        formatted += "*"
+    return formatted
+
+
+def _parse_place_map_export_place_ids(raw_place_ids):
+    if isinstance(raw_place_ids, str):
+        raw_place_ids = [value.strip() for value in raw_place_ids.split(",")]
+    elif raw_place_ids is None:
+        raw_place_ids = []
+    elif not isinstance(raw_place_ids, (list, tuple, set)):
+        raw_place_ids = [raw_place_ids]
+
+    place_ids = []
+    seen_ids = set()
+    for raw_place_id in raw_place_ids:
+        try:
+            place_id = int(raw_place_id)
+        except (TypeError, ValueError):
+            continue
+
+        if place_id not in seen_ids:
+            place_ids.append(place_id)
+            seen_ids.add(place_id)
+
+    return place_ids
+
+
+@api_view(["POST"])
+def export_place_map_excel(request):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+        from begunici.app_types.animals.models import Ewe, Maker, Ram, Sheep
+    except ImportError:
+        return Response(
+            {"error": "Библиотека openpyxl не установлена. Экспорт Excel недоступен."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    place_ids = _parse_place_map_export_place_ids(request.data.get("place_ids"))
+    if not place_ids:
+        return Response(
+            {"error": "Выберите хотя бы один отсек для экспорта."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    animal_type_map = {
+        "maker": (Maker, "Баран-Производитель"),
+        "ram": (Ram, "Баранчик"),
+        "ewe": (Ewe, "Ярка"),
+        "sheep": (Sheep, "Овцематка"),
+    }
+
+    raw_animal_types = request.data.get("animal_types")
+    if raw_animal_types is None:
+        raw_animal_types = request.data.get("animal_type", "all")
+    if isinstance(raw_animal_types, str):
+        raw_animal_types = [value.strip() for value in raw_animal_types.split(",")]
+    elif not isinstance(raw_animal_types, (list, tuple, set)):
+        raw_animal_types = [raw_animal_types]
+
+    selected_animal_type_keys = []
+    invalid_animal_types = []
+    for raw_animal_type in raw_animal_types:
+        animal_type_key = str(raw_animal_type or "").strip().lower()
+        if not animal_type_key:
+            continue
+        if animal_type_key == "all":
+            selected_animal_type_keys = list(animal_type_map.keys())
+            invalid_animal_types = []
+            break
+        if animal_type_key not in animal_type_map:
+            invalid_animal_types.append(animal_type_key)
+            continue
+        if animal_type_key not in selected_animal_type_keys:
+            selected_animal_type_keys.append(animal_type_key)
+
+    if invalid_animal_types:
+        return Response(
+            {"error": "Выбран неизвестный тип животных для экспорта."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not selected_animal_type_keys:
+        return Response(
+            {"error": "Выберите хотя бы один тип животных для экспорта."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    places = list(Place.objects.filter(id__in=place_ids))
+    if not places:
+        return Response(
+            {"error": "Выбранные отсеки не найдены."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    places = sorted(places, key=place_natural_sort_key)
+    place_order = {place.id: index for index, place in enumerate(places)}
+    selected_models = [
+        (animal_type_key, animal_type_map[animal_type_key])
+        for animal_type_key in selected_animal_type_keys
+    ]
+
+    animal_entries = []
+    selected_place_ids = list(place_order.keys())
+    for type_order, (_, (model, type_label)) in enumerate(selected_models):
+        queryset = (
+            model.objects
+            .filter(is_archived=False, place_id__in=selected_place_ids)
+            .select_related("tag", "animal_status", "place")
+        )
+        for animal in queryset:
+            animal_entries.append({
+                "animal": animal,
+                "type_label": type_label,
+                "type_order": type_order,
+            })
+
+    animal_entries.sort(key=lambda entry: (
+        place_order.get(entry["animal"].place_id, 10**9),
+        entry["type_order"],
+        (entry["animal"].tag.tag_number if entry["animal"].tag else "").lower(),
+    ))
+
+    tag_ids = [
+        entry["animal"].tag_id
+        for entry in animal_entries
+        if getattr(entry["animal"], "tag_id", None)
+    ]
+    latest_weights_by_tag = {}
+    if tag_ids:
+        for weight_record in (
+            WeightRecord.objects
+            .filter(tag_id__in=tag_ids)
+            .order_by("tag_id", "-weight_date", "-id")
+        ):
+            latest_weights_by_tag.setdefault(weight_record.tag_id, weight_record)
+
+    headers = [
+        "№",
+        "Тип животного",
+        "Бирка",
+        "Статус",
+        "Возраст (мес)",
+        "Овчарня",
+        "Кровность по основной породе",
+        "Назначение",
+        "Живой вес (кг)",
+        "Дата взвешивания",
+        "Рабочее состояние",
+        "Примечание",
+    ]
+
+    export_rows = []
+    for row_number, entry in enumerate(animal_entries, start=1):
+        animal = entry["animal"]
+        latest_weight = latest_weights_by_tag.get(animal.tag_id)
+        export_rows.append([
+            row_number,
+            entry["type_label"],
+            animal.tag.tag_number if animal.tag else "-",
+            animal.animal_status.status_type if animal.animal_status else "Нет статуса",
+            float(animal.age) if animal.age is not None else "-",
+            animal.place.sheepfold if animal.place else "Нет данных",
+            _format_place_map_dorper_display(animal) or "-",
+            "Брак" if animal.is_reject else "-",
+            float(latest_weight.weight) if latest_weight else "-",
+            latest_weight.weight_date if latest_weight else "-",
+            animal.working_condition if hasattr(animal, "working_condition") and animal.working_condition else "-",
+            animal.note or "",
+        ])
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Карта овчарен"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for column_index, header in enumerate(headers, start=1):
+        cell = worksheet.cell(row=1, column=column_index, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for row_index, row_data in enumerate(export_rows, start=2):
+        for column_index, value in enumerate(row_data, start=1):
+            cell = _write_place_map_excel_cell(worksheet, row_index, column_index, value)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    column_widths = [8, 24, 16, 18, 14, 24, 24, 14, 16, 18, 22, 36]
+    for column_index, width in enumerate(column_widths, start=1):
+        worksheet.column_dimensions[get_column_letter(column_index)].width = width
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    filename = f"place_map_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    workbook.save(response)
+    return response
 
 
 @api_view(['GET'])
@@ -423,8 +674,14 @@ class PlaceViewSet(viewsets.ModelViewSet):
     serializer_class = PlaceSerializer
     permission_classes = [AllowAny]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = ["sheepfold"]
+    filter_backends = [DjangoFilterBackend]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(_build_text_case_variants_filter("sheepfold", search))
+        return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())

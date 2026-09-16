@@ -414,7 +414,7 @@ function renderCommonAnimals(animals) {
         const statusText = animal.animal_status ? animal.animal_status.status_type : "Нет статуса";
 
         const weightText = animal.last_weight_date && animal.last_weight !== null
-            ? `${animal.last_weight_date}: ${animal.last_weight} кг`
+            ? `${formatDateToOutput(animal.last_weight_date)}: ${animal.last_weight} кг`
             : "Нет записей";
 
         const vetText = formatLastVetTreatment(
@@ -543,6 +543,22 @@ function toggleSelectedActions() {
     if (!selectedActionsDiv) return;
 
     selectedActionsDiv.style.display = selectedAnimals.size > 0 ? "block" : "none";
+}
+
+function clearSelectedAnimals() {
+    selectedAnimals.clear();
+    saveSelectedAnimals();
+
+    document.querySelectorAll(".select-common").forEach((checkbox) => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById("select-all");
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleSelectedActions();
 }
 
 async function deleteSelectedAnimals() {
@@ -780,6 +796,7 @@ window.performCommonSearch = function () {
 window.toggleCommonAdditionalFilters = toggleCommonAdditionalFilters;
 window.toggleSelectAll = toggleSelectAll;
 window.deleteSelectedAnimals = deleteSelectedAnimals;
+window.clearSelectedAnimals = clearSelectedAnimals;
 window.closeDeleteModal = closeDeleteModal;
 window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;

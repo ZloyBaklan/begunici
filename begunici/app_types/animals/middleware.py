@@ -167,6 +167,10 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if method == "POST" and "/animals/" in path and "/restore/" in path:
             return True
 
+        # Sheep body condition records are logged with business-level details.
+        if method == "POST" and "/animals/sheep/" in path and "/body_condition/" in path:
+            return True
+
         # Conversions are logged with business-level details.
         if (
             method == "POST"

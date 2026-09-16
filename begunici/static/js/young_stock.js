@@ -304,6 +304,22 @@ function toggleSelectedActions() {
     selectedActionsDiv.style.display = selectedYoungStock.size > 0 ? "block" : "none";
 }
 
+function clearSelectedYoungStock() {
+    selectedYoungStock.clear();
+    saveSelectedYoungStock();
+
+    document.querySelectorAll(".select-young-stock").forEach((checkbox) => {
+        checkbox.checked = false;
+    });
+
+    const selectAllCheckbox = document.getElementById("select-all");
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+
+    toggleSelectedActions();
+}
+
 async function deleteSelectedYoungStock() {
     const selected = Array.from(selectedYoungStock.values());
     if (selected.length === 0) {
@@ -545,6 +561,7 @@ window.getYoungStockFiltersFromInputs = getYoungStockFiltersFromInputs;
 window.toggleYoungStockAdditionalFilters = toggleYoungStockAdditionalFilters;
 window.toggleSelectAll = toggleSelectAll;
 window.deleteSelectedYoungStock = deleteSelectedYoungStock;
+window.clearSelectedYoungStock = clearSelectedYoungStock;
 window.closeDeleteModal = closeDeleteModal;
 window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;

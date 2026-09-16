@@ -54,9 +54,58 @@
                     <p>Ярки: <span id="born-ewes">-</span></p>
                 </div>
             </div>
-            
-            <div class="stat-card">
+        </div>
+
+        <div class="plan-parameters-card" id="plan-parameters-card">
+            <div class="plan-parameters-header">
+                <div>
+                    <h4>Плановые параметры</h4>
+                    <small id="plan-parameters-year">Фактически за текущий год</small>
+                </div>
+                <div class="plan-parameters-actions">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="toggle-plan-parameters-btn" onclick="togglePlanParameters()">
+                        Развернуть
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="edit-plan-btn" onclick="enablePlanEditing()" style="display: none;">
+                        Редактировать план
+                    </button>
+                    <button type="button" class="btn btn-success btn-sm" id="save-plan-btn" onclick="savePlanParameters()" style="display: none;">
+                        Сохранить
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="cancel-plan-btn" onclick="cancelPlanEditing()" style="display: none;">
+                        Отмена
+                    </button>
+                </div>
+            </div>
+            <div class="plan-parameters-content" id="plan-parameters-content" style="display: none;">
+                <div class="plan-parameters-message" id="plan-parameters-message"></div>
+                <div class="plan-parameters-table-wrapper">
+                    <table class="plan-parameters-table">
+                        <thead>
+                            <tr>
+                                <th>Параметр</th>
+                                <th>План</th>
+                                <th>Фактически</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plan-parameters-body">
+                            <tr>
+                                <td colspan="3">Загрузка...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="yearly-statistics-card" id="yearly-statistics-card">
+            <div class="yearly-statistics-header">
                 <h4>Статистика по годам</h4>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="toggle-yearly-stats-btn" onclick="toggleYearlyStatistics()">
+                    Развернуть
+                </button>
+            </div>
+            <div class="yearly-statistics-content" id="yearly-statistics-content" style="display: none;">
                 <div class="year-selector">
                     <div class="year-period-field">
                         <label for="year-select">Год:</label>
@@ -124,7 +173,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
     // Инициализация селекторов периода
     initYearSelector();
-    
+
+    const statisticsContainer = document.querySelector('.statistics-container');
+    if (statisticsContainer) {
     try {
         const response = await fetch('/animals/api/dashboard-statistics/');
         const data = await response.json();
@@ -187,8 +238,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Ошибка загрузки статистики:', error);
     }
     
-    // Загружаем годовую статистику для текущего года
-    loadYearlyStatistics(new Date().getFullYear(), getSelectedStatisticsMonth());
+    await loadPlanParameters(new Date().getFullYear());
+    }
     
     // Проверяем нужность автобэкапа
     try {
@@ -243,7 +294,10 @@ function initYearSelector() {
     });
     
     const reloadStatistics = () => {
-        loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
+        if (isYearlyStatisticsExpanded()) {
+            loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
+        }
+        loadPlanParameters(getSelectedStatisticsYear());
     };
 
     yearSelect.addEventListener('change', reloadStatistics);
@@ -258,6 +312,190 @@ function getSelectedStatisticsYear() {
 function getSelectedStatisticsMonth() {
     const monthSelect = document.getElementById('month-select');
     return monthSelect?.value || '';
+}
+
+let planParameters = [];
+let planEditing = false;
+let yearlyStatisticsLoaded = false;
+
+function isPlanParametersExpanded() {
+    const content = document.getElementById('plan-parameters-content');
+    return content && content.style.display !== 'none';
+}
+
+function isYearlyStatisticsExpanded() {
+    const content = document.getElementById('yearly-statistics-content');
+    return content && content.style.display !== 'none';
+}
+
+function updatePlanActionButtons() {
+    const isExpanded = isPlanParametersExpanded();
+    document.getElementById('toggle-plan-parameters-btn').textContent = isExpanded ? 'Свернуть' : 'Развернуть';
+    document.getElementById('edit-plan-btn').style.display = isExpanded && !planEditing ? 'inline-block' : 'none';
+    document.getElementById('save-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
+    document.getElementById('cancel-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
+}
+
+function togglePlanParameters() {
+    const content = document.getElementById('plan-parameters-content');
+    if (!content) {
+        return;
+    }
+
+    if (isPlanParametersExpanded()) {
+        content.style.display = 'none';
+        planEditing = false;
+        showPlanMessage('');
+        renderPlanParameters();
+    } else {
+        content.style.display = 'block';
+    }
+    updatePlanActionButtons();
+}
+
+function showPlanMessage(message, type = 'info') {
+    const messageContainer = document.getElementById('plan-parameters-message');
+    if (!messageContainer) {
+        return;
+    }
+    messageContainer.textContent = message || '';
+    messageContainer.className = `plan-parameters-message ${message ? `plan-message-${type}` : ''}`;
+}
+
+function renderPlanParameters() {
+    const tbody = document.getElementById('plan-parameters-body');
+    if (!tbody) {
+        return;
+    }
+
+    if (!planParameters.length) {
+        tbody.innerHTML = '<tr><td colspan="3">Нет данных</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = planParameters.map((item) => {
+        const planCell = planEditing
+            ? `<div class="plan-input-wrap">
+                    <input type="text" class="form-control form-control-sm plan-value-input" data-key="${item.key}" value="${item.plan_value || ''}">
+               </div>`
+            : item.plan_display;
+
+        return `
+            <tr>
+                <td>${item.label}</td>
+                <td>${planCell}</td>
+                <td class="${item.actual_class || ''}">${item.actual_display || '-'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function loadPlanParameters(year) {
+    const tbody = document.getElementById('plan-parameters-body');
+    if (tbody && !planParameters.length) {
+        tbody.innerHTML = '<tr><td colspan="3">Загрузка...</td></tr>';
+    }
+
+    try {
+        const params = new URLSearchParams({ year: String(year || new Date().getFullYear()) });
+        const response = await fetch(`/animals/api/dashboard-plan-parameters/?${params.toString()}`);
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+            throw new Error(data.error || 'Не удалось загрузить плановые параметры');
+        }
+
+        planParameters = data.parameters || [];
+        const yearLabel = document.getElementById('plan-parameters-year');
+        if (yearLabel) {
+            yearLabel.textContent = `Фактически за ${data.year} год`;
+        }
+        renderPlanParameters();
+    } catch (error) {
+        console.error('Ошибка загрузки плановых параметров:', error);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="3">Ошибка загрузки: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+function enablePlanEditing() {
+    planEditing = true;
+    updatePlanActionButtons();
+    showPlanMessage('');
+    renderPlanParameters();
+}
+
+function cancelPlanEditing() {
+    planEditing = false;
+    updatePlanActionButtons();
+    showPlanMessage('');
+    renderPlanParameters();
+}
+
+async function savePlanParameters() {
+    const values = {};
+    document.querySelectorAll('.plan-value-input').forEach((input) => {
+        values[input.dataset.key] = input.value;
+    });
+
+    try {
+        const params = new URLSearchParams({ year: String(getSelectedStatisticsYear()) });
+        const response = await fetch(`/animals/api/dashboard-plan-parameters/?${params.toString()}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ values })
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            const errors = data.errors
+                ? Object.values(data.errors).join('; ')
+                : (data.error || 'Не удалось сохранить план');
+            throw new Error(errors);
+        }
+
+        planParameters = data.parameters || [];
+        planEditing = false;
+        updatePlanActionButtons();
+        renderPlanParameters();
+        showPlanMessage('Плановые значения сохранены.', 'success');
+    } catch (error) {
+        console.error('Ошибка сохранения плановых параметров:', error);
+        showPlanMessage(error.message, 'error');
+    }
+}
+
+function toggleYearlyStatistics() {
+    const planCard = document.getElementById('plan-parameters-card');
+    const content = document.getElementById('yearly-statistics-content');
+    const toggleBtn = document.getElementById('toggle-yearly-stats-btn');
+    if (!content || !toggleBtn) {
+        return;
+    }
+
+    if (isYearlyStatisticsExpanded()) {
+        content.style.display = 'none';
+        toggleBtn.textContent = 'Развернуть';
+        if (planCard) {
+            planCard.style.display = 'block';
+        }
+        return;
+    }
+
+    if (planCard) {
+        planCard.style.display = 'none';
+    }
+    content.style.display = 'block';
+    toggleBtn.textContent = 'Свернуть';
+
+    if (!yearlyStatisticsLoaded) {
+        yearlyStatisticsLoaded = true;
+        loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
+    }
 }
 
 // Загрузка годовой статистики
@@ -574,6 +812,128 @@ function toggleExpand(containerId, trigger) {
     /* Убираем отступ слева и линию */
     /* padding-left: 8px; */
     /* border-left: 2px solid #e9ecef; */
+}
+
+.plan-parameters-card,
+.yearly-statistics-card {
+    margin-top: 16px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 18px;
+}
+
+.plan-parameters-header,
+.yearly-statistics-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.plan-parameters-header h4,
+.yearly-statistics-header h4 {
+    margin: 0;
+    font-size: 18px;
+    color: #495057;
+}
+
+.plan-parameters-header small {
+    color: #6c757d;
+}
+
+.plan-parameters-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.plan-parameters-table-wrapper {
+    overflow-x: auto;
+}
+
+.plan-parameters-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+}
+
+.plan-parameters-table th,
+.plan-parameters-table td {
+    border: 1px solid #dee2e6;
+    padding: 8px 10px;
+    vertical-align: middle;
+}
+
+.plan-parameters-table th {
+    background: #eef2f6;
+    color: #495057;
+    font-weight: 600;
+}
+
+.plan-parameters-table th:nth-child(2),
+.plan-parameters-table th:nth-child(3),
+.plan-parameters-table td:nth-child(2),
+.plan-parameters-table td:nth-child(3) {
+    width: 140px;
+    text-align: center;
+}
+
+.plan-parameters-table td.plan-actual-good {
+    background-color: #dff3e6;
+    color: #0f5132;
+    font-weight: 600;
+}
+
+.plan-parameters-table td.plan-actual-warning {
+    background-color: #fff1d6;
+    color: #7a4d00;
+    font-weight: 600;
+}
+
+.plan-parameters-table td.plan-actual-danger {
+    background-color: #fde2e2;
+    color: #842029;
+    font-weight: 600;
+}
+
+.plan-input-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    justify-content: center;
+}
+
+.plan-value-input {
+    width: 86px;
+    text-align: center;
+}
+
+.plan-parameters-message {
+    min-height: 20px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.plan-message-success {
+    color: #198754;
+}
+
+.plan-message-error {
+    color: #dc3545;
+}
+
+@media (max-width: 768px) {
+    .plan-parameters-header,
+    .yearly-statistics-header {
+        flex-direction: column;
+    }
+
+    .plan-parameters-actions {
+        justify-content: flex-start;
+    }
 }
 </style>
 

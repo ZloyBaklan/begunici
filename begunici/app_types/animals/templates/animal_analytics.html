@@ -176,6 +176,32 @@
                     </div>
                 </div>
 
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">История упитанности</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Дата</th>
+                                        <th>Индекс</th>
+                                        <th>Расшифровка</th>
+                                        <th>Примечание</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="body-condition-history-list"></tbody>
+                            </table>
+                        </div>
+                        <div id="body-condition-pagination" class="pagination-container mt-3">
+                            <button id="body-condition-prev" class="btn btn-sm btn-secondary" disabled>Предыдущая</button>
+                            <span id="body-condition-page-numbers"></span>
+                            <button id="body-condition-next" class="btn btn-sm btn-secondary" disabled>Следующая</button>
+                        </div>
+                    </div>
+                </div>
+
                 {% if animal_type == 'maker' or animal_type == 'ram' %}
                 <div class="card mb-4">
                     <div class="card-header">

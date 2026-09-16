@@ -43,6 +43,24 @@ document.addEventListener('DOMContentLoaded', function () {
     if (carpetMoveSearchButton) {
         carpetMoveSearchButton.addEventListener('click', searchCarpetMoveAnimals);
     }
+
+    const exportSelectAllCheckbox = document.getElementById('place-map-export-select-all');
+    if (exportSelectAllCheckbox) {
+        exportSelectAllCheckbox.addEventListener('change', function() {
+            setPlaceMapExportSectionsChecked(this.checked);
+        });
+    }
+
+    const exportTypeSelectAllCheckbox = document.getElementById('place-map-export-type-select-all');
+    if (exportTypeSelectAllCheckbox) {
+        exportTypeSelectAllCheckbox.addEventListener('change', function() {
+            setPlaceMapExportAnimalTypesChecked(this.checked);
+        });
+    }
+
+    document.querySelectorAll('.place-map-export-animal-type-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updatePlaceMapExportTypeSelectionState);
+    });
 });
 
 function formatSectionMetric(value, unit) {
@@ -98,6 +116,139 @@ function sortPlacesBySheepfold(places) {
             || leftParts[2].localeCompare(rightParts[2], 'ru')
         );
     });
+}
+
+function getSectionDisplayName(section) {
+    return section?.name || `Отсек ${section?.section_number || ''}`.trim();
+}
+
+function getNonEmptyExportSections() {
+    if (!currentBarnStats) {
+        return [];
+    }
+
+    return [...(currentBarnStats.sections || [])]
+        .filter(section => !isSectionEmpty(currentBarnStats, section))
+        .sort((left, right) => Number(left.section_number) - Number(right.section_number));
+}
+
+function getSelectedPlaceMapExportPlaceIds() {
+    return Array.from(document.querySelectorAll('.place-map-export-section-checkbox:checked'))
+        .map(checkbox => parseInt(checkbox.value, 10))
+        .filter(Number.isInteger);
+}
+
+function getSelectedPlaceMapExportAnimalTypes() {
+    return Array.from(document.querySelectorAll('.place-map-export-animal-type-checkbox:checked'))
+        .map(checkbox => checkbox.value)
+        .filter(Boolean);
+}
+
+function setPlaceMapExportSubmitEnabled(enabled) {
+    const submitButton = document.getElementById('place-map-export-submit');
+    if (submitButton) {
+        submitButton.disabled = !enabled;
+    }
+}
+
+function setPlaceMapExportResult(message, alertClass = 'alert-warning') {
+    const resultBlock = document.getElementById('place-map-export-result');
+    if (!resultBlock) return;
+
+    if (!message) {
+        resultBlock.style.display = 'none';
+        resultBlock.textContent = '';
+        return;
+    }
+
+    resultBlock.className = `alert ${alertClass}`;
+    resultBlock.style.display = 'block';
+    resultBlock.textContent = message;
+}
+
+function updatePlaceMapExportSelectionState() {
+    const sectionCheckboxes = Array.from(document.querySelectorAll('.place-map-export-section-checkbox'));
+    const selectAllCheckbox = document.getElementById('place-map-export-select-all');
+    const selectedCount = sectionCheckboxes.filter(checkbox => checkbox.checked).length;
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = sectionCheckboxes.length > 0 && selectedCount === sectionCheckboxes.length;
+        selectAllCheckbox.indeterminate = false;
+    }
+
+    updatePlaceMapExportSubmitState();
+}
+
+function updatePlaceMapExportTypeSelectionState() {
+    const typeCheckboxes = Array.from(document.querySelectorAll('.place-map-export-animal-type-checkbox'));
+    const selectAllCheckbox = document.getElementById('place-map-export-type-select-all');
+    const selectedCount = typeCheckboxes.filter(checkbox => checkbox.checked).length;
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = typeCheckboxes.length > 0 && selectedCount === typeCheckboxes.length;
+        selectAllCheckbox.indeterminate = false;
+    }
+
+    updatePlaceMapExportSubmitState();
+}
+
+function updatePlaceMapExportSubmitState() {
+    setPlaceMapExportSubmitEnabled(
+        getSelectedPlaceMapExportPlaceIds().length > 0
+        && getSelectedPlaceMapExportAnimalTypes().length > 0
+    );
+}
+
+function setPlaceMapExportSectionsChecked(checked) {
+    document.querySelectorAll('.place-map-export-section-checkbox').forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+    updatePlaceMapExportSelectionState();
+}
+
+function setPlaceMapExportAnimalTypesChecked(checked) {
+    document.querySelectorAll('.place-map-export-animal-type-checkbox').forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+    updatePlaceMapExportTypeSelectionState();
+}
+
+function renderPlaceMapExportSections() {
+    const container = document.getElementById('place-map-export-sections');
+    if (!container) return;
+
+    const sections = getNonEmptyExportSections();
+    container.innerHTML = '';
+
+    if (sections.length === 0) {
+        const selectAllCheckbox = document.getElementById('place-map-export-select-all');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        }
+        container.innerHTML = '<div class="text-muted">В этой овчарне нет непустых отсеков.</div>';
+        setPlaceMapExportSubmitEnabled(false);
+        return;
+    }
+
+    sections.forEach(section => {
+        const label = document.createElement('label');
+        label.className = 'place-map-export-section-option';
+        label.innerHTML = `
+            <input
+                type="checkbox"
+                class="place-map-export-section-checkbox"
+                value="${section.id}"
+                checked
+            >
+            <span>${escapeHtml(getSectionDisplayName(section))}</span>
+        `;
+        label.querySelector('input').addEventListener('change', updatePlaceMapExportSelectionState);
+        container.appendChild(label);
+    });
+
+    updatePlaceMapExportSelectionState();
+    updatePlaceMapExportTypeSelectionState();
 }
 
 async function populatePlaceSelect(selectId) {
@@ -1298,6 +1449,115 @@ async function downloadManualTransferAct(animals, oldPlaceId, newPlaceId) {
     window.URL.revokeObjectURL(url);
 }
 
+function openPlaceMapExportModal() {
+    if (!currentBarnStats) {
+        alert('Сначала выберите овчарню для экспорта');
+        return;
+    }
+
+    const modal = document.getElementById('place-map-export-modal');
+    const selectAllCheckbox = document.getElementById('place-map-export-select-all');
+    const typeSelectAllCheckbox = document.getElementById('place-map-export-type-select-all');
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    }
+    if (typeSelectAllCheckbox) {
+        typeSelectAllCheckbox.checked = true;
+        typeSelectAllCheckbox.indeterminate = false;
+    }
+    setPlaceMapExportAnimalTypesChecked(true);
+
+    setPlaceMapExportResult('');
+    renderPlaceMapExportSections();
+    if (modal) {
+        modal.style.display = 'block';
+    }
+}
+
+function closePlaceMapExportModal() {
+    const modal = document.getElementById('place-map-export-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function performPlaceMapExport() {
+    const placeIds = getSelectedPlaceMapExportPlaceIds();
+    const animalTypes = getSelectedPlaceMapExportAnimalTypes();
+    const submitButton = document.getElementById('place-map-export-submit');
+    const originalButtonText = submitButton?.textContent || 'Экспортировать';
+
+    if (placeIds.length === 0) {
+        setPlaceMapExportResult('Выберите хотя бы один отсек для экспорта.');
+        return;
+    }
+    if (animalTypes.length === 0) {
+        setPlaceMapExportResult('Выберите хотя бы один тип животных для экспорта.');
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Экспорт...';
+    }
+    setPlaceMapExportResult('');
+
+    try {
+        const response = await fetch('/veterinary/api/place-map/export-excel/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken(),
+            },
+            body: JSON.stringify({
+                place_ids: placeIds,
+                animal_types: animalTypes,
+            }),
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get('Content-Type') || '';
+            const responseText = await response.text();
+            let errorMessage = `Ошибка экспорта: ${response.status}`;
+
+            if (contentType.includes('application/json')) {
+                try {
+                    errorMessage = getApiErrorMessage(JSON.parse(responseText), errorMessage);
+                } catch (parseError) {
+                    errorMessage = responseText || errorMessage;
+                }
+            } else {
+                errorMessage = responseText || errorMessage;
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        const blob = await response.blob();
+        const filename = getFilenameFromContentDisposition(response.headers.get('Content-Disposition'))
+            || `place_map_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        closePlaceMapExportModal();
+    } catch (error) {
+        console.error('Ошибка экспорта карты овчарен:', error);
+        setPlaceMapExportResult(error.message || 'Не удалось выполнить экспорт.');
+    } finally {
+        if (submitButton) {
+            submitButton.textContent = originalButtonText;
+        }
+        updatePlaceMapExportSelectionState();
+    }
+}
+
 async function requestBulkPlaceMove(animals, destinationPlaceId, confirmGroupPlaceMove = false, previewOnly = false) {
     return apiRequest('/animals/api/bulk-place-move/', 'POST', {
         animals,
@@ -1526,5 +1786,8 @@ window.openPlaceImportModal = openPlaceImportModal;
 window.closePlaceImportModal = closePlaceImportModal;
 window.previewPlaceImport = previewPlaceImport;
 window.confirmPlaceImport = confirmPlaceImport;
+window.openPlaceMapExportModal = openPlaceMapExportModal;
+window.closePlaceMapExportModal = closePlaceMapExportModal;
+window.performPlaceMapExport = performPlaceMapExport;
 window.showMoveAnimalsDialog = showMoveAnimalsDialog;
 window.moveSelectedAnimals = moveSelectedAnimals;
