@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 """Статус через админку и вебку имеет дату создания, но в случае выставления статуса в поле(его обновления), нужно чтобы дата обновлялась на текущую"""
@@ -27,9 +27,28 @@ class Tag(models.Model):
         Обновление бирки животного и сохранение предыдущей бирки.
         """
         if self.tag_number != new_tag_number:  # Проверяем, меняется ли бирка
-            # self.previous_tags.append(self.tag_number)  # Добавляем текущую бирку в историю
-            self.tag_number = new_tag_number  # Обновляем на новую бирку
-            self.save()
+            with transaction.atomic():
+                old_tag_number = self.tag_number
+                # self.previous_tags.append(self.tag_number)  # Добавляем текущую бирку в историю
+                self.tag_number = new_tag_number  # Обновляем на новую бирку
+                self.save(update_fields=["tag_number"])
+                self._update_text_tag_references(old_tag_number, new_tag_number)
+
+    @staticmethod
+    def _update_text_tag_references(old_tag_number, new_tag_number):
+        """
+        Текстовые поля родителей хранят номер бирки, поэтому при переименовании
+        бирки их тоже нужно перевести на новое значение.
+        """
+        from begunici.app_types.animals.models import Ewe, Lambing, Maker, Ram, Sheep
+
+        for model in (Maker, Ram, Ewe, Sheep):
+            model.objects.filter(mother__iexact=old_tag_number).update(mother=new_tag_number)
+            model.objects.filter(father__iexact=old_tag_number).update(father=new_tag_number)
+
+        Lambing.objects.filter(mother_tag_text__iexact=old_tag_number).update(
+            mother_tag_text=new_tag_number
+        )
 
     def __str__(self):
         return self.tag_number

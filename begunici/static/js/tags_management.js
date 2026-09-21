@@ -55,18 +55,23 @@ async function loadTemporaryTags() {
     const tbody = document.getElementById("temporary-tags-list");
     if (!tbody) return;
 
-    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Загрузка...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Загрузка...</td></tr>';
     try {
         const tags = await apiRequest("/animals/api/tags/temporary/");
         if (!tags.length) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Временных бирок нет</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Временных бирок нет</td></tr>';
             return;
         }
 
         tbody.innerHTML = tags.map((tag, index) => `
             <tr>
                 <td>${index + 1}</td>
-                <td>${escapeHtml(tag.tag_number)}</td>
+                <td>
+                    ${tag.is_occupied && tag.animal_url
+                        ? `<a href="${escapeHtml(tag.animal_url)}">${escapeHtml(tag.tag_number)}</a>`
+                        : escapeHtml(tag.tag_number)}
+                </td>
+                <td>${tag.is_occupied ? "Да" : "Нет"}</td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger delete-temporary-tag-btn" data-id="${tag.id}">
                         Удалить
@@ -76,7 +81,7 @@ async function loadTemporaryTags() {
         `).join("");
     } catch (error) {
         console.error("Ошибка загрузки временных бирок:", error);
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Ошибка загрузки</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Ошибка загрузки</td></tr>';
     }
 }
 

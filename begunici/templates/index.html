@@ -470,7 +470,6 @@ async function savePlanParameters() {
 }
 
 function toggleYearlyStatistics() {
-    const planCard = document.getElementById('plan-parameters-card');
     const content = document.getElementById('yearly-statistics-content');
     const toggleBtn = document.getElementById('toggle-yearly-stats-btn');
     if (!content || !toggleBtn) {
@@ -480,15 +479,9 @@ function toggleYearlyStatistics() {
     if (isYearlyStatisticsExpanded()) {
         content.style.display = 'none';
         toggleBtn.textContent = 'Развернуть';
-        if (planCard) {
-            planCard.style.display = 'block';
-        }
         return;
     }
 
-    if (planCard) {
-        planCard.style.display = 'none';
-    }
     content.style.display = 'block';
     toggleBtn.textContent = 'Свернуть';
 

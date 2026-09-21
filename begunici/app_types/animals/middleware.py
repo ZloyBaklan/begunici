@@ -243,6 +243,12 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if method == "POST" and "/animals/api/bulk-vaccination/" in path:
             return True
 
+        if method in {"POST", "DELETE"} and "/animals/api/tags/" in path:
+            return True
+
+        if method == "POST" and path.rstrip("/") == "/animals/api/dashboard-plan-parameters":
+            return True
+
         return False
 
     @staticmethod

@@ -18,6 +18,7 @@ from .models import (
     SheepBodyConditionRecord,
     CalendarNote,
     ArchiveAct,
+    append_tag_change_note,
     build_unsuccessful_insemination_mother_warning,
     format_birth_type_for_animal,
     get_current_unsuccessful_insemination_count_for_mother,
@@ -168,6 +169,36 @@ def build_sheep_last_insemination_data(sheep):
     return {
         "date": placement_date.strftime("%Y-%m-%d"),
         "father_tag": father.tag.tag_number,
+        "father_url": _get_animal_detail_url(father),
+    }
+
+
+def build_ewe_insemination_data(ewe):
+    if not ewe:
+        return None
+
+    lambing = (
+        Lambing.objects.filter(ewe=ewe)
+        .select_related("maker__tag", "ram__tag")
+        .order_by("-start_date", "-id")
+        .first()
+    )
+    if not lambing or not lambing.start_date:
+        return None
+
+    father = lambing.get_father()
+    if not father or not getattr(father, "tag", None):
+        return None
+
+    father_display_name = (
+        father.get_display_name()
+        if hasattr(father, "get_display_name")
+        else father.tag.tag_number
+    )
+    return {
+        "date": lambing.start_date.strftime("%Y-%m-%d"),
+        "father_tag": father.tag.tag_number,
+        "father_display_name": father_display_name,
         "father_url": _get_animal_detail_url(father),
     }
 
@@ -341,6 +372,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     primary_weighing_display = serializers.SerializerMethodField()
     secondary_weighing_display = serializers.SerializerMethodField()
     final_weighing_display = serializers.SerializerMethodField()
+    birth_type_display = serializers.SerializerMethodField()
+    birth_weight_display = serializers.SerializerMethodField()
     latest_body_condition = serializers.SerializerMethodField()
 
     class Meta:
@@ -895,7 +928,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         if new_tag:
             # Если передана строка (номер бирки), обновляем
             if isinstance(new_tag, str) and instance.tag.tag_number != new_tag.strip():
+                old_tag_number = instance.tag.tag_number
                 new_tag = self._validate_global_tag_unique(new_tag, current_instance=instance)
+                validated_data["note"] = append_tag_change_note(
+                    validated_data.get("note", instance.note),
+                    old_tag_number,
+                    new_tag,
+                )
                 instance.tag.update_tag(new_tag)
         
         # Проверяем, изменится ли статус
@@ -1116,6 +1155,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     def get_final_weighing_display(self, obj):
         return self._get_scheduled_weighing_display(obj, 10)
 
+    def get_birth_type_display(self, obj):
+        return format_birth_type_for_animal(obj)
+
+    def get_birth_weight_display(self, obj):
+        weight_record = _get_weight_record_near_date(obj.tag, obj.birth_date)
+        return _format_weight_kg(weight_record.weight) if weight_record else "-"
+
 
 
 class AnimalNoteHistorySerializer(serializers.ModelSerializer):
@@ -1302,10 +1348,9 @@ class RamSerializer(AnimalBaseSerializer):
 
 class EweSerializer(AnimalBaseSerializer):
     active_lambings = serializers.SerializerMethodField()
-    birth_type_display = serializers.SerializerMethodField()
-    birth_weight_display = serializers.SerializerMethodField()
     last_weight_display = serializers.SerializerMethodField()
     weaning_display = serializers.SerializerMethodField()
+    insemination = serializers.SerializerMethodField()
     
     class Meta(AnimalBaseSerializer.Meta):
         model = Ewe
@@ -1324,13 +1369,6 @@ class EweSerializer(AnimalBaseSerializer):
             # В случае ошибки возвращаем пустой список
             return []
 
-    def get_birth_type_display(self, obj):
-        return format_birth_type_for_animal(obj)
-
-    def get_birth_weight_display(self, obj):
-        weight_record = _get_weight_record_near_date(obj.tag, obj.birth_date)
-        return _format_weight_kg(weight_record.weight) if weight_record else "-"
-
     def get_last_weight_display(self, obj):
         weight_record = WeightRecord.objects.filter(tag=obj.tag).order_by("-weight_date", "-id").first()
         return _format_weight_record_with_date(weight_record)
@@ -1338,6 +1376,9 @@ class EweSerializer(AnimalBaseSerializer):
     def get_weaning_display(self, obj):
         weight_record = _get_weight_record_near_date(obj.tag, obj.date_otbivka)
         return _format_weight_record_with_date(weight_record)
+
+    def get_insemination(self, obj):
+        return build_ewe_insemination_data(obj)
 
 
 class SheepSerializer(AnimalBaseSerializer):

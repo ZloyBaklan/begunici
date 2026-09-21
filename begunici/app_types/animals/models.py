@@ -30,6 +30,33 @@ STATUS_FATTENING = "Откорм"
 STATUS_REPAIR = "Ремонт"
 STATUS_IN_GROUP = "В группе"
 
+ANIMAL_NOTE_MAX_LENGTH = 300
+
+
+def append_tag_change_note(existing_note, old_tag_number, new_tag_number):
+    """Append tag-change information while keeping the animal note within DB limits."""
+    tag_change_line = f"Бирка: {old_tag_number} -> {new_tag_number}"
+    existing_note = str(existing_note or "").rstrip()
+    updated_note = f"{existing_note}\n{tag_change_line}" if existing_note else tag_change_line
+    if len(updated_note) <= ANIMAL_NOTE_MAX_LENGTH:
+        return updated_note
+
+    if len(tag_change_line) >= ANIMAL_NOTE_MAX_LENGTH:
+        return tag_change_line[-ANIMAL_NOTE_MAX_LENGTH:]
+
+    prefix = "..."
+    separator = "\n" if existing_note else ""
+    available_existing_length = (
+        ANIMAL_NOTE_MAX_LENGTH
+        - len(prefix)
+        - len(separator)
+        - len(tag_change_line)
+    )
+    if available_existing_length <= 0:
+        return tag_change_line[-ANIMAL_NOTE_MAX_LENGTH:]
+
+    return f"{prefix}{existing_note[-available_existing_length:]}{separator}{tag_change_line}"
+
 
 class AnimalBase(models.Model):
     tag = models.OneToOneField(
@@ -1243,6 +1270,7 @@ class Ram(AnimalBase):
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 is_reject=self.is_reject,
+                needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
                 mother=self.mother,
@@ -1311,6 +1339,7 @@ class Ewe(AnimalBase):
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 is_reject=self.is_reject,
+                needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
                 mother=self.mother,

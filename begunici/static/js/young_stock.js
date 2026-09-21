@@ -1,6 +1,7 @@
 import {
     addRshnPresenceFilter,
     apiRequest,
+    formatDateToOutput,
     getCheckboxFilterValue,
     setCheckboxFilterValue,
 } from "./utils.js";
@@ -230,7 +231,7 @@ function renderYoungStock(animals) {
                 <td>${recordNumber}</td>
                 <td>${linkedText(tagNumber, animal.tag_url)}</td>
                 <td>${escapeHtml(animal.birth_type || "-")}</td>
-                <td>${escapeHtml(animal.birth_date || "-")}</td>
+                <td>${escapeHtml(formatDateToOutput(animal.birth_date) || "-")}</td>
                 <td>${escapeHtml(animal.birth_weight || "-")}</td>
                 <td>${escapeHtml(animal.weaning || "-")}</td>
                 <td>${linkedText(animal.mother_tag, animal.mother_url)}</td>

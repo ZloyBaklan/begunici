@@ -1,4 +1,4 @@
-﻿from rest_framework import viewsets, status
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -41,6 +41,7 @@ from .models import (
     ArchiveAct,
     CalendarNote,
     ShiftTransferNote,
+    append_tag_change_note,
     build_unsuccessful_insemination_modal_warning,
     format_birth_type_for_animal,
     get_next_unsuccessful_insemination_count,
@@ -305,6 +306,7 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "dorper_percentage": source_animal.dorper_percentage,
         "is_manual_dorper": source_animal.is_manual_dorper,
         "is_reject": source_animal.is_reject,
+        "needs_retagging": source_animal.needs_retagging,
         "is_archived": source_animal.is_archived,
         "carcass_weight": source_animal.carcass_weight,
         "mother": source_animal.mother,
@@ -5421,6 +5423,12 @@ def _format_weight_record_value(record):
     return _format_weight_kg_fixed(record.weight)
 
 
+def _format_weight_record_export_parts(record):
+    if not record:
+        return "-", "-"
+    return _format_date_for_excel(record.weight_date), _format_weight_record_value(record)
+
+
 def _get_weight_record_near_date(tag, target_date, delta_days=5):
     if not tag or not target_date:
         return None
@@ -5450,12 +5458,25 @@ def _format_ewe_weaning(animal):
     return _format_weight_record_date_text(weight_record)
 
 
+def _get_ewe_weaning_export_parts(animal):
+    weight_record = _get_weight_record_near_date(animal.tag, animal.date_otbivka)
+    return _format_weight_record_export_parts(weight_record)
+
+
 def _format_scheduled_weighing(animal, months_after_birth, delta_days=15):
     if not animal.birth_date:
         return "-"
     target_date = animal.birth_date + relativedelta(months=months_after_birth)
     weight_record = _get_weight_record_near_date(animal.tag, target_date, delta_days=delta_days)
     return _format_weight_record_date_text(weight_record)
+
+
+def _get_scheduled_weighing_export_parts(animal, months_after_birth, delta_days=15):
+    if not animal.birth_date:
+        return "-", "-"
+    target_date = animal.birth_date + relativedelta(months=months_after_birth)
+    weight_record = _get_weight_record_near_date(animal.tag, target_date, delta_days=delta_days)
+    return _format_weight_record_export_parts(weight_record)
 
 
 def _format_last_vet(animal):
@@ -6519,6 +6540,39 @@ def _build_retagging_animal_payload(animal, animal_type):
     }
 
 
+def _find_animal_for_temporary_tag(tag_number):
+    normalized_tag = str(tag_number or "").strip()
+    if not normalized_tag:
+        return None, None
+
+    for animal_type, config in ANIMAL_RETAGGING_CONFIG.items():
+        animal = (
+            config["model"].objects
+            .filter(tag__tag_number__iexact=normalized_tag)
+            .select_related("tag")
+            .first()
+        )
+        if animal:
+            return animal, animal_type
+    return None, None
+
+
+def _build_temporary_tag_payload(tag):
+    animal, animal_type = _find_animal_for_temporary_tag(tag.tag_number)
+    animal_url = None
+    if animal and animal.tag:
+        animal_url = _get_animal_detail_url_for_type(animal_type, animal.tag.tag_number)
+
+    return {
+        "id": tag.id,
+        "tag_number": tag.tag_number,
+        "created_at": tag.created_at,
+        "created_by": tag.created_by.username if tag.created_by else "-",
+        "is_occupied": bool(animal),
+        "animal_url": animal_url,
+    }
+
+
 def _find_active_animal_for_retagging(animal_type, tag_number):
     config = ANIMAL_RETAGGING_CONFIG.get(str(animal_type or "").strip().lower())
     if not config:
@@ -6572,12 +6626,7 @@ def temporary_tags_api(request):
     if request.method == "GET":
         tags = TemporaryTag.objects.select_related("created_by").order_by("tag_number")
         return Response([
-            {
-                "id": tag.id,
-                "tag_number": tag.tag_number,
-                "created_at": tag.created_at,
-                "created_by": tag.created_by.username if tag.created_by else "-",
-            }
+            _build_temporary_tag_payload(tag)
             for tag in tags
         ], status=status.HTTP_200_OK)
 
@@ -6596,12 +6645,7 @@ def temporary_tags_api(request):
         tag.tag_number,
         f"Создана временная бирка: {tag.tag_number}",
     )
-    return Response({
-        "id": tag.id,
-        "tag_number": tag.tag_number,
-        "created_at": tag.created_at,
-        "created_by": tag.created_by.username if tag.created_by else "-",
-    }, status=status.HTTP_201_CREATED)
+    return Response(_build_temporary_tag_payload(tag), status=status.HTTP_201_CREATED)
 
 
 @api_view(["DELETE"])
@@ -6733,11 +6777,23 @@ def retagging_change_tag_api(request):
         tag = Tag.objects.select_for_update().get(pk=animal.tag_id)
         tag.tag_number = new_tag_number
         tag.save(update_fields=["tag_number"])
+        old_note = animal.note or ""
+        updated_note = append_tag_change_note(old_note, old_tag_number, new_tag_number)
 
         # AnimalBase.save() also saves the cached tag object. A direct update avoids
         # overwriting the new tag number with the old cached relation.
-        config["model"].objects.filter(pk=animal.pk).update(needs_retagging=False)
+        config["model"].objects.filter(pk=animal.pk).update(
+            needs_retagging=False,
+            note=updated_note,
+        )
         animal.needs_retagging = False
+        animal.note = updated_note
+        if old_note.strip() != updated_note.strip():
+            AnimalNoteHistory.objects.create(
+                tag=tag,
+                old_note=old_note,
+                new_note=updated_note,
+            )
 
         updated_references = _update_text_tag_references(old_tag_number, new_tag_number)
 
@@ -6972,13 +7028,17 @@ def export_to_excel(request):
                 'Вес при рождении',
                 'Статус',
                 'Назначение',
+                'Дата первичного взвешивания',
                 'Первичное взвешивание',
+                'Дата вторичного взвешивания',
                 'Вторичное взвешивание',
+                'Дата заключительного взвешивания',
                 'Заключительное взвешивание',
                 'Овчарня',
                 'Дата последнего взвешивания',
                 'Последнее взвешивание',
-                'Отбивка',
+                'Дата отбивки',
+                'Вес при отбивке',
                 'Дата последней ветобработки',
                 'Последняя ветобработка',
                 'Бирка РСХН',
@@ -6991,6 +7051,10 @@ def export_to_excel(request):
                     tag=animal.tag
                 ).order_by('-weight_date', '-id').first()
                 last_vet_date, last_vet_text = _get_last_vet_parts(animal)
+                primary_date, primary_weight = _get_scheduled_weighing_export_parts(animal, 3)
+                secondary_date, secondary_weight = _get_scheduled_weighing_export_parts(animal, 5)
+                final_date, final_weight = _get_scheduled_weighing_export_parts(animal, 10)
+                weaning_date, weaning_weight = _get_ewe_weaning_export_parts(animal)
                 export_data.append([
                     idx,
                     animal.tag.tag_number,
@@ -6999,13 +7063,17 @@ def export_to_excel(request):
                     _format_ewe_birth_weight(animal),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
-                    _format_scheduled_weighing(animal, 3),
-                    _format_scheduled_weighing(animal, 5),
-                    _format_scheduled_weighing(animal, 10),
+                    primary_date,
+                    primary_weight,
+                    secondary_date,
+                    secondary_weight,
+                    final_date,
+                    final_weight,
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
                     _format_weight_record_value(last_weight_record),
-                    _format_ewe_weaning(animal),
+                    weaning_date,
+                    weaning_weight,
                     _format_date_for_excel(last_vet_date) if last_vet_date else '-',
                     last_vet_text,
                     animal.rshn_tag or '-',
@@ -7018,8 +7086,11 @@ def export_to_excel(request):
                 'Дата рождения',
                 'Статус',
                 'Назначение',
+                'Дата первичного взвешивания',
                 'Первичное взвешивание',
+                'Дата вторичного взвешивания',
                 'Вторичное взвешивание',
+                'Дата заключительного взвешивания',
                 'Заключительное взвешивание',
                 'Овчарня',
                 'Дата последнего взвешивания',
@@ -7042,15 +7113,21 @@ def export_to_excel(request):
                 last_insemination_date, last_insemination_text = _split_sheep_last_insemination(animal)
                 last_lambing_date, last_lambing_text = _split_sheep_last_lambing(animal)
                 last_vet_date, last_vet_text = _get_last_vet_parts(animal)
+                primary_date, primary_weight = _get_scheduled_weighing_export_parts(animal, 3)
+                secondary_date, secondary_weight = _get_scheduled_weighing_export_parts(animal, 5)
+                final_date, final_weight = _get_scheduled_weighing_export_parts(animal, 10)
                 export_data.append([
                     idx,
                     animal.tag.tag_number,
                     _format_date_for_excel(animal.birth_date),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
                     'Брак' if animal.is_reject else '-',
-                    _format_scheduled_weighing(animal, 3),
-                    _format_scheduled_weighing(animal, 5),
-                    _format_scheduled_weighing(animal, 10),
+                    primary_date,
+                    primary_weight,
+                    secondary_date,
+                    secondary_weight,
+                    final_date,
+                    final_weight,
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
                     _format_weight_record_value(last_weight_record),
@@ -7072,15 +7149,26 @@ def export_to_excel(request):
                 'Овчарня',
                 'Кровность по основной породе',
                 'Назначение',
-                'Живой вес (кг)',
-                'Дата взвешивания',
+                'Дата последнего взвешивания',
+                'Последнее взвешивание',
+                'Дата последней ветобработки',
+                'Последняя ветобработка',
             ]
             if animal_type == 'common':
                 headers.insert(1, 'Тип животного')
-            elif animal_type in ('maker', 'ram'):
+            elif animal_type == 'ram':
+                headers[2:2] = [
+                    'Дата рождения',
+                    'Тип рождения',
+                    'Вес при рождении',
+                ]
+
+            if animal_type in ('maker', 'ram'):
                 assignment_index = headers.index('Назначение') + 1
                 headers[assignment_index:assignment_index] = [
+                    'Дата первичного взвешивания',
                     'Первичное взвешивание',
+                    'Дата вторичного взвешивания',
                     'Вторичное взвешивание',
                 ]
             
@@ -7089,6 +7177,7 @@ def export_to_excel(request):
             elif animal_type == 'common':
                 headers.append('Рабочее состояние')
             
+            headers.append('Бирка РСХН')
             headers.append('Примечание')
             
             if include_details:
@@ -7098,6 +7187,7 @@ def export_to_excel(request):
             export_data = []
             for idx, item in enumerate(animals_list, start=1):
                 animal = item['animal']
+                last_vet_date, last_vet_text = _get_last_vet_parts(animal)
                 row_data = [
                     idx,  # №
                     animal.tag.tag_number,
@@ -7106,8 +7196,10 @@ def export_to_excel(request):
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_dorper_display(animal),
                     'Брак' if animal.is_reject else '-',
-                    item['last_weight'] if item['last_weight'] else '-',
-                    _format_date_for_excel(item['last_weight_date']) if item['last_weight_date'] else '-'
+                    _format_date_for_excel(item['last_weight_date']) if item['last_weight_date'] else '-',
+                    _format_weight_kg_fixed(item['last_weight']) if item['last_weight'] is not None else '-',
+                    _format_date_for_excel(last_vet_date) if last_vet_date else '-',
+                    last_vet_text,
                 ]
 
                 if animal_type == 'common':
@@ -7120,10 +7212,21 @@ def export_to_excel(request):
                     row_data.insert(1, type_labels.get(item.get('animal_type'), item.get('animal_type', '-')))
                 elif animal_type in ('maker', 'ram'):
                     assignment_index = 7
+                    primary_date, primary_weight = _get_scheduled_weighing_export_parts(animal, 3)
+                    secondary_date, secondary_weight = _get_scheduled_weighing_export_parts(animal, 5)
                     row_data[assignment_index:assignment_index] = [
-                        _format_scheduled_weighing(animal, 3),
-                        _format_scheduled_weighing(animal, 5),
+                        primary_date,
+                        primary_weight,
+                        secondary_date,
+                        secondary_weight,
                     ]
+
+                    if animal_type == 'ram':
+                        row_data[2:2] = [
+                            _format_date_for_excel(animal.birth_date),
+                            format_birth_type_for_animal(animal),
+                            _format_ewe_birth_weight(animal),
+                        ]
                 
                 if animal_type == 'maker':
                     row_data.extend([
@@ -7133,6 +7236,7 @@ def export_to_excel(request):
                 elif animal_type == 'common':
                     row_data.append(animal.working_condition if hasattr(animal, 'working_condition') and animal.working_condition else '-')
                 
+                row_data.append(animal.rshn_tag or '-')
                 row_data.append(animal.note if animal.note else '')
                 
                 if include_details:
@@ -7613,20 +7717,23 @@ def _get_dashboard_plan_definitions():
     extra_rows = [
         ("weaned_lambs_per_100_mothers", "Выход живых ягнят к отбивке на 100 маток, гол", 1),
         ("survival_to_weaning_percent", "Сохранность до отбивки, %", 1),
-        ("ewe_culling_percent", "Выбраковка овцематок, %", 1),
+        ("ewe_culling_percent", "Выбраковка овцематок, %", 1, "lower_is_better"),
         ("ewe_weight_365d", "Вес ярочек в 365 дней, кг", 1),
         ("ewe_weight_300d", "Вес ярочек в 300 дней, кг", 1),
         ("ram_weight_210d", "Вес баранчиков в 210 дней, кг", 1),
         ("daily_gain_before_weaning", "с/сут до отбивки, г", 0),
         ("daily_gain_after_weaning", "с/сут после отбивки, г", 0),
     ]
-    for key, label, actual_decimals in extra_rows:
+    for row in extra_rows:
+        key, label, actual_decimals = row[:3]
+        comparison = row[3] if len(row) > 3 else "higher_is_better"
         definitions.append({
             "key": key,
             "label": label,
             "default": DASHBOARD_PLAN_DEFAULTS[key],
             "sort_order": order,
             "actual_decimals": actual_decimals,
+            "comparison": comparison,
         })
         order += 1
 
@@ -7941,7 +8048,7 @@ def _calculate_dashboard_plan_actuals(year):
     return actuals
 
 
-def _get_dashboard_actual_class(actual_value, plan_value, decimal_places=None):
+def _get_dashboard_actual_class(actual_value, plan_value, decimal_places=None, comparison="higher_is_better"):
     if actual_value is None or plan_value in (None, 0):
         return ""
 
@@ -7958,6 +8065,13 @@ def _get_dashboard_actual_class(actual_value, plan_value, decimal_places=None):
         quant = Decimal("1") if decimal_places == 0 else Decimal("1").scaleb(-decimal_places)
         actual_decimal = actual_decimal.quantize(quant)
         plan_decimal = plan_decimal.quantize(quant)
+
+    if comparison == "lower_is_better":
+        if actual_decimal <= plan_decimal:
+            return "plan-actual-good"
+        if actual_decimal <= plan_decimal * Decimal("1.1"):
+            return "plan-actual-warning"
+        return "plan-actual-danger"
 
     if actual_decimal >= plan_decimal:
         return "plan-actual-good"
@@ -7992,6 +8106,7 @@ def _build_dashboard_plan_payload(year):
                 actual_value,
                 plan_value,
                 definition["actual_decimals"],
+                definition.get("comparison", "higher_is_better"),
             ),
             "suffix": "",
         })
@@ -8000,6 +8115,24 @@ def _build_dashboard_plan_payload(year):
         "year": year,
         "parameters": rows,
     }
+
+
+def _log_dashboard_plan_parameters_update(request, year, changed_labels):
+    if not changed_labels or not request.user or not request.user.is_authenticated:
+        return
+
+    from .models_user_log import UserActionLog
+
+    UserActionLog.objects.create(
+        user=request.user,
+        action_type="Редактирование плановых параметров",
+        object_type="Плановые параметры",
+        object_id=str(year),
+        description=(
+            f"Обновлены плановые параметры на {year} год: "
+            + ", ".join(changed_labels)
+        ),
+    )
 
 
 @api_view(["GET", "POST"])
@@ -8032,6 +8165,16 @@ def dashboard_plan_parameters(request):
         if errors:
             return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        previous_values = {
+            parameter.key: parameter.plan_value
+            for parameter in DashboardPlanParameter.objects.filter(key__in=parsed_values.keys())
+        }
+        changed_labels = [
+            definitions_by_key[key]["label"]
+            for key, plan_value in parsed_values.items()
+            if previous_values.get(key) != plan_value
+        ]
+
         with transaction.atomic():
             for key, plan_value in parsed_values.items():
                 definition = definitions_by_key[key]
@@ -8043,6 +8186,8 @@ def dashboard_plan_parameters(request):
                         "sort_order": definition["sort_order"],
                     },
                 )
+
+        _log_dashboard_plan_parameters_update(request, year, changed_labels)
 
     return Response(_build_dashboard_plan_payload(year))
 

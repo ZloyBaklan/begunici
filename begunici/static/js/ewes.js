@@ -317,7 +317,7 @@ function renderEwes(ewes) {
             </td>
             <td>${recordNumber}</td>
             <td><a href="/animals/ewe/${ewe.tag.tag_number}/info/">${ewe.tag.tag_number}</a></td>
-            <td>${ewe.birth_date || '-'}</td>
+            <td>${formatDateToOutput(ewe.birth_date) || '-'}</td>
             <td>${ewe.birth_type_display || '-'}</td>
             <td>${ewe.birth_weight_display || '-'}</td>
             <td style="background-color:${ewe.animal_status ? ewe.animal_status.color : '#FFFFFF'}">
@@ -328,6 +328,7 @@ function renderEwes(ewes) {
             <td>${ewe.secondary_weighing_display || '-'}</td>
             <td>${ewe.final_weighing_display || '-'}</td>
             <td>${ewe.place ? ewe.place.sheepfold : 'Не указано'}</td>
+            <td>${formatInsemination(ewe.insemination)}</td>
             <td>${ewe.last_weight_display || '-'}</td>
             <td>${ewe.weaning_display || '-'}</td>
             <td>${formatLastVetTreatment(ewe.veterinary_history)}</td>
@@ -352,6 +353,32 @@ function renderEwes(ewes) {
     
     // Обновляем кнопки действий
     toggleDeleteButton();
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function formatLinkedTag(tagNumber, url, displayText = null) {
+    const safeText = escapeHtml(displayText || tagNumber || '-');
+    return url ? `<a href="${escapeHtml(url)}">${safeText}</a>` : safeText;
+}
+
+function formatInsemination(insemination) {
+    if (!insemination || !insemination.date || !insemination.father_tag) {
+        return '-';
+    }
+
+    return `${escapeHtml(formatDateToOutput(insemination.date))}: ${formatLinkedTag(
+        insemination.father_tag,
+        insemination.father_url,
+        insemination.father_display_name || insemination.father_tag
+    )}`;
 }
 
 function formatLastVetTreatment(veterinaryHistory) {

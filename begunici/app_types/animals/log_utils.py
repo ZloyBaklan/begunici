@@ -164,6 +164,18 @@ def resolve_log_action(method, path, params=None, status_code=None):
             action = "Ковровая ветобработка"
         elif method == "POST" and "/api/bulk-create-lambings/" in path:
             action = "Массовое создание окотов"
+        elif method == "POST" and "/api/dashboard-plan-parameters/" in path:
+            action = "Редактирование плановых параметров"
+        elif method == "POST" and "/api/tags/temporary/" in path:
+            action = "Создание временной бирки"
+        elif method == "DELETE" and "/api/tags/temporary/" in path:
+            action = "Удаление временной бирки"
+        elif method == "POST" and "/api/tags/retagging/mark/" in path:
+            action = "Добавление в перебиркование"
+        elif method == "POST" and "/api/tags/retagging/unmark/" in path:
+            action = "Удаление из перебиркования"
+        elif method == "POST" and "/api/tags/retagging/change/" in path:
+            action = "Перебиркование животного"
         elif method == "POST" and "/actions/bulk_archive/" in path:
             action = "Массовый перенос в архив"
         elif method == "POST" and "/lambing-group/" in path and "/add-mothers/" in path:
@@ -306,6 +318,12 @@ def resolve_log_object_type(method, path):
         return "Отбивка"
     if "/api/bulk-vaccination/" in path:
         return "Ветобработка"
+    if "/api/dashboard-plan-parameters/" in path:
+        return "Плановые параметры"
+    if "/api/tags/temporary/" in path:
+        return "Временная бирка"
+    if "/api/tags/retagging/" in path:
+        return "Перебиркование"
     if "/api/lambings/" in path or "/lambing/" in path:
         return "Окот"
     if (

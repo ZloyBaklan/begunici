@@ -327,7 +327,7 @@ function renderSheeps(sheeps, startIndex = null) {
             </td>
             <td>${recordNumber}</td>
             <td><a href="/animals/sheep/${sheep.tag.tag_number}/info/">${sheep.tag.tag_number}</a></td>
-            <td>${sheep.birth_date || '-'}</td>
+            <td>${formatDateToOutput(sheep.birth_date) || '-'}</td>
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>

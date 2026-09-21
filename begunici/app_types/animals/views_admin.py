@@ -62,6 +62,7 @@ def _hide_technical_and_duplicate_logs(logs):
         Q(additional_data__path="/animals/lambing-group/")
         | Q(additional_data__path__regex=r"^/animals/lambing-group/[0-9]+/remove-father/$")
         | Q(additional_data__path__regex=r"^/animals/lambing/[0-9]+/(complete|complete-with-children|complete-early-failure)/$")
+        | Q(additional_data__path__regex=r"^/animals/api/tags/")
     )
     return logs.exclude(hidden_readonly_logs | raw_request_noise | successful_middleware_duplicates)
 

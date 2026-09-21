@@ -318,6 +318,9 @@ function renderRams(rams, startIndex = null) {
             </td>
             <td>${recordNumber}</td>
             <td><a href="/animals/ram/${ram.tag.tag_number}/info/">${ram.tag.tag_number}</a></td>
+            <td>${formatDateToOutput(ram.birth_date) || '-'}</td>
+            <td>${ram.birth_type_display || '-'}</td>
+            <td>${ram.birth_weight_display || '-'}</td>
             <td style="background-color:${ram.animal_status ? ram.animal_status.color : '#FFFFFF'}">
                 ${ram.animal_status ? ram.animal_status.status_type : 'Не указан'}
             </td>

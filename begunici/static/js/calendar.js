@@ -133,6 +133,10 @@ class LambingCalendar {
             this.weighingData = {};
         }
     }
+
+    isShearingDate(month, day) {
+        return (month === 3 && day === 15) || (month === 9 && day === 15);
+    }
     
     renderCalendar() {
         const year = this.currentDate.getFullYear();
@@ -194,6 +198,7 @@ class LambingCalendar {
                     const hasNotes = this.notesData[currentDateStr];
                     const hasVet = this.vetData[currentDateStr];
                     const hasWeighing = this.weighingData && this.weighingData[currentDateStr];
+                    const hasShearing = this.isShearingDate(month, date);
                     
                     // Определяем типы событий
                     const eventTypes = [];
@@ -202,6 +207,7 @@ class LambingCalendar {
                     if (hasVet && hasVet.vet_treatments && hasVet.vet_treatments.length > 0) eventTypes.push('vet_treatments');
                     if (hasVet && hasVet.vet_expiring && hasVet.vet_expiring.length > 0) eventTypes.push('vet_expiring');
                     if (hasWeighing) eventTypes.push('weighing');
+                    if (hasShearing) eventTypes.push('shearing');
                     
                     let totalCount = 0;
                     if (hasLambing) totalCount += hasLambing.length;
@@ -209,6 +215,7 @@ class LambingCalendar {
                     if (hasVet && hasVet.vet_treatments) totalCount += hasVet.vet_treatments.length;
                     if (hasVet && hasVet.vet_expiring) totalCount += hasVet.vet_expiring.length;
                     if (hasWeighing) totalCount += hasWeighing.length;
+                    if (hasShearing) totalCount += 1;
                     
                     if (eventTypes.length > 1) {
                         // Многоцветная ячейка - делим на части
@@ -237,6 +244,9 @@ class LambingCalendar {
                                     break;
                                 case 'weighing':
                                     color = '#007bff';
+                                    break;
+                                case 'shearing':
+                                    color = '#6f42c1';
                                     break;
                             }
                             
@@ -267,6 +277,8 @@ class LambingCalendar {
                             cell.classList.add('has-vet-expiring');
                         } else if (eventType === 'weighing') {
                             cell.classList.add('has-weighing');
+                        } else if (eventType === 'shearing') {
+                            cell.classList.add('has-shearing');
                         }
                         
                         cell.innerHTML += `<div class="lambing-count">${totalCount}</div>`;
@@ -275,7 +287,7 @@ class LambingCalendar {
                     // Добавляем обработчик клика
                     if (eventTypes.length > 0) {
                         cell.addEventListener('click', () => {
-                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet, hasWeighing);
+                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet, hasWeighing, hasShearing);
                         });
                     }
                     
@@ -294,7 +306,7 @@ class LambingCalendar {
         }
     }
     
-    showDayDetails(dateStr, lambings, notes, vetData, weighingData) {
+    showDayDetails(dateStr, lambings, notes, vetData, weighingData, hasShearing = false) {
         const modalElement = document.getElementById('lambingModal');
         if (!modalElement) {
             console.warn('Модальное окно календаря не найдено на странице');
@@ -321,6 +333,15 @@ class LambingCalendar {
         modalTitle.textContent = `События на ${formattedDate}`;
         
         let content = '';
+
+        if (hasShearing) {
+            content += `
+                <h6 style="color: #6f42c1;">Напоминание:</h6>
+                <div class="list-group mb-3">
+                    <div class="list-group-item">Произвести стрижку</div>
+                </div>
+            `;
+        }
         
         // Показываем роды
         if (lambings && lambings.length > 0) {
