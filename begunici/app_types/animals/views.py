@@ -3881,6 +3881,487 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date', 'created_at']
     pagination_class = PaginationSetting
 
+    CALENDAR_EXPORT_HEADERS = [
+        '№',
+        'Тип животного',
+        'Бирка',
+        'Статус',
+        'Возраст (мес)',
+        'Овчарня',
+        'Кровность по основной породе',
+        'Назначение',
+        'Дата последнего взвешивания',
+        'Последнее взвешивание',
+        'Дата последней ветобработки',
+        'Последняя ветобработка',
+        'Рабочее состояние',
+        'Бирка РСХН',
+        'Примечание',
+    ]
+    CALENDAR_EXPORT_TYPE_LABELS = {
+        'maker': 'Баран-Производитель',
+        'ram': 'Баранчик',
+        'ewe': 'Ярка',
+        'sheep': 'Овцематка',
+    }
+    CALENDAR_EXPORT_EXTRA_HEADERS = {
+        'Ветобработка': [
+            'Выполненная ветобработка',
+            'Срок действия',
+            'Дата окончания срока действия',
+        ],
+        'Стрижка': [
+            'Выполненная ветобработка',
+            'Срок действия',
+            'Дата окончания срока действия',
+        ],
+        'Окончание срока ветобработки': [
+            'Окончен срок действия ветобработки',
+            'Срок действия',
+            'Дата ветобработки',
+        ],
+        'Взвешивание': [
+            'Выполнено',
+            'Вес',
+        ],
+    }
+
+    @staticmethod
+    def _is_shearing_care(care):
+        if not care:
+            return False
+
+        searchable_values = (
+            care.care_type,
+            care.care_name,
+            care.medication,
+            care.purpose,
+        )
+        return any('стриж' in str(value).lower() for value in searchable_values if value)
+
+    def _get_calendar_animal_type_key(self, animal):
+        for type_key, model in (
+            ('maker', Maker),
+            ('ram', Ram),
+            ('ewe', Ewe),
+            ('sheep', Sheep),
+        ):
+            if isinstance(animal, model):
+                return type_key
+        return None
+
+    def _get_calendar_animal_by_tag_id(self, tag_id):
+        if not tag_id:
+            return None, None
+
+        for type_key, model in (
+            ('maker', Maker),
+            ('ram', Ram),
+            ('ewe', Ewe),
+            ('sheep', Sheep),
+        ):
+            animal = (
+                model.objects
+                .filter(tag_id=tag_id, is_archived=False)
+                .select_related('tag', 'animal_status', 'place')
+                .first()
+            )
+            if animal:
+                return animal, type_key
+        return None, None
+
+    def _calendar_export_row(self, index, animal, animal_type):
+        last_weight_record = (
+            WeightRecord.objects
+            .filter(tag=animal.tag)
+            .order_by('-weight_date', '-id')
+            .first()
+        )
+        last_vet_date, last_vet_text = _get_last_vet_parts(animal)
+
+        return [
+            index,
+            self.CALENDAR_EXPORT_TYPE_LABELS.get(animal_type, animal_type or '-'),
+            animal.tag.tag_number if animal.tag else '-',
+            animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
+            animal.age if animal.age else '-',
+            animal.place.sheepfold if animal.place else 'Нет данных',
+            _format_dorper_display(animal),
+            'Брак' if animal.is_reject else '-',
+            _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
+            _format_weight_record_value(last_weight_record),
+            _format_date_for_excel(last_vet_date) if last_vet_date else '-',
+            last_vet_text,
+            animal.working_condition if getattr(animal, 'working_condition', None) else '-',
+            animal.rshn_tag or '-',
+            animal.note if animal.note else '',
+        ]
+
+    def _format_calendar_export_vet_name(self, vet):
+        care = vet.veterinary_care
+        if not care:
+            return 'Не указано'
+
+        parts = [
+            care.care_name,
+            care.medication,
+            care.purpose,
+        ]
+        return ' - '.join(str(part).strip() for part in parts if part)
+
+    def _format_calendar_export_duration(self, duration_days):
+        if duration_days in (None, ''):
+            return '-'
+        try:
+            duration_days = int(duration_days)
+        except (TypeError, ValueError):
+            return str(duration_days)
+        return 'Бессрочно' if duration_days == 0 else f'{duration_days} дней'
+
+    def _merge_calendar_extra_values(self, old_values, new_values):
+        old_values = list(old_values or [])
+        new_values = list(new_values or [])
+        max_length = max(len(old_values), len(new_values))
+        merged_values = []
+
+        for index in range(max_length):
+            old_value = old_values[index] if index < len(old_values) else '-'
+            new_value = new_values[index] if index < len(new_values) else '-'
+            old_text = str(old_value or '-')
+            new_text = str(new_value or '-')
+
+            if new_text == '-':
+                merged_values.append(old_text)
+            elif old_text == '-':
+                merged_values.append(new_text)
+            elif new_text in old_text.split('\n'):
+                merged_values.append(old_text)
+            else:
+                merged_values.append(f'{old_text}\n{new_text}')
+
+        return merged_values
+
+    def _add_calendar_export_animal(self, groups, group_name, animal, animal_type=None, extra_values=None, dedupe_key=None):
+        if not animal or not getattr(animal, 'tag', None):
+            return
+
+        if animal_type is None:
+            animal_type = self._get_calendar_animal_type_key(animal)
+        if not animal_type:
+            return
+
+        groups.setdefault(group_name, {})
+        if animal.tag_id in groups[group_name]:
+            groups[group_name][animal.tag_id]['extra_values'] = self._merge_calendar_extra_values(
+                groups[group_name][animal.tag_id].get('extra_values'),
+                extra_values,
+            )
+            return
+
+        groups[group_name][animal.tag_id] = {
+            'animal': animal,
+            'animal_type': animal_type,
+            'extra_values': extra_values or [],
+        }
+
+    def _get_calendar_completed_weight_record(self, tag_id, weighing_date, delta_days=15):
+        if not tag_id or not weighing_date:
+            return None
+
+        start_date = weighing_date - timedelta(days=delta_days)
+        end_date = weighing_date + timedelta(days=delta_days)
+        records = WeightRecord.objects.filter(
+            tag_id=tag_id,
+            weight_date__gte=start_date,
+            weight_date__lte=end_date,
+        ).order_by('weight_date', 'id')
+
+        return min(
+            records,
+            key=lambda record: (
+                abs((record.weight_date - weighing_date).days),
+                record.weight_date,
+                record.id,
+            ),
+            default=None,
+        )
+
+    def _build_calendar_weighing_groups_for_date(self, target_date):
+        from dateutil.relativedelta import relativedelta
+
+        animals = []
+        animal_sources = [
+            (Maker, 'maker', False),
+            (Ram, 'ram', False),
+            (Ewe, 'ewe', True),
+            (Sheep, 'sheep', False),
+        ]
+        for model, animal_type, include_final_weighing in animal_sources:
+            queryset = (
+                model.objects
+                .filter(is_archived=False, birth_date__isnull=False)
+                .select_related('tag', 'animal_status', 'place')
+            )
+            for animal in queryset:
+                animals.append({
+                    'animal': animal,
+                    'animal_type': animal_type,
+                    'birth_date': animal.birth_date,
+                    'include_final_weighing': include_final_weighing,
+                })
+
+        weighing_events = []
+        for item in animals:
+            weighing_events.append({
+                **item,
+                'weighing_date': item['birth_date'] + relativedelta(months=3),
+                'weighing_type': 'primary',
+            })
+            weighing_events.append({
+                **item,
+                'weighing_date': item['birth_date'] + relativedelta(months=5),
+                'weighing_type': 'secondary',
+            })
+            if item['include_final_weighing']:
+                weighing_events.append({
+                    **item,
+                    'weighing_date': item['birth_date'] + relativedelta(months=10),
+                    'weighing_type': 'final',
+                })
+
+        groups_for_target = []
+        for weighing_type in ('primary', 'secondary', 'final'):
+            typed_events = sorted(
+                [
+                    event for event in weighing_events
+                    if event['weighing_type'] == weighing_type
+                ],
+                key=lambda event: event['weighing_date'],
+            )
+
+            group_events = []
+            group_start_date = None
+            for event in typed_events:
+                if (
+                    not group_events
+                    or (event['weighing_date'] - group_start_date).days <= 7
+                ):
+                    group_events.append(event)
+                    if group_start_date is None:
+                        group_start_date = event['weighing_date']
+                    continue
+
+                average_ordinal = round(
+                    sum(group_event['weighing_date'].toordinal() for group_event in group_events)
+                    / len(group_events)
+                )
+                if datetime.fromordinal(average_ordinal).date() == target_date:
+                    groups_for_target.extend(group_events)
+
+                group_events = [event]
+                group_start_date = event['weighing_date']
+
+            if group_events:
+                average_ordinal = round(
+                    sum(group_event['weighing_date'].toordinal() for group_event in group_events)
+                    / len(group_events)
+                )
+                if datetime.fromordinal(average_ordinal).date() == target_date:
+                    groups_for_target.extend(group_events)
+
+        return groups_for_target
+
+    def _build_calendar_export_groups(self, target_date):
+        groups = {}
+
+        lambings = (
+            Lambing.objects
+            .filter(is_active=True, planned_lambing_date=target_date)
+        )
+        for lambing in lambings:
+            mother = lambing.get_mother()
+            father = lambing.get_father()
+            self._add_calendar_export_animal(
+                groups,
+                'Ожидаемые роды',
+                mother,
+                dedupe_key=('lambing', 'mother', getattr(getattr(mother, 'tag', None), 'id', None)),
+            )
+            self._add_calendar_export_animal(
+                groups,
+                'Ожидаемые роды',
+                father,
+                dedupe_key=('lambing', 'father', getattr(getattr(father, 'tag', None), 'id', None)),
+            )
+
+        vets = (
+            Veterinary.objects
+            .select_related('tag', 'veterinary_care')
+            .filter(date_of_care__date=target_date)
+        )
+        for vet in vets:
+            animal, animal_type = self._get_calendar_animal_by_tag_id(vet.tag_id)
+            if not animal:
+                continue
+            group_name = 'Стрижка' if self._is_shearing_care(vet.veterinary_care) else 'Ветобработка'
+            self._add_calendar_export_animal(
+                groups,
+                group_name,
+                animal,
+                animal_type,
+                extra_values=[
+                    self._format_calendar_export_vet_name(vet),
+                    self._format_calendar_export_duration(vet.duration_days),
+                    _format_date_for_excel(vet.get_expiry_date()) if vet.get_expiry_date() else '-',
+                ],
+            )
+
+        expiring_vets = (
+            Veterinary.objects
+            .select_related('tag', 'veterinary_care')
+            .filter(duration_days__gt=0)
+        )
+        for vet in expiring_vets:
+            if self._is_shearing_care(vet.veterinary_care):
+                continue
+            if vet.get_expiry_date() != target_date:
+                continue
+            animal, animal_type = self._get_calendar_animal_by_tag_id(vet.tag_id)
+            care_date = vet.get_care_date()
+            self._add_calendar_export_animal(
+                groups,
+                'Окончание срока ветобработки',
+                animal,
+                animal_type,
+                extra_values=[
+                    self._format_calendar_export_vet_name(vet),
+                    self._format_calendar_export_duration(vet.duration_days),
+                    _format_date_for_excel(care_date) if care_date else '-',
+                ],
+            )
+
+        for event in self._build_calendar_weighing_groups_for_date(target_date):
+            completed_weight = self._get_calendar_completed_weight_record(
+                event['animal'].tag_id,
+                event['weighing_date'],
+            )
+            self._add_calendar_export_animal(
+                groups,
+                'Взвешивание',
+                event['animal'],
+                event['animal_type'],
+                extra_values=[
+                    _format_date_for_excel(completed_weight.weight_date) if completed_weight else '-',
+                    _format_weight_record_value(completed_weight),
+                ],
+                dedupe_key=('weighing', event['weighing_type'], event['animal'].tag_id),
+            )
+
+        return groups
+
+    @action(detail=False, methods=['get'], url_path='calendar-export-excel')
+    def calendar_export_excel(self, request):
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response(
+                {'error': 'Необходимо указать дату'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {'error': 'Неверный формат даты. Используйте YYYY-MM-DD'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from io import BytesIO
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            return Response(
+                {'error': 'Библиотека openpyxl не установлена. Экспорт XLSX недоступен.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        groups = self._build_calendar_export_groups(target_date)
+        workbook = Workbook()
+        default_sheet = workbook.active
+        workbook.remove(default_sheet)
+
+        header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF')
+        title_font = Font(bold=True, size=13)
+
+        if not groups:
+            worksheet = workbook.create_sheet('Нет данных')
+            worksheet.cell(row=1, column=1, value=f'За {target_date.strftime("%d.%m.%Y")} животных для экспорта не найдено')
+            worksheet.cell(row=1, column=1).font = title_font
+        else:
+            used_titles = set()
+            for group_name, group_rows in groups.items():
+                base_title = group_name[:31] or 'Группа'
+                sheet_title = base_title
+                suffix = 2
+                while sheet_title in used_titles:
+                    sheet_title = f'{base_title[:28]} {suffix}'
+                    suffix += 1
+                used_titles.add(sheet_title)
+
+                headers = self.CALENDAR_EXPORT_HEADERS + self.CALENDAR_EXPORT_EXTRA_HEADERS.get(group_name, [])
+                worksheet = workbook.create_sheet(sheet_title)
+                worksheet.cell(row=1, column=1, value=f'{group_name}: {target_date.strftime("%d.%m.%Y")}')
+                worksheet.cell(row=1, column=1).font = title_font
+                worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+
+                for col_num, header in enumerate(headers, 1):
+                    cell = worksheet.cell(row=3, column=col_num, value=header)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+                sorted_rows = sorted(
+                    group_rows.values(),
+                    key=lambda item: (
+                        self.CALENDAR_EXPORT_TYPE_LABELS.get(item['animal_type'], item['animal_type']),
+                        item['animal'].tag.tag_number if item['animal'].tag else '',
+                        str(item.get('extra_values') or ''),
+                    )
+                )
+                for row_index, item in enumerate(sorted_rows, start=4):
+                    row_data = self._calendar_export_row(
+                        row_index - 3,
+                        item['animal'],
+                        item['animal_type'],
+                    )
+                    row_data.extend(item.get('extra_values') or [])
+                    for col_num, value in enumerate(row_data, 1):
+                        cell = _write_excel_cell(worksheet, row_index, col_num, value)
+                        cell.alignment = Alignment(vertical='top', wrap_text=True)
+
+                for col_index in range(1, len(headers) + 1):
+                    max_length = 0
+                    for cell in worksheet[get_column_letter(col_index)]:
+                        value = cell.value
+                        if value is not None:
+                            max_length = max(max_length, len(str(value)))
+                    worksheet.column_dimensions[get_column_letter(col_index)].width = min(max(max_length + 2, 12), 45)
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+
+        filename = f"calendar_{target_date.strftime('%Y-%m-%d')}.xlsx"
+        response = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
     def get_queryset(self):
         """Фильтрация заметок по дате"""
         queryset = super().get_queryset()
@@ -3990,6 +4471,32 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             today = moscow_now.date()
             
             calendar_data = {}
+
+            def is_shearing_care(care):
+                if not care:
+                    return False
+
+                searchable_values = (
+                    care.care_type,
+                    care.care_name,
+                    care.medication,
+                    care.purpose,
+                )
+                return any('стриж' in str(value).lower() for value in searchable_values if value)
+
+            def serialize_vet_record(vet, care_date_str):
+                return {
+                    'id': vet.id,
+                    'tag_number': vet.tag.tag_number,
+                    'animal_type': vet.tag.animal_type,
+                    'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
+                    'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
+                    'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан препарат',
+                    'purpose': vet.veterinary_care.purpose if vet.veterinary_care and vet.veterinary_care.purpose else 'Не указана цель',
+                    'date_of_care': care_date_str,
+                    'duration_days': vet.duration_days,
+                    'expiry_date': vet.get_expiry_date().strftime('%Y-%m-%d') if vet.get_expiry_date() else None
+                }
             
             # 1. Загружаем ветобработки за указанный период (для оранжевых меток)
             vet_queryset = Veterinary.objects.select_related('tag', 'veterinary_care').all()
@@ -4010,27 +4517,19 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 if care_date_str not in calendar_data:
                     calendar_data[care_date_str] = {}
                 
-                # Добавляем оранжевую метку для даты ветобработки
-                if 'vet_treatments' not in calendar_data[care_date_str]:
-                    calendar_data[care_date_str]['vet_treatments'] = []
-                
-                calendar_data[care_date_str]['vet_treatments'].append({
-                    'id': vet.id,
-                    'tag_number': vet.tag.tag_number,
-                    'animal_type': vet.tag.animal_type,
-                    'care_name': vet.veterinary_care.care_name if vet.veterinary_care else 'Не указано',
-                    'care_type': vet.veterinary_care.care_type if vet.veterinary_care else 'Не указан',
-                    'medication': vet.veterinary_care.medication if vet.veterinary_care and vet.veterinary_care.medication else 'Не указан препарат',
-                    'purpose': vet.veterinary_care.purpose if vet.veterinary_care and vet.veterinary_care.purpose else 'Не указана цель',
-                    'date_of_care': care_date_str,
-                    'duration_days': vet.duration_days,
-                    'expiry_date': vet.get_expiry_date().strftime('%Y-%m-%d') if vet.get_expiry_date() else None
-                })
+                event_key = 'shearing_treatments' if is_shearing_care(vet.veterinary_care) else 'vet_treatments'
+                if event_key not in calendar_data[care_date_str]:
+                    calendar_data[care_date_str][event_key] = []
+
+                calendar_data[care_date_str][event_key].append(serialize_vet_record(vet, care_date_str))
             
             # 2. Отдельно загружаем все ветобработки для поиска истекающих в указанном периоде (для желтых меток)
             all_vets = Veterinary.objects.select_related('tag', 'veterinary_care').filter(duration_days__gt=0)
             
             for vet in all_vets:
+                if is_shearing_care(vet.veterinary_care):
+                    continue
+
                 expiry_date = vet.get_expiry_date()
                 if expiry_date:
                     # Проверяем, попадает ли дата окончания в указанный период
@@ -4098,6 +4597,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     def weighing_calendar_data(self, request):
         """Получить данные напоминаний о взвешивании для календаря"""
         try:
+            from datetime import timedelta
             from dateutil.relativedelta import relativedelta
             from django.urls import reverse
 
@@ -4127,6 +4627,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     url = reverse(route_name, kwargs={'tag_number': animal.tag.tag_number})
                     animals.append({
                         'tag': animal.tag.tag_number,
+                        'tag_id': animal.tag_id,
                         'birth_date': animal.birth_date,
                         'animal_type': animal_type,
                         'display_name': display_getter(animal),
@@ -4143,6 +4644,28 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     'weighing_type': weighing_type,
                     'weighing_type_display': weighing_type_display,
                 })
+
+            def get_completed_weight_record(tag_id, weighing_date, delta_days=15):
+                if not tag_id or not weighing_date:
+                    return None
+
+                start_date = weighing_date - timedelta(days=delta_days)
+                end_date = weighing_date + timedelta(days=delta_days)
+                records = WeightRecord.objects.filter(
+                    tag_id=tag_id,
+                    weight_date__gte=start_date,
+                    weight_date__lte=end_date,
+                ).order_by('weight_date', 'id')
+
+                return min(
+                    records,
+                    key=lambda record: (
+                        abs((record.weight_date - weighing_date).days),
+                        record.weight_date,
+                        record.id,
+                    ),
+                    default=None,
+                )
 
             def get_average_date(group_events):
                 average_ordinal = round(
@@ -4171,6 +4694,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
 
                 for event in group_events:
                     animal = event['animal']
+                    completed_weight = get_completed_weight_record(animal['tag_id'], event['weighing_date'])
+                    is_completed = completed_weight is not None
                     calendar_data[date_str].append({
                         'tag': animal['tag'],
                         'animal_type': animal['animal_type'],
@@ -4182,6 +4707,10 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                         'group_start_date': group_start.strftime('%Y-%m-%d'),
                         'group_end_date': group_end.strftime('%Y-%m-%d'),
                         'group_size': group_size,
+                        'is_completed': is_completed,
+                        'completed_date': completed_weight.weight_date.strftime('%Y-%m-%d') if completed_weight else None,
+                        'completed_date_display': completed_weight.weight_date.strftime('%d.%m.%Y') if completed_weight else None,
+                        'completed_weight': _format_weight_value(completed_weight.weight) if completed_weight else None,
                         'url': animal['url']
                     })
 

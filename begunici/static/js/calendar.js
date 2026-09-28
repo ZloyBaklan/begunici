@@ -9,6 +9,16 @@ class LambingCalendar {
             'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
             'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
         ];
+        this.eventColors = {
+            lambing: '#dc3545',
+            notes: '#57ad68',
+            vet_treatments: '#d9902f',
+            vet_expiring: '#ffeb3b',
+            weighing: '#007bff',
+            weighing_completed: '#003f8c',
+            shearing: '#9b5cf6',
+            shearing_treatments: '#3b1d6d'
+        };
         
         this.init();
     }
@@ -137,6 +147,10 @@ class LambingCalendar {
     isShearingDate(month, day) {
         return (month === 3 && day === 15) || (month === 9 && day === 15);
     }
+
+    getEventColor(eventType) {
+        return this.eventColors[eventType] || this.eventColors.notes;
+    }
     
     renderCalendar() {
         const year = this.currentDate.getFullYear();
@@ -198,6 +212,7 @@ class LambingCalendar {
                     const hasNotes = this.notesData[currentDateStr];
                     const hasVet = this.vetData[currentDateStr];
                     const hasWeighing = this.weighingData && this.weighingData[currentDateStr];
+                    const hasOnlyCompletedWeighings = hasWeighing && hasWeighing.length > 0 && hasWeighing.every(item => item.is_completed);
                     const hasShearing = this.isShearingDate(month, date);
                     
                     // Определяем типы событий
@@ -206,7 +221,8 @@ class LambingCalendar {
                     if (hasNotes) eventTypes.push('notes');
                     if (hasVet && hasVet.vet_treatments && hasVet.vet_treatments.length > 0) eventTypes.push('vet_treatments');
                     if (hasVet && hasVet.vet_expiring && hasVet.vet_expiring.length > 0) eventTypes.push('vet_expiring');
-                    if (hasWeighing) eventTypes.push('weighing');
+                    if (hasVet && hasVet.shearing_treatments && hasVet.shearing_treatments.length > 0) eventTypes.push('shearing_treatments');
+                    if (hasWeighing) eventTypes.push(hasOnlyCompletedWeighings ? 'weighing_completed' : 'weighing');
                     if (hasShearing) eventTypes.push('shearing');
                     
                     let totalCount = 0;
@@ -214,6 +230,7 @@ class LambingCalendar {
                     if (hasNotes) totalCount += hasNotes.length;
                     if (hasVet && hasVet.vet_treatments) totalCount += hasVet.vet_treatments.length;
                     if (hasVet && hasVet.vet_expiring) totalCount += hasVet.vet_expiring.length;
+                    if (hasVet && hasVet.shearing_treatments) totalCount += hasVet.shearing_treatments.length;
                     if (hasWeighing) totalCount += hasWeighing.length;
                     if (hasShearing) totalCount += 1;
                     
@@ -228,27 +245,7 @@ class LambingCalendar {
                         const partSize = 100 / eventTypes.length;
                         
                         eventTypes.forEach((type, index) => {
-                            let color = '';
-                            switch(type) {
-                                case 'lambing':
-                                    color = '#dc3545';
-                                    break;
-                                case 'vet_treatments':
-                                    color = '#ff9800';
-                                    break;
-                                case 'vet_expiring':
-                                    color = '#ffeb3b';
-                                    break;
-                                case 'notes':
-                                    color = '#28a745';
-                                    break;
-                                case 'weighing':
-                                    color = '#007bff';
-                                    break;
-                                case 'shearing':
-                                    color = '#6f42c1';
-                                    break;
-                            }
+                            const color = this.getEventColor(type);
                             
                             const startPercent = index * partSize;
                             const endPercent = (index + 1) * partSize;
@@ -275,8 +272,12 @@ class LambingCalendar {
                             cell.classList.add('has-vet-treatment');
                         } else if (eventType === 'vet_expiring') {
                             cell.classList.add('has-vet-expiring');
+                        } else if (eventType === 'shearing_treatments') {
+                            cell.classList.add('has-shearing-treatment');
                         } else if (eventType === 'weighing') {
                             cell.classList.add('has-weighing');
+                        } else if (eventType === 'weighing_completed') {
+                            cell.classList.add('has-weighing-completed');
                         } else if (eventType === 'shearing') {
                             cell.classList.add('has-shearing');
                         }
@@ -336,7 +337,7 @@ class LambingCalendar {
 
         if (hasShearing) {
             content += `
-                <h6 style="color: #6f42c1;">Напоминание:</h6>
+                <h6 style="color: #9b5cf6;">Напоминание:</h6>
                 <div class="list-group mb-3">
                     <div class="list-group-item">Произвести стрижку</div>
                 </div>
@@ -382,6 +383,34 @@ class LambingCalendar {
                 `;
             });
             
+            content += '</div>';
+        }
+
+        // Показываем выполненную стрижку отдельно от обычных ветобработок
+        if (vetData && vetData.shearing_treatments && vetData.shearing_treatments.length > 0) {
+            content += '<h6 style="color: #3b1d6d;">Стрижка:</h6>';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+
+            vetData.shearing_treatments.forEach(vet => {
+                const medicationText = (vet.medication || '').trim() || 'Не указан препарат';
+                const purposeText = (vet.purpose || '').trim() || 'Не указана цель';
+                content += `
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <a href="/animals/${this.getAnimalTypeRoute(vet.animal_type)}/${vet.tag_number}/info/" class="text-decoration-none">
+                                    ${vet.tag_number}
+                                </a>
+                                <span class="text-muted ms-2">${medicationText} - ${purposeText}</span>
+                            </h6>
+                        </div>
+                        <small>
+                            Дата обработки: ${new Date(vet.date_of_care).toLocaleDateString('ru-RU')}
+                        </small>
+                    </div>
+                `;
+            });
+
             content += '</div>';
         }
         
@@ -475,6 +504,13 @@ class LambingCalendar {
                 html += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
 
                 animals.forEach(animal => {
+                    const plannedDate = animal.original_weighing_date
+                        ? new Date(animal.original_weighing_date).toLocaleDateString('ru-RU')
+                        : 'Не указана';
+                    const completedHtml = animal.is_completed
+                        ? `<br><strong style="color: #003f8c;">Выполнено:</strong> ${animal.completed_date_display}: ${animal.completed_weight} кг`
+                        : '';
+
                     html += `
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
@@ -486,6 +522,8 @@ class LambingCalendar {
                             </div>
                             <small>
                                 Дата рождения: ${new Date(animal.birth_date).toLocaleDateString('ru-RU')}
+                                <br>Плановая дата: ${plannedDate}
+                                ${completedHtml}
                             </small>
                         </div>
                     `;
@@ -502,6 +540,15 @@ class LambingCalendar {
         
         if (!content) {
             content = '<p>Нет событий на эту дату.</p>';
+        } else {
+            const exportUrl = `/animals/notes/calendar-export-excel/?date=${encodeURIComponent(dateStr)}`;
+            content = `
+                <div class="d-flex justify-content-end mb-3">
+                    <a href="${exportUrl}" class="btn btn-outline-success btn-sm">
+                        Экспорт
+                    </a>
+                </div>
+            ` + content;
         }
         
         modalBody.innerHTML = content;

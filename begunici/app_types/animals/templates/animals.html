@@ -169,7 +169,7 @@
                                 <small>Ожидаемые роды</small>
                             </div>
                             <div class="legend-item me-3">
-                                <span class="legend-color" style="background-color: #28a745;"></span>
+                                <span class="legend-color" style="background-color: #57ad68;"></span>
                                 <small>Заметки</small>
                             </div>
                             <div class="legend-item me-3">
@@ -177,11 +177,15 @@
                                 <small>Взвешивание</small>
                             </div>
                             <div class="legend-item me-3">
-                                <span class="legend-color" style="background-color: #6f42c1;"></span>
+                                <span class="legend-color" style="background-color: #9b5cf6;"></span>
+                                <small>Напоминание о стрижке</small>
+                            </div>
+                            <div class="legend-item me-3">
+                                <span class="legend-color" style="background-color: #3b1d6d;"></span>
                                 <small>Стрижка</small>
                             </div>
                             <div class="legend-item me-3">
-                                <span class="legend-color" style="background-color: #ff9800;"></span>
+                                <span class="legend-color" style="background-color: #d9902f;"></span>
                                 <small>Ветобработка</small>
                             </div>
                             <div class="legend-item">
@@ -242,13 +246,13 @@
 }
 
 .calendar-table td.has-notes {
-    background-color: #28a745 !important;
+    background-color: #57ad68 !important;
     color: white;
     font-weight: bold;
 }
 
 .calendar-table td.has-vet-treatment {
-    background-color: #ff9800 !important;
+    background-color: #d9902f !important;
     color: white;
     font-weight: bold;
 }
@@ -265,8 +269,20 @@
     font-weight: bold;
 }
 
+.calendar-table td.has-weighing-completed {
+    background-color: #003f8c !important;
+    color: white;
+    font-weight: bold;
+}
+
 .calendar-table td.has-shearing {
-    background-color: #6f42c1 !important;
+    background-color: #9b5cf6 !important;
+    color: white;
+    font-weight: bold;
+}
+
+.calendar-table td.has-shearing-treatment {
+    background-color: #3b1d6d !important;
     color: white;
     font-weight: bold;
 }
@@ -290,19 +306,29 @@
 }
 
 .calendar-table td.has-lambing:hover {
-    background-color: #c82333 !important;
+    filter: brightness(0.95);
 }
 
 .calendar-table td.has-notes:hover {
-    background-color: #218838 !important;
+    filter: brightness(0.95);
 }
 
 .calendar-table td.has-weighing:hover {
-    background-color: #0056b3 !important;
+    filter: brightness(0.95);
+}
+
+.calendar-table td.has-weighing-completed:hover {
+    filter: brightness(0.95);
 }
 
 .calendar-table td.has-shearing:hover {
-    background-color: #59359a !important;
+    filter: brightness(0.95);
+}
+
+.calendar-table td.has-vet-treatment:hover,
+.calendar-table td.has-vet-expiring:hover,
+.calendar-table td.has-shearing-treatment:hover {
+    filter: brightness(0.95);
 }
 
 .calendar-table td.has-both:hover {
@@ -314,7 +340,7 @@
 }
 
 .calendar-table td.has-lambing:hover {
-    background-color: #c82333 !important;
+    filter: brightness(0.95);
 }
 
 .day-number {

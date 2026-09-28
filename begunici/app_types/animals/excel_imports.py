@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -447,6 +448,7 @@ def _parse_vet_import(workbook):
             _add_row_error(errors, row_number, animal_error)
             continue
 
+        row_errors_count = len(errors)
         if invalid_care_id_parts:
             _add_row_error(
                 errors,
@@ -454,6 +456,8 @@ def _parse_vet_import(workbook):
                 "Некорректный № обработки: " + ", ".join(invalid_care_id_parts),
             )
 
+        row_cares = []
+        row_keys = set()
         for care_id in care_ids:
             try:
                 care = VeterinaryCare.objects.get(pk=care_id)
@@ -462,14 +466,13 @@ def _parse_vet_import(workbook):
                 continue
 
             key = (animal.tag_id, care.id, care_date)
-            if key in seen_keys:
+            if key in seen_keys or key in row_keys:
                 _add_row_error(
                     errors,
                     row_number,
                     f"Дубль обработки №{care.id} в загруженном файле",
                 )
                 continue
-            seen_keys.add(key)
 
             if Veterinary.objects.filter(
                 tag=animal.tag,
@@ -486,6 +489,14 @@ def _parse_vet_import(workbook):
                 )
                 continue
 
+            row_keys.add(key)
+            row_cares.append(care)
+
+        if len(errors) > row_errors_count:
+            continue
+
+        seen_keys.update(row_keys)
+        for care in row_cares:
             valid_rows.append({
                 "row": row_number,
                 "tag": animal.tag.tag_number,
@@ -613,20 +624,9 @@ def _apply_otbivka_import(request, valid_rows):
             })
             continue
 
-        old_place = animal.place
-        old_place_id = old_place.id if old_place else None
-        target_place = item["target_place"]
-
-        animal.date_otbivka = item["otbivka_date"]
-        update_fields = ["date_otbivka"]
-        if target_place and old_place_id != target_place.id:
-            animal.place = target_place
-            update_fields.append("place")
-
-        animal.save(update_fields=update_fields)
-
+        weight_serializer = None
         if item["weight"] is not None:
-            serializer = WeightRecordSerializer(
+            weight_serializer = WeightRecordSerializer(
                 data={
                     "tag_write": animal.tag.tag_number,
                     "weight": item["weight"],
@@ -634,23 +634,54 @@ def _apply_otbivka_import(request, valid_rows):
                 },
                 context={"request": request},
             )
-            if serializer.is_valid():
-                serializer.save()
-                weight_count += 1
-            else:
+            if not weight_serializer.is_valid():
                 errors.append({
                     "row": item["row"],
-                    "message": f"Вес не сохранен: {serializer.errors}",
+                    "message": f"Строка не импортирована: вес не сохранен: {weight_serializer.errors}",
                 })
+                continue
 
-        if target_place and old_place_id != target_place.id:
-            PlaceMovement.objects.create(
-                tag=animal.tag,
-                old_place=old_place,
-                new_place=target_place,
-            )
+        old_place = animal.place
+        old_place_id = old_place.id if old_place else None
+        target_place = item["target_place"]
+        row_weight_saved = False
+        row_moved = False
+        row_moved_place = None
+
+        try:
+            with transaction.atomic():
+                animal.date_otbivka = item["otbivka_date"]
+                update_fields = ["date_otbivka"]
+                if target_place and old_place_id != target_place.id:
+                    animal.place = target_place
+                    update_fields.append("place")
+
+                animal.save(update_fields=update_fields)
+
+                if weight_serializer is not None:
+                    weight_serializer.save()
+                    row_weight_saved = True
+
+                if target_place and old_place_id != target_place.id:
+                    PlaceMovement.objects.create(
+                        tag=animal.tag,
+                        old_place=old_place,
+                        new_place=target_place,
+                    )
+                    row_moved = True
+                    row_moved_place = target_place.sheepfold
+        except Exception as exc:
+            errors.append({
+                "row": item["row"],
+                "message": f"Строка не импортирована: {exc}",
+            })
+            continue
+
+        if row_weight_saved:
+            weight_count += 1
+        if row_moved:
             moved_count += 1
-            moved_places.append(target_place.sheepfold)
+            moved_places.append(row_moved_place)
 
         set_mothers_not_inseminated_after_child_update(animal)
         updated += 1
