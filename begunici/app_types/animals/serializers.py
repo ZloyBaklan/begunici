@@ -643,6 +643,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 if len(status_name) > 15:
                     status_name = status_name[:15] + "..."
                 details.append(f"Статус: {status_name}")
+            if instance.rshn_tag:
+                details.append(f"Бирка РСХН: {instance.rshn_tag}")
             
             details_text = "; ".join(details)
             

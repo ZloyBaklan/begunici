@@ -100,43 +100,14 @@
 
         <div class="yearly-statistics-card" id="yearly-statistics-card">
             <div class="yearly-statistics-header">
-                <h4>Статистика по годам</h4>
+                <h4>Статистика</h4>
                 <button type="button" class="btn btn-outline-primary btn-sm" id="toggle-yearly-stats-btn" onclick="toggleYearlyStatistics()">
                     Развернуть
                 </button>
             </div>
             <div class="yearly-statistics-content" id="yearly-statistics-content" style="display: none;">
-                <div class="year-selector">
-                    <div class="year-period-field">
-                        <label for="year-select">Год:</label>
-                        <select id="year-select">
-                            <!-- Годы будут добавлены через JavaScript -->
-                        </select>
-                    </div>
-                    <div class="year-period-field">
-                        <label for="month-select">Месяц:</label>
-                        <select id="month-select">
-                            <option value="">Все месяцы</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="yearly-stats" id="yearly-stats">
-                    <div class="yearly-stat-section">
-                        <strong>Прирост веса по месяцам:</strong>
-                        <div id="avg-weight-gain">-</div>
-                    </div>
-                    <div class="yearly-stat-section">
-                        <strong>Ветобработки:</strong>
-                        <div id="vet-treatments">-</div>
-                    </div>
-                    <div class="yearly-stat-section">
-                        <strong>Животные по статусам:</strong>
-                        <div id="animals-by-status">-</div>
-                    </div>
-                    <div class="yearly-stat-section">
-                        <strong>Рождения:</strong>
-                        <div id="births-stats">-</div>
-                    </div>
+                <div class="statistics-tables" id="statistics-tables">
+                    <div class="statistics-loading">Загрузка статистики...</div>
                 </div>
             </div>
         </div>
@@ -261,62 +232,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Инициализация селектора годов
+// Общего выбора периода в статистике нет: период выбирается внутри конкретных таблиц.
 function initYearSelector() {
-    const yearSelect = document.getElementById('year-select');
-    const monthSelect = document.getElementById('month-select');
-    if (!yearSelect || !monthSelect) {
-        return;
-    }
-
-    const currentYear = new Date().getFullYear();
-    const monthNames = [
-        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-    ];
-    
-    // Добавляем годы от 2020 до текущего года
-    for (let year = 2020; year <= currentYear; year++) {
-        const option = document.createElement('option');
-        option.value = year;
-        option.textContent = year;
-        if (year === currentYear) {
-            option.selected = true;
-        }
-        yearSelect.appendChild(option);
-    }
-
-    monthNames.forEach((monthName, index) => {
-        const option = document.createElement('option');
-        option.value = String(index + 1);
-        option.textContent = monthName;
-        monthSelect.appendChild(option);
-    });
-    
-    const reloadStatistics = () => {
-        if (isYearlyStatisticsExpanded()) {
-            loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
-        }
-        loadPlanParameters(getSelectedStatisticsYear());
-    };
-
-    yearSelect.addEventListener('change', reloadStatistics);
-    monthSelect.addEventListener('change', reloadStatistics);
 }
 
 function getSelectedStatisticsYear() {
-    const yearSelect = document.getElementById('year-select');
-    return parseInt(yearSelect?.value || new Date().getFullYear(), 10);
+    return new Date().getFullYear();
 }
 
 function getSelectedStatisticsMonth() {
-    const monthSelect = document.getElementById('month-select');
-    return monthSelect?.value || '';
+    return '';
 }
 
 let planParameters = [];
 let planEditing = false;
 let yearlyStatisticsLoaded = false;
+const statisticsCurrentYear = new Date().getFullYear();
+const statisticsMonthNames = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+];
+let statisticsPeriodYear = statisticsCurrentYear;
+let statisticsPeriodMonth = '';
+let statisticsDynamicsYear = statisticsCurrentYear;
+let statisticsArchiveByActs = false;
+let expandedStatisticsTableKeys = new Set();
 
 function isPlanParametersExpanded() {
     const content = document.getElementById('plan-parameters-content');
@@ -485,73 +425,300 @@ function toggleYearlyStatistics() {
     content.style.display = 'block';
     toggleBtn.textContent = 'Свернуть';
 
-    if (!yearlyStatisticsLoaded) {
-        yearlyStatisticsLoaded = true;
-        loadYearlyStatistics(getSelectedStatisticsYear(), getSelectedStatisticsMonth());
+    yearlyStatisticsLoaded = true;
+    loadYearlyStatistics();
+}
+
+function escapeStatisticsHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function buildStatisticsYearOptions(selectedYear) {
+    const selected = parseInt(selectedYear || statisticsCurrentYear, 10);
+    const startYear = Math.min(2020, selected);
+    const endYear = Math.max(statisticsCurrentYear, selected);
+    let options = '';
+    for (let year = startYear; year <= endYear; year++) {
+        options += `<option value="${year}" ${year === selected ? 'selected' : ''}>${year}</option>`;
+    }
+    return options;
+}
+
+function buildStatisticsMonthOptions(selectedMonth) {
+    const selected = String(selectedMonth || '');
+    const monthOptions = statisticsMonthNames.map((monthName, index) => {
+        const value = String(index + 1);
+        return `<option value="${value}" ${value === selected ? 'selected' : ''}>${monthName}</option>`;
+    }).join('');
+    return `<option value="" ${selected ? '' : 'selected'}>Все месяцы</option>${monthOptions}`;
+}
+
+function renderStatisticsArchiveByActsControl() {
+    return `
+        <label class="statistics-checkbox-label">
+            <input type="checkbox"
+                   class="statistics-archive-by-acts"
+                   ${statisticsArchiveByActs ? 'checked' : ''}>
+            Выбытие по актам
+        </label>
+    `;
+}
+
+function renderStatisticsControls(controls) {
+    if (!controls || !controls.type) {
+        return '';
+    }
+
+    const hasArchiveByActsControl = Object.prototype.hasOwnProperty.call(controls, 'archive_by_acts');
+    if (hasArchiveByActsControl) {
+        statisticsArchiveByActs = Boolean(controls.archive_by_acts);
+    }
+    const archiveByActsControl = hasArchiveByActsControl ? renderStatisticsArchiveByActsControl() : '';
+
+    if (controls.type === 'period') {
+        statisticsPeriodYear = parseInt(controls.year || statisticsPeriodYear, 10);
+        statisticsPeriodMonth = String(controls.month || '');
+        return `
+            <div class="statistics-table-controls">
+                <label>
+                    Год:
+                    <select class="statistics-period-year">${buildStatisticsYearOptions(statisticsPeriodYear)}</select>
+                </label>
+                <label>
+                    Месяц:
+                    <select class="statistics-period-month">${buildStatisticsMonthOptions(statisticsPeriodMonth)}</select>
+                </label>
+                ${archiveByActsControl}
+            </div>
+        `;
+    }
+
+    if (controls.type === 'year') {
+        statisticsDynamicsYear = parseInt(controls.year || statisticsDynamicsYear, 10);
+        return `
+            <div class="statistics-table-controls">
+                <label>
+                    Год:
+                    <select class="statistics-dynamics-year">${buildStatisticsYearOptions(statisticsDynamicsYear)}</select>
+                </label>
+                ${archiveByActsControl}
+            </div>
+        `;
+    }
+
+    return '';
+}
+
+function bindStatisticsControls(root = document) {
+    root.querySelectorAll('.statistics-period-year').forEach((select) => {
+        select.addEventListener('change', () => {
+            statisticsPeriodYear = parseInt(select.value || statisticsCurrentYear, 10);
+            reloadStatisticsTable('reproduction_movement');
+        });
+    });
+
+    root.querySelectorAll('.statistics-period-month').forEach((select) => {
+        select.addEventListener('change', () => {
+            statisticsPeriodMonth = select.value || '';
+            reloadStatisticsTable('reproduction_movement');
+        });
+    });
+
+    root.querySelectorAll('.statistics-dynamics-year').forEach((select) => {
+        select.addEventListener('change', () => {
+            statisticsDynamicsYear = parseInt(select.value || statisticsCurrentYear, 10);
+            reloadStatisticsTable('monthly_dynamics');
+        });
+    });
+
+    root.querySelectorAll('.statistics-archive-by-acts').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            statisticsArchiveByActs = checkbox.checked;
+            document.querySelectorAll('.statistics-archive-by-acts').forEach((relatedCheckbox) => {
+                relatedCheckbox.checked = statisticsArchiveByActs;
+            });
+            reloadStatisticsTable('reproduction_movement', false);
+            reloadStatisticsTable('monthly_dynamics', false);
+        });
+    });
+}
+
+function renderStatisticsTableCard(table, index) {
+    const tableId = `statistics-table-${index}`;
+    const tableKey = table.key || `table-${index}`;
+    const isExpanded = expandedStatisticsTableKeys.has(tableKey);
+    const columns = (table.columns || [])
+        .map((column) => `<th>${escapeStatisticsHtml(column)}</th>`)
+        .join('');
+    const rows = (table.rows || [])
+        .map((row) => `
+            <tr>
+                ${(row || []).map((cell) => `<td>${escapeStatisticsHtml(cell)}</td>`).join('')}
+            </tr>
+        `)
+        .join('');
+
+    return `
+        <div class="statistics-table-card" data-table-key="${escapeStatisticsHtml(tableKey)}">
+            <div class="statistics-table-header">
+                <h5>${escapeStatisticsHtml(table.title || 'Таблица')}</h5>
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        onclick="toggleStatisticsTable('${tableId}', this, '${escapeStatisticsHtml(tableKey)}')">
+                    ${isExpanded ? 'Свернуть' : 'Развернуть'}
+                </button>
+            </div>
+            <div class="statistics-table-content" id="${tableId}" style="display: ${isExpanded ? 'block' : 'none'};">
+                ${renderStatisticsControls(table.controls)}
+                <div class="statistics-table-wrapper">
+                    <table class="statistics-data-table">
+                        <thead><tr>${columns}</tr></thead>
+                        <tbody>${rows || '<tr><td colspan="10">Нет данных</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderStatisticsTables(tables) {
+    const container = document.getElementById('statistics-tables');
+    if (!container) {
+        return;
+    }
+
+    if (!tables || !tables.length) {
+        container.innerHTML = '<div class="statistics-empty">Нет данных</div>';
+        return;
+    }
+
+    container.innerHTML = tables.map((table, index) => renderStatisticsTableCard(table, index)).join('');
+    bindStatisticsControls();
+}
+
+function buildStatisticsRequestParams() {
+    const params = new URLSearchParams({
+        period_year: String(statisticsPeriodYear),
+        dynamics_year: String(statisticsDynamicsYear)
+    });
+    if (statisticsPeriodMonth) {
+        params.set('period_month', statisticsPeriodMonth);
+    }
+    if (statisticsArchiveByActs) {
+        params.set('archive_by_acts', '1');
+    }
+    return params;
+}
+
+async function fetchStatisticsTables() {
+    const params = buildStatisticsRequestParams();
+    const response = await fetch(`/animals/api/yearly-statistics/?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.error) {
+        throw new Error(data.error);
+    }
+
+    return data.tables || [];
+}
+
+function findStatisticsTableCard(tableKey) {
+    return Array.from(document.querySelectorAll('.statistics-table-card'))
+        .find((card) => card.dataset.tableKey === tableKey);
+}
+
+async function reloadStatisticsTable(tableKey, forceExpanded = true) {
+    const currentCard = findStatisticsTableCard(tableKey);
+    if (currentCard) {
+        currentCard.classList.add('statistics-table-card-loading');
+    }
+
+    try {
+        const tables = await fetchStatisticsTables();
+        const tableIndex = tables.findIndex((table, index) => (table.key || `table-${index}`) === tableKey);
+        if (tableIndex === -1) {
+            throw new Error('Таблица не найдена в ответе сервера');
+        }
+
+        if (forceExpanded || expandedStatisticsTableKeys.has(tableKey)) {
+            expandedStatisticsTableKeys.add(tableKey);
+        } else {
+            expandedStatisticsTableKeys.delete(tableKey);
+        }
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = renderStatisticsTableCard(tables[tableIndex], tableIndex).trim();
+        const newCard = wrapper.firstElementChild;
+
+        if (currentCard && newCard) {
+            currentCard.replaceWith(newCard);
+            bindStatisticsControls(newCard);
+        } else {
+            renderStatisticsTables(tables);
+        }
+    } catch (error) {
+        console.error('Ошибка обновления таблицы статистики:', error);
+        if (currentCard) {
+            currentCard.classList.remove('statistics-table-card-loading');
+            const content = currentCard.querySelector('.statistics-table-content');
+            if (content) {
+                content.insertAdjacentHTML(
+                    'afterbegin',
+                    `<div class="statistics-error">Ошибка обновления: ${escapeStatisticsHtml(error.message)}</div>`
+                );
+            }
+        }
     }
 }
 
-// Загрузка годовой статистики
-async function loadYearlyStatistics(year, month = '') {
-    // Показываем индикатор загрузки
-    const containers = ['avg-weight-gain', 'vet-treatments', 'animals-by-status', 'births-stats'];
-    containers.forEach(id => {
-        const container = document.getElementById(id);
-        if (container) {
-            container.innerHTML = '<div style="text-align: center; padding: 20px;">Загрузка статистики...</div>';
+function toggleStatisticsTable(tableId, button, tableKey) {
+    const content = document.getElementById(tableId);
+    if (!content) {
+        return;
+    }
+    const isExpanded = content.style.display !== 'none';
+    content.style.display = isExpanded ? 'none' : 'block';
+    if (tableKey) {
+        if (isExpanded) {
+            expandedStatisticsTableKeys.delete(tableKey);
+        } else {
+            expandedStatisticsTableKeys.add(tableKey);
         }
-    });
-    
-    try {
-        const params = new URLSearchParams({ year: String(year) });
-        if (month) {
-            params.set('month', month);
-        }
+    }
+    if (button) {
+        button.textContent = isExpanded ? 'Развернуть' : 'Свернуть';
+    }
+}
 
-        const response = await fetch(`/animals/api/yearly-statistics/?${params.toString()}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.error) {
-            console.error('Ошибка загрузки годовой статистики:', data.error);
-            containers.forEach(id => {
-                const container = document.getElementById(id);
-                if (container) {
-                    container.innerHTML = `<div style="color: red;">Ошибка: ${data.error}</div>`;
-                }
-            });
-            return;
-        }
-        
-        // Средний прирост веса
-        displayWeightGain(data.monthly_weight_gain, data.month);
-        
-        // Ветобработки
-        displayVetTreatments(data.veterinary_treatments);
-        
-        // Животные по статусам
-        displayAnimalsByStatus(data.animals_by_status);
-        
-        // Рождения
-        displayBirths(data.births);
-        
+// Загрузка статистики
+async function loadYearlyStatistics() {
+    const container = document.getElementById('statistics-tables');
+    if (container) {
+        container.innerHTML = '<div class="statistics-loading">Загрузка статистики...</div>';
+    }
+
+    try {
+        const tables = await fetchStatisticsTables();
+        renderStatisticsTables(tables);
+
     } catch (error) {
-        console.error('Ошибка загрузки годовой статистики:', error);
-        containers.forEach(id => {
-            const container = document.getElementById(id);
-            if (container) {
-                container.innerHTML = `<div style="color: red;">Ошибка загрузки данных: ${error.message}</div>`;
-            }
-        });
+        console.error('Ошибка загрузки статистики:', error);
+        if (container) {
+            container.innerHTML = `<div class="statistics-error">Ошибка загрузки данных: ${escapeStatisticsHtml(error.message)}</div>`;
+        }
     }
 }
 
@@ -832,6 +999,10 @@ function toggleExpand(containerId, trigger) {
     color: #495057;
 }
 
+.yearly-statistics-header h4 {
+    font-weight: 400;
+}
+
 .plan-parameters-header small {
     color: #6c757d;
 }
@@ -845,6 +1016,111 @@ function toggleExpand(containerId, trigger) {
 
 .plan-parameters-table-wrapper {
     overflow-x: auto;
+}
+
+.statistics-tables {
+    display: grid;
+    gap: 10px;
+}
+
+.statistics-table-card {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.statistics-table-card-loading {
+    opacity: 0.65;
+}
+
+.statistics-table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    background: #fff;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.statistics-table-header h5 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 400;
+    color: #212529;
+}
+
+.statistics-table-wrapper {
+    overflow-x: auto;
+}
+
+.statistics-table-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #dee2e6;
+    background: #fff;
+}
+
+.statistics-table-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: #495057;
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.statistics-table-controls select {
+    min-width: 120px;
+    padding: 4px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #fff;
+    color: #212529;
+    font-size: 14px;
+}
+
+.statistics-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.statistics-data-table th,
+.statistics-data-table td {
+    border: 1px solid #dee2e6;
+    padding: 5px 8px;
+    vertical-align: middle;
+}
+
+.statistics-data-table th {
+    background: #f8f9fa;
+    color: #212529;
+    font-weight: 400;
+}
+
+.statistics-data-table td:not(:first-child),
+.statistics-data-table th:not(:first-child) {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.statistics-loading,
+.statistics-empty,
+.statistics-error {
+    padding: 16px;
+    text-align: center;
+    color: #6c757d;
+}
+
+.statistics-error {
+    color: #dc3545;
 }
 
 .plan-parameters-table {
@@ -926,6 +1202,11 @@ function toggleExpand(containerId, trigger) {
 
     .plan-parameters-actions {
         justify-content: flex-start;
+    }
+
+    .statistics-table-header {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 </style>

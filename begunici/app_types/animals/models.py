@@ -401,9 +401,11 @@ class AnimalBase(models.Model):
         old_place = None
         old_status = None
         old_note = None
+        old_dorper_percentage = None
         
         # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
         skip_status_history = kwargs.pop('skip_status_history', False)
+        cascade_dorper = kwargs.pop('cascade_dorper', True)
 
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in ARCHIVE_STATUS_NAMES:
@@ -430,6 +432,7 @@ class AnimalBase(models.Model):
                 old_place = old_instance.place
                 old_status = old_instance.animal_status
                 old_note = old_instance.note
+                old_dorper_percentage = old_instance.dorper_percentage
             except self.__class__.DoesNotExist:
                 pass  # old_place и old_status останутся None
 
@@ -450,6 +453,54 @@ class AnimalBase(models.Model):
                 old_note=old_note or "",
                 new_note=self.note or "",
             )
+
+        if (
+            cascade_dorper
+            and not is_new
+            and self.tag
+            and old_dorper_percentage != self.dorper_percentage
+        ):
+            recalculate_descendant_dorper_percentages(self.tag.tag_number)
+
+
+def recalculate_descendant_dorper_percentages(parent_tag_number, visited=None):
+    parent_tag_number = str(parent_tag_number or "").strip()
+    if not parent_tag_number:
+        return 0
+
+    visited = visited or set()
+    parent_key = parent_tag_number.casefold()
+    if parent_key in visited:
+        return 0
+    visited.add(parent_key)
+
+    updated_count = 0
+    child_models = (Ram, Ewe, Sheep, Maker)
+
+    for model in child_models:
+        children = (
+            model.objects
+            .filter(Q(mother__iexact=parent_tag_number) | Q(father__iexact=parent_tag_number))
+            .select_related("tag", "animal_status", "place")
+        )
+        for child in children:
+            if child.is_manual_dorper:
+                continue
+
+            old_child_dorper = child.dorper_percentage
+            child.calculate_dorper_percentage()
+            if old_child_dorper == child.dorper_percentage:
+                continue
+
+            child.save(cascade_dorper=False)
+            updated_count += 1
+            if child.tag:
+                updated_count += recalculate_descendant_dorper_percentages(
+                    child.tag.tag_number,
+                    visited,
+                )
+
+    return updated_count
 
 
 class ArchiveAct(models.Model):

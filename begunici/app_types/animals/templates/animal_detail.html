@@ -152,6 +152,7 @@
                                     </td>
                                 </tr>
                                 <tr><th>Бирка РСХН</th><td>{{ animal.rshn_tag|default:"-" }}</td></tr>
+                                <tr><th>Дата присвоения бирки РСХН</th><td>{{ rshn_assignment_timestamp|date:"d.m.Y"|default:"-" }}</td></tr>
                                 {% if animal_type == 'maker' %}
                                 <tr><th>Имя</th><td>{{ animal.name|default:"-" }}</td></tr>
                                 {% endif %}

@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Min, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
+from django.utils.html import escape
 from decimal import Decimal
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
@@ -4252,6 +4253,33 @@ class MakersView(TemplateView):
         return context
 
 
+def _get_rshn_assignment_timestamp(animal):
+    rshn_tag = (getattr(animal, "rshn_tag", "") or "").strip()
+    if not rshn_tag or not getattr(animal, "tag", None):
+        return None
+
+    from .models_user_log import UserActionLog
+
+    tag_number = animal.tag.tag_number
+    rshn_log_filter = (
+        Q(action_type__in=["Присвоение РСХН", "Перепривязка РСХН"])
+        | Q(description__icontains="Бирка РСХН:")
+    )
+    animal_filter = (
+        Q(object_id__iexact=tag_number)
+        | Q(description__icontains=f"Бирке {tag_number} ")
+        | Q(description__icontains=f"{tag_number}:")
+    )
+
+    log = (
+        UserActionLog.objects
+        .filter(rshn_log_filter, animal_filter, description__icontains=rshn_tag)
+        .order_by("-timestamp", "-id")
+        .first()
+    )
+    return log.timestamp if log else None
+
+
 class AnimalDetailView(TemplateView):
     template_name = "animal_detail.html" # Унифицированный шаблон
     model = None
@@ -4271,6 +4299,7 @@ class AnimalDetailView(TemplateView):
             context["animal"] = animal
             context["animal_type"] = model_name
             context["animal_type_label"] = animal_type_labels.get(model_name, "животное")
+            context["rshn_assignment_timestamp"] = _get_rshn_assignment_timestamp(animal)
             context["can_convert_to_maker"] = (
                 self.model is Ram and animal.is_older_than_two_years()
             )
@@ -8310,6 +8339,484 @@ def dashboard_statistics(request):
     })
 
 
+DASHBOARD_STATUSES_ORDER = [
+    STATUS_NOT_INSEMINATED,
+    STATUS_INSEMINATED,
+    STATUS_LAMBED,
+    STATUS_FATTENING,
+    STATUS_REPAIR,
+    STATUS_UNDEFINED,
+    STATUS_IN_GROUP,
+]
+
+DASHBOARD_EWE_STATUSES_ORDER = [
+    STATUS_UNDEFINED,
+    STATUS_NOT_INSEMINATED,
+    STATUS_INSEMINATED,
+    STATUS_REPAIR,
+]
+
+DASHBOARD_RAM_STATUSES_ORDER = [
+    STATUS_FATTENING,
+    STATUS_REPAIR,
+]
+
+DASHBOARD_ARCHIVE_STATUSES_ORDER = [
+    "Падеж",
+    "Вынужденная прирезка",
+    "Реализация в живом весе",
+    "Продажа на племя",
+    "Убой на мясо",
+]
+
+DASHBOARD_MONTH_NAMES = [
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+]
+
+
+def _format_dashboard_percent(value):
+    return f"{_format_dashboard_decimal(value, 1)}%"
+
+
+def _get_dashboard_statistics_period(year, selected_month):
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    if selected_month:
+        period_start = date(year, selected_month, 1)
+        period_end = period_start + relativedelta(months=1) - timedelta(days=1)
+        period_label = f"{DASHBOARD_MONTH_NAMES[selected_month - 1]} {year}"
+    else:
+        period_start = year_start
+        period_end = year_end
+        period_label = str(year)
+    return year_start, year_end, period_start, period_end, period_label
+
+
+def _get_dashboard_active_animals():
+    return {
+        "sheep": list(
+            Sheep.objects.filter(is_archived=False)
+            .select_related("tag", "animal_status")
+        ),
+        "ewes": list(
+            Ewe.objects.filter(is_archived=False)
+            .select_related("tag", "animal_status")
+        ),
+        "rams": list(
+            Ram.objects.filter(is_archived=False)
+            .select_related("tag", "animal_status")
+        ),
+        "makers": list(
+            Maker.objects.filter(is_archived=False)
+            .select_related("tag", "animal_status")
+        ),
+    }
+
+
+def _get_dashboard_status_name(animal):
+    return animal.animal_status.status_type if animal.animal_status else "Без статуса"
+
+
+def _get_dashboard_ordered_statuses(stats_by_status, allowed_statuses=None):
+    if allowed_statuses is not None:
+        allowed_set = set(allowed_statuses)
+        statuses = [status_name for status_name in allowed_statuses if status_name in allowed_set]
+        return statuses
+
+    statuses = list(DASHBOARD_STATUSES_ORDER)
+    extra_statuses = sorted(
+        status_name
+        for status_name in stats_by_status.keys()
+        if status_name not in DASHBOARD_STATUSES_ORDER
+    )
+    return statuses + extra_statuses
+
+
+def _get_dashboard_age_bucket(animal, as_of_date):
+    if not animal.birth_date:
+        return "older_3m"
+
+    if animal.birth_date > as_of_date - relativedelta(months=1):
+        return "under_1m"
+
+    if animal.birth_date >= as_of_date - relativedelta(months=3):
+        return "one_three_weaned" if animal.date_otbivka else "one_three_not_weaned"
+
+    return "older_3m"
+
+
+def _build_dashboard_status_table(active_animals):
+    stats_by_status = defaultdict(lambda: {"sheep": 0, "ewes": 0, "rams": 0, "makers": 0})
+    for type_key, animals in active_animals.items():
+        for animal in animals:
+            stats_by_status[_get_dashboard_status_name(animal)][type_key] += 1
+
+    rows = []
+    for status_name in _get_dashboard_ordered_statuses(stats_by_status):
+        counts = stats_by_status[status_name]
+        rows.append([
+            status_name,
+            counts["sheep"] + counts["ewes"] + counts["rams"] + counts["makers"],
+            counts["sheep"],
+            counts["ewes"],
+            counts["rams"],
+            counts["makers"],
+        ])
+
+    return {
+        "title": "Актуальное поголовье по статусам",
+        "accent": "blue",
+        "columns": ["Статус", "Всего", "Овцематки", "Ярки", "Баранчики", "Бараны-пр."],
+        "rows": rows,
+    }
+
+
+def _build_dashboard_young_stock_table(active_animals, as_of_date):
+    buckets = [
+        ("under_1m", "До 1 мес."),
+        ("one_three_not_weaned", "1-3 мес., не отбиты"),
+        ("one_three_weaned", "1-3 мес., уже отбиты"),
+        ("older_3m", "Старше 3 мес."),
+    ]
+    counts = {
+        bucket_key: {"ewes": 0, "rams": 0}
+        for bucket_key, _label in buckets
+    }
+
+    for animal in active_animals["ewes"]:
+        counts[_get_dashboard_age_bucket(animal, as_of_date)]["ewes"] += 1
+    for animal in active_animals["rams"]:
+        counts[_get_dashboard_age_bucket(animal, as_of_date)]["rams"] += 1
+
+    total_young_stock = sum(
+        bucket_counts["ewes"] + bucket_counts["rams"]
+        for bucket_counts in counts.values()
+    )
+
+    rows = []
+    for bucket_key, label in buckets:
+        ewe_count = counts[bucket_key]["ewes"]
+        ram_count = counts[bucket_key]["rams"]
+        total = ewe_count + ram_count
+        share = (
+            Decimal(total) * Decimal("100") / Decimal(total_young_stock)
+            if total_young_stock else Decimal("0")
+        )
+        rows.append([label, ewe_count, ram_count, total, _format_dashboard_percent(share)])
+
+    return {
+        "title": "Молодняк по возрасту и отбивке",
+        "accent": "green",
+        "columns": ["Возрастная группа", "Ярки", "Баранчики", "Всего", "Доля молодняка"],
+        "rows": rows,
+    }
+
+
+def _build_dashboard_status_age_table(animals, title, accent, as_of_date, allowed_statuses=None):
+    buckets = [
+        ("under_1m", "До 1 мес."),
+        ("one_three_not_weaned", "1-3 не отб."),
+        ("one_three_weaned", "1-3 отб."),
+        ("older_3m", "Старше 3 мес."),
+    ]
+    stats_by_status = defaultdict(lambda: {bucket_key: 0 for bucket_key, _label in buckets})
+    for animal in animals:
+        status_name = _get_dashboard_status_name(animal)
+        stats_by_status[status_name][_get_dashboard_age_bucket(animal, as_of_date)] += 1
+
+    rows = []
+    for status_name in _get_dashboard_ordered_statuses(stats_by_status, allowed_statuses):
+        row = [status_name]
+        total = 0
+        for bucket_key, _label in buckets:
+            value = stats_by_status[status_name][bucket_key]
+            row.append(value)
+            total += value
+        row.append(total)
+        rows.append(row)
+
+    return {
+        "title": title,
+        "accent": accent,
+        "columns": ["Статус"] + [label for _bucket_key, label in buckets] + ["Всего"],
+        "rows": rows,
+    }
+
+
+def _get_dashboard_period_archive_stats(period_start, period_end, acts_only=False):
+    archive_statuses = defaultdict(set)
+    acts = ArchiveAct.objects.filter(
+        status_date__gte=period_start,
+        status_date__lte=period_end,
+    ).values("tag_id", "status_name")
+    for act in acts:
+        if act["tag_id"] and act["status_name"]:
+            archive_statuses[act["status_name"]].add(act["tag_id"])
+
+    if acts_only:
+        return archive_statuses
+
+    tags_with_archive_acts = set(ArchiveAct.objects.values_list("tag_id", flat=True))
+    archive_status_ids = Status.objects.filter(
+        status_type__in=ARCHIVE_STATUS_NAMES
+    ).values_list("id", flat=True)
+    fallback_histories = (
+        StatusHistory.objects.filter(
+            new_status_id__in=archive_status_ids,
+            change_date__date__gte=period_start,
+            change_date__date__lte=period_end,
+        )
+        .exclude(tag_id__in=tags_with_archive_acts)
+        .select_related("new_status")
+    )
+    for history in fallback_histories:
+        if history.tag_id and history.new_status:
+            archive_statuses[history.new_status.status_type].add(history.tag_id)
+
+    return archive_statuses
+
+
+def _get_dashboard_insemination_stats(period_start, period_end):
+    groups = (
+        LambingGroup.objects.filter(
+            placement_date__gte=period_start,
+            placement_date__lte=period_end,
+        )
+        .select_related("maker__tag", "ram__tag")
+        .prefetch_related("sheep__tag", "ewes__tag")
+    )
+
+    records_count = 0
+    unique_mothers = set()
+    unique_fathers = set()
+
+    for group in groups:
+        father = group.get_father()
+        if father and father.tag_id:
+            unique_fathers.add((father.__class__.__name__, father.tag_id))
+
+        for mother in group.sheep.all():
+            records_count += 1
+            if mother.tag_id:
+                unique_mothers.add((mother.__class__.__name__, mother.tag_id))
+
+        for mother in group.ewes.all():
+            records_count += 1
+            if mother.tag_id:
+                unique_mothers.add((mother.__class__.__name__, mother.tag_id))
+
+    return {
+        "insemination_records": records_count,
+        "unique_mothers": len(unique_mothers),
+        "unique_fathers": len(unique_fathers),
+    }
+
+
+def _count_dashboard_weaned_animals(period_start, period_end):
+    ewe_count = Ewe.objects.filter(date_otbivka__gte=period_start, date_otbivka__lte=period_end).count()
+    ram_count = Ram.objects.filter(date_otbivka__gte=period_start, date_otbivka__lte=period_end).count()
+    return ewe_count, ram_count
+
+
+def _get_dashboard_lambing_reproduction_stats(period_start, period_end):
+    insemination_stats = _get_dashboard_insemination_stats(period_start, period_end)
+
+    lambings = list(
+        Lambing.objects.filter(
+            is_active=False,
+            completion_type=Lambing.COMPLETION_NORMAL,
+            actual_lambing_date__gte=period_start,
+            actual_lambing_date__lte=period_end,
+        )
+        .select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
+        .order_by("actual_lambing_date", "id")
+    )
+    children_map = _build_lambing_children_map(lambings)
+
+    live_born = 0
+    dead_born = 0
+    ewe_children_count = 0
+    ram_children_count = 0
+    unspecified_children_count = 0
+
+    for lambing in lambings:
+        live_count = lambing.number_of_lambs or 0
+        dead_count = lambing.dead_lambs_count or 0
+        grouped_children = _get_lambing_grouped_children(lambing, children_map)
+        ewe_count = len(grouped_children["ewes"])
+        ram_count = len(grouped_children["rams"])
+
+        live_born += live_count
+        dead_born += dead_count
+        ewe_children_count += ewe_count
+        ram_children_count += ram_count
+        unspecified_children_count += max(live_count - ewe_count - ram_count, 0)
+
+    weaned_ewes, weaned_rams = _count_dashboard_weaned_animals(period_start, period_end)
+
+    return {
+        "insemination_records": insemination_stats["insemination_records"],
+        "unique_mothers": insemination_stats["unique_mothers"],
+        "unique_fathers": insemination_stats["unique_fathers"],
+        "lambings": len(lambings),
+        "total_progeny": live_born + dead_born,
+        "live_born": live_born,
+        "dead_born": dead_born,
+        "ewe_children_count": ewe_children_count,
+        "ram_children_count": ram_children_count,
+        "unspecified_children_count": unspecified_children_count,
+        "weaned_total": weaned_ewes + weaned_rams,
+        "weaned_ewes": weaned_ewes,
+        "weaned_rams": weaned_rams,
+    }
+
+
+def _build_dashboard_reproduction_table(period_start, period_end, period_label, year, selected_month, archive_by_acts):
+    reproduction_stats = _get_dashboard_lambing_reproduction_stats(period_start, period_end)
+    archive_stats = _get_dashboard_period_archive_stats(period_start, period_end, acts_only=archive_by_acts)
+    archived_total = len(set().union(*archive_stats.values())) if archive_stats else 0
+
+    left_rows = [
+        ["Случки", reproduction_stats["insemination_records"], "", ""],
+        ["Уникальные матки в случке", reproduction_stats["unique_mothers"], "", ""],
+        ["Бараны, использованные в случках", reproduction_stats["unique_fathers"], "", ""],
+        ["Окоты", reproduction_stats["lambings"], "", ""],
+        ["Приплод всего", reproduction_stats["total_progeny"], "", ""],
+        ["Живорожденные", reproduction_stats["live_born"], "", ""],
+        ["Мертворожденные", reproduction_stats["dead_born"], "", ""],
+        ["Ярки с указанной биркой", reproduction_stats["ewe_children_count"], "", ""],
+        ["Баранчики с указанной биркой", reproduction_stats["ram_children_count"], "", ""],
+        ["Пол/бирка не указаны", reproduction_stats["unspecified_children_count"], "", ""],
+        ["Отбито всего", reproduction_stats["weaned_total"], "", ""],
+        ["Отбито ярок", reproduction_stats["weaned_ewes"], "", ""],
+        ["Отбито баранчиков", reproduction_stats["weaned_rams"], "", ""],
+    ]
+
+    archive_rows = [["", "", "Всего выбыло", archived_total]]
+    for status_name in DASHBOARD_ARCHIVE_STATUSES_ORDER:
+        archive_rows.append(["", "", status_name, len(archive_stats.get(status_name, set()))])
+
+    row_count = max(len(left_rows), len(archive_rows))
+    rows = []
+    for index in range(row_count):
+        left = left_rows[index] if index < len(left_rows) else ["", "", "", ""]
+        archive = archive_rows[index] if index < len(archive_rows) else ["", "", "", ""]
+        rows.append([left[0], left[1], archive[2], archive[3]])
+
+    return {
+        "key": "reproduction_movement",
+        "title": "Воспроизводство и движение за выбранный период",
+        "accent": "orange",
+        "controls": {
+            "type": "period",
+            "year": year,
+            "month": selected_month or "",
+            "archive_by_acts": archive_by_acts,
+        },
+        "columns": ["Показатель", "Значение", "Выбытие / архив", "Количество"],
+        "rows": rows,
+    }
+
+
+def _build_dashboard_monthly_dynamics_table(year, archive_by_acts=False):
+    rows = []
+    for month_index, month_name in enumerate(DASHBOARD_MONTH_NAMES, start=1):
+        month_start = date(year, month_index, 1)
+        month_end = month_start + relativedelta(months=1) - timedelta(days=1)
+        reproduction_stats = _get_dashboard_lambing_reproduction_stats(month_start, month_end)
+        archive_stats = _get_dashboard_period_archive_stats(month_start, month_end, acts_only=archive_by_acts)
+        archived_total = len(set().union(*archive_stats.values())) if archive_stats else 0
+
+        rows.append([
+            f"{month_name} {year}",
+            reproduction_stats["insemination_records"],
+            reproduction_stats["lambings"],
+            reproduction_stats["total_progeny"],
+            reproduction_stats["dead_born"],
+            reproduction_stats["weaned_total"],
+            archived_total,
+        ])
+
+    return {
+        "key": "monthly_dynamics",
+        "title": "Динамика по месяцам",
+        "accent": "blue",
+        "controls": {
+            "type": "year",
+            "year": year,
+            "archive_by_acts": archive_by_acts,
+        },
+        "columns": ["Месяц", "Случки", "Окоты", "Приплод всего", "Мертворожденные", "Отбито", "Выбыло"],
+        "rows": rows,
+    }
+
+
+def _build_dashboard_chipping_table(active_animals):
+    labels = [
+        ("makers", "Бараны-пр."),
+        ("rams", "Баранчики"),
+        ("ewes", "Ярки"),
+        ("sheep", "Овцематки"),
+    ]
+    rows = []
+    total = 0
+    for type_key, label in labels:
+        count = sum(1 for animal in active_animals[type_key] if (animal.rshn_tag or "").strip())
+        total += count
+        rows.append([label, count])
+    rows.append(["Всего", total])
+
+    return {
+        "title": "Чипирование",
+        "accent": "purple",
+        "columns": ["Тип животного", "Количество чипированных"],
+        "rows": rows,
+    }
+
+
+def _build_dashboard_statistics_tables(period_year, selected_month, dynamics_year=None, archive_by_acts=False):
+    dynamics_year = dynamics_year or period_year
+    _year_start, _year_end, period_start, period_end, period_label = _get_dashboard_statistics_period(
+        period_year,
+        selected_month,
+    )
+    active_animals = _get_dashboard_active_animals()
+    as_of_date = timezone.localdate()
+
+    return [
+        _build_dashboard_status_table(active_animals),
+        _build_dashboard_young_stock_table(active_animals, as_of_date),
+        _build_dashboard_status_age_table(
+            active_animals["ewes"],
+            "Ярки — статусы по возрастным группам",
+            "green",
+            as_of_date,
+            DASHBOARD_EWE_STATUSES_ORDER,
+        ),
+        _build_dashboard_status_age_table(
+            active_animals["rams"],
+            "Баранчики — статусы по возрастным группам",
+            "yellow",
+            as_of_date,
+            DASHBOARD_RAM_STATUSES_ORDER,
+        ),
+        _build_dashboard_reproduction_table(period_start, period_end, period_label, period_year, selected_month, archive_by_acts),
+        _build_dashboard_monthly_dynamics_table(dynamics_year, archive_by_acts=archive_by_acts),
+        _build_dashboard_chipping_table(active_animals),
+    ]
+
+
 @api_view(['GET'])
 def yearly_statistics(request):
     """
@@ -8324,12 +8831,21 @@ def yearly_statistics(request):
     from django.db.models import Avg, Count, F, Q, Sum
     from begunici.app_types.veterinary.vet_models import VeterinaryCare, Place, StatusHistory
     
-    year = request.GET.get('year', timezone.now().year)
-    selected_month = request.GET.get('month')
+    default_year = timezone.localdate().year
+    year = request.GET.get('period_year') or request.GET.get('year') or default_year
+    dynamics_year = request.GET.get('dynamics_year') or year
+    archive_by_acts = str(request.GET.get('archive_by_acts') or '').lower() in {'1', 'true', 'yes', 'on'}
+    selected_month = request.GET.get('period_month')
+    if selected_month is None:
+        selected_month = request.GET.get('month')
     try:
         year = int(year)
     except (ValueError, TypeError):
         return Response({'error': 'Неверный формат года'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        dynamics_year = int(dynamics_year)
+    except (ValueError, TypeError):
+        return Response({'error': 'Неверный формат года динамики'}, status=status.HTTP_400_BAD_REQUEST)
 
     if selected_month in (None, '', 'all'):
         selected_month = None
@@ -8525,6 +9041,9 @@ def yearly_statistics(request):
         return Response({
             'year': year,
             'month': selected_month,
+            'dynamics_year': dynamics_year,
+            'archive_by_acts': archive_by_acts,
+            'tables': _build_dashboard_statistics_tables(year, selected_month, dynamics_year, archive_by_acts),
             'monthly_weight_gain': monthly_weight_gain,
             'veterinary_treatments': treatment_stats,
             'animals_by_status': status_stats,
@@ -10484,16 +11003,67 @@ def check_kinship(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _get_kinship_animal_display(tag_number):
+    animal = find_animal_by_tag(tag_number)
+    if animal and hasattr(animal, 'get_display_name'):
+        return animal.get_display_name()
+    if animal and getattr(animal, 'tag', None):
+        return animal.tag.tag_number
+    return tag_number
+
+
+def _get_kinship_animal_link(tag_number):
+    animal = find_animal_by_tag(tag_number)
+    display_name = _get_kinship_animal_display(tag_number)
+    safe_display_name = escape(display_name)
+
+    if not animal:
+        return str(safe_display_name)
+
+    animal_type = animal.get_animal_type().lower()
+    safe_tag = escape(tag_number)
+    url = f"/animals/{animal_type}/{safe_tag}/info/"
+    return (
+        f'<a href="{url}" class="text-decoration-none" '
+        f'style="color: #007bff; text-decoration: underline; font-weight: bold;">'
+        f'{safe_display_name}</a>'
+    )
+
+
+def _build_kinship_pair_messages(father_tag, mother_tag):
+    father_display = _get_kinship_animal_display(father_tag)
+    mother_display = _get_kinship_animal_display(mother_tag)
+
+    return {
+        'father_display': father_display,
+        'mother_display': mother_display,
+        'pair_message': f'Конфликтующая пара: {father_display} и {mother_display}',
+        'pair_message_with_links': (
+            f'Конфликтующая пара: '
+            f'{_get_kinship_animal_link(father_tag)} и {_get_kinship_animal_link(mother_tag)}'
+        ),
+    }
+
+
 def _evaluate_kinship_pair(father_tag, mother_tag, max_generations=4):
+    pair_messages = _build_kinship_pair_messages(father_tag, mother_tag)
+
     # Проверяем прямое родство (отец-ребенок или мать-ребенок)
     direct_kinship = check_direct_kinship(father_tag, mother_tag)
     if direct_kinship:
         return {
             'has_kinship': True,
-            'message': f'Обнаружено прямое родство: {direct_kinship["message"]}',
-            'message_with_links': direct_kinship["message_with_links"],
+            'message': (
+                f'{pair_messages["pair_message"]}. '
+                f'Обнаружено прямое родство: {direct_kinship["message"]}'
+            ),
+            'message_with_links': (
+                f'{pair_messages["pair_message_with_links"]}. '
+                f'Обнаружено прямое родство: {direct_kinship["message_with_links"]}'
+            ),
             'common_ancestors': [direct_kinship["message"]],
-            'warning': True
+            'warning': True,
+            **pair_messages,
         }
 
     # Строим родословные деревья для обоих животных
@@ -10526,10 +11096,19 @@ def _evaluate_kinship_pair(father_tag, mother_tag, max_generations=4):
 
         return {
             'has_kinship': True,
-            'message': f'Обнаружены общие предки до {max_generations}-го колена: {", ".join(ancestor_display_names)}',
-            'message_with_links': f'Обнаружены общие предки до {max_generations}-го колена: {", ".join(ancestor_links)}',
+            'message': (
+                f'{pair_messages["pair_message"]}. '
+                f'Обнаружены общие предки до {max_generations}-го колена: '
+                f'{", ".join(ancestor_display_names)}'
+            ),
+            'message_with_links': (
+                f'{pair_messages["pair_message_with_links"]}. '
+                f'Обнаружены общие предки до {max_generations}-го колена: '
+                f'{", ".join(ancestor_links)}'
+            ),
             'common_ancestors': common_ancestors,
-            'warning': True
+            'warning': True,
+            **pair_messages,
         }
 
     return {
@@ -10537,7 +11116,8 @@ def _evaluate_kinship_pair(father_tag, mother_tag, max_generations=4):
         'message': f'Общих предков до {max_generations}-го колена не обнаружено',
         'message_with_links': f'Общих предков до {max_generations}-го колена не обнаружено',
         'common_ancestors': [],
-        'warning': False
+        'warning': False,
+        **pair_messages,
     }
 
 
