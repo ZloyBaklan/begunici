@@ -1,10 +1,12 @@
 import re
 
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from rest_framework import viewsets, status, filters
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from django.utils import timezone
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -21,6 +23,12 @@ from .vet_models import (
     WeightRecord,
     Place,
     PlaceMovement,
+    BarnCalculatorProfile,
+)
+from .barn_calculator import (
+    CalculatorInputError, DEFAULT_PARAMETERS, GROUPS, PARAMETER_LABELS,
+    build_factual_composition, calculate_barn, empty_composition,
+    normalize_barn_number, normalize_composition, normalize_parameters, parameters_to_json,
 )
 from .vet_serializers import (
     StatusSerializer,
@@ -32,10 +40,10 @@ from .vet_serializers import (
     PlaceMovementSerializer,
 )
 from begunici.app_types.animals.models import ARCHIVE_STATUS_NAMES
+from begunici.app_types.animals.age_utils import age_months_for_export
 from begunici.app_types.animals.status_logic import get_allowed_active_status_names_for_animal_type
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import render
-from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -272,10 +280,10 @@ def export_place_map_excel(request):
             entry["type_label"],
             animal.tag.tag_number if animal.tag else "-",
             animal.animal_status.status_type if animal.animal_status else "Нет статуса",
-            float(animal.age) if animal.age is not None else "-",
+            age_months_for_export(animal.birth_date),
             animal.place.sheepfold if animal.place else "Нет данных",
             _format_place_map_dorper_display(animal) or "-",
-            "Брак" if animal.is_reject else "-",
+            animal.get_assignment_display(),
             float(latest_weight.weight) if latest_weight else "-",
             latest_weight.weight_date if latest_weight else "-",
             animal.working_condition if hasattr(animal, "working_condition") and animal.working_condition else "-",
@@ -344,7 +352,7 @@ def get_animals_by_place(request, place_id):
                 'rshn_tag': maker.rshn_tag or '',
                 'display_name': display_name,
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
-                'age': maker.age
+                'age': maker.get_age_months()
             })
             
         for ram in rams:
@@ -354,7 +362,7 @@ def get_animals_by_place(request, place_id):
                 'rshn_tag': ram.rshn_tag or '',
                 'display_name': ram.tag.tag_number if ram.tag else 'Нет бирки',
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
-                'age': ram.age
+                'age': ram.get_age_months()
             })
             
         for ewe in ewes:
@@ -364,7 +372,7 @@ def get_animals_by_place(request, place_id):
                 'rshn_tag': ewe.rshn_tag or '',
                 'display_name': ewe.tag.tag_number if ewe.tag else 'Нет бирки',
                 'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
-                'age': ewe.age
+                'age': ewe.get_age_months()
             })
             
         for s in sheep:
@@ -374,7 +382,7 @@ def get_animals_by_place(request, place_id):
                 'rshn_tag': s.rshn_tag or '',
                 'display_name': s.tag.tag_number if s.tag else 'Нет бирки',
                 'status': s.animal_status.status_type if s.animal_status else 'Нет статуса',
-                'age': s.age
+                'age': s.get_age_months()
             })
         
         return Response(animals)
@@ -391,7 +399,7 @@ def get_barn_statistics(request, barn_number):
     try:
         from begunici.app_types.animals.models import Maker, Ram, Ewe, Sheep
         
-        today = timezone.now().date()
+        today = timezone.localdate()
         current_month_start = today.replace(day=1)
         current_month_end = today.replace(
             day=monthrange(today.year, today.month)[1]
@@ -405,17 +413,7 @@ def get_barn_statistics(request, barn_number):
             return round(sum(values) / len(values), 1)
 
         def _get_age_months_as_of(animal, as_of_date):
-            if animal.birth_date:
-                days = (as_of_date - animal.birth_date).days
-                if days < 0:
-                    return None
-                return round(days / 30.0, 1)
-            if animal.age is not None:
-                try:
-                    return float(animal.age)
-                except (TypeError, ValueError):
-                    return None
-            return None
+            return animal.get_age_months(as_of_date)
 
         def _build_period_stats(
             animal_entries,
@@ -862,3 +860,299 @@ def export_veterinary_cares_excel(request):
     workbook.save(response)
     return response
 
+
+
+@login_required
+def barn_calculator_page(request):
+    return render(request, "barn_calculator.html")
+
+
+def _barn_calculator_profile_data(number, profile=None):
+    return {
+        "barn_number": number, "has_saved_parameters": profile is not None,
+        "parameters": parameters_to_json(normalize_parameters(profile.parameters if profile else {})),
+        "manual_composition": normalize_composition(profile.manual_composition if profile else {}),
+        "updated_at": profile.updated_at.isoformat() if profile else None,
+    }
+
+
+def _barn_calculator_payload(request):
+    if not isinstance(request.data, dict):
+        raise CalculatorInputError("Данные расчёта должны быть объектом")
+    return request.data
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def barn_calculator_config(request):
+    profiles = {profile.barn_number: profile for profile in BarnCalculatorProfile.objects.all()}
+    return Response({
+        "profiles": [_barn_calculator_profile_data(number, profiles.get(number)) for number in range(1, 5)],
+        "defaults": DEFAULT_PARAMETERS, "empty_composition": empty_composition(),
+        "norms": [
+            {"key": key, "label": label, "base_area": area, "base_front": front, "section_limit": limit}
+            for key, label, area, front, limit in GROUPS
+        ],
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def barn_calculator_factual(request):
+    try:
+        return Response(build_factual_composition(request.query_params.get("barn_number")))
+    except CalculatorInputError as exc:
+        return Response({"error": str(exc)}, status=400)
+
+
+def _barn_calculator_result(data):
+    barn_number = normalize_barn_number(data.get("barn_number"), allow_arbitrary=True)
+    mode = data.get("composition_mode", "manual")
+    if not isinstance(mode, str) or mode not in {"manual", "factual"}:
+        raise CalculatorInputError("Выберите ручную или фактическую компоновку")
+    factual = None
+    if mode == "factual":
+        if barn_number is None:
+            raise CalculatorInputError("Фактическая компоновка доступна только для овчарен 1–4")
+        factual = build_factual_composition(barn_number)
+    parameters = normalize_parameters(data.get("parameters", {}))
+    composition = factual["composition"] if factual else data.get("composition", {})
+    result = calculate_barn(parameters, composition)
+    result.update({
+        "composition_mode": mode, "barn_number": barn_number,
+        "factual": factual, "as_of_date": timezone.localdate().isoformat(),
+        "complete": not factual or not factual["warnings"],
+        "parameters": parameters_to_json(parameters),
+    })
+    # Incomplete factual data must never be presented as a full compliance pass.
+    if not result["complete"] and result["passed"]:
+        result["passed"] = None
+    return result
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def barn_calculator_calculate(request):
+    try:
+        return Response(_barn_calculator_result(_barn_calculator_payload(request)))
+    except CalculatorInputError as exc:
+        return Response({"error": str(exc)}, status=400)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def barn_calculator_save(request):
+    try:
+        data = _barn_calculator_payload(request)
+        number = normalize_barn_number(data.get("barn_number"))
+        if "parameters" not in data or "manual_composition" not in data:
+            raise CalculatorInputError("Для сохранения передайте параметры и ручную компоновку")
+        parameters = parameters_to_json(normalize_parameters(data["parameters"]))
+        manual = normalize_composition(data["manual_composition"])
+    except CalculatorInputError as exc:
+        return Response({"error": str(exc)}, status=400)
+    with transaction.atomic():
+        profile, created = BarnCalculatorProfile.objects.select_for_update().get_or_create(barn_number=number)
+        old_parameters = parameters_to_json(normalize_parameters(profile.parameters))
+        old_manual = normalize_composition(profile.manual_composition)
+        changed_labels = [PARAMETER_LABELS[key] for key in parameters if parameters[key] != old_parameters[key]]
+        if manual != old_manual:
+            changed_labels.append("Ручная компоновка")
+        if created or changed_labels:
+            profile.parameters = parameters
+            profile.manual_composition = manual
+            profile.save(update_fields=["parameters", "manual_composition", "updated_at"])
+            from begunici.app_types.animals.models_user_log import UserActionLog
+            UserActionLog.objects.create(
+                user=request.user, action_type="Сохранение параметров овчарни",
+                object_type="Калькулятор овчарни", object_id=str(number),
+                description=f"Овчарня {number}: " + ("параметры сохранены впервые" if created else "изменены " + ", ".join(changed_labels)),
+                additional_data={"parameters": parameters, "manual_composition": manual},
+            )
+    return Response(_barn_calculator_profile_data(number, profile))
+
+
+def _barn_calculator_fill_sheet(xml, values, *, styles=None, row_heights=None, formulas=None):
+    from xml.etree import ElementTree as ET
+
+    styles, row_heights, formulas = styles or {}, row_heights or {}, formulas or {}
+    cells_by_row = {}
+    for address, value in values.items():
+        number = int(re.search(r"\d+$", address).group())
+        cells_by_row.setdefault(number, {})[address] = value
+
+    def column_number(address):
+        number = 0
+        for letter in re.match(r"[A-Z]+", address).group():
+            number = number * 26 + ord(letter) - ord("A") + 1
+        return number
+
+    def fill_cell(address, value, original=None):
+        cell = ET.fromstring(original) if original else ET.Element("c", r=address)
+        if address in styles:
+            cell.set("s", str(styles[address]))
+        for child in list(cell):
+            if child.tag in {"v", "is"}:
+                cell.remove(child)
+        formula = cell.find("f")
+        if address in formulas:
+            if formula is None:
+                formula = ET.SubElement(cell, "f")
+            formula.text = formulas[address]
+        if isinstance(value, str):
+            value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", value)
+            cell.set("t", "str" if formula is not None else "inlineStr")
+            if formula is not None:
+                ET.SubElement(cell, "v").text = value
+            else:
+                text = ET.SubElement(ET.SubElement(cell, "is"), "t")
+                text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                text.text = value
+        else:
+            cell.attrib.pop("t", None)
+            ET.SubElement(cell, "v").text = str(value)
+        return ET.tostring(cell, encoding="unicode")
+
+    def fill_rows(match):
+        rows = {}
+        for row in re.finditer(r'<row\b([^>]*)>(.*?)</row>', match[1], re.S):
+            attrs, body = row.groups()
+            number = int(re.search(r'\br="(\d+)"', attrs).group(1))
+            updates = cells_by_row.pop(number, {})
+            if updates:
+                cells = {}
+                for cell in re.finditer(r'<c\b[^>]*(?:/>|>.*?</c>)', body, re.S):
+                    address = re.search(r'\br="([A-Z]+\d+)"', cell[0]).group(1)
+                    cells[address] = fill_cell(address, updates.pop(address), cell[0]) if address in updates else cell[0]
+                cells.update({address: fill_cell(address, value) for address, value in updates.items()})
+                body = "".join(cells[address] for address in sorted(cells, key=column_number))
+            rows[number] = f"<row{attrs}>{body}</row>"
+        for number, updates in cells_by_row.items():
+            height = f' ht="{row_heights[number]}" customHeight="1"' if number in row_heights else ""
+            body = "".join(fill_cell(address, updates[address]) for address in sorted(updates, key=column_number))
+            rows[number] = f'<row r="{number}"{height}>{body}</row>'
+        return "<sheetData>" + "".join(rows[number] for number in sorted(rows)) + "</sheetData>"
+
+    # Patch only cells: reserializing the sheet would drop Excel extension namespaces,
+    # while saving with openpyxl would discard all cached formula results.
+    xml = re.sub(r"<sheetData>(.*?)</sheetData>", fill_rows, xml, count=1, flags=re.S)
+    last_row = max(int(re.search(r"\d+$", address).group()) for address in values)
+    xml = re.sub(
+        r'(<dimension ref="[A-Z]+\d+:[A-Z]+)(\d+)("/>)',
+        lambda match: match[1] + str(max(int(match[2]), last_row)) + match[3], xml, count=1,
+    )
+    return xml.encode("utf-8")
+
+
+def _barn_calculator_excel(result):
+    from decimal import Decimal
+    from io import BytesIO
+    from pathlib import Path
+    from zipfile import ZipFile
+
+    parameters, building = result["parameters"], result["building"]
+    left, right = result["sides"]["left"], result["sides"]["right"]
+    warnings = result["factual"]["warnings"] if result["factual"] else []
+    summary = {
+        "A2": f"Овчарня {result['barn_number']}" if result["barn_number"] else "Произвольная овчарня",
+        "B2": "Фактическая компоновка" if result["composition_mode"] == "factual" else "Ручная компоновка",
+        "D2": "Дата расчёта: " + date.fromisoformat(result["as_of_date"]).strftime("%d.%m.%Y"),
+        "B6": Decimal(parameters["area_limit"]), "B7": Decimal(parameters["length"]),
+        "B8": Decimal(parameters["central_width"]),
+        "B9": "Да" if parameters["include_wall_passages"] else "Нет",
+        "B10": Decimal(parameters["wall_passage_width"]), "B11": Decimal(parameters["housing_width"]),
+        "B12": Decimal(parameters["breeding_premium_percent"]) / 100,
+        "B13": 1, "B14": Decimal(parameters["door_width"]),
+        "B15": "Свободный доступ (2 головы на место)" if parameters["feeding_mode"] == "free_access" else "Нормированное кормление (1 голова на место)",
+        "G4": "2 — фиксированное число по сторонам", "G5": left["doors"], "G6": right["doors"],
+        "G7": left["sections_required"], "G8": right["sections_required"],
+        "G9": left["doors"], "G10": right["doors"],
+        "F11": "Учтено голов", "G11": result["total_heads"],
+        "F12": "Не включено в расчёт", "G12": len(warnings),
+        "B18": building["max_width"], "B19": building["width"], "B20": building["area"],
+        "B21": building["area_remaining"], "B22": building["central_passage_area"],
+        "B23": building["wall_passages_area"],
+        "B24": left["area_available"], "B25": left["area_required"], "B26": left["area_remaining"],
+        "B27": right["area_available"], "B28": right["area_required"], "B29": right["area_remaining"],
+        "B30": left["doors"], "B31": left["door_deduction"], "B32": left["feeding_available"],
+        "B33": left["feeding_required"], "B34": left["feeding_remaining"],
+        "B35": right["doors"], "B36": right["door_deduction"], "B37": right["feeding_available"],
+        "B38": right["feeding_required"], "B39": right["feeding_remaining"],
+        "B40": "ПРОХОДИТ" if result["passed"] else "НЕ ПРОХОДИТ",
+        "A62": "Пожарно-эвакуационная проверка в калькулятор не включена. Число дверей определяется по выбранному режиму: по числу секций или вручную для каждой стороны. Все дверные проемы вычитаются из кормовой линии, поскольку выходят в центральный кормовой проход.",
+    }
+    styles, row_heights, formulas = {}, {}, {}
+    if result["factual"]:
+        summary.update(F13="Всего голов в базе", G13=result["factual"]["total_heads"])
+    if warnings:
+        summary["B40"] = "ПРОВЕРКА НЕПОЛНАЯ" if result["passed"] is None else "НЕ ПРОХОДИТ"
+        formulas["B40"] = 'IF(AND(B21>=0,B26>=0,B29>=0,B34>=0,B39>=0),IF($G$12>0,"ПРОВЕРКА НЕПОЛНАЯ","ПРОХОДИТ"),"НЕ ПРОХОДИТ")'
+        summary["A65"] = "Животные, не включённые в расчёт"
+        styles["A65"] = 1
+        row_heights[65] = 30
+        for column, label in zip("ABCD", ("Бирка", "Тип животного", "Овчарня", "Причина")):
+            summary[f"{column}66"] = label
+            styles[f"{column}66"] = 1
+        names = {"sheep": "Овцематка", "ewe": "Ярка", "ram": "Баранчик", "maker": "Баран-производитель"}
+        for number, warning in enumerate(warnings, 67):
+            values = (warning["tag_number"], names.get(warning["animal_type"], warning["animal_type"]), warning["place"], warning["reason"])
+            row_heights[number] = 60
+            for column, value in zip("ABCD", values):
+                summary[f"{column}{number}"] = value
+                styles[f"{column}{number}"] = 4
+    composition, norms = {}, {}
+    for number, group in enumerate(result["rows"], 2):
+        lvalues, rvalues = group["left"], group["right"]
+        values = [lvalues["heads"], rvalues["heads"], lvalues["area"], rvalues["area"],
+                  lvalues["feeding"], rvalues["feeding"], lvalues["sections"], rvalues["sections"],
+                  lvalues["sections"], rvalues["sections"],
+                  f'{lvalues["sections"]} секц. слева / {rvalues["sections"]} справа; {lvalues["sections"]} дверей слева / {rvalues["sections"]} справа' if lvalues["heads"] + rvalues["heads"] else "",
+                  group["area_norm"], group["front_norm"], group["section_limit"]]
+        composition.update({f"{column}{number}": value for column, value in zip("BCDEFGHIJKLMNO", values)})
+        norms.update({f"C{number}": group["area_norm"], f"F{number}": group["front_norm"]})
+        if group["key"] in {"fattening_adults", "fattening_young"}:
+            norms[f"E{number}"] = 2 if parameters["feeding_mode"] == "free_access" else 1
+        summary_values = [group["label"], lvalues["heads"], rvalues["heads"], lvalues["heads"] + rvalues["heads"],
+                          lvalues["area"], rvalues["area"], lvalues["feeding"], rvalues["feeding"], "—"]
+        summary.update({f"{column}{number + 44}": value for column, value in zip("ABCDEFGHI", summary_values)})
+    composition.update({
+        f"{column}16": result["sides"][side][key]
+        for column, (side, key) in zip("BCDEFGHIJK", (
+            ("left", "heads"), ("right", "heads"), ("left", "area_required"), ("right", "area_required"),
+            ("left", "feeding_required"), ("right", "feeding_required"), ("left", "sections_required"), ("right", "sections_required"),
+            ("left", "sections_required"), ("right", "sections_required"),
+        ))
+    })
+    summary.update({
+        "B59": left["heads"], "C59": right["heads"], "D59": result["total_heads"],
+        "E59": left["area_required"], "F59": right["area_required"],
+        "G59": left["feeding_required"], "H59": right["feeding_required"],
+        "I59": f'{left["doors"]} / {right["doors"]}',
+    })
+    template = Path(__file__).with_name("excel_templates") / "barn_calculator.xlsx"
+    output = BytesIO()
+    with ZipFile(template) as source, ZipFile(output, "w") as target:
+        for part in source.infolist():
+            content = source.read(part.filename)
+            if part.filename == "xl/worksheets/sheet1.xml":
+                content = _barn_calculator_fill_sheet(content.decode("utf-8"), summary, styles=styles, row_heights=row_heights, formulas=formulas)
+            elif part.filename in {"xl/worksheets/sheet2.xml", "xl/worksheets/sheet3.xml"}:
+                values = composition if part.filename.endswith("sheet2.xml") else norms
+                content = _barn_calculator_fill_sheet(content.decode("utf-8"), values)
+            elif part.filename == "xl/workbook.xml":
+                content = re.sub(r"<calcPr\b[^>]*/>", '<calcPr calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>', content.decode("utf-8")).encode("utf-8")
+            target.writestr(part, content)
+    return output.getvalue()
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def barn_calculator_export(request):
+    try:
+        result = _barn_calculator_result(_barn_calculator_payload(request))
+    except CalculatorInputError as exc:
+        return Response({"error": str(exc)}, status=400)
+    response = HttpResponse(_barn_calculator_excel(result), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    barn = result["barn_number"] or "custom"
+    response["Content-Disposition"] = f'attachment; filename="calculator_{barn}.xlsx"'
+    return response

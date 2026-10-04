@@ -1,0 +1,432 @@
+/* Размеры и переносы для небольших экранов. Оформление настольной версии не меняется. */
+.day-name-short {
+    display: none;
+}
+
+@media (max-width: 991.98px) {
+    .internal-page main .row > [class*="col-"],
+    .internal-page main .card,
+    .internal-page main .card-header,
+    .internal-page main .card-body {
+        min-width: 0;
+    }
+
+    .internal-page main .d-flex {
+        flex-wrap: wrap;
+        min-width: 0;
+    }
+
+    .internal-page main .d-flex > .btn {
+        max-width: 100%;
+        white-space: normal;
+    }
+
+    .internal-page .pagination,
+    .internal-page .pagination-controls,
+    .internal-page .pagination-container {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .internal-page .internal-header-layout {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px;
+        padding-top: 12px !important;
+        padding-bottom: 12px !important;
+    }
+
+    .internal-page .internal-header-nav {
+        flex-wrap: wrap;
+        gap: 8px !important;
+        align-items: center !important;
+    }
+
+    .internal-page .internal-header-nav > a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
+
+    .internal-page .internal-header-divider {
+        display: none;
+    }
+
+    .internal-page .internal-header-user {
+        flex: 1 0 100%;
+        order: -1;
+        overflow-wrap: anywhere;
+    }
+
+    .public-page .public-header-layout {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+    }
+
+    .public-page .public-header nav {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px !important;
+        width: 100%;
+    }
+
+    .public-page .public-header nav a {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        font-size: 14px;
+    }
+
+    .public-page .brand-mark {
+        align-self: flex-start;
+    }
+
+    .public-page .hero-content {
+        padding: 24px 20px 132px;
+    }
+
+    .public-page .hero-logo {
+        right: 20px;
+        bottom: 16px;
+    }
+
+    .public-page .hero-logo img {
+        height: 96px;
+    }
+
+    .internal-page .btn.btn,
+    .public-page .btn,
+    .login-page .btn,
+    .internal-page .toggle-btn {
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 16px;
+        line-height: 1.4;
+        white-space: normal;
+    }
+
+    .internal-page .btn-close {
+        flex-shrink: 0;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+    }
+
+    .internal-page .form-control,
+    .internal-page .form-select,
+    .internal-page .form-group input:not([type="checkbox"]):not([type="radio"]),
+    .internal-page .form-group select,
+    .internal-page .form-group textarea,
+    .login-page .form-control {
+        min-width: 0;
+        max-width: 100%;
+        min-height: 44px;
+        font-size: 16px !important;
+    }
+
+    .internal-page input[type="checkbox"],
+    .internal-page input[type="radio"] {
+        flex-shrink: 0;
+        width: 24px !important;
+        height: 24px !important;
+        vertical-align: middle;
+    }
+
+    .internal-page .form-check {
+        min-height: 44px;
+    }
+
+    .internal-page .form-check-label {
+        padding-top: 5px;
+        padding-bottom: 5px;
+    }
+
+    .internal-page .input-group > input.form-control[type="text"],
+    .internal-page .input-group > input.form-control:not([type]) {
+        flex-basis: 100%;
+        width: 100%;
+        margin-bottom: 8px;
+        border-radius: 4px !important;
+    }
+
+    .internal-page .input-group > .btn {
+        flex: 1 1 auto;
+        margin-left: 0 !important;
+    }
+
+    /* Те же блоки формы и списка; меняется только порядок на телефоне. */
+    .internal-page .mobile-list-column {
+        order: -1 !important;
+        margin-bottom: 16px;
+    }
+
+    .internal-page .mobile-form-column {
+        order: 1 !important;
+    }
+
+    .internal-page .table-responsive {
+        max-width: 100%;
+        overscroll-behavior-x: contain;
+    }
+
+    .internal-page .table-responsive > .table {
+        margin-top: 0;
+    }
+
+    .internal-page .table-responsive > .mobile-animal-table td {
+        height: 44px;
+    }
+
+    .internal-page .table-responsive:has(> .mobile-animal-table)::before {
+        content: "Прокрутите таблицу в сторону, чтобы увидеть все столбцы →";
+        display: block;
+        margin-bottom: 8px;
+        color: #6c757d;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .internal-page .mobile-animal-table:not(.mobile-animal-table-common) th:nth-child(3),
+    .internal-page .mobile-animal-table:not(.mobile-animal-table-common) td:nth-child(3),
+    .internal-page .mobile-animal-table-common th:nth-child(4),
+    .internal-page .mobile-animal-table-common td:nth-child(4) {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background-color: var(--animal-purpose-bg, #fff);
+    }
+
+    .internal-page .mobile-animal-table:not(.mobile-animal-table-common) thead th:nth-child(3),
+    .internal-page .mobile-animal-table-common thead th:nth-child(4) {
+        z-index: 2;
+        background-color: #f8f9fa;
+    }
+
+    /* У пагинации нет пустых фиксированных отступов на телефоне. */
+    .internal-page #pagination,
+    .internal-page #pagination > div {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 8px !important;
+    }
+
+    .internal-page #pagination > div > div:empty {
+        display: none;
+    }
+
+    .internal-page #pagination > div > span {
+        flex: 1 0 100%;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+        text-align: center;
+    }
+
+    .internal-page #pagination > div > button {
+        max-width: 100%;
+    }
+
+    .internal-page .pagination-container {
+        gap: 8px;
+    }
+
+    .internal-page .pagination-container > span {
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .internal-page .pagination .page-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .internal-page .pagination-controls button,
+    .internal-page .pagination-container .page-number {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 16px;
+    }
+
+    .internal-page .calendar-legend,
+    .internal-page .calendar-legend > .d-flex {
+        flex-wrap: wrap;
+        justify-content: flex-start !important;
+        gap: 8px 12px;
+    }
+
+    .internal-page .calendar-legend .legend-item {
+        margin-right: 0 !important;
+    }
+
+    .internal-page .legend-color,
+    .internal-page .legend-marker {
+        flex-shrink: 0;
+    }
+
+    .internal-page .calendar-table td {
+        height: 48px;
+        font-size: 14px;
+    }
+
+    .internal-page .day-name-full {
+        display: none;
+    }
+
+    .internal-page .day-name-short {
+        display: inline;
+    }
+
+    .internal-page .week-calendar-table th,
+    .internal-page .week-calendar-table td,
+    .internal-page .month-calendar-table th,
+    .internal-page .month-calendar-table td {
+        padding: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .internal-page .calendar-navigation,
+    .internal-page .navigation {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .internal-page #currentPeriod,
+    .internal-page #currentMonth {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        margin: 0 !important;
+        font-size: 16px;
+    }
+
+    .internal-page #prevPeriod,
+    .internal-page #prevMonth,
+    .internal-page #nextPeriod,
+    .internal-page #nextMonth {
+        grid-row: 2;
+    }
+
+    .internal-page .lambing-info {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Отсеки сохраняют своё оформление и идут по одному в строке. */
+    .internal-page .barn-table,
+    .internal-page .barn-table tbody,
+    .internal-page .barn-table tr,
+    .internal-page .barn-table .section-cell {
+        display: block;
+        width: 100%;
+    }
+
+    .internal-page .barn-table {
+        border-spacing: 0;
+    }
+
+    .internal-page .barn-table .section-cell {
+        min-height: 0;
+        margin-bottom: 12px;
+    }
+
+    .internal-page .barn-table .empty-placeholder {
+        display: none;
+    }
+
+    .internal-page .section-content-grid {
+        flex-direction: column;
+    }
+
+    .internal-page .section-composition-block,
+    .internal-page .section-month-stats {
+        flex: 1 1 auto;
+        width: 100%;
+        min-height: 0;
+    }
+
+    .internal-page .section-month-line,
+    .internal-page .section-month-title,
+    .internal-page .section-composition-title,
+    .internal-page .animal-count {
+        font-size: 14px;
+    }
+
+    .internal-page .section-month-period {
+        font-size: 12px;
+    }
+
+    .internal-page .animal-count {
+        padding: 8px;
+    }
+
+    .internal-page .modal-dialog {
+        width: calc(100% - 24px) !important;
+        max-width: calc(100% - 24px);
+        margin: 12px auto !important;
+    }
+
+    .internal-page .modal-dialog .modal-content {
+        width: 100% !important;
+        max-width: none;
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        margin: 0;
+        padding: 12px;
+        overflow: hidden;
+    }
+
+    .internal-page .modal-dialog .modal-header,
+    .internal-page .modal-dialog .modal-footer {
+        flex-shrink: 0;
+        padding: 12px;
+    }
+
+    .internal-page .modal-dialog .modal-body {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        padding: 12px;
+    }
+
+    .internal-page .modal > .modal-content {
+        width: calc(100% - 24px) !important;
+        max-width: none;
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        margin: 12px auto;
+        padding: 16px;
+    }
+
+    .internal-page .modal-actions,
+    .internal-page .modal-buttons {
+        flex-wrap: wrap;
+    }
+
+    .internal-page .modal .close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .login-page .login-card {
+        padding: 24px;
+    }
+}
+
+@media (max-width: 359.98px) {
+    .public-page .public-header nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

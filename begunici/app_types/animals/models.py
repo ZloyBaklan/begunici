@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
+from .age_utils import calculate_age_months, format_age, get_age_delta
 from begunici.app_types.veterinary.vet_models import (
     Tag,
     Status,
@@ -21,6 +22,16 @@ ARCHIVE_STATUS_NAMES = {
     "Продажа на племя",
     "Убой на мясо",
 }
+
+ARCHIVE_DEATH_REASONS = (
+    "Болезнь нервной системы",
+    "Болезнь сердечно-сосудистой системы",
+    "Болезнь пищеварительного тракта",
+    "Болезнь опорно-двигательного аппарата",
+    "Травма",
+    "Несчастный случай",
+    "Кража",
+)
 
 STATUS_INSEMINATED = "Осемененная"
 STATUS_LAMBED = "Объягненная"
@@ -66,13 +77,6 @@ class AnimalBase(models.Model):
         Status, on_delete=models.SET_NULL, null=True, verbose_name="Статус", db_index=True
     )
     birth_date = models.DateField(verbose_name="Дата рождения", null=True, blank=True, db_index=True)
-    age = models.DecimalField(
-        verbose_name="Возраст (в месяцах)",
-        max_digits=5,
-        decimal_places=1,
-        null=True,
-        blank=True,
-    )
     note = models.CharField(
         max_length=300, verbose_name="Примечание", null=True, blank=True
     )
@@ -107,6 +111,12 @@ class AnimalBase(models.Model):
     is_reject = models.BooleanField(
         default=False,
         verbose_name="Брак",
+        help_text="Отдельная отметка назначения животного, не статус.",
+        db_index=True,
+    )
+    is_for_sale = models.BooleanField(
+        default=False,
+        verbose_name="К продаже",
         help_text="Отдельная отметка назначения животного, не статус.",
         db_index=True,
     )
@@ -177,62 +187,22 @@ class AnimalBase(models.Model):
     def note_history(self):
         return self.tag.note_history.all()
 
-    # Расчет возраста
-    def calculate_age(self):
-        if self.birth_date:
-            try:
-                current_date = timezone.now().date()
-                
-                # Убеждаемся, что birth_date - это объект date
-                if isinstance(self.birth_date, str):
-                    from datetime import datetime
-                    birth_date = datetime.strptime(self.birth_date, '%Y-%m-%d').date()
-                else:
-                    birth_date = self.birth_date
-                
-                delta = relativedelta(current_date, birth_date)
-                calculated_age = round(delta.years * 12 + delta.months + delta.days / 30, 1)
-                self.age = calculated_age
-            except (ValueError, TypeError) as e:
-                # Если не удается вычислить возраст, устанавливаем None
-                self.age = None
+    def get_age_months(self, reference_date=None):
+        return calculate_age_months(self.birth_date, reference_date)
 
-    def get_age_display(self):
+    def get_assignment_display(self, empty="-"):
+        labels = []
+        if self.is_reject:
+            labels.append("Брак")
+        if self.is_for_sale:
+            labels.append("К продаже")
+        return ", ".join(labels) if labels else empty
+
+    def get_age_display(self, reference_date=None):
         """
         Возвращает возраст в формате 'X мес. (Y сут)'
         """
-        if not self.birth_date:
-            return None
-            
-        try:
-            current_date = timezone.now().date()
-            
-            # Убеждаемся, что birth_date - это объект date
-            if isinstance(self.birth_date, str):
-                from datetime import datetime
-                birth_date = datetime.strptime(self.birth_date, '%Y-%m-%d').date()
-            else:
-                birth_date = self.birth_date
-            
-            delta = relativedelta(current_date, birth_date)
-            
-            # Рассчитываем полные месяцы
-            total_months = delta.years * 12 + delta.months
-            
-            # Рассчитываем дни (округляем до целых)
-            days = round(delta.days)
-            
-            if total_months == 0 and days == 0:
-                return "0 мес."
-            elif total_months == 0:
-                return f"{days} сут."
-            elif days == 0:
-                return f"{total_months} мес."
-            else:
-                return f"{total_months} мес. ({days} сут.)"
-                
-        except (ValueError, TypeError):
-            return None
+        return format_age(self.birth_date, reference_date)
 
     def get_animal_type(self):
         """
@@ -412,9 +382,6 @@ class AnimalBase(models.Model):
             self.is_archived = True
         else:
             self.is_archived = False
-        
-        # 🔹 Вычисляем возраст независимо от статуса архивирования
-        self.calculate_age()
         
         # 🔹 Автоматический расчет дорперности (если не задана вручную)
         if not self.is_manual_dorper:
@@ -726,7 +693,7 @@ class Maker(AnimalBase):
         """
         self.working_condition = new_condition
         self.working_condition_date = (
-            timezone.now().date()
+            timezone.localdate()
         )  # Устанавливаем текущую дату
         self.save()
 
@@ -744,7 +711,7 @@ class Maker(AnimalBase):
             children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
 
         # Sort children by birth date, for example
-        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        children.sort(key=lambda x: x.birth_date or timezone.localdate(), reverse=True)
         return children
 
 
@@ -1276,7 +1243,7 @@ class Ram(AnimalBase):
             children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
 
         # Сортируем детей по дате рождения
-        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        children.sort(key=lambda x: x.birth_date or timezone.localdate(), reverse=True)
         return children
 
     def is_older_than_two_years(self):
@@ -1284,14 +1251,8 @@ class Ram(AnimalBase):
         Проверка, что барану 1 год и больше.
         """
         if self.birth_date:
-            delta = relativedelta(timezone.now().date(), self.birth_date)
-            return delta.years >= 1
-
-        if self.age is not None:
-            try:
-                return float(self.age) >= 12
-            except (TypeError, ValueError):
-                return False
+            delta = get_age_delta(self.birth_date)
+            return delta is not None and delta.years >= 1
 
         return False
 
@@ -1314,13 +1275,13 @@ class Ram(AnimalBase):
                 tag=self.tag,
                 animal_status=self.animal_status,
                 birth_date=self.birth_date,
-                age=self.age,
                 note=self.note,
                 rshn_tag=self.rshn_tag,
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 is_reject=self.is_reject,
+                is_for_sale=self.is_for_sale,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
@@ -1372,7 +1333,7 @@ class Ewe(AnimalBase):
             children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
 
         # Сортируем детей по дате рождения
-        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        children.sort(key=lambda x: x.birth_date or timezone.localdate(), reverse=True)
         return children
 
     # Метод для преобразования Ярки в Овцу после случки
@@ -1383,13 +1344,13 @@ class Ewe(AnimalBase):
                 tag=self.tag,
                 animal_status=self.animal_status,
                 birth_date=self.birth_date,
-                age=self.age,
                 note=self.note,
                 rshn_tag=self.rshn_tag,
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 is_reject=self.is_reject,
+                is_for_sale=self.is_for_sale,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
@@ -1449,7 +1410,7 @@ class Sheep(AnimalBase):
             children.extend(list(model.objects.filter(Q(father=self.tag) | Q(mother=self.tag))))
 
         # Сортируем детей по дате рождения
-        children.sort(key=lambda x: x.birth_date or timezone.now().date(), reverse=True)
+        children.sort(key=lambda x: x.birth_date or timezone.localdate(), reverse=True)
         return children
 
     # Метод для добавления нового окота
@@ -1491,7 +1452,7 @@ class Sheep(AnimalBase):
         Если уже есть окот, то новая дата.
         """
         if not self.planned_lambing_date or self.is_new_lambing():
-            self.planned_lambing_date = timezone.now().date() + timedelta(days=150)
+            self.planned_lambing_date = timezone.localdate() + timedelta(days=150)
         self.save()
 
     def is_new_lambing(self):

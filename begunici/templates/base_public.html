@@ -19,11 +19,12 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
   {% block extra_head %}{% endblock %}
+  <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=1">
 </head>
 
 <body class="public-page">
 <header class="public-header">
-  <div class="container py-3 d-flex align-items-center justify-content-between">
+  <div class="public-header-layout container py-3 d-flex align-items-center justify-content-between">
     <a class="d-flex align-items-center gap-2 brand-mark" href="{% url 'public_site:home' %}">
       <img src="{% static 'img/logo.png' %}" alt="Ферма Бегуницы">
       <span class="brand-name">Ферма Бегуницы</span>

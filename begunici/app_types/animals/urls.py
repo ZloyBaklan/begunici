@@ -1,6 +1,7 @@
 from django.urls import path, include
 from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
+from .genealogy_export import genealogy_animals_api, genealogy_export_excel
 from .views import (
     MakerViewSet,
     MakersView,
@@ -335,6 +336,8 @@ urlpatterns = [
     path("api/tags/retagging/unmark/", retagging_unmark_api, name="retagging-unmark-api"),
     path("api/tags/retagging/change/", retagging_change_tag_api, name="retagging-change-tag-api"),
     path("api/acts/archive/", archive_acts_api, name="archive-acts-api"),
+    path("api/acts/genealogy/animals/", genealogy_animals_api, name="genealogy-animals-api"),
+    path("api/acts/genealogy/export/", genealogy_export_excel, name="genealogy-export-excel"),
     path("api/archive/act/<str:animal_type>/<str:tag_number>/", archive_act_download, name="archive-act-download"),
     path("api/acts/transfer/", transfer_acts_api, name="transfer-acts-api"),
     path("api/acts/transfer/<int:act_number>/", transfer_act_download, name="transfer-act-download"),

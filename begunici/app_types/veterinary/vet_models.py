@@ -1,4 +1,5 @@
 from django.db import models, transaction
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils import timezone
 
 """Статус через админку и вебку имеет дату создания, но в случае выставления статуса в поле(его обновления), нужно чтобы дата обновлялась на текущую"""
@@ -7,7 +8,7 @@ from django.utils import timezone
 
 def get_current_date():
     """Возвращает текущую дату для DateField"""
-    return timezone.now().date()
+    return timezone.localdate()
 
 
 class Tag(models.Model):
@@ -107,6 +108,30 @@ class Place(models.Model):
 
     def __str__(self):
         return self.sheepfold
+
+
+class BarnCalculatorProfile(models.Model):
+    barn_number = models.PositiveSmallIntegerField(
+        unique=True, validators=[MinValueValidator(1), MaxValueValidator(4)],
+        verbose_name="Номер овчарни",
+    )
+    parameters = models.JSONField(default=dict, verbose_name="Параметры калькулятора")
+    manual_composition = models.JSONField(default=dict, verbose_name="Ручная компоновка")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата изменения")
+
+    class Meta:
+        ordering = ["barn_number"]
+        verbose_name = "Параметры калькулятора овчарни"
+        verbose_name_plural = "Параметры калькулятора овчарен"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(barn_number__gte=1, barn_number__lte=4),
+                name="barn_calculator_number_1_to_4",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Овчарня {self.barn_number}"
 
 
 class PlaceMovement(models.Model):

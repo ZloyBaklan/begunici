@@ -86,7 +86,8 @@ function getMakerFiltersFromInputs() {
         father_tag: document.getElementById('maker-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('maker-mother-tag-filter')?.value || '',
         has_rshn_tag: getCheckboxFilterValue('maker-has-rshn-tag-filter'),
-        is_reject: getCheckboxFilterValue('maker-is-reject-filter')
+        is_reject: getCheckboxFilterValue('maker-is-reject-filter'),
+        is_for_sale: getCheckboxFilterValue('maker-is-for-sale-filter')
     };
 }
 
@@ -107,7 +108,8 @@ function initializeMakerFiltersFromUrl() {
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || '',
         has_rshn_tag: urlParams.get('has_rshn_tag') || '',
-        is_reject: urlParams.get('is_reject') || ''
+        is_reject: urlParams.get('is_reject') || '',
+        is_for_sale: urlParams.get('is_for_sale') || ''
     };
 
     const searchInput = document.getElementById('maker-search');
@@ -134,8 +136,9 @@ function initializeMakerFiltersFromUrl() {
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
     setCheckboxFilterValue('maker-has-rshn-tag-filter', filters.has_rshn_tag);
     setCheckboxFilterValue('maker-is-reject-filter', filters.is_reject);
+    setCheckboxFilterValue('maker-is-for-sale-filter', filters.is_for_sale);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject || filters.is_for_sale) {
         const filtersBlock = document.getElementById('maker-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -243,6 +246,7 @@ async function saveMaker() {
         dorper_percentage: document.getElementById('dorper_percentage').value || null,
         is_manual_dorper: document.getElementById('dorper_percentage').value ? true : false,
         is_reject: Boolean(document.getElementById('is_reject')?.checked),
+        is_for_sale: Boolean(document.getElementById('is_for_sale')?.checked),
         note: document.getElementById('note').value,
         place_id: parseInt(document.getElementById('place').value), // Передаём ID места,
     };
@@ -281,7 +285,7 @@ async function fetchMakers(page = 1, filters = {}) {
         
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject', 'is_for_sale'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -348,6 +352,9 @@ async function fetchMakers(page = 1, filters = {}) {
         if (currentFilters.is_reject) {
             params.append('is_reject', currentFilters.is_reject);
         }
+        if (currentFilters.is_for_sale) {
+            params.append('is_for_sale', currentFilters.is_for_sale);
+        }
         
         currentPage = page;
         const response = await apiRequest(`/animals/maker/?${params.toString()}`);
@@ -385,7 +392,7 @@ function renderMakers(makers, startIndex = null) {
         // Если startIndex не передан, используем стандартную пагинацию
         const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
         
-        const row = `<tr class="${maker.is_reject ? 'table-warning' : ''}">
+        const row = `<tr class="${getAnimalPurposeRowClass(maker)}">
             <td>
                 <input type="checkbox" 
                 class="select-maker"  
@@ -400,7 +407,7 @@ function renderMakers(makers, startIndex = null) {
             <td>${maker.age || 'Нет данных'}</td>
             <td>${maker.place ? maker.place.sheepfold : 'Нет данных'}</td>
             <td>${maker.dorper_display || '-'}</td>
-            <td>${maker.is_reject ? 'Брак' : '-'}</td>
+            <td>${getAnimalPurposeText(maker)}</td>
             <td>${maker.primary_weighing_display || '-'}</td>
             <td>${maker.secondary_weighing_display || '-'}</td>
             <td>${maker.weight_records && maker.weight_records.length > 0 

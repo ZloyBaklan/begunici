@@ -20,6 +20,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
         "/backup/check-auto/",
         "/api/archive/act-preview/",
         "/api/check-kinship/",
+        "/veterinary/api/barn-calculator/calculate/",
         "/api/health/",
         "/scanner/read/api/",
         "/favicon.ico",
@@ -220,6 +221,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
     def _is_successfully_logged_elsewhere(self, request):
         method = request.method.upper()
         path = request.path
+
+        if method == "POST" and path.rstrip("/") == "/veterinary/api/barn-calculator/save":
+            return True
 
         if method == "POST" and "/animals/lambing-group/" in path:
             if path.rstrip("/") == "/animals/lambing-group":

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Акты{% endblock %}
 
@@ -62,6 +63,43 @@
                         Отчет о движении скота и птицы на ферме (СП-51)
                     </button>
                 </div>
+                <div class="col-md-6 col-lg-3">
+                    <button type="button" class="btn btn-outline-primary w-100 py-3"
+                            data-bs-toggle="modal" data-bs-target="#genealogyModal">
+                        Таблица генеалогии
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="genealogyModal" tabindex="-1" aria-labelledby="genealogyModalLabel" aria-hidden="true"
+     data-search-url="{% url 'animals:genealogy-animals-api' %}" data-export-url="{% url 'animals:genealogy-export-excel' %}">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="genealogyModalLabel">Выбор животных</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <form id="genealogy-search-form" class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="genealogy-search" aria-label="Поиск животных"
+                               placeholder="Введите бирку или РСХН для поиска..." maxlength="2000">
+                        <button type="submit" class="btn btn-primary">Поиск</button>
+                    </div>
+                </form>
+                <div id="genealogy-error" class="alert alert-danger" role="alert" hidden></div>
+                <div id="genealogy-list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-muted text-center py-3">
+                        Введите бирку или РСХН и нажмите "Поиск" для отображения результатов
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="genealogy-download" disabled>Скачать</button>
             </div>
         </div>
     </div>
@@ -167,6 +205,7 @@
     </div>
 </div>
 
+<script src="{% static 'js/genealogy_export.js' %}?v=2"></script>
 <script>
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("monthly-breeding-act-form");

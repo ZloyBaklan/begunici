@@ -230,6 +230,7 @@ function renderWeekCalendar(weekDays, notes) {
     body.innerHTML = '';
     
     const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+    const shortDayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     
     // Создаем заголовки и ячейки для каждого дня
     for (let index = 0; index < weekDays.length; index++) {
@@ -239,8 +240,10 @@ function renderWeekCalendar(weekDays, notes) {
         
         // Заголовок
         const th = document.createElement('th');
+        th.scope = 'col';
+        th.setAttribute('aria-label', dayName);
         th.innerHTML = `
-            <div class="day-name">${dayName}</div>
+            <div class="day-name"><span class="day-name-full">${dayName}</span><span class="day-name-short" aria-hidden="true">${shortDayNames[index]}</span></div>
             <div class="day-number">${date.getDate()}</div>
         `;
         header.appendChild(th);

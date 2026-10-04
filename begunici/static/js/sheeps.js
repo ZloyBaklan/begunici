@@ -87,7 +87,8 @@ function getSheepFiltersFromInputs() {
         father_tag: document.getElementById('sheep-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('sheep-mother-tag-filter')?.value || '',
         has_rshn_tag: getCheckboxFilterValue('sheep-has-rshn-tag-filter'),
-        is_reject: getCheckboxFilterValue('sheep-is-reject-filter')
+        is_reject: getCheckboxFilterValue('sheep-is-reject-filter'),
+        is_for_sale: getCheckboxFilterValue('sheep-is-for-sale-filter')
     };
 }
 
@@ -108,7 +109,8 @@ function initializeSheepFiltersFromUrl() {
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || '',
         has_rshn_tag: urlParams.get('has_rshn_tag') || '',
-        is_reject: urlParams.get('is_reject') || ''
+        is_reject: urlParams.get('is_reject') || '',
+        is_for_sale: urlParams.get('is_for_sale') || ''
     };
 
     const searchInput = document.getElementById('sheep-search');
@@ -135,8 +137,9 @@ function initializeSheepFiltersFromUrl() {
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
     setCheckboxFilterValue('sheep-has-rshn-tag-filter', filters.has_rshn_tag);
     setCheckboxFilterValue('sheep-is-reject-filter', filters.is_reject);
+    setCheckboxFilterValue('sheep-is-for-sale-filter', filters.is_for_sale);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject || filters.is_for_sale) {
         const filtersBlock = document.getElementById('sheep-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -180,6 +183,7 @@ async function saveSheep() {
         dorper_percentage: formData.get('dorper_percentage') || null,
         is_manual_dorper: formData.get('dorper_percentage') ? true : false,
         is_reject: formData.get('is_reject') === 'on',
+        is_for_sale: formData.get('is_for_sale') === 'on',
         note: formData.get('note') || ''
     };
 
@@ -217,7 +221,7 @@ async function fetchSheeps(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject', 'is_for_sale'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -278,6 +282,9 @@ async function fetchSheeps(page = 1, filters = {}) {
         if (currentFilters.is_reject) {
             params.set('is_reject', currentFilters.is_reject);
         }
+        if (currentFilters.is_for_sale) {
+            params.set('is_for_sale', currentFilters.is_for_sale);
+        }
         
         if (params.toString()) {
             apiUrl += '?' + params.toString();
@@ -318,7 +325,7 @@ function renderSheeps(sheeps, startIndex = null) {
         // Если startIndex не передан, используем стандартную пагинацию
         const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
         
-        const row = `<tr class="${sheep.is_reject ? 'table-warning' : ''}">
+        const row = `<tr class="${getAnimalPurposeRowClass(sheep)}">
             <td>
                 <input type="checkbox" 
                 class="select-sheep"  
@@ -331,7 +338,7 @@ function renderSheeps(sheeps, startIndex = null) {
             <td style="background-color:${sheep.animal_status ? sheep.animal_status.color : '#FFFFFF'}">
                 ${sheep.animal_status ? sheep.animal_status.status_type : 'Не указан'}
             </td>
-            <td>${sheep.is_reject ? 'Брак' : '-'}</td>
+            <td>${getAnimalPurposeText(sheep)}</td>
             <td>${sheep.primary_weighing_display || '-'}</td>
             <td>${sheep.secondary_weighing_display || '-'}</td>
             <td>${sheep.final_weighing_display || '-'}</td>

@@ -1518,9 +1518,236 @@ div[id="pagination"] .btn-outline-primary:hover,
     border-color: #007bff !important;
 }
 
+.table.mobile-animal-table {
+    --animal-for-sale-bg: #d9d9d9;
+    --animal-reject-bg: #fff3cd;
+}
+
+.table.mobile-animal-table > tbody > tr.table-warning {
+    --animal-purpose-bg: var(--animal-reject-bg);
+}
+
+.table.mobile-animal-table > tbody > tr.animal-for-sale,
+.table.mobile-animal-table > tbody > tr.animal-reject-for-sale {
+    --animal-purpose-bg: var(--animal-for-sale-bg);
+}
+
+/* Keep purpose colors independent of Bootstrap striping and hover overlays. */
+.table.mobile-animal-table > tbody > tr.table-warning > *,
+.table.mobile-animal-table > tbody > tr.animal-for-sale > *,
+.table.mobile-animal-table > tbody > tr.animal-reject-for-sale > * {
+    --bs-table-accent-bg: transparent;
+    background-color: var(--animal-purpose-bg);
+    box-shadow: none;
+}
+
+.table.mobile-animal-table > tbody > tr.animal-reject-for-sale > * {
+    background-image: repeating-linear-gradient(
+        135deg,
+        var(--animal-reject-bg) 0,
+        var(--animal-reject-bg) 12px,
+        var(--animal-for-sale-bg) 12px,
+        var(--animal-for-sale-bg) 24px
+    );
+}
+
+.table.mobile-animal-table > tbody > tr > [style*="background-color"] {
+    --bs-table-accent-bg: transparent;
+    background-image: none;
+    box-shadow: none;
+}
+
 /* Переопределяем Bootstrap стили для outline кнопок */
 .btn-outline-primary:not(:disabled):not(.disabled):hover {
     color: white !important;
     background-color: #007bff !important;
     border-color: #007bff !important;
+}
+
+
+/* Barn calculator. */
+.barn-calculator {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.barn-calculator [hidden] {
+    display: none !important;
+}
+
+.calculator-heading,
+.calculator-card-heading,
+.calculator-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.calculator-heading {
+    margin-bottom: 20px;
+}
+
+.calculator-heading h1 {
+    margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.calculator-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 24px;
+}
+
+.calculator-selection {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 800px;
+}
+
+.calculator-fields .form-label {
+    display: block;
+}
+
+.calculator-checkbox-field {
+    display: flex;
+    align-items: center;
+    padding-top: 26px;
+}
+
+.calculator-feeding-field {
+    grid-column: span 2;
+}
+
+.calculator-actions {
+    justify-content: flex-start;
+    margin-top: 16px;
+}
+
+.barn-calculator table {
+    margin-top: 0;
+}
+
+.barn-calculator .table th {
+    background-color: #f8f9fa;
+    vertical-align: middle;
+    font-weight: 500;
+}
+
+.calculator-composition-table {
+    min-width: 1050px;
+}
+
+.calculator-composition-table th:first-child,
+.calculator-composition-table td:first-child {
+    min-width: 270px;
+    max-width: 340px;
+}
+
+.calculator-composition-table input {
+    min-width: 85px;
+}
+
+.calculator-composition-table td:not(:first-child),
+.calculator-composition-table th:not(:first-child),
+.calculator-checks-table td:not(:first-child) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.calculator-composition-table tfoot {
+    background-color: #f8f9fa;
+    font-weight: 500;
+}
+
+.calculator-checks-table .calculator-check-good {
+    background-color: #e8f3eb;
+}
+
+.calculator-checks-table .calculator-check-bad {
+    background-color: #fbe7e7;
+    color: #842029;
+}
+
+.calculator-verdict-good {
+    color: #198754;
+}
+
+.calculator-verdict-bad {
+    color: #b02a37;
+}
+
+.calculator-verdict-warning {
+    color: #856404;
+}
+
+.calculator-result-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+    margin-top: 20px;
+}
+
+.calculator-result-grid h2 {
+    font-size: 1.15rem;
+    margin-bottom: 16px;
+}
+
+.calculator-result-grid dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 16px;
+}
+
+.calculator-result-grid dt {
+    font-weight: 400;
+}
+
+.calculator-result-grid dd {
+    text-align: right;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.calculator-norms summary {
+    cursor: pointer;
+}
+
+#calculator-warnings .table {
+    margin-bottom: 0;
+}
+
+@media (max-width: 1000px) {
+    .calculator-fields,
+    .calculator-result-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .barn-calculator {
+        padding: 16px 12px;
+    }
+
+    .calculator-fields,
+    .calculator-selection,
+    .calculator-result-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .calculator-feeding-field {
+        grid-column: auto;
+    }
+
+    .calculator-checkbox-field {
+        padding-top: 0;
+    }
+
+    .calculator-actions .btn {
+        flex: 1 1 100%;
+    }
 }

@@ -473,6 +473,11 @@ async function loadAnimalDetails(animalType, tagNumber) {
             rejectField.checked = Boolean(animal.is_reject);
         }
 
+        const forSaleField = document.getElementById('is_for_sale');
+        if (forSaleField) {
+            forSaleField.checked = Boolean(animal.is_for_sale);
+        }
+
         const retaggingField = document.getElementById('needs_retagging');
         if (retaggingField) {
             retaggingField.checked = Boolean(animal.needs_retagging);
@@ -482,7 +487,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
         const rejectWarningDisplay = document.getElementById('reject-warning-display');
         const warningText = animal.unsuccessful_insemination_warning || '';
         if (rejectDisplay) {
-            const rejectText = animal.is_reject ? 'Брак' : '-';
+            const rejectText = getAnimalPurposeText(animal);
             rejectDisplay.textContent = warningText ? `${rejectText} (${warningText})` : rejectText;
         }
         if (rejectWarningDisplay) {
@@ -729,6 +734,7 @@ async function saveAnimalDetails() {
         rshn_tag: document.getElementById('rshn_tag').value || null,
         date_otbivka: document.getElementById('date_otbivka').value || null,
         is_reject: Boolean(document.getElementById('is_reject')?.checked),
+        is_for_sale: Boolean(document.getElementById('is_for_sale')?.checked),
         needs_retagging: Boolean(document.getElementById('needs_retagging')?.checked),
     };
 

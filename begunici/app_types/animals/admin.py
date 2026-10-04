@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import Maker, Ram, Ewe, Sheep, Lambing, SheepBodyConditionRecord
 
+
 admin.site.register(Maker)
 admin.site.register(Ram)
 admin.site.register(Lambing)

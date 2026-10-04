@@ -5,7 +5,9 @@ from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
+from .age_utils import as_local_date, format_age
 from .models import (
+    ARCHIVE_DEATH_REASONS,
     ARCHIVE_STATUS_NAMES,
     Maker,
     Ram,
@@ -359,7 +361,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_diagnosis = serializers.CharField(write_only=True, required=False, allow_blank=True)
     archive_act_worker_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=255)
     archive_act_weight_date = serializers.DateField(write_only=True, required=False, allow_null=True)
-    archive_act_death_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=50)
+    archive_act_death_reason = serializers.ChoiceField(
+        choices=ARCHIVE_DEATH_REASONS,
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        error_messages={"invalid_choice": "Выберите причину падежа из списка."},
+    )
     archive_act_add_weight_record = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_download = serializers.BooleanField(write_only=True, required=False, default=False)
     archive_act_group_key = serializers.UUIDField(write_only=True, required=False, allow_null=True)
@@ -841,7 +849,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'working_condition': 'Рабочее состояние',
             'working_condition_date': 'Дата рабочего состояния',
             'carcass_weight': 'Вес туши (кг)',
-            'is_reject': 'Назначение',
+            'is_reject': 'Назначение: Брак',
+            'is_for_sale': 'Назначение: К продаже',
             'needs_retagging': 'Необходимо перебиркование',
         }
         
@@ -1727,38 +1736,13 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     def _format_age_at_date(birth_date, reference_date):
         if not birth_date:
             return None
-
-        from datetime import datetime
-        from dateutil.relativedelta import relativedelta
-
-        try:
-            if isinstance(birth_date, str):
-                birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
-            elif hasattr(birth_date, "date"):
-                birth_date = birth_date.date()
-
-            if hasattr(reference_date, "date"):
-                reference_date = reference_date.date()
-            if reference_date is None:
-                reference_date = timezone.now().date()
-
-            # Защита от неконсистентных данных
-            if reference_date < birth_date:
-                return "0 мес."
-
-            delta = relativedelta(reference_date, birth_date)
-            total_months = delta.years * 12 + delta.months
-            days = round(delta.days)
-
-            if total_months == 0 and days == 0:
-                return "0 мес."
-            if total_months == 0:
-                return f"{days} сут."
-            if days == 0:
-                return f"{total_months} мес."
-            return f"{total_months} мес. ({days} сут.)"
-        except (ValueError, TypeError):
+        birth_date = as_local_date(birth_date)
+        reference_date = timezone.localdate() if reference_date is None else as_local_date(reference_date)
+        if not birth_date or not reference_date:
             return None
+        if reference_date < birth_date:
+            return "0 мес."
+        return format_age(birth_date, reference_date)
 
     def to_representation(self, instance):
         from begunici.app_types.animals.models import Tag

@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Калькулятор овчарни{% endblock %}
+{% block content %}
+<div class="barn-calculator" id="barn-calculator"
+     data-config-url="{% url 'veterinary:barn_calculator_config' %}"
+     data-factual-url="{% url 'veterinary:barn_calculator_factual' %}"
+     data-calculate-url="{% url 'veterinary:barn_calculator_calculate' %}"
+     data-save-url="{% url 'veterinary:barn_calculator_save' %}"
+     data-export-url="{% url 'veterinary:barn_calculator_export' %}">
+    <div class="calculator-heading">
+        <h1>Калькулятор овчарни</h1>
+        <a href="{% url 'places_map' %}" class="btn btn-outline-secondary">К карте овчарен</a>
+    </div>
+    <div id="calculator-message" class="alert" role="status" hidden></div>
+    <form id="calculator-form">
+        <div class="card mb-3">
+            <div class="card-header">Выбор овчарни</div>
+            <div class="card-body">
+                <div class="calculator-fields calculator-selection">
+                    <div>
+                        <label for="calculator-barn" class="form-label">Овчарня</label>
+                        <select id="calculator-barn" class="form-select">
+                            <option value="1">Овчарня 1</option>
+                            <option value="2">Овчарня 2</option>
+                            <option value="3">Овчарня 3</option>
+                            <option value="4">Овчарня 4</option>
+                            <option value="arbitrary">Произвольная овчарня</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="calculator-mode" class="form-label">Компоновка</label>
+                        <select id="calculator-mode" class="form-select">
+                            <option value="manual">Ручная</option>
+                            <option value="factual">Фактическая</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="calculator-profile-note" class="text-muted mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">Параметры овчарни</div>
+            <div class="card-body">
+                <div class="calculator-fields">
+                    <div><label for="calc-area_limit" class="form-label">Лимит площади здания, м²</label><input id="calc-area_limit" data-parameter="area_limit" type="number" min="0.0001" max="1000000" step="any" class="form-control" required></div>
+                    <div><label for="calc-length" class="form-label">Длина овчарни, м</label><input id="calc-length" data-parameter="length" type="number" min="0.0001" max="1000000" step="any" class="form-control" required></div>
+                    <div><label for="calc-housing_width" class="form-label">Ширина зоны содержания с каждой стороны, м</label><input id="calc-housing_width" data-parameter="housing_width" type="number" min="0.0001" max="1000000" step="any" class="form-control" required></div>
+                    <div><label for="calc-central_width" class="form-label">Ширина центрального кормового проезда, м</label><input id="calc-central_width" data-parameter="central_width" type="number" min="0" max="1000000" step="any" class="form-control" required></div>
+                    <div class="calculator-checkbox-field"><div class="form-check"><input id="calc-include_wall_passages" data-parameter="include_wall_passages" type="checkbox" class="form-check-input"><label for="calc-include_wall_passages" class="form-check-label">Учитывать техпроходы вдоль наружных стен</label></div></div>
+                    <div><label for="calc-wall_passage_width" class="form-label">Ширина одного техпрохода, м</label><input id="calc-wall_passage_width" data-parameter="wall_passage_width" type="number" min="0" max="1000000" step="any" class="form-control" required></div>
+                    <div><label for="calc-breeding_premium_percent" class="form-label">Племенная надбавка площади, %</label><input id="calc-breeding_premium_percent" data-parameter="breeding_premium_percent" type="number" min="0" max="20" step="any" class="form-control" required></div>
+                    <div><label for="calc-doors_left" class="form-label">Количество дверей слева</label><input id="calc-doors_left" data-parameter="doors_left" type="number" min="0" max="10000" step="1" class="form-control" required></div>
+                    <div><label for="calc-doors_right" class="form-label">Количество дверей справа</label><input id="calc-doors_right" data-parameter="doors_right" type="number" min="0" max="10000" step="1" class="form-control" required></div>
+                    <div><label for="calc-door_width" class="form-label">Ширина одной двери, м</label><input id="calc-door_width" data-parameter="door_width" type="number" min="0" max="1000000" step="any" class="form-control" required></div>
+                    <div class="calculator-feeding-field"><label for="calc-feeding_mode" class="form-label">Режим кормления откормочного поголовья</label><select id="calc-feeding_mode" data-parameter="feeding_mode" class="form-select"><option value="rationed">Нормированное кормление: 1 голова на место</option><option value="free_access">Свободный доступ: 2 головы на место</option></select></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header calculator-card-heading">
+                <span>Компоновка</span>
+            </div>
+            <div class="card-body">
+                <div id="calculator-factual-note" class="text-muted mb-3" hidden></div>
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle calculator-composition-table">
+                        <thead><tr>
+                            <th scope="col">Группа животных</th>
+                            <th scope="col">Голов слева</th><th scope="col">Голов справа</th>
+                            <th scope="col">Площадь слева, м²</th><th scope="col">Площадь справа, м²</th>
+                            <th scope="col">Фронт слева, м</th><th scope="col">Фронт справа, м</th>
+                            <th scope="col">Секций слева</th><th scope="col">Секций справа</th>
+                        </tr></thead>
+                        <tbody id="calculator-composition"></tbody>
+                        <tfoot id="calculator-composition-total" hidden></tfoot>
+                    </table>
+                </div>
+                <div id="calculator-warnings" class="alert alert-warning mt-3" hidden></div>
+                <div class="calculator-actions">
+                    <button type="submit" id="calculator-submit" class="btn btn-success" disabled>Рассчитать</button>
+                    <button type="button" id="calculator-save" class="btn btn-primary" disabled>Сохранить параметры и компоновку</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <section id="calculator-result" class="card mb-3" aria-live="polite" hidden>
+        <div class="card-header calculator-card-heading"><span>Результат расчёта</span><span id="calculator-verdict"></span><button type="button" id="calculator-export" class="btn btn-outline-success btn-sm" disabled>Экспорт</button></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered calculator-checks-table">
+                    <thead><tr><th>Показатель</th><th>Доступно</th><th>Требуется</th><th>Остаток / превышение</th></tr></thead>
+                    <tbody id="calculator-checks"></tbody>
+                </table>
+            </div>
+            <div class="calculator-result-grid">
+                <div><h2>Здание</h2><dl id="calculator-building-details"></dl></div>
+                <div><h2>Левая сторона</h2><dl id="calculator-left-details"></dl></div>
+                <div><h2>Правая сторона</h2><dl id="calculator-right-details"></dl></div>
+            </div>
+        </div>
+    </section>
+
+    <details class="card calculator-norms">
+        <summary class="card-header">Нормативы и правила расчёта</summary>
+        <div class="card-body">
+            <p>НТП-АПК 1.10.03.001-00.</p>
+            <div class="table-responsive"><table class="table table-bordered align-middle">
+                <thead><tr><th>Группа животных</th><th>Базовая площадь, м²/гол.</th><th>Племенная площадь, м²/гол.</th><th>Базовый фронт, м/гол.</th><th>Расчётный фронт, м/гол.</th><th>Максимум голов в секции</th></tr></thead>
+                <tbody id="calculator-norms"></tbody>
+            </table></div>
+        </div>
+    </details>
+</div>
+<script type="module" src="{% static 'js/barn_calculator.js' %}?v=4"></script>
+{% endblock %}

@@ -172,6 +172,7 @@ function getAppliedListFiltersForExport() {
         'place',
         'has_rshn_tag',
         'is_reject',
+        'is_for_sale',
     ];
     const filters = {};
 

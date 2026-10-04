@@ -86,7 +86,8 @@ function getRamFiltersFromInputs() {
         father_tag: document.getElementById('ram-father-tag-filter')?.value || '',
         mother_tag: document.getElementById('ram-mother-tag-filter')?.value || '',
         has_rshn_tag: getCheckboxFilterValue('ram-has-rshn-tag-filter'),
-        is_reject: getCheckboxFilterValue('ram-is-reject-filter')
+        is_reject: getCheckboxFilterValue('ram-is-reject-filter'),
+        is_for_sale: getCheckboxFilterValue('ram-is-for-sale-filter')
     };
 }
 
@@ -107,7 +108,8 @@ function initializeRamFiltersFromUrl() {
         father_tag: urlParams.get('father_tag') || '',
         mother_tag: urlParams.get('mother_tag') || '',
         has_rshn_tag: urlParams.get('has_rshn_tag') || '',
-        is_reject: urlParams.get('is_reject') || ''
+        is_reject: urlParams.get('is_reject') || '',
+        is_for_sale: urlParams.get('is_for_sale') || ''
     };
 
     const searchInput = document.getElementById('ram-search');
@@ -134,8 +136,9 @@ function initializeRamFiltersFromUrl() {
     if (motherTagInput) motherTagInput.value = filters.mother_tag;
     setCheckboxFilterValue('ram-has-rshn-tag-filter', filters.has_rshn_tag);
     setCheckboxFilterValue('ram-is-reject-filter', filters.is_reject);
+    setCheckboxFilterValue('ram-is-for-sale-filter', filters.is_for_sale);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.has_rshn_tag || filters.is_reject || filters.is_for_sale) {
         const filtersBlock = document.getElementById('ram-advanced-filters');
         if (filtersBlock) {
             filtersBlock.style.display = 'block';
@@ -169,6 +172,7 @@ async function saveRam() {
         dorper_percentage: formData.get('dorper_percentage') || null,
         is_manual_dorper: formData.get('dorper_percentage') ? true : false,
         is_reject: formData.get('is_reject') === 'on',
+        is_for_sale: formData.get('is_for_sale') === 'on',
         note: formData.get('note') || ''
     };
 
@@ -207,7 +211,7 @@ async function fetchRams(page = 1, filters = {}) {
 
         // Сохраняем параметры поиска в URL для сохранения при пагинации
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject'];
+        const filterKeys = ['search', 'birth_date_from', 'birth_date_to', 'date_otbivka_from', 'date_otbivka_to', 'age_min', 'age_max', 'weight_min', 'weight_max', 'father_tag', 'mother_tag', 'has_rshn_tag', 'is_reject', 'is_for_sale'];
         filterKeys.forEach(key => {
             const value = (currentFilters[key] || '').toString().trim();
             currentFilters[key] = value;
@@ -268,6 +272,9 @@ async function fetchRams(page = 1, filters = {}) {
         if (currentFilters.is_reject) {
             params.set('is_reject', currentFilters.is_reject);
         }
+        if (currentFilters.is_for_sale) {
+            params.set('is_for_sale', currentFilters.is_for_sale);
+        }
         
         if (params.toString()) {
             apiUrl += '?' + params.toString();
@@ -309,7 +316,7 @@ function renderRams(rams, startIndex = null) {
         // Если startIndex не передан, используем стандартную пагинацию
         const recordNumber = startIndex !== null ? startIndex + index + 1 : (currentPage - 1) * pageSize + index + 1;
         
-        const row = `<tr class="${ram.is_reject ? 'table-warning' : ''}">
+        const row = `<tr class="${getAnimalPurposeRowClass(ram)}">
             <td>
                 <input type="checkbox" 
                 class="select-ram"  
@@ -327,7 +334,7 @@ function renderRams(rams, startIndex = null) {
             <td>${ram.age || 'Не указан'}</td>
             <td>${ram.place ? ram.place.sheepfold : 'Не указано'}</td>
             <td>${ram.dorper_display || '-'}</td>
-            <td>${ram.is_reject ? 'Брак' : '-'}</td>
+            <td>${getAnimalPurposeText(ram)}</td>
             <td>${ram.primary_weighing_display || '-'}</td>
             <td>${ram.secondary_weighing_display || '-'}</td>
             <td>${ram.weight_records && ram.weight_records.length > 0 

@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
-from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -12,6 +11,7 @@ from django.utils import timezone
 from begunici.app_types.veterinary.vet_models import StatusHistory, Tag, WeightRecord
 
 from .models import ArchiveAct, Ewe, Maker, Ram, Sheep, SheepBodyConditionRecord
+from .age_utils import get_age_delta
 
 
 ARCHIVE_ACT_TEMPLATES = {
@@ -163,13 +163,9 @@ def get_archive_status_date(animal):
 def format_age_for_act(birth_date, reference_date=None):
     if not birth_date:
         return ""
-    reference_date = reference_date or timezone.now().date()
-    if hasattr(reference_date, "date"):
-        reference_date = reference_date.date()
-    if reference_date < birth_date:
+    delta = get_age_delta(birth_date, reference_date)
+    if delta is None:
         return "0 мес. (0 сут.)"
-
-    delta = relativedelta(reference_date, birth_date)
     total_months = delta.years * 12 + delta.months
     remaining_days = delta.days
 
@@ -247,7 +243,7 @@ def get_latest_body_condition_record(tag):
 
 def build_archive_act_preview_item(animal, status_name=None):
     status_name = status_name or (animal.animal_status.status_type if animal.animal_status else "")
-    archive_date = get_archive_status_date(animal) or timezone.now().date()
+    archive_date = get_archive_status_date(animal) or timezone.localdate()
     latest_weight_record = get_latest_live_weight_record(animal.tag)
     live_weight = latest_weight_record.weight if latest_weight_record else None
     latest_body_condition = get_latest_body_condition_record(animal.tag)

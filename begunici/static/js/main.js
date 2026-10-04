@@ -1,3 +1,16 @@
+function getAnimalPurposeText(animal) {
+    const purposes = [];
+    if (animal.is_reject) purposes.push('Брак');
+    if (animal.is_for_sale) purposes.push('К продаже');
+    return purposes.join(', ') || '-';
+}
+
+function getAnimalPurposeRowClass(animal) {
+    if (animal.is_reject && animal.is_for_sale) return 'animal-reject-for-sale';
+    if (animal.is_for_sale) return 'animal-for-sale';
+    return animal.is_reject ? 'table-warning' : '';
+}
+
 // Функция для переключения вкладок
 function showTab(tabId) {
     console.log("Переключение на вкладку:", tabId);

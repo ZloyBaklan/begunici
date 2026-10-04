@@ -1,6 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .vet_views import (
+    barn_calculator_config,
+    barn_calculator_factual,
+    barn_calculator_calculate,
+    barn_calculator_save,
+    barn_calculator_export,
     StatusViewSet,
     PlaceViewSet,
     VeterinaryCareViewSet,
@@ -35,6 +40,11 @@ router.register(r"weight-record", WeightRecordViewSet)
 router.register(r"place_movement", PlaceMovementViewSet)
 
 urlpatterns = [
+    path("api/barn-calculator/", barn_calculator_config, name="barn_calculator_config"),
+    path("api/barn-calculator/factual/", barn_calculator_factual, name="barn_calculator_factual"),
+    path("api/barn-calculator/calculate/", barn_calculator_calculate, name="barn_calculator_calculate"),
+    path("api/barn-calculator/save/", barn_calculator_save, name="barn_calculator_save"),
+    path("api/barn-calculator/export-excel/", barn_calculator_export, name="barn_calculator_export"),
     path("api/", include(router.urls)),  # Возвращаем префикс /api/
     path("api/place/<int:place_id>/animals/", get_animals_by_place, name="animals_by_place"),  # API для животных по месту
     path("api/barn/<int:barn_number>/statistics/", get_barn_statistics, name="barn_statistics"),  # API для статистики овчарни

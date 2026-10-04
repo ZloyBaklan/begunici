@@ -136,7 +136,7 @@ def _animal_basic_info(type_key, type_label, animal):
         ),
         "place": animal.place.sheepfold if animal.place else None,
         "dorper": dorper,
-        "purpose": "Брак" if animal.is_reject else None,
+        "purpose": animal.get_assignment_display(empty=None),
         "mother": mother_data.get("tag_number") if mother_data else None,
         "father": (
             father_data.get("display_name") or father_data.get("tag_number")

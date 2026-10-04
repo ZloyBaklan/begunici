@@ -242,7 +242,9 @@ def resolve_log_action(method, path, params=None, status_code=None):
                 action = "Экспорт данных"
 
     elif "/veterinary/" in path:
-        if method == "POST" and "/api/care/" in path:
+        if method == "POST" and path.rstrip("/") == "/veterinary/api/barn-calculator/save":
+            action = "Сохранение параметров овчарни"
+        elif method == "POST" and "/api/care/" in path:
             action = "Создание ветобработки"
         elif method == "POST" and "/api/place/" in path:
             action = "Создание овчарни"
@@ -346,6 +348,8 @@ def resolve_log_object_type(method, path):
         return "Ярка"
     if "/sheep/" in path:
         return "Овцематка"
+    if "/veterinary/api/barn-calculator/" in path:
+        return "Калькулятор овчарни"
     if "/veterinary/api/weight-record/" in path:
         return "Запись о весе"
     if "/veterinary/api/place_movement/" in path:

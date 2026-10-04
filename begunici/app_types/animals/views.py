@@ -8,7 +8,7 @@ from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.db import transaction
-from django.db.models import Min, Q
+from django.db.models import Max, Min, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.utils.html import escape
@@ -87,6 +87,7 @@ from .archive_acts import (
 )
 from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
 from .monthly_breeding_acts import monthly_breeding_act_response
+from .age_utils import age_months_for_export, filter_queryset_by_age, format_age
 from .weight_acts import get_weight_acts_page, weight_act_response
 from .progeny_acts import get_progeny_acts_page, progeny_act_response
 from .livestock_movement_acts import livestock_movement_act_response
@@ -300,13 +301,13 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "tag": source_animal.tag,
         "animal_status": status_obj,
         "birth_date": source_animal.birth_date,
-        "age": source_animal.age,
         "note": source_animal.note,
         "rshn_tag": source_animal.rshn_tag,
         "date_otbivka": source_animal.date_otbivka,
         "dorper_percentage": source_animal.dorper_percentage,
         "is_manual_dorper": source_animal.is_manual_dorper,
         "is_reject": source_animal.is_reject,
+        "is_for_sale": source_animal.is_for_sale,
         "needs_retagging": source_animal.needs_retagging,
         "is_archived": source_animal.is_archived,
         "carcass_weight": source_animal.carcass_weight,
@@ -570,6 +571,7 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
         weight_max_raw = self.request.query_params.get('weight_max', '').strip()
         has_rshn_tag = self.request.query_params.get('has_rshn_tag', '').strip()
         is_reject = self.request.query_params.get('is_reject', '').strip()
+        is_for_sale = self.request.query_params.get('is_for_sale', '').strip()
 
         age_min = None
         if age_min_raw:
@@ -613,11 +615,7 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
 
-        if age_min is not None:
-            queryset = queryset.filter(age__gte=age_min)
-
-        if age_max is not None:
-            queryset = queryset.filter(age__lte=age_max)
+        queryset = filter_queryset_by_age(queryset, age_min, age_max)
 
         if father_tag:
             queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
@@ -630,6 +628,8 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
 
         if _is_truthy_filter_value(is_reject):
             queryset = queryset.filter(is_reject=True)
+        if _is_truthy_filter_value(is_for_sale):
+            queryset = queryset.filter(is_for_sale=True)
 
         queryset = _filter_queryset_by_latest_weight(queryset, weight_min_raw, weight_max_raw)
 
@@ -3915,6 +3915,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             'Срок действия',
             'Дата окончания срока действия',
         ],
+        'Напоминание о стрижке': ['Дата последней стрижки'],
         'Окончание срока ветобработки': [
             'Окончен срок действия ветобработки',
             'Срок действия',
@@ -3938,6 +3939,59 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             care.purpose,
         )
         return any('стриж' in str(value).lower() for value in searchable_values if value)
+
+    def _get_shearing_reminder_animals(self, reminder_date):
+        if (reminder_date.month, reminder_date.day) not in ((4, 15), (10, 15)):
+            return []
+
+        care_ids = [
+            care.id for care in VeterinaryCare.objects.all()
+            if self._is_shearing_care(care)
+        ]
+        latest_shearings = (
+            Veterinary.objects.filter(
+                veterinary_care_id__in=care_ids,
+                date_of_care__date__lte=timezone.localdate(),
+            )
+            .values('tag_id')
+            .annotate(last_shearing_at=Max('date_of_care'))
+        )
+        threshold_date = reminder_date - relativedelta(months=7)
+        last_shearing_by_tag = {}
+        for item in latest_shearings:
+            last_shearing_by_tag[item['tag_id']] = timezone.localdate(item['last_shearing_at'])
+
+        reminders = []
+        for animal_type, model in (('ewe', Ewe), ('sheep', Sheep)):
+            animals = (
+                model.objects.filter(is_archived=False, birth_date__lte=threshold_date)
+                .select_related('tag', 'animal_status', 'place')
+                .order_by('tag__tag_number')
+            )
+            for animal in animals:
+                last_date = last_shearing_by_tag.get(animal.tag_id)
+                if last_date is not None and last_date >= threshold_date:
+                    continue
+                reminders.append({
+                    'animal': animal,
+                    'animal_type': animal_type,
+                    'last_shearing_date': last_date,
+                })
+        return reminders
+
+    def _serialize_shearing_reminder(self, reminder):
+        animal = reminder['animal']
+        animal_type = reminder['animal_type']
+        last_date = reminder['last_shearing_date']
+        return {
+            'tag_number': animal.tag.tag_number,
+            'animal_type': animal_type,
+            'animal_type_display': self.CALENDAR_EXPORT_TYPE_LABELS[animal_type],
+            'display_name': animal.get_display_name() if animal_type == 'maker' else animal.tag.tag_number,
+            'url': reverse(f'animals:{animal_type}-detail', kwargs={'tag_number': animal.tag.tag_number}),
+            'last_shearing_date': last_date.isoformat() if last_date else None,
+            'last_shearing_date_display': last_date.strftime('%d.%m.%Y') if last_date else 'Нет записей',
+        }
 
     def _get_calendar_animal_type_key(self, animal):
         for type_key, model in (
@@ -3984,10 +4038,10 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             self.CALENDAR_EXPORT_TYPE_LABELS.get(animal_type, animal_type or '-'),
             animal.tag.tag_number if animal.tag else '-',
             animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
-            animal.age if animal.age else '-',
+            age_months_for_export(animal.birth_date),
             animal.place.sheepfold if animal.place else 'Нет данных',
             _format_dorper_display(animal),
-            'Брак' if animal.is_reject else '-',
+            animal.get_assignment_display(),
             _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
             _format_weight_record_value(last_weight_record),
             _format_date_for_excel(last_vet_date) if last_vet_date else '-',
@@ -4173,6 +4227,15 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
 
     def _build_calendar_export_groups(self, target_date):
         groups = {}
+
+        for reminder in self._get_shearing_reminder_animals(target_date):
+            self._add_calendar_export_animal(
+                groups,
+                'Напоминание о стрижке',
+                reminder['animal'],
+                reminder['animal_type'],
+                extra_values=[_format_date_for_excel(reminder['last_shearing_date'])],
+            )
 
         lambings = (
             Lambing.objects
@@ -4472,18 +4535,6 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             
             calendar_data = {}
 
-            def is_shearing_care(care):
-                if not care:
-                    return False
-
-                searchable_values = (
-                    care.care_type,
-                    care.care_name,
-                    care.medication,
-                    care.purpose,
-                )
-                return any('стриж' in str(value).lower() for value in searchable_values if value)
-
             def serialize_vet_record(vet, care_date_str):
                 return {
                     'id': vet.id,
@@ -4517,7 +4568,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 if care_date_str not in calendar_data:
                     calendar_data[care_date_str] = {}
                 
-                event_key = 'shearing_treatments' if is_shearing_care(vet.veterinary_care) else 'vet_treatments'
+                event_key = 'shearing_treatments' if self._is_shearing_care(vet.veterinary_care) else 'vet_treatments'
                 if event_key not in calendar_data[care_date_str]:
                     calendar_data[care_date_str][event_key] = []
 
@@ -4527,7 +4578,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             all_vets = Veterinary.objects.select_related('tag', 'veterinary_care').filter(duration_days__gt=0)
             
             for vet in all_vets:
-                if is_shearing_care(vet.veterinary_care):
+                if self._is_shearing_care(vet.veterinary_care):
                     continue
 
                 expiry_date = vet.get_expiry_date()
@@ -4587,6 +4638,16 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                                 'expiry_date': expiry_date_str
                             })
             
+            reminder_year = int(year) if year else today.year
+            for reminder_month in (4, 10):
+                if month and int(month) != reminder_month:
+                    continue
+                reminder_date = date(reminder_year, reminder_month, 15)
+                reminders = self._get_shearing_reminder_animals(reminder_date)
+                calendar_data.setdefault(reminder_date.isoformat(), {})['shearing_reminders'] = [
+                    self._serialize_shearing_reminder(reminder) for reminder in reminders
+                ]
+
             return Response(calendar_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response(
@@ -4976,7 +5037,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
 
     serializer_class = ArchiveAnimalSerializer
     filter_backends = [OrderingFilter]  # Убираем DjangoFilterBackend, так как работаем со списком
-    ordering_fields = ["birth_date", "age", "tag__tag_number"]
+    ordering_fields = ["birth_date", "tag__tag_number"]
     pagination_class = PaginationSetting  # Возвращаем пагинацию по 10 записей
 
     def _build_archive_act_rows(self, animals_list):
@@ -5194,7 +5255,7 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
             # - без отбивки
             # - младше 100 дней
             # - независимо от архивных животных
-            lamb_cutoff_date = timezone.now().date() - timedelta(days=100)
+            lamb_cutoff_date = timezone.localdate() - timedelta(days=100)
             archive_status_names = ARCHIVE_STATUS_NAMES
 
             ewes_qs = Ewe.objects.filter(
@@ -5372,6 +5433,7 @@ def common_animals_api(request):
     place_filter = request.query_params.get("place", "").strip()
     has_rshn_tag = request.query_params.get("has_rshn_tag", "").strip()
     is_reject = request.query_params.get("is_reject", "").strip()
+    is_for_sale = request.query_params.get("is_for_sale", "").strip()
 
     page_raw = request.query_params.get("page", "1")
     page_size_raw = request.query_params.get("page_size", "10")
@@ -5460,11 +5522,7 @@ def common_animals_api(request):
         if date_otbivka_to:
             queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
 
-        if age_min is not None:
-            queryset = queryset.filter(age__gte=age_min)
-
-        if age_max is not None:
-            queryset = queryset.filter(age__lte=age_max)
+        queryset = filter_queryset_by_age(queryset, age_min, age_max)
 
         if father_tag:
             queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
@@ -5477,6 +5535,8 @@ def common_animals_api(request):
 
         if _is_truthy_filter_value(is_reject):
             queryset = queryset.filter(is_reject=True)
+        if _is_truthy_filter_value(is_for_sale):
+            queryset = queryset.filter(is_for_sale=True)
 
         queryset = _filter_queryset_by_latest_weight(queryset, weight_min_raw, weight_max_raw)
 
@@ -5534,10 +5594,11 @@ def common_animals_api(request):
                     if animal.animal_status
                     else None
                 ),
-                "age": animal.get_age_display() if hasattr(animal, "get_age_display") else animal.age,
+                "age": animal.get_age_display(),
                 "place": {"sheepfold": animal.place.sheepfold} if animal.place else None,
                 "dorper_display": _format_dorper_display(animal),
                 "is_reject": animal.is_reject,
+                "is_for_sale": animal.is_for_sale,
                 "last_weight": float(last_weight.weight) if last_weight else None,
                 "last_weight_date": last_weight.weight_date.strftime("%Y-%m-%d") if last_weight else None,
                 "last_vet_date": last_vet_care_date.isoformat() if last_vet_care_date else None,
@@ -5590,7 +5651,7 @@ def young_stock(request):
 
 
 def _get_young_stock_cutoff_date():
-    return timezone.now().date() - relativedelta(months=7)
+    return timezone.localdate() - relativedelta(months=7)
 
 
 def _get_animal_url_by_type(animal_type, tag_number):
@@ -5655,6 +5716,7 @@ def _get_young_stock_filtered_items(query_params):
     animal_type_filter = query_params.get("animal_type", "").strip().lower()
     has_rshn_tag = query_params.get("has_rshn_tag", "").strip()
     is_reject = query_params.get("is_reject", "").strip()
+    is_for_sale = query_params.get("is_for_sale", "").strip()
     cutoff_date = _get_young_stock_cutoff_date()
 
     if animal_type_filter:
@@ -5692,10 +5754,7 @@ def _get_young_stock_filtered_items(query_params):
             queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
         if date_otbivka_to:
             queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
-        if age_min is not None:
-            queryset = queryset.filter(age__gte=age_min)
-        if age_max is not None:
-            queryset = queryset.filter(age__lte=age_max)
+        queryset = filter_queryset_by_age(queryset, age_min, age_max)
         if father_tag:
             queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
         if mother_tag:
@@ -5704,6 +5763,8 @@ def _get_young_stock_filtered_items(query_params):
             queryset = _filter_queryset_with_rshn_tag(queryset)
         if _is_truthy_filter_value(is_reject):
             queryset = queryset.filter(is_reject=True)
+        if _is_truthy_filter_value(is_for_sale):
+            queryset = queryset.filter(is_for_sale=True)
 
         for animal in queryset:
             items.append((animal_type, type_label, animal))
@@ -5730,6 +5791,7 @@ def _build_young_stock_row(animal_type, type_label, animal):
         "mother_tag": mother_tag,
         "mother_url": mother_url,
         "is_reject": animal.is_reject,
+        "is_for_sale": animal.is_for_sale,
     }
 
 
@@ -6229,6 +6291,49 @@ def _build_last_completed_lambings_map():
     return last_map
 
 
+def _build_first_completed_lambings_map():
+    completed_lambings = (
+        Lambing.objects.filter(is_active=False, actual_lambing_date__isnull=False)
+        .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
+        .select_related("sheep__tag", "ewe__tag")
+        .order_by("actual_lambing_date", "id")
+    )
+    first_map = {}
+    for lambing in completed_lambings:
+        mother_key = _get_lambing_mother_key(lambing)
+        if mother_key and mother_key not in first_map:
+            first_map[mother_key] = (lambing.actual_lambing_date, lambing.id)
+    return first_map
+
+
+def _get_progeny_mother_age_group(lambing, first_completed_map):
+    category_label = _format_mother_age_group_from_category(lambing.mother_category_at_start)
+    if category_label:
+        return category_label
+
+    historical_label = _format_mother_age_group_from_text(lambing.mother_type_text)
+    if historical_label in {"Ярка", "Овцематка"}:
+        return historical_label
+
+    mother_key = _get_lambing_mother_key(lambing)
+    if not mother_key:
+        return "-"
+
+    # Legacy records lack a type snapshot; use the full history, not journal filters.
+    first_lambing = first_completed_map.get(mother_key)
+    if first_lambing and (lambing.actual_lambing_date, lambing.id) > first_lambing:
+        return "Овцематка"
+
+    mother = lambing.get_mother()
+    if (
+        mother
+        and mother.birth_date
+        and lambing.actual_lambing_date > mother.birth_date + relativedelta(years=2)
+    ):
+        return "Овцематка"
+    return "Ярка"
+
+
 def _build_active_lambing_mother_keys():
     active_lambings = Lambing.objects.filter(is_active=True).select_related("sheep__tag", "ewe__tag")
     return {
@@ -6441,7 +6546,7 @@ def journal_progeny(request):
         ]
 
     if bad_mother_only and last_completed_map is not None:
-        today = timezone.now().date()
+        today = timezone.localdate()
         lambings = [
             lambing
             for lambing in lambings
@@ -6480,6 +6585,7 @@ def journal_progeny(request):
         all_children.extend(grouped_children["ewes"])
         all_children.extend(grouped_children["rams"])
     first_weight_map = _build_first_weight_map(all_children)
+    first_completed_map = _build_first_completed_lambings_map() if lambings else {}
 
     rows = []
     total_ewes = 0
@@ -6558,6 +6664,7 @@ def journal_progeny(request):
             {
                 "mother_tag": mother_tag,
                 "mother_url": mother_url,
+                "mother_age_group": _get_progeny_mother_age_group(lambing, first_completed_map),
                 "actual_lambing_date": lambing.actual_lambing_date,
                 "total_born": live_count + dead_count,
                 "ewe_tags": ewe_tags,
@@ -6602,6 +6709,7 @@ def journal_progeny(request):
                 [
                     idx,
                     row["mother_tag"],
+                    row["mother_age_group"],
                     _format_date_for_excel(row["actual_lambing_date"]),
                     row["total_born"],
                     _numbered_tags_as_text(row["ewe_tags"]),
@@ -6622,6 +6730,7 @@ def journal_progeny(request):
         headers = [
             "№",
             "Бирка матери",
+            "Половозрастная группа матери",
             "Дата окота",
             "Родилось всего",
             "Бирки ярок",
@@ -7021,7 +7130,7 @@ def journal_shift_transfer(request):
         "selected_month_from": month_from,
         "selected_month_to": month_to,
         "base_query": _build_base_query(request),
-        "today": timezone.now().date().strftime("%Y-%m-%d"),
+        "today": timezone.localdate().strftime("%Y-%m-%d"),
     }
     return render(request, "journal_shift_transfer.html", context)
 
@@ -7424,6 +7533,7 @@ def export_to_excel(request):
         animal_status = request.data.get('animal_status', None)
         place = request.data.get('place', None)
         is_reject = request.data.get('is_reject', False)
+        is_for_sale = request.data.get('is_for_sale', False)
         common_animal_type = str(request.data.get('common_animal_type', '') or '').strip().lower()
         
         print(f"Параметры экспорта: type={animal_type}, limit={limit}, weight_min={weight_min}, weight_max={weight_max}, age_min={age_min}, age_max={age_max}, include_details={include_details}")
@@ -7476,10 +7586,7 @@ def export_to_excel(request):
                     queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
                 if date_otbivka_to:
                     queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
-                if age_min is not None:
-                    queryset = queryset.filter(age__gte=float(age_min))
-                if age_max is not None:
-                    queryset = queryset.filter(age__lte=float(age_max))
+                queryset = filter_queryset_by_age(queryset, age_min, age_max)
                 if father_tag:
                     queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
                 if mother_tag:
@@ -7489,6 +7596,8 @@ def export_to_excel(request):
                     queryset = _filter_queryset_with_rshn_tag(queryset)
                 if _is_truthy_filter_value(is_reject):
                     queryset = queryset.filter(is_reject=True)
+                if _is_truthy_filter_value(is_for_sale):
+                    queryset = queryset.filter(is_for_sale=True)
 
                 queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
@@ -7544,10 +7653,7 @@ def export_to_excel(request):
                 queryset = queryset.filter(date_otbivka__gte=date_otbivka_from)
             if date_otbivka_to:
                 queryset = queryset.filter(date_otbivka__lte=date_otbivka_to)
-            if age_min is not None:
-                queryset = queryset.filter(age__gte=float(age_min))
-            if age_max is not None:
-                queryset = queryset.filter(age__lte=float(age_max))
+            queryset = filter_queryset_by_age(queryset, age_min, age_max)
             if father_tag:
                 queryset = queryset.filter(_build_case_variants_filter("father", father_tag))
             if mother_tag:
@@ -7557,6 +7663,8 @@ def export_to_excel(request):
                 queryset = _filter_queryset_with_rshn_tag(queryset)
             if _is_truthy_filter_value(is_reject):
                 queryset = queryset.filter(is_reject=True)
+            if _is_truthy_filter_value(is_for_sale):
+                queryset = queryset.filter(is_for_sale=True)
 
             queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
@@ -7620,7 +7728,7 @@ def export_to_excel(request):
                     format_birth_type_for_animal(animal),
                     _format_ewe_birth_weight(animal),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
-                    'Брак' if animal.is_reject else '-',
+                    animal.get_assignment_display(),
                     primary_date,
                     primary_weight,
                     secondary_date,
@@ -7679,7 +7787,7 @@ def export_to_excel(request):
                     animal.tag.tag_number,
                     _format_date_for_excel(animal.birth_date),
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
-                    'Брак' if animal.is_reject else '-',
+                    animal.get_assignment_display(),
                     primary_date,
                     primary_weight,
                     secondary_date,
@@ -7750,10 +7858,10 @@ def export_to_excel(request):
                     idx,  # №
                     animal.tag.tag_number,
                     animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
-                    animal.age if animal.age else '-',
+                    age_months_for_export(animal.birth_date),
                     animal.place.sheepfold if animal.place else 'Нет данных',
                     _format_dorper_display(animal),
-                    'Брак' if animal.is_reject else '-',
+                    animal.get_assignment_display(),
                     _format_date_for_excel(item['last_weight_date']) if item['last_weight_date'] else '-',
                     _format_weight_kg_fixed(item['last_weight']) if item['last_weight'] is not None else '-',
                     _format_date_for_excel(last_vet_date) if last_vet_date else '-',
@@ -7813,7 +7921,7 @@ def export_to_excel(request):
                     }
                     children_str = '; '.join([
                         f"{child.tag.tag_number} ({type_translations.get(child.get_animal_type(), child.get_animal_type())}" + 
-                        (f", {child.age}мес" if child.age else "") + ")"
+                        (f", {child_age}" if (child_age := child.get_age_display()) else "") + ")"
                         for child in children[:10]  # Ограничиваем до 10 детей для читаемости
                     ]) if children else 'Нет данных'
                     
@@ -8305,20 +8413,26 @@ def _format_dashboard_decimal(value, decimal_places=None):
         decimal_value = Decimal(str(value))
     except Exception:
         return "-"
+    if not decimal_value.is_finite():
+        return "-"
 
     if decimal_places is not None:
         quant = Decimal("1") if decimal_places == 0 else Decimal("1").scaleb(-decimal_places)
         decimal_value = decimal_value.quantize(quant)
 
-    text = format(decimal_value, "f").rstrip("0").rstrip(".")
+    text = format(decimal_value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
     return (text or "0").replace(".", ",")
 
 
 def _parse_dashboard_plan_decimal(value):
-    text = str(value or "").strip().replace(",", ".").replace("*", "")
+    text = str(value if value is not None else "").strip().replace(",", ".").replace("*", "")
     if not text:
         raise ValueError("значение не заполнено")
     parsed_value = Decimal(text)
+    if not parsed_value.is_finite():
+        raise ValueError("значение должно быть конечным числом")
     if parsed_value < 0:
         raise ValueError("значение не может быть отрицательным")
     return parsed_value.quantize(Decimal("0.01"))
@@ -8376,25 +8490,34 @@ def _get_dashboard_animals_with_birth_date(models_to_read):
     return animals
 
 
-def _get_dashboard_weights_by_tag(tag_ids):
+def _get_dashboard_weights_by_tag(tag_ids, cutoff_date=None):
     weights_by_tag = defaultdict(list)
     if not tag_ids:
         return weights_by_tag
 
-    for record in WeightRecord.objects.filter(tag_id__in=tag_ids).order_by("tag_id", "weight_date", "id"):
-        weights_by_tag[record.tag_id].append(record)
+    records = WeightRecord.objects.filter(tag_id__in=tag_ids, weight__gt=0)
+    if cutoff_date is not None:
+        records = records.filter(weight_date__lte=cutoff_date)
+    for record in records.order_by("tag_id", "weight_date", "id"):
+        if record.weight.is_finite():
+            weights_by_tag[record.tag_id].append(record)
     return weights_by_tag
 
 
-def _find_dashboard_weight_near_date(records, target_date, delta_days):
+def _find_dashboard_weight_near_date(records, target_date, delta_days, min_date=None, max_date=None):
     if not records or not target_date:
         return None
 
     start_date = target_date - timedelta(days=delta_days)
     end_date = target_date + timedelta(days=delta_days)
+    if min_date is not None:
+        start_date = max(start_date, min_date)
+    if max_date is not None:
+        end_date = min(end_date, max_date)
     candidates = [
         record for record in records
         if start_date <= record.weight_date <= end_date
+        and record.weight is not None and record.weight.is_finite() and record.weight > 0
     ]
     return min(
         candidates,
@@ -8403,7 +8526,7 @@ def _find_dashboard_weight_near_date(records, target_date, delta_days):
     )
 
 
-def _average_dashboard_weight(animals, weights_by_tag, target_date_getter, delta_days):
+def _average_dashboard_weight(animals, weights_by_tag, target_date_getter, delta_days, cutoff_date=None):
     weights = []
     for animal in animals:
         target_date = target_date_getter(animal)
@@ -8413,6 +8536,8 @@ def _average_dashboard_weight(animals, weights_by_tag, target_date_getter, delta
             weights_by_tag.get(animal.tag_id, []),
             target_date,
             delta_days,
+            min_date=animal.birth_date,
+            max_date=cutoff_date,
         )
         if record and record.weight is not None:
             weights.append(Decimal(record.weight))
@@ -8429,52 +8554,69 @@ def _average_dashboard_weight_for_year(animals, weights_by_tag, target_date_gett
             return None
         return target_date
 
-    return _average_dashboard_weight(animals, weights_by_tag, target_date_in_year, delta_days)
+    return _average_dashboard_weight(
+        animals, weights_by_tag, target_date_in_year, delta_days, cutoff_date=cutoff_date
+    )
 
 
-def _count_weaned_dashboard_animals(animals):
-    return sum(1 for animal in animals if animal.date_otbivka)
+def _count_weaned_dashboard_animals(animals, cutoff_date=None):
+    cutoff_date = cutoff_date or timezone.localdate()
+    return sum(
+        1 for animal in animals
+        if animal.birth_date and animal.date_otbivka
+        and animal.birth_date <= animal.date_otbivka <= cutoff_date
+    )
 
 
-def _calculate_dashboard_daily_gain(animals, weights_by_tag, after_weaning=False):
+def _calculate_dashboard_daily_gain(animals, weights_by_tag, after_weaning=False, cutoff_date=None):
+    cutoff_date = cutoff_date or timezone.localdate()
     gains = []
     for animal in animals:
         if not animal.birth_date or not animal.date_otbivka:
             continue
+        if not animal.birth_date <= animal.date_otbivka <= cutoff_date:
+            continue
 
-        birth_record = _find_dashboard_weight_near_date(
-            weights_by_tag.get(animal.tag_id, []),
-            animal.birth_date,
-            10,
-        )
+        records = weights_by_tag.get(animal.tag_id, [])
         weaning_record = _find_dashboard_weight_near_date(
-            weights_by_tag.get(animal.tag_id, []),
+            records,
             animal.date_otbivka,
             5,
+            min_date=animal.birth_date,
+            max_date=cutoff_date,
         )
         if not weaning_record or not weaning_record.weight:
             continue
 
         if after_weaning:
             later_records = [
-                record for record in weights_by_tag.get(animal.tag_id, [])
-                if record.weight_date > animal.date_otbivka
+                record for record in records
+                if max(animal.date_otbivka, weaning_record.weight_date) < record.weight_date <= cutoff_date
+                and record.weight is not None and record.weight.is_finite() and record.weight > 0
             ]
             if not later_records:
                 continue
-            latest_record = later_records[-1]
-            days = (latest_record.weight_date - animal.date_otbivka).days
+            latest_record = max(later_records, key=lambda record: (record.weight_date, record.id))
+            days = (latest_record.weight_date - weaning_record.weight_date).days
             start_weight = Decimal(weaning_record.weight)
             end_weight = Decimal(latest_record.weight)
         else:
+            birth_record = _find_dashboard_weight_near_date(
+                records,
+                animal.birth_date,
+                10,
+                min_date=animal.birth_date,
+                max_date=weaning_record.weight_date,
+            )
             if not birth_record or not birth_record.weight:
                 continue
-            days = (animal.date_otbivka - animal.birth_date).days
+            days = (weaning_record.weight_date - birth_record.weight_date).days
             start_weight = Decimal(birth_record.weight)
             end_weight = Decimal(weaning_record.weight)
 
-        if days <= 0 or end_weight < start_weight:
+        if days <= 0:
             continue
+        # Weight loss also affects the herd's average daily gain.
         gains.append((end_weight - start_weight) * Decimal("1000") / Decimal(days))
 
     if not gains:
@@ -8483,13 +8625,9 @@ def _calculate_dashboard_daily_gain(animals, weights_by_tag, after_weaning=False
 
 
 def _get_dashboard_mother_key(lambing):
-    if lambing.sheep_id:
-        return ("sheep", lambing.sheep_id)
-    if lambing.ewe_id:
-        return ("ewe", lambing.ewe_id)
-    mother_tag = (lambing.mother_tag_text or "").strip().lower()
+    mother_tag = (lambing.get_mother_tag() or "").strip().casefold()
     if mother_tag:
-        return ("text", mother_tag)
+        return ("tag", mother_tag)
     return None
 
 
@@ -8497,15 +8635,19 @@ def _calculate_dashboard_plan_actuals(year):
     today = timezone.localdate()
     year_end = date(year, 12, 31)
     cutoff_date = min(today, year_end)
-    male_weight_animals = _get_dashboard_animals_with_birth_date([Ram])
-    female_weight_animals = _get_dashboard_animals_with_birth_date([Ewe])
+    # Retain juvenile measurements after promotion to a breeding animal.
+    male_weight_animals = _get_dashboard_animals_with_birth_date([Ram, Maker])
+    female_weight_animals = _get_dashboard_animals_with_birth_date([Ewe, Sheep])
     all_weight_animals = male_weight_animals + female_weight_animals
-    children_born_in_year = _get_dashboard_animals_for_year([Ram, Ewe], year)
+    children_born_in_year = [
+        animal for animal in all_weight_animals
+        if animal.birth_date.year == year and animal.birth_date <= cutoff_date
+    ]
     tag_ids = [
         animal.tag_id for animal in (all_weight_animals + children_born_in_year)
         if animal.tag_id
     ]
-    weights_by_tag = _get_dashboard_weights_by_tag(tag_ids)
+    weights_by_tag = _get_dashboard_weights_by_tag(tag_ids, cutoff_date=cutoff_date)
 
     actuals = {}
     for key_part, _label, months_text in DASHBOARD_PLAN_WEIGHT_ROWS:
@@ -8567,6 +8709,7 @@ def _calculate_dashboard_plan_actuals(year):
             is_active=False,
             completion_type=Lambing.COMPLETION_NORMAL,
             actual_lambing_date__year=year,
+            actual_lambing_date__lte=cutoff_date,
         )
         .select_related("sheep__tag", "ewe__tag")
         .order_by("actual_lambing_date", "id")
@@ -8576,7 +8719,7 @@ def _calculate_dashboard_plan_actuals(year):
         key for key in (_get_dashboard_mother_key(lambing) for lambing in normal_lambings)
         if key
     }
-    weaned_count = _count_weaned_dashboard_animals(children_born_in_year)
+    weaned_count = _count_weaned_dashboard_animals(children_born_in_year, cutoff_date=cutoff_date)
     actuals["weaned_lambs_per_100_mothers"] = (
         Decimal(weaned_count) * Decimal("100") / Decimal(len(mother_keys))
         if mother_keys else None
@@ -8597,11 +8740,13 @@ def _calculate_dashboard_plan_actuals(year):
         children_born_in_year,
         weights_by_tag,
         after_weaning=False,
+        cutoff_date=cutoff_date,
     )
     actuals["daily_gain_after_weaning"] = _calculate_dashboard_daily_gain(
         children_born_in_year,
         weights_by_tag,
         after_weaning=True,
+        cutoff_date=cutoff_date,
     )
     return actuals
 
@@ -9795,7 +9940,7 @@ def get_inactive_mothers(request):
                 'rshn_tag': sheep.rshn_tag or '',
                 'animal_type': 'Овцематка',
                 'type_code': 'sheep',
-                'age': float(sheep.age) if sheep.age else 0,
+                'age': sheep.get_age_months(),
                 'status': sheep.animal_status.status_type if sheep.animal_status else 'Нет статуса',
                 'place': sheep.place.sheepfold if sheep.place else 'Нет места'
             })
@@ -9807,7 +9952,7 @@ def get_inactive_mothers(request):
                 'rshn_tag': ewe.rshn_tag or '',
                 'animal_type': 'Ярка',
                 'type_code': 'ewe',
-                'age': float(ewe.age) if ewe.age else 0,
+                'age': ewe.get_age_months(),
                 'status': ewe.animal_status.status_type if ewe.animal_status else 'Нет статуса',
                 'place': ewe.place.sheepfold if ewe.place else 'Нет места'
             })
@@ -9883,7 +10028,7 @@ def get_all_fathers(request):
                 'name': maker.name,  # Добавляем поле имени
                 'animal_type': 'Баран-Производитель',
                 'type_code': 'maker',
-                'age': float(maker.age) if maker.age else 0,
+                'age': maker.get_age_months(),
                 'status': maker.animal_status.status_type if maker.animal_status else 'Нет статуса',
                 'place': maker.place.sheepfold if maker.place else 'Нет места',
                 'first_group_placement_date': first_placement_date.isoformat() if first_placement_date else None,
@@ -9898,7 +10043,7 @@ def get_all_fathers(request):
                 'rshn_tag': ram.rshn_tag or '',
                 'animal_type': 'Баранчик',
                 'type_code': 'ram',
-                'age': float(ram.age) if ram.age else 0,
+                'age': ram.get_age_months(),
                 'status': ram.animal_status.status_type if ram.animal_status else 'Нет статуса',
                 'place': ram.place.sheepfold if ram.place else 'Нет места',
                 'first_group_placement_date': first_placement_date.isoformat() if first_placement_date else None,
@@ -11485,27 +11630,7 @@ def calculate_age_at_date(birth_date, target_date):
     """
     if not birth_date or not target_date:
         return None
-    
-    try:
-        delta = relativedelta(target_date, birth_date)
-        
-        # Рассчитываем полные месяцы
-        total_months = delta.years * 12 + delta.months
-        
-        # Рассчитываем дни (округляем до целых)
-        days = round(delta.days)
-        
-        if total_months == 0 and days == 0:
-            return "0 мес."
-        elif total_months == 0:
-            return f"{days} сут."
-        elif days == 0:
-            return f"{total_months} мес."
-        else:
-            return f"{total_months} мес. ({days} сут.)"
-            
-    except (ValueError, TypeError):
-        return None
+    return format_age(birth_date, target_date)
 
 
 @api_view(['POST'])

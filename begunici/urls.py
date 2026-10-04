@@ -20,7 +20,7 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from .views import index, internal_login  # Импортируем view для главной страницы
-from begunici.app_types.veterinary.vet_views import places_map  # Импортируем view для карты овчарен
+from begunici.app_types.veterinary.vet_views import places_map, barn_calculator_page
 from begunici.app_types.animals.views_admin import admin_panel, admin_logs_api  # Импортируем admin views
 from begunici.app_types.animals.views_scanner import (
     scanner_export_excel,
@@ -32,6 +32,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),  # Панель администратора Django
     path("", index, name="index"),  # Главная страница
     path("places/map/", places_map, name="places_map"),  # Карта овчарен
+    path("places/map/kalkulyator/", barn_calculator_page, name="barn_calculator"),
     path("login/", internal_login, name="login"),  # Вход во внутреннюю часть
     path("login", RedirectView.as_view(url="/login/", permanent=False)),  # Поддержка /login без слеша
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),  # Выход

@@ -795,6 +795,24 @@ function isSectionEmpty(barnStats, section) {
     return Number(stats.total || 0) <= 0;
 }
 
+function getBarnSectionRows(sections) {
+    const rows = new Map();
+    for (const section of sections) {
+        const number = Number(section.section_number);
+        const rowNumber = Math.floor((number - 1) / 2);
+        if (!rows.has(rowNumber)) rows.set(rowNumber, {});
+        rows.get(rowNumber)[number % 2 ? 'left' : 'right'] = section;
+    }
+    return [...rows.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
+}
+
+function createEmptySectionCell() {
+    const cell = document.createElement('td');
+    cell.className = 'section-cell empty-placeholder';
+    cell.style.visibility = 'hidden';
+    return cell;
+}
+
 function displayBarnFromStatistics(barnStats) {
     const container = document.getElementById('barn-content');
     container.innerHTML = '';
@@ -820,33 +838,14 @@ function displayBarnFromStatistics(barnStats) {
         return;
     }
 
-    const rows = Math.ceil(sections.length / 2);
-    
-    for (let row = 0; row < rows; row++) {
+    for (const row of getBarnSectionRows(sections)) {
         const tr = document.createElement('tr');
-        
-        // Левый отсек
-        const leftIndex = row * 2;
-        if (leftIndex < sections.length) {
-            const leftSection = sections[leftIndex];
-            const leftCell = createSectionCellFromStats(leftSection, getSectionAnimalStats(barnStats, leftSection));
-            tr.appendChild(leftCell);
+        for (const side of ['left', 'right']) {
+            const section = row[side];
+            tr.appendChild(section
+                ? createSectionCellFromStats(section, getSectionAnimalStats(barnStats, section))
+                : createEmptySectionCell());
         }
-        
-        // Правый отсек (если есть)
-        const rightIndex = row * 2 + 1;
-        if (rightIndex < sections.length) {
-            const rightSection = sections[rightIndex];
-            const rightCell = createSectionCellFromStats(rightSection, getSectionAnimalStats(barnStats, rightSection));
-            tr.appendChild(rightCell);
-        } else {
-            // Если правого отсека нет, добавляем пустую ячейку для выравнивания
-            const emptyCell = document.createElement('td');
-            emptyCell.className = 'section-cell empty-placeholder';
-            emptyCell.style.visibility = 'hidden';
-            tr.appendChild(emptyCell);
-        }
-        
         table.appendChild(tr);
     }
     
@@ -1080,34 +1079,14 @@ function createBarnTable(barnNumber, sections, animalsByPlace) {
     const table = document.createElement('table');
     table.className = 'barn-table';
     
-    // Определяем количество строк (по 2 отсека в ряд)
-    const rows = Math.ceil(sectionNumbers.length / 2);
-    
-    for (let row = 0; row < rows; row++) {
+    for (const row of getBarnSectionRows(sectionNumbers.map(section_number => ({ section_number })))) {
         const tr = document.createElement('tr');
-        
-        // Левый отсек
-        const leftIndex = row * 2;
-        if (leftIndex < sectionNumbers.length) {
-            const leftSectionNum = sectionNumbers[leftIndex];
-            const leftCell = createSectionCell(leftSectionNum, sections[leftSectionNum], animalsByPlace);
-            tr.appendChild(leftCell);
+        for (const side of ['left', 'right']) {
+            const sectionNumber = row[side]?.section_number;
+            tr.appendChild(sectionNumber
+                ? createSectionCell(sectionNumber, sections[sectionNumber], animalsByPlace)
+                : createEmptySectionCell());
         }
-        
-        // Правый отсек (если есть)
-        const rightIndex = row * 2 + 1;
-        if (rightIndex < sectionNumbers.length) {
-            const rightSectionNum = sectionNumbers[rightIndex];
-            const rightCell = createSectionCell(rightSectionNum, sections[rightSectionNum], animalsByPlace);
-            tr.appendChild(rightCell);
-        } else {
-            // Если правого отсека нет, добавляем пустую ячейку для выравнивания
-            const emptyCell = document.createElement('td');
-            emptyCell.className = 'section-cell empty-placeholder';
-            emptyCell.style.visibility = 'hidden';
-            tr.appendChild(emptyCell);
-        }
-        
         table.appendChild(tr);
     }
     

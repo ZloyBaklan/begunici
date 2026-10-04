@@ -115,6 +115,7 @@ function getCommonFiltersFromInputs() {
         animal_type: document.getElementById("common-animal-type-filter")?.value || "",
         has_rshn_tag: getCheckboxFilterValue("common-has-rshn-tag-filter"),
         is_reject: getCheckboxFilterValue("common-is-reject-filter"),
+        is_for_sale: getCheckboxFilterValue("common-is-for-sale-filter"),
     };
 }
 
@@ -137,6 +138,7 @@ function initializeCommonFiltersFromUrl() {
         animal_type: urlParams.get("animal_type") || "",
         has_rshn_tag: urlParams.get("has_rshn_tag") || "",
         is_reject: urlParams.get("is_reject") || "",
+        is_for_sale: urlParams.get("is_for_sale") || "",
     };
 
     const searchInput = document.getElementById("common-search");
@@ -177,8 +179,9 @@ function initializeCommonFiltersFromUrl() {
 
     setCheckboxFilterValue("common-has-rshn-tag-filter", filters.has_rshn_tag);
     setCheckboxFilterValue("common-is-reject-filter", filters.is_reject);
+    setCheckboxFilterValue("common-is-for-sale-filter", filters.is_for_sale);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.weight_min || filters.weight_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject || filters.is_for_sale) {
         const filtersBlock = document.getElementById("common-advanced-filters");
         if (filtersBlock) {
             filtersBlock.style.display = "block";
@@ -303,6 +306,7 @@ async function saveCommonAnimal() {
         dorper_percentage: document.getElementById("dorper_percentage")?.value || null,
         is_manual_dorper: !!document.getElementById("dorper_percentage")?.value,
         is_reject: Boolean(document.getElementById("is_reject")?.checked),
+        is_for_sale: Boolean(document.getElementById("is_for_sale")?.checked),
         note: document.getElementById("note")?.value || "",
     };
 
@@ -348,7 +352,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...filters };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "weight_min", "weight_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "weight_min", "weight_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject", "is_for_sale"];
 
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
@@ -381,6 +385,7 @@ async function fetchCommonAnimals(page = 1, filters = {}) {
         if (currentFilters.animal_type) params.set("animal_type", currentFilters.animal_type);
         if (currentFilters.has_rshn_tag) params.set("has_rshn_tag", currentFilters.has_rshn_tag);
         if (currentFilters.is_reject) params.set("is_reject", currentFilters.is_reject);
+        if (currentFilters.is_for_sale) params.set("is_for_sale", currentFilters.is_for_sale);
 
         currentPage = page;
         const response = await apiRequest(`/animals/api/common/?${params.toString()}`);
@@ -424,7 +429,7 @@ function renderCommonAnimals(animals) {
         );
 
         rows.push(`
-            <tr class="${animal.is_reject ? "table-warning" : ""}">
+            <tr class="${getAnimalPurposeRowClass(animal)}">
                 <td>
                     <input type="checkbox"
                            class="select-common"
@@ -441,7 +446,7 @@ function renderCommonAnimals(animals) {
                 <td>${animal.age || "-"}</td>
                 <td>${animal.place ? animal.place.sheepfold : "Нет данных"}</td>
                 <td>${animal.dorper_display || "-"}</td>
-                <td>${animal.is_reject ? "Брак" : "-"}</td>
+                <td>${getAnimalPurposeText(animal)}</td>
                 <td>${weightText}</td>
                 <td>${vetText}</td>
                 <td>${animal.animal_type === "maker" ? (animal.working_condition || "-") : "-"}</td>

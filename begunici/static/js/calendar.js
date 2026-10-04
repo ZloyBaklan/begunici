@@ -214,6 +214,7 @@ class LambingCalendar {
                     const hasWeighing = this.weighingData && this.weighingData[currentDateStr];
                     const hasOnlyCompletedWeighings = hasWeighing && hasWeighing.length > 0 && hasWeighing.every(item => item.is_completed);
                     const hasShearing = this.isShearingDate(month, date);
+                    const shearingReminders = (hasVet && hasVet.shearing_reminders) || [];
                     
                     // Определяем типы событий
                     const eventTypes = [];
@@ -232,7 +233,7 @@ class LambingCalendar {
                     if (hasVet && hasVet.vet_expiring) totalCount += hasVet.vet_expiring.length;
                     if (hasVet && hasVet.shearing_treatments) totalCount += hasVet.shearing_treatments.length;
                     if (hasWeighing) totalCount += hasWeighing.length;
-                    if (hasShearing) totalCount += 1;
+                    if (hasShearing) totalCount += shearingReminders.length || 1;
                     
                     if (eventTypes.length > 1) {
                         // Многоцветная ячейка - делим на части
@@ -287,8 +288,13 @@ class LambingCalendar {
                     
                     // Добавляем обработчик клика
                     if (eventTypes.length > 0) {
-                        cell.addEventListener('click', () => {
-                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, hasVet, hasWeighing, hasShearing);
+                        cell.addEventListener('click', async () => {
+                            if (hasShearing) {
+                                await this.loadVetData();
+                                this.renderCalendar();
+                            }
+                            const currentVetData = hasShearing ? this.vetData[currentDateStr] : hasVet;
+                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, currentVetData, hasWeighing, hasShearing);
                         });
                     }
                     
@@ -342,6 +348,24 @@ class LambingCalendar {
                     <div class="list-group-item">Произвести стрижку</div>
                 </div>
             `;
+            const animals = (vetData && vetData.shearing_reminders) || [];
+            if (animals.length > 0) {
+                content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+                animals.forEach(animal => {
+                    content += `
+                        <div class="list-group-item">
+                            <div>
+                                <a href="${this.escapeHtml(animal.url)}" class="text-decoration-none">${this.escapeHtml(animal.display_name)}</a>
+                                <span class="text-muted ms-2">${this.escapeHtml(animal.animal_type_display)}</span>
+                            </div>
+                            <small>Последняя стрижка: ${this.escapeHtml(animal.last_shearing_date_display)}</small>
+                        </div>
+                    `;
+                });
+                content += '</div>';
+            } else {
+                content += '<p class="text-muted">Нет животных, которым требуется стрижка</p>';
+            }
         }
         
         // Показываем роды
@@ -555,6 +579,11 @@ class LambingCalendar {
         modal.show();
     }
     
+    escapeHtml(value) {
+        const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return String(value ?? '').replace(/[&<>"']/g, character => entities[character]);
+    }
+
     getAnimalTypeRoute(animalType) {
         const typeMap = {
             // Английские названия

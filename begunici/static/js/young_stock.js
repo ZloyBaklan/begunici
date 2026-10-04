@@ -115,6 +115,7 @@ function getYoungStockFiltersFromInputs() {
         animal_type: document.getElementById("young-stock-animal-type-filter")?.value || "",
         has_rshn_tag: getCheckboxFilterValue("young-stock-has-rshn-tag-filter"),
         is_reject: getCheckboxFilterValue("young-stock-is-reject-filter"),
+        is_for_sale: getCheckboxFilterValue("young-stock-is-for-sale-filter"),
     };
 }
 
@@ -135,6 +136,7 @@ function initializeYoungStockFiltersFromUrl() {
         animal_type: urlParams.get("animal_type") || "",
         has_rshn_tag: urlParams.get("has_rshn_tag") || "",
         is_reject: urlParams.get("is_reject") || "",
+        is_for_sale: urlParams.get("is_for_sale") || "",
     };
 
     const inputs = {
@@ -157,8 +159,9 @@ function initializeYoungStockFiltersFromUrl() {
 
     setCheckboxFilterValue("young-stock-has-rshn-tag-filter", filters.has_rshn_tag);
     setCheckboxFilterValue("young-stock-is-reject-filter", filters.is_reject);
+    setCheckboxFilterValue("young-stock-is-for-sale-filter", filters.is_for_sale);
 
-    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject) {
+    if (filters.birth_date_from || filters.birth_date_to || filters.date_otbivka_from || filters.date_otbivka_to || filters.age_min || filters.age_max || filters.father_tag || filters.mother_tag || filters.animal_type || filters.has_rshn_tag || filters.is_reject || filters.is_for_sale) {
         const filtersBlock = document.getElementById("young-stock-advanced-filters");
         if (filtersBlock) filtersBlock.style.display = "block";
     }
@@ -176,7 +179,7 @@ async function fetchYoungStock(page = 1, filters = {}) {
         currentFilters = { ...currentFilters, ...(filters || {}) };
 
         const urlParams = new URLSearchParams(window.location.search);
-        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject"];
+        const filterKeys = ["search", "birth_date_from", "birth_date_to", "date_otbivka_from", "date_otbivka_to", "age_min", "age_max", "father_tag", "mother_tag", "animal_type", "has_rshn_tag", "is_reject", "is_for_sale"];
         filterKeys.forEach((key) => {
             const value = (currentFilters[key] || "").toString().trim();
             currentFilters[key] = value;
@@ -220,7 +223,7 @@ function renderYoungStock(animals) {
         const selectionKey = getSelectionKey(animal.animal_type, tagNumber);
 
         return `
-            <tr class="${animal.is_reject ? "table-warning" : ""}">
+            <tr class="${getAnimalPurposeRowClass(animal)}">
                 <td>
                     <input type="checkbox"
                            class="select-young-stock"
