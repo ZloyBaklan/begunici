@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "begunici.app_types.animals",
     "begunici.app_types.veterinary",  # Приложение для ветобработки и взвешивания
     "begunici.app_types.public_site",  # Публичный сайт
+    "begunici.app_types.inventory",  # INVENTORY BRIDGE: изолированный складской учёт
     "rest_framework",  # Если используете Django REST Framework
 ]
 

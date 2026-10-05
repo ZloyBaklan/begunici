@@ -1,0 +1,5 @@
+{% if allowed %}<div class="alert alert-success mt-3">
+    <strong>Убой на мясо и складской учёт</strong>
+    <p class="mb-2">До выбытия поставьте назначение «К продаже». После завершения архивирования оформите выход продукции в СП-55: можно создать новый акт или дополнить текущий.</p>
+    <a href="{% url 'inventory:slaughter' %}" target="_blank" rel="noopener">Создать или дополнить СП-55</a>
+</div>{% endif %}

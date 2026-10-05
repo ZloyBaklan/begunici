@@ -1,3 +1,4 @@
+{% load inventory_tags %}
 <div id="archive-modal" class="modal" style="display:none;">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -5,6 +6,8 @@
                 <h5 class="modal-title">Перенос в архив</h5>
             </div>
             <div class="modal-body">
+                {# INVENTORY BRIDGE: отдельный переход к СП-55 после архивирования. #}
+                {% inventory_archive_hint %}
                 <div id="archive-current-animal" class="alert alert-info py-2 mb-3" style="display: none;"></div>
                 <div id="archive-status-assignment" class="border rounded p-3" style="display: none;"></div>
                 <div id="archive-per-animal-fields">

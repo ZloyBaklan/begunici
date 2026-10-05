@@ -29,6 +29,8 @@ from begunici.app_types.animals.views_scanner import (
 )
 
 urlpatterns = [
+    # INVENTORY BRIDGE: все сценарии склада принадлежат отдельному приложению.
+    path("inventory/", include("begunici.app_types.inventory.urls")),
     path("admin/", admin.site.urls),  # Панель администратора Django
     path("", index, name="index"),  # Главная страница
     path("places/map/", places_map, name="places_map"),  # Карта овчарен

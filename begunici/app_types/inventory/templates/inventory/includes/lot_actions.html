@@ -1,0 +1,6 @@
+<div class="iv-row-actions">
+    <a class="btn btn-sm btn-primary" href="{% url 'inventory:invoice-new' %}?lots={{ lot.pk }}"><i class="fas fa-file-invoice me-1" aria-hidden="true"></i>В накладную</a>
+    {% if lot.product.category == 'meat' %}
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'inventory:cut' lot.pk %}"><i class="fas fa-cut me-1" aria-hidden="true"></i>Разделать</a>
+    {% endif %}
+</div>

@@ -1,5 +1,6 @@
 ﻿{% extends 'base.html' %}
 {% load static %}
+{% load inventory_tags %}
 
 {% block title %}Главная{% endblock %}
 
@@ -128,6 +129,8 @@
                     Управление животными
                 </a>
             </div>
+            {# INVENTORY BRIDGE: третья кнопка, доступ только finans/admin. #}
+            {% inventory_home_button %}
         </div>
     </div>
     

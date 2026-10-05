@@ -1,0 +1,64 @@
+{% extends 'inventory/base.html' %}
+{% load inventory_tags %}
+{% block inventory_content %}
+{% if section == 'home' %}
+<div class="iv-title-row mb-3"><h1 class="mb-0">Складской учёт</h1><span class="text-muted">Учёт с 01.10.2026</span></div>
+<p class="text-muted mb-4">Животные к продаже, оформление актов и движение продукции.</p>
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><h5 class="mb-0">Животные и оформление</h5></div>
+            <div class="card-body">
+                <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'inventory:live' %}"><i class="fas fa-paw me-2" aria-hidden="true"></i>Список живых животных к продаже</a>
+                <a class="btn btn-secondary w-100 mb-3 iv-menu-button" href="{% url 'inventory:pending' %}"><i class="fas fa-file-signature me-2" aria-hidden="true"></i>Складская база к оформлению</a>
+                <p class="text-muted small mb-0">Назначение «К продаже», выбытие животных, проверка актов СП-54 и СП-55.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><h5 class="mb-0">Продукция и реализация</h5></div>
+            <div class="card-body">
+                <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'inventory:orders' %}"><i class="fas fa-inbox me-2" aria-hidden="true"></i>Список входящих заявок на продукцию</a>
+                <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'inventory:stock' %}"><i class="fas fa-boxes me-2" aria-hidden="true"></i>Складская база к реализации</a>
+                <a class="btn btn-outline-secondary w-100 mb-3 iv-menu-button" href="{% url 'inventory:archive' %}"><i class="fas fa-archive me-2" aria-hidden="true"></i>Реализованный архив</a>
+                <p class="text-muted small mb-0">Остатки, разделка, товарные накладные и выполнение заявок.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% elif section == 'live' or section == 'pending' %}
+<div class="iv-title-row"><h1>{% if section == 'live' %}Живые животные к продаже{% else %}Складская база к оформлению{% endif %}</h1>
+{% if section == 'pending' %}<a class="btn btn-outline-primary" href="{% url 'inventory:slaughter' %}">Акты СП-55</a>{% endif %}</div>
+{% if section == 'live' %}<p>Список обновляется по назначению «К продаже». Архивирование выполняется в обычной карточке животного.</p>{% else %}<p>После архивирования проверяется акт. Продукция поступает на склад только после его подтверждения.</p>{% endif %}
+<label class="iv-search">Поиск по бирке, месту или статусу<input type="search" class="form-control" data-filter-table="iv-animals" placeholder="Начните вводить…"></label>
+<div class="iv-table-wrap"><table class="table table-striped table-hover" id="iv-animals"><thead><tr><th>Бирка</th><th>Текущий статус</th><th>Местоположение</th><th>Назначения</th><th>Тип / возраст</th><th>Кровность, %</th><th>Последний вес, кг</th><th>Дата выбытия</th><th>Документы</th></tr></thead><tbody>
+{% for animal in animals %}<tr>
+    <td><a href="{{ animal.url }}">{{ animal.tag_number }}</a></td><td>{{ animal.status|default:'Не указан' }}</td><td>{{ animal.snapshot.place|default:'Не указано' }}</td>
+    <td>{% include 'inventory/includes/assignments.html' with snapshot=animal.snapshot only %}</td>
+    <td>{{ animal.snapshot.animal_type|animal_type_label }}, {{ animal.snapshot.age }}</td><td>{{ animal.snapshot.dorper_percentage|default_if_none:'—' }}</td><td>{{ animal.snapshot.last_weight|default_if_none:'—' }}</td>
+    <td>{{ animal.archive_date|date:'d.m.Y'|default:'—' }}</td><td>
+    {% if animal.document %}<a href="{% url 'inventory:document' animal.document.pk %}">{{ animal.document }} · {{ animal.document.get_state_display }}</a>
+    {% elif section == 'pending' %}<a href="{% url 'inventory:animal' animal.tag_id %}">Оформить</a>{% else %}<a href="{% url 'inventory:animal' animal.tag_id %}">Данные животного</a>{% endif %}
+    </td></tr>
+{% empty %}<tr><td colspan="9" class="iv-empty">Животных в этом списке пока нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% elif section == 'stock' %}
+<div class="iv-title-row"><h1>Складская база к реализации</h1><a class="btn btn-primary" href="{% url 'inventory:invoice-new' %}">Создать накладную</a></div>
+<div class="iv-totals">{% for item in summary %}<div><strong>{{ item.name }}</strong><span>{{ item.weight }} кг / {{ item.quantity }} шт.</span></div>{% empty %}<p>На складе пока нет продукции.</p>{% endfor %}</div>
+<p>Каждая партия связана с животным. Непроданная продукция остаётся здесь после частичной отгрузки.</p>
+<div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Бирка</th><th>Номенклатура</th><th>Остаток, кг</th><th>Шт.</th><th>Приход</th><th>Действия</th></tr></thead><tbody>
+{% for lot in lots %}<tr><td><a href="{% url 'inventory:animal' lot.animal.source_tag_id %}">{{ lot.animal.tag_number }}</a><small>{{ lot.animal.animal_type|animal_type_label }}</small></td><td>{{ lot.product.name }}{% if lot.parent_id %}<small>После разделки партии № {{ lot.parent_id }}</small>{% endif %}</td><td>{{ lot.available_weight }}</td><td>{{ lot.available_quantity }}</td><td><a href="{% url 'inventory:document' lot.animal.receipt_id %}">{{ lot.animal.receipt }}</a></td><td>{% include 'inventory/includes/lot_actions.html' %}</td></tr>
+{% empty %}<tr><td colspan="6" class="iv-empty">Нет доступных остатков.</td></tr>{% endfor %}
+</tbody></table></div>
+<h2>Товарные накладные</h2><div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Документ</th><th>Получатель</th><th>Состояние</th><th>Заявка</th></tr></thead><tbody>
+{% for invoice in invoices %}<tr><td><a href="{% url 'inventory:document' invoice.pk %}">{{ invoice }}</a></td><td>{{ invoice.payload.customer }}</td><td>{{ invoice.get_state_display }}</td><td>{% if invoice.order_id %}<a href="{% url 'inventory:order' invoice.order_id %}">№ {{ invoice.order_id }}</a>{% else %}—{% endif %}</td></tr>{% empty %}<tr><td colspan="4">Накладных пока нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% elif section == 'archive' %}
+<h1>Реализованный архив</h1><p>Записи до 01.10.2026 отображаются справочно. Они не создают складских остатков и движений.</p>
+<div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Бирка</th><th>Выбытие</th><th>Дата</th><th>Учёт</th></tr></thead><tbody>
+{% for row in archive %}<tr><td>{% if row.legacy %}<a href="{{ row.url }}">{{ row.tag_number }}</a>{% else %}<a href="{% url 'inventory:animal' row.case.source_tag_id %}">{{ row.tag_number }}</a>{% endif %}<small>{{ row.snapshot.animal_type|animal_type_label }}</small></td><td>{{ row.snapshot.status }}</td><td>{{ row.archive_date|date:'d.m.Y' }}</td><td>{% if row.legacy %}<span class="iv-badge">До начала учёта · исторический архив</span>{% else %}<a href="{% url 'inventory:document' row.document.pk %}">{{ row.document }}</a><small>Остатков нет; реализации и брак — в документе</small>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4" class="iv-empty">Архив пока пуст.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

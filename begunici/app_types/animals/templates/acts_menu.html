@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load inventory_tags %}
 
 {% block title %}Акты{% endblock %}
 
@@ -23,6 +24,8 @@
         </div>
         <div class="card-body">
             <div class="row g-3">
+                {# INVENTORY BRIDGE: подготовка СП-55 ветврачом. #}
+                {% inventory_acts_button %}
                 <div class="col-md-6 col-lg-3">
                     <a href="{% url 'animals:acts-archive' %}" class="btn btn-outline-primary w-100 py-3">
                         Акты выбытия (СП-54)

@@ -1,0 +1,8 @@
+{% extends 'inventory/base.html' %}
+{% block inventory_content %}
+<div class="iv-title-row"><h1>Входящие заявки на продукцию</h1><a class="btn btn-primary" href="{% url 'inventory:order-new' %}">Создать заявку вручную</a></div>
+<p>Жёлтым отмечены частично выполненные заявки. Зелёным — покрытые по всем требованиям, в том числе с превышением веса или количества.</p>
+<div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Заявка</th><th>Получатель</th><th>Тип</th><th>Состояние</th><th>Что осталось</th></tr></thead><tbody>
+{% for item in orders %}<tr class="{% if item.report.complete %}iv-good{% elif item.order.state == 'partial' %}iv-partial{% endif %}"><td><a href="{% url 'inventory:order' item.order.pk %}">№ {{ item.order.pk }}</a><small>{{ item.order.created_at|date:'d.m.Y' }}</small></td><td>{{ item.order.customer }}</td><td>{{ item.order.get_kind_display }}</td><td>{{ item.order.get_state_display }}</td><td>{% if item.report.complete %}Все требования выполнены{% else %}{% for missing in item.report.missing %}<div>{{ missing }}</div>{% endfor %}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="5" class="iv-empty">Пока нет входящих заявок.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
