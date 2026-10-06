@@ -7,7 +7,7 @@
     {% if inventory_allowed %}
     {% if section != 'home' %}
     <div class="card mb-4">
-        <div class="card-header iv-heading"><a href="{% url 'inventory:home' %}" class="text-dark text-decoration-none"><i class="fas fa-warehouse me-2" aria-hidden="true"></i>Складской учёт</a><span class="text-muted small">Учёт с 01.10.2026</span></div>
+        <div class="card-header iv-heading"><a href="{% url 'inventory:home' %}" class="text-dark text-decoration-none">Складской учёт</a><span class="text-muted small">Учёт с 01.10.2026</span></div>
         <nav class="card-body iv-nav" aria-label="Складской учёт">
             <a class="btn btn-outline-secondary" href="{% url 'inventory:live' %}">Живые к продаже</a>
             <a class="btn btn-outline-secondary" href="{% url 'inventory:pending' %}">К оформлению</a>
@@ -17,11 +17,11 @@
         </nav>
     </div>
     {% endif %}
-    {% else %}<div class="iv-heading mb-4"><a class="btn btn-outline-secondary" href="{% url 'animals:acts' %}"><i class="fas fa-arrow-left me-2" aria-hidden="true"></i>Акты</a><span class="text-muted">СП-55 · учёт с 01.10.2026</span></div>{% endif %}
+    {% else %}<div class="iv-heading mb-4"><a class="btn btn-outline-secondary" href="{% url 'animals:acts' %}">Акты</a><span class="text-muted">СП-55 · учёт с 01.10.2026</span></div>{% endif %}
     <div class="iv-error" id="iv-error" role="alert" tabindex="-1" hidden></div>
     <div{% if section != 'home' %} class="card iv-content-card"{% endif %}>
         {% block inventory_content %}{% endblock %}
     </div>
 </div>
-<script src="{% static 'inventory/inventory.js' %}?v=3" defer></script>
+<script src="{% static 'inventory/inventory.js' %}?v=4" defer></script>
 {% endblock %}

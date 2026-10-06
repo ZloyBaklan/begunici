@@ -35,6 +35,22 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(plain(value), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def animal_url(animal_type, tag_number):
+    return reverse("animals:animals").removesuffix("main/") + f"{animal_type}/{quote(tag_number, safe='')}/info/"
+
+
+def current_source_urls(tag_ids):
+    """Resolve current cards by stable tag IDs without changing document snapshots."""
+    urls = {}
+    if not tag_ids:
+        return urls
+    for animal_type, model in ANIMAL_MODELS.items():
+        animals = model.objects.filter(tag_id__in=tag_ids).select_related("tag").only("tag_id", "tag__tag_number")
+        for animal in animals:
+            urls[animal.tag_id] = animal_url(animal_type, animal.tag.tag_number)
+    return urls
+
+
 def source_queryset(model):
     return model.objects.select_related("tag", "animal_status", "place").prefetch_related(
         Prefetch("tag__archive_acts", queryset=ArchiveAct.objects.order_by("-updated_at", "-id"), to_attr="inventory_acts"),
@@ -113,7 +129,7 @@ def source_info(animal):
         "group_key": str(act.act_group_key) if act and act.act_group_key else "",
         # Core registers the same *-detail name for the HTML page and DRF's
         # resource. Reverse the unambiguous base instead of landing on JSON.
-        "url": reverse("animals:animals").removesuffix("main/") + f"{animal_type}/{quote(animal.tag.tag_number, safe='')}/info/",
+        "url": animal_url(animal_type, animal.tag.tag_number),
     }
 
 

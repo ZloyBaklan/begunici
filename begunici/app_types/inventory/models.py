@@ -7,7 +7,7 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -194,6 +194,35 @@ class AuditEvent(AppendOnly):
 
     class Meta:
         ordering = ["-id"]
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        from begunici.app_types.animals.models_user_log import UserActionLog
+
+        result = super().save(*args, **kwargs)
+        details = [self.action_label]
+        if self.document_id:
+            object_type = {"sp54": "Акт СП-54", "sp55": "Акт СП-55", "invoice": "Товарная накладная"}[self.document.kind]
+            object_id = str(self.document_id)
+            details.append(str(self.document))
+            tags = list(self.document.animals.values_list("tag_number", flat=True))
+            if tags:
+                details.append("Животные: " + ", ".join(tags))
+        elif self.order_id:
+            object_type, object_id = "Складская заявка", str(self.order_id)
+            details.append(f"Заявка № {self.order_id}; получатель: {self.order.customer}")
+        else:
+            object_type, object_id = "Складской учёт", ""
+        if self.summary:
+            details.append(self.summary)
+        UserActionLog.objects.create(
+            user=self.actor, action_type=self.action_label[:50],
+            object_type=object_type, object_id=object_id,
+            description="; ".join(details), timestamp=self.created_at,
+            additional_data={"inventory_event_id": self.pk, "document_id": self.document_id,
+                             "order_id": self.order_id, "action": self.action, "data": self.data},
+        )
+        return result
 
     @property
     def action_label(self):

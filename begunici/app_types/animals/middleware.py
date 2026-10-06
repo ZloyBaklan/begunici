@@ -222,6 +222,9 @@ class UserActionLogMiddleware(MiddlewareMixin):
         method = request.method.upper()
         path = request.path
 
+        if getattr(request, "_inventory_logged", False):
+            return True
+
         if method == "POST" and path.rstrip("/") == "/veterinary/api/barn-calculator/save":
             return True
 

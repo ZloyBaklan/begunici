@@ -1,4 +1,5 @@
 from django import template
+from django.contrib.auth.models import AnonymousUser
 
 from ..animal_types import type_label
 from ..models import AnimalCase
@@ -8,29 +9,33 @@ register = template.Library()
 register.filter("animal_type_label", type_label)
 
 
+def context_user(context):
+    return getattr(context.get("request"), "user", AnonymousUser())
+
+
 @register.simple_tag(takes_context=True)
 def inventory_access(context):
-    return can_manage_inventory(context["request"].user)
+    return can_manage_inventory(context_user(context))
 
 
 @register.inclusion_tag("inventory/includes/archive_hint.html", takes_context=True)
 def inventory_archive_hint(context):
-    return {"allowed": can_access_slaughter(context["request"].user)}
+    return {"allowed": can_access_slaughter(context_user(context))}
 
 
 @register.inclusion_tag("inventory/includes/home_button.html", takes_context=True)
 def inventory_home_button(context):
-    return {"allowed": can_manage_inventory(context["request"].user)}
+    return {"allowed": can_manage_inventory(context_user(context))}
 
 
 @register.inclusion_tag("inventory/includes/acts_button.html", takes_context=True)
 def inventory_acts_button(context):
-    return {"allowed": can_access_slaughter(context["request"].user)}
+    return {"allowed": can_access_slaughter(context_user(context))}
 
 
 @register.inclusion_tag("inventory/includes/animal_button.html", takes_context=True)
 def inventory_animal_button(context, animal):
-    if not can_manage_inventory(context["request"].user):
+    if not can_manage_inventory(context_user(context)):
         return {}
     case = AnimalCase.objects.filter(source_tag_id=animal.tag_id).select_related("receipt").first()
     label = "Складской учёт"

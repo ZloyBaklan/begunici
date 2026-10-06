@@ -90,7 +90,22 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
     action = None
 
-    if path.startswith("/api/scales/v1/"):
+    if path.startswith("/inventory/") and method == "POST":
+        inventory_actions = (
+            (r"/receipts/prepare/$", "Подготовка складского акта"),
+            (r"/receipts/[0-9]+/save/$", "Сохранение складского акта"),
+            (r"/documents/[0-9]+/confirm/$", "Подтверждение складского документа"),
+            (r"/documents/[0-9]+/replace/$", "Замена файла складского документа"),
+            (r"/documents/[0-9]+/return/$", "Возврат акта ветврачу"),
+            (r"/invoices/save/$", "Сохранение товарной накладной"),
+            (r"/invoices/[0-9]+/reverse/$", "Сторно товарной накладной"),
+            (r"/orders/create/$", "Создание складской заявки"),
+            (r"/orders/[0-9]+/close/$", "Закрытие складской заявки"),
+            (r"/lots/[0-9]+/cut/$", "Разделка продукции"),
+        )
+        action = next((label for pattern, label in inventory_actions if re.search(pattern, path)), None)
+
+    elif path.startswith("/api/scales/v1/"):
         if method == "POST" and "/bindings/" in path:
             action = "Присвоение РСХН"
         elif method == "POST" and "/weights/" in path:
@@ -297,6 +312,14 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
 def resolve_log_object_type(method, path):
     path = _normalize_path(path)
+
+    if path.startswith("/inventory/"):
+        for segment, label in (("invoices", "Товарная накладная"), ("receipts", "Складской акт"),
+                               ("documents", "Складской документ"), ("orders", "Складская заявка"),
+                               ("lots", "Складская партия")):
+            if f"/{segment}/" in path:
+                return label
+        return "Складской учёт"
 
     if path.startswith("/api/scales/v1/"):
         if "/bindings/" in path:

@@ -61,7 +61,7 @@ def prepare_receipt(user, tag_ids, *, kind, document_id=None, expected_revision=
         )
         snapshot = source["snapshot"]
         document.payload["animals"][str(case.pk)] = {
-            "weight": snapshot.get("last_weight") or snapshot.get("live_weight") or "",
+            "weight": snapshot.get("live_weight") or snapshot.get("last_weight") or "",
             "fatness": snapshot.get("fatness", ""), "comment": snapshot.get("vet_comment", ""),
         }
         if kind == "sp54":

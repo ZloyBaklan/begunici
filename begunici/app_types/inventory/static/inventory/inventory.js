@@ -69,7 +69,6 @@
         const search = field.value.toLocaleLowerCase();
         document.querySelectorAll(`#${field.dataset.filterTable} tbody tr`).forEach(row => { row.hidden = !row.textContent.toLocaleLowerCase().includes(search); });
     }));
-    $$('.iv-source-link').forEach(link => { link.href = `/animals/${encodeURIComponent(link.dataset.type)}/${encodeURIComponent(link.dataset.tag)}/info/`; });
     $$('[data-prepare-tag]').forEach(button => button.addEventListener('click', () => run(async () => {
         follow(await post(button.dataset.url, {kind: 'sp54', tags: [Number(button.dataset.prepareTag)]}));
     })));

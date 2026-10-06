@@ -27,7 +27,9 @@ def api(view):
             data = json.loads(request.POST.get("data", "{}")) if request.content_type and request.content_type.startswith("multipart/") else json.loads(request.body or b"{}")
             if not isinstance(data, dict):
                 raise ValidationError("Ожидается объект запроса.")
-            return JsonResponse(view(request, data, *args, **kwargs))
+            result = view(request, data, *args, **kwargs)
+            request._inventory_logged = True
+            return JsonResponse(result)
         except invoices.IncompleteOrder as exc:
             return JsonResponse({"error": " ".join(exc.messages), "needs_keep_open": True, "report": exc.report}, status=409)
         except PermissionDenied:
@@ -109,8 +111,12 @@ def animal(request, tag_id):
 def document(request, pk):
     doc = get_object_or_404(Document, pk=pk)
     document_access(request.user, doc)
+    animals = list(doc.animals.all())
+    current_urls = bridges.current_source_urls([case.source_tag_id for case in animals])
+    for case in animals:
+        case.source_url = current_urls.get(case.source_tag_id)
     context = {
-        "document": doc, "animals": list(doc.animals.all()),
+        "document": doc, "animals": animals,
         "products": list(Product.objects.values("code", "name", "category", "counted")),
         "payload": doc.payload, "versions": doc.versions.defer("content").select_related("created_by"),
         "events": doc.events.select_related("actor"),
