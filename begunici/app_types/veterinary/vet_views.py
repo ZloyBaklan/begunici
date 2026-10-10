@@ -74,7 +74,8 @@ def places_map(request):
 @api_view(["GET"])
 def export_feed_plan_excel(request):
     try:
-        from begunici.app_types.animals.feed_plan import feed_plan_response
+        # FEED BRIDGE: прежний URL скачивания использует общие нормы и итоги.
+        from begunici.app_types.feed_inventory.plan import feed_plan_response
 
         return feed_plan_response()
     except FileNotFoundError as exc:

@@ -8,13 +8,20 @@
     {% if section != 'home' %}
     <div class="card mb-4">
         <div class="card-header iv-heading"><a href="{% url 'inventory:home' %}" class="text-dark text-decoration-none">Складской учёт</a><span class="text-muted small">Учёт с 01.10.2026</span></div>
-        <nav class="card-body iv-nav" aria-label="Складской учёт">
+        <!-- FEED BRIDGE: у каждого склада своё меню операций. -->
+        <nav class="card-body d-flex flex-wrap gap-2" aria-label="Разделы складского учёта">
+            <a class="btn {% if section == 'feeds' %}btn-outline-secondary{% else %}btn-secondary{% endif %}" href="{% url 'inventory:home' %}"{% if section != 'feeds' %} aria-current="true"{% endif %}>Склад продукции и животных</a>
+            <a class="btn {% if section == 'feeds' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'feed_inventory:home' %}"{% if section == 'feeds' %} aria-current="true"{% endif %}>Склад кормов</a>
+        </nav>
+        {% if section != 'feeds' %}
+        <nav class="card-body pt-0 iv-nav" aria-label="Склад продукции и животных">
             <a class="btn btn-outline-secondary" href="{% url 'inventory:live' %}">Живые к продаже</a>
             <a class="btn btn-outline-secondary" href="{% url 'inventory:pending' %}">К оформлению</a>
             <a class="btn btn-outline-secondary" href="{% url 'inventory:orders' %}">Входящие заявки</a>
             <a class="btn btn-outline-secondary" href="{% url 'inventory:stock' %}">К реализации</a>
             <a class="btn btn-outline-secondary" href="{% url 'inventory:archive' %}">Реализованный архив</a>
         </nav>
+        {% endif %}
     </div>
     {% endif %}
     {% else %}<div class="iv-heading mb-4"><a class="btn btn-outline-secondary" href="{% url 'animals:acts' %}">Акты</a><span class="text-muted">СП-55 · учёт с 01.10.2026</span></div>{% endif %}

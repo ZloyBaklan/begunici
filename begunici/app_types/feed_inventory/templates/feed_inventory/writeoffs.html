@@ -1,0 +1,7 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<div class="iv-title-row"><h1>Списания кормов по актам</h1><a class="btn btn-outline-danger" href="{% url 'feed_inventory:writeoff-new' %}">Новый акт списания</a></div>
+<p class="text-muted">Порча, отсыревание, передача на подстилку и другие причины. Остатки уменьшаются после загрузки акта и подтверждения. Списания не включаются в расход на кормление.</p>
+{% include 'feed_inventory/document_list.html' %}
+<div class="feed-actions">{% if documents.has_previous %}<a class="btn btn-outline-secondary" href="?page={{ documents.previous_page_number }}">Предыдущая</a>{% endif %}<span>Страница {{ documents.number }} из {{ documents.paginator.num_pages }}</span>{% if documents.has_next %}<a class="btn btn-outline-secondary" href="?page={{ documents.next_page_number }}">Следующая</a>{% endif %}</div>
+{% endblock %}

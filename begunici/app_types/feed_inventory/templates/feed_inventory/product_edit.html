@@ -1,0 +1,12 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<h1>Изменить номенклатуру</h1><p class="text-muted">{{ product.name }}. Новое название появится в справочнике, остатках и кормовом плане. В оформленных документах останется название на момент их создания.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="revision" value="{{ form.revision }}">
+<label class="form-label w-100">Название<input class="form-control" name="name" value="{{ form.name }}" maxlength="120" required></label>
+<div class="row"><label class="form-label col-md-4">Категория<select class="form-select" name="category">{% for value,label in categories %}<option value="{{ value }}"{% if form.category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="form-label col-md-3">Единица измерения{% if unit_locked %}<input class="form-control" value="{{ product.get_unit_display }}" readonly><input type="hidden" name="unit" value="{{ product.unit }}">{% else %}<select class="form-select" name="unit">{% for value,label in units %}<option value="{{ value }}"{% if form.unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% endif %}</label>
+<label class="form-label col-md-5">Упаковка{% if package_locked %}<input class="form-control" value="{{ product.package|default:'Без упаковки' }}" readonly><input type="hidden" name="package" value="{{ product.package }}">{% else %}<input class="form-control" name="package" value="{{ form.package }}" maxlength="40">{% endif %}</label></div>
+{% if unit_locked or package_locked %}<p class="alert alert-info">Единица и упаковка, уже используемые в учёте, защищены от изменения: килограммы нельзя превратить в литры, а мешки — в тюки. Для другой единицы или упаковки добавьте отдельную позицию. Единица также фиксируется при заданных нормах потребления.</p>{% endif %}
+<div class="feed-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button><a class="btn btn-outline-secondary" href="{% url 'feed_inventory:products' %}">Отмена</a></div>
+</form>
+{% endblock %}

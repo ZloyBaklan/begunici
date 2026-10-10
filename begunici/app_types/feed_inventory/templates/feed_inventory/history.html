@@ -1,0 +1,16 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<h1>История операций с кормами</h1><p>Создание и исправления документов, подтверждения, сторно и изменения норм сохраняются с автором и временем.</p>
+{% for event in events %}<details class="card card-body mb-2"><summary>{{ event.created_at|date:'d.m.Y H:i:s' }} · {{ event.created_by }} · {{ event.action }}</summary><div class="mt-3">
+{% if event.data.document %}<p><a href="{% url 'feed_inventory:document' event.data.document %}">Документ № {{ event.data.document }}</a></p>{% endif %}
+{% if event.data.order %}<p><a href="{% url 'feed_inventory:order' event.data.order %}">Заявка № {{ event.data.order }}</a></p>{% endif %}
+{% if event.data.reversal %}<p><a href="{% url 'feed_inventory:document' event.data.reversal %}">Сторно № {{ event.data.reversal }}</a></p>{% endif %}
+{% if event.data.reason %}<p>Причина: {{ event.data.reason }}</p>{% endif %}{% if event.data.name %}<p>{{ event.data.name }} · {{ event.data.package }}</p>{% endif %}
+{% if event.data.revision %}<p>Версия: {{ event.data.revision }}</p>{% endif %}
+{% if event.data.before %}<div class="feed-table-wrap"><table class="table table-sm"><thead><tr><th>Поле</th><th>Было</th><th>Стало</th></tr></thead><tbody>
+<tr><td>Название</td><td>{{ event.data.before.name }}</td><td>{{ event.data.after.name }}</td></tr><tr><td>Категория</td><td>{{ event.data.before.category }}</td><td>{{ event.data.after.category }}</td></tr><tr><td>Единица</td><td>{{ event.data.before.unit }}</td><td>{{ event.data.after.unit }}</td></tr><tr><td>Упаковка</td><td>{{ event.data.before.package|default:'—' }}</td><td>{{ event.data.after.package|default:'—' }}</td></tr>
+</tbody></table></div>{% endif %}
+{% for change in event.data.changes %}<p>{{ change.name }} · {{ change.label }}: {{ change.before|default_if_none:'Не задана' }} → {{ change.after|default_if_none:'Не задана' }}</p>{% endfor %}
+</div></details>{% empty %}<p>Операций пока нет.</p>{% endfor %}
+<div class="feed-actions mt-3">{% if events.has_previous %}<a class="btn btn-outline-secondary" href="?page={{ events.previous_page_number }}">Предыдущая</a>{% endif %}<span>Страница {{ events.number }} из {{ events.paginator.num_pages }}</span>{% if events.has_next %}<a class="btn btn-outline-secondary" href="?page={{ events.next_page_number }}">Следующая</a>{% endif %}</div>
+{% endblock %}

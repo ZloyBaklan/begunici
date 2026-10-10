@@ -1,0 +1,38 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<div class="iv-title-row"><h1>{{ document }}</h1><span class="badge {% if document.state == 'posted' %}bg-success{% else %}bg-secondary{% endif %}">{{ document.get_state_display }}</span></div>
+<p>{{ document.date|date:'d.m.Y' }} · Создал: {{ document.created_by }}{% if document.number %} · Номер поставщика: {{ document.number }}{% endif %}{% if document.order_id %} · <a href="{% url 'feed_inventory:order' document.order_id %}">Заявка № {{ document.order_id }}</a>{% endif %}</p>
+{% if document.posted_at %}<p>Подтвердил: {{ document.posted_by }} · {{ document.posted_at|date:'d.m.Y H:i' }}</p>{% endif %}
+{% if document.reversal_of %}<p>Сторно документа <a href="{% url 'feed_inventory:document' document.reversal_of_id %}">{{ document.reversal_of }}</a>. Причина: {{ version.payload.note }}</p>{% endif %}
+<div class="feed-table-wrap"><table class="table table-striped"><thead><tr><th>Номенклатура</th><th>Количество</th><th>Упаковки, шт.</th></tr></thead><tbody>{% for line in version.payload.lines %}<tr><td>{{ line.name }}</td><td>{{ line.amount }} {{ line.unit }}</td><td>{{ line.packages }}<small>{{ line.package }}</small></td></tr>{% endfor %}</tbody></table></div>
+<p>{{ version.payload.note }}</p>
+{% if version.payload.reason_label %}<p><strong>Причина списания:</strong> {{ version.payload.reason_label }}</p>{% endif %}
+<div class="feed-actions mb-3">
+{% if document.kind == 'writeoff' %}<a class="btn btn-outline-primary" href="{% url 'feed_inventory:writeoff-print' version.pk %}" target="_blank" rel="noopener">Печатная форма акта</a>{% endif %}
+{% if version.filename %}<a class="btn btn-outline-primary" href="{% url 'feed_inventory:download' version.pk %}">{% if document.kind == 'writeoff' %}Скачать подтверждающий акт{% else %}Скачать накладную{% endif %} · версия {{ version.number }}</a>{% endif %}
+</div>
+{% if document.state == 'draft' %}
+{% if document.kind == 'writeoff' and not version.filename %}<div class="alert alert-warning">Чтобы подтвердить списание, прикрепите акт в форме ниже. При необходимости откройте печатную форму, оформите документ и сохраните его в PDF.</div>{% endif %}
+<form method="post" class="card card-body bg-light mb-4" data-feed-confirm>
+    {% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="revision" value="{{ document.revision }}">
+    <label class="mb-3"><input type="checkbox" name="verified" value="yes" required> Номенклатура и количества проверены{% if version.filename %}, соответствуют {% if document.kind == 'writeoff' %}подтверждающему акту{% else %}файлу накладной{% endif %}{% endif %}</label>
+    <button class="btn {% if document.kind == 'writeoff' %}btn-danger{% else %}btn-success{% endif %} align-self-start" type="submit"{% if document.kind == 'writeoff' and not version.filename %} disabled{% endif %}>{% if document.kind == 'receipt' %}Подтвердить приход на склад{% elif document.kind == 'writeoff' %}Подтвердить списание по акту{% else %}Подтвердить списание со склада{% endif %}</button>
+</form>
+<details class="card card-body mb-3" data-feed-edit-details {% if editing or document.kind == 'writeoff' and not version.filename %}open{% endif %}><summary>{% if document.kind == 'writeoff' %}Прикрепить акт или исправить черновик{% else %}Исправить черновик{% endif %}</summary>
+<form method="post" enctype="multipart/form-data" class="mt-3" data-feed-draft {% if editing %}data-dirty="yes"{% endif %}>
+    {% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="revision" value="{{ document.revision }}">
+    {% include 'feed_inventory/line_editor.html' %}
+    {% if document.kind == 'writeoff' %}<label class="form-label w-100">Причина списания<select class="form-select" name="reason" required>{% for value,label in reasons %}<option value="{{ value }}"{% if editing and form.reason == value or not editing and version.payload.reason == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="form-label w-100">{% if document.kind == 'writeoff' %}Обоснование списания{% else %}Примечание / причина изменения{% endif %}<textarea class="form-control" name="note" maxlength="4000"{% if document.kind == 'writeoff' %} required{% endif %}>{% if editing %}{{ form.note }}{% else %}{{ version.payload.note }}{% endif %}</textarea></label>
+    {% if document.kind == 'receipt' or document.kind == 'writeoff' %}<label class="form-label w-100">{% if document.kind == 'writeoff' %}Подтверждающий акт — PDF или XLSX{% else %}Исправленный файл{% endif %}<input class="form-control" type="file" name="file" accept=".pdf,.xlsx"></label>
+    {% if version.filename %}<label class="mb-3"><input type="checkbox" name="replace" value="yes"> Подтверждаю замену файла. Старый останется в истории.</label>{% endif %}{% endif %}
+    <button class="btn btn-primary" type="submit">Сохранить новую версию</button>
+</form></details>
+<form method="post" data-feed-ask="Отменить этот черновик? Остатки не изменятся.">{% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="revision" value="{{ document.revision }}"><button class="btn btn-outline-danger" type="submit">Отменить черновик</button></form>
+{% elif document.state == 'posted' and document.kind != 'reversal' %}
+<details class="mt-3"><summary>Исправить подтверждённое движение через сторно</summary><form method="post" class="mt-3" data-feed-ask="Создать обратное движение и сохранить причину в истории?">{% csrf_token %}<input type="hidden" name="action" value="reverse"><label class="form-label w-100">Причина<textarea name="reason" class="form-control" maxlength="2000" required></textarea></label><button class="btn btn-outline-danger" type="submit">Сторнировать документ</button></form></details>
+{% endif %}
+{% if version.payload.plan %}<details class="mt-4"><summary>Расчёт, сохранённый при оформлении расхода</summary><p>По текущему поголовью на {{ version.payload.plan.date }} · {{ version.payload.plan.heads }} голов. Без категории: {{ version.payload.plan.unclassified }}.</p><ul>{% for product in version.payload.plan.products %}<li>{{ product.name }}: {{ product.daily }} {{ product.unit }} / сутки</li>{% endfor %}</ul></details>{% endif %}
+<h2 class="mt-4">История версий</h2>
+{% for item in versions %}<details class="card card-body mb-2"><summary>Версия {{ item.number }} · {{ item.created_at|date:'d.m.Y H:i' }} · {{ item.created_by }}</summary>{% if item.payload.reason_label %}<p class="mt-2">{{ item.payload.reason_label }}</p>{% endif %}<p class="mt-2">{{ item.payload.note }}</p><ul>{% for line in item.payload.lines %}<li>{{ line.name }}: {{ line.amount }} {{ line.unit }}, упаковок {{ line.packages }}</li>{% endfor %}</ul>{% if document.kind == 'writeoff' %}<p><a href="{% url 'feed_inventory:writeoff-print' item.pk %}" target="_blank" rel="noopener">Печатная форма версии {{ item.number }}</a></p>{% endif %}{% if item.filename %}<a href="{% url 'feed_inventory:download' item.pk %}">Скачать {{ item.filename }}</a><small class="feed-hash">SHA-256: {{ item.sha256 }}</small>{% endif %}</details>{% endfor %}
+{% endblock %}

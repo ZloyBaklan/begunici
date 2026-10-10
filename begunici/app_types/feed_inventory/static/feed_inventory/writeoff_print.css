@@ -1,0 +1,15 @@
+body { background: #eef1f5; color: #20252c; font: 15px/1.5 Arial, sans-serif; margin: 0; }
+.print-actions { max-width: 920px; margin: 24px auto; display: flex; justify-content: space-between; gap: 20px; padding: 0 20px; }
+.print-actions a { color: #185e9d; }
+.print-actions button { padding: 10px 18px; background: #185e9d; color: white; border: 0; border-radius: 4px; cursor: pointer; }
+.act-sheet { max-width: 920px; margin: 0 auto 40px; padding: 36px; box-sizing: border-box; background: white; box-shadow: 0 2px 12px #ccd4df; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+.act-status { color: #576676; border-bottom: 1px solid #cbd3dc; padding-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; }
+th, td { border: 1px solid #8893a0; padding: 9px; text-align: left; overflow-wrap: anywhere; }
+th { background: #f1f4f7; }
+.numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.act-conclusion { margin-bottom: 30px; }
+.act-signatures { margin-top: 45px; break-inside: avoid; }
+.act-signatures p { margin: 25px 0; }
+@media print { @page { size: A4; margin: 14mm; } body { background: white; } .print-actions { display: none; } .act-sheet { max-width: none; padding: 0; box-shadow: none; margin: 0; } tr { break-inside: avoid; } thead { display: table-header-group; } }

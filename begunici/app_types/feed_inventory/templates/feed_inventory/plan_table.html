@@ -1,0 +1,22 @@
+{% load feed_tags %}
+<div class="feed-table-wrap feed-plan-scroll" tabindex="0" role="region" aria-label="Таблица кормового плана">
+<table class="table feed-plan-table">
+    <thead><tr><th class="feed-group-col" scope="col">Тип / группа животных</th><th class="feed-heads-col" scope="col">Голов</th>{% for product in plan.products %}<th scope="col">{{ product.name }}<span class="feed-unit-label">{{ product.unit }}</span></th>{% endfor %}</tr></thead>
+    <tbody>{% for row in plan.rows %}<tr class="{% if row.count %}feed-populated{% else %}feed-empty-group{% endif %}">
+        <th class="feed-group-col" scope="row">{{ row.label }}</th><td class="feed-heads-col"><span class="feed-head-count">{{ row.count }}</span></td>
+        {% for cell in row.cells %}<td class="feed-plan-value">
+            <span data-feed-metric="norm" class="feed-metric {% if cell.norm == '' %}feed-unset{% endif %}" {% if editing %}hidden{% endif %}>{{ cell.norm|feed_quantity }}</span>
+            {% if can_edit %}<input class="form-control form-control-sm feed-norm" name="norm_{{ cell.product_id }}_{{ row.group }}" value="{{ cell.norm }}" type="number" min="0" max="999999999.999" step="0.001" aria-label="Норма: {{ row.label }}, {{ cell.product_name }}" placeholder="Не задана" {% if not editing %}disabled hidden{% endif %}>{% endif %}
+            <span data-feed-metric="daily" class="feed-metric" hidden>{{ cell.daily|feed_quantity }}</span>
+            <span data-feed-metric="monthly" class="feed-metric" hidden>{{ cell.monthly|feed_quantity }}</span>
+            <span data-feed-metric="yearly" class="feed-metric" hidden>{{ cell.yearly|feed_quantity }}</span>
+        </td>{% endfor %}
+    </tr>{% endfor %}</tbody>
+    <tfoot>
+        <tr class="feed-total-day"><th class="feed-group-col" scope="row">Всего в сутки</th><td class="feed-heads-col">{{ plan.heads }}</td>{% for product in plan.products %}<td><strong>{{ product.daily|feed_quantity }}</strong><span class="feed-total-unit">{{ product.unit }}</span></td>{% endfor %}</tr>
+        <tr class="feed-total-month" data-feed-total="monthly"><th class="feed-group-col" scope="row">Всего за месяц<small>{{ plan.days }} дн.</small></th><td class="feed-heads-col">{{ plan.heads }}</td>{% for product in plan.products %}<td><strong>{{ product.monthly|feed_quantity }}</strong><span class="feed-total-unit">{{ product.unit }}</span></td>{% endfor %}</tr>
+        <tr class="feed-total-year" data-feed-total="yearly" hidden><th class="feed-group-col" scope="row">Всего до конца года<small>{{ plan.date_label }}–{{ plan.year_end_label }}<br>{{ plan.year_days }} дн.</small></th><td class="feed-heads-col">{{ plan.heads }}</td>{% for product in plan.products %}<td><strong>{{ product.yearly|feed_quantity }}</strong><span class="feed-total-unit">{{ product.unit }}</span></td>{% endfor %}</tr>
+    </tfoot>
+</table>
+</div>
+<p class="text-muted small mb-0">«—» — норма не задана; 0 — корм не требуется. Тип животного и поголовье закреплены при горизонтальной прокрутке.</p>

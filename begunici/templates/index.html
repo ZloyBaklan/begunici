@@ -1,6 +1,7 @@
 ﻿{% extends 'base.html' %}
 {% load static %}
 {% load inventory_tags %}
+{% load feed_tags %}
 
 {% block title %}Главная{% endblock %}
 
@@ -98,6 +99,9 @@
                 </div>
             </div>
         </div>
+
+        <!-- FEED BRIDGE: самостоятельный кормовой план между планом и статистикой. -->
+        {% feed_plan_card %}
 
         <div class="yearly-statistics-card" id="yearly-statistics-card">
             <div class="yearly-statistics-header">

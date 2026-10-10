@@ -29,6 +29,8 @@ from begunici.app_types.animals.views_scanner import (
 )
 
 urlpatterns = [
+    # FEED BRIDGE: приход и расход кормов не меняют учёт животных и продукции.
+    path("inventory/feeds/", include("begunici.app_types.feed_inventory.urls")),
     # INVENTORY BRIDGE: все сценарии склада принадлежат отдельному приложению.
     path("inventory/", include("begunici.app_types.inventory.urls")),
     path("admin/", admin.site.urls),  # Панель администратора Django

@@ -1,0 +1,12 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<h1>Заявки на приход кормов</h1>
+<div class="feed-table-wrap"><table class="table table-striped"><thead><tr><th>Заявка</th><th>Поставщик</th><th>Дата</th><th>Состояние</th></tr></thead><tbody>{% for row in orders %}<tr class="{% if row.progress.complete %}table-success{% elif row.progress.partial %}table-warning{% endif %}"><td><a class="btn btn-outline-primary btn-sm" href="{% url 'feed_inventory:order' row.order.pk %}">Заявка № {{ row.order.pk }}</a></td><td>{{ row.order.supplier }}</td><td>{{ row.order.created_at|date:'d.m.Y' }}</td><td>{{ row.progress.label }}</td></tr>{% empty %}<tr><td colspan="4">Заявок пока нет.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card mt-4" id="new-order"><div class="card-header"><h2 class="h5 mb-0">Новая входящая заявка</h2></div><form method="post" class="card-body">
+{% csrf_token %}<input type="hidden" name="token" value="{{ token }}">
+<label class="form-label w-100">Поставщик<input name="supplier" class="form-control" maxlength="200" value="{{ form.supplier }}" required></label>
+{% include 'feed_inventory/line_editor.html' %}
+<label class="form-label w-100">Примечание<textarea name="note" class="form-control" maxlength="4000">{{ form.note }}</textarea></label>
+<button class="btn btn-primary" type="submit">Создать заявку</button>
+</form></div>
+{% endblock %}
