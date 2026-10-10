@@ -1,0 +1,12 @@
+{% extends 'vet_inventory/base.html' %}{% block vet_content %}
+<h1>{% if kind == 'receipt' %}Приходная накладная{% elif kind == 'writeoff' %}Акт списания препаратов{% else %}Прочий расход препаратов{% endif %}</h1>
+{% if not can_finance %}<div class="alert alert-info">Оформление документов доступно finans и admin.</div>{% else %}
+{% if order %}<p>Заявка <a href="{% url 'vet_inventory:order' order.pk %}">№ {{ order.pk }}</a> · {{ order.supplier }}</p>{% else %}<p>Расход по обработкам учитывается автоматически. Здесь оформляются дополнительные расходы и списания с указанием основания.</p>{% endif %}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}">
+<div class="row mb-3"><label class="col-md-4 form-label">Дата<input class="form-control" type="date" name="date" value="{{ date }}" required></label>{% if kind == 'receipt' %}<label class="col-md-8 form-label">Номер накладной поставщика<input class="form-control" name="number" maxlength="100" value="{{ form.number }}" required></label>{% endif %}</div>
+{% if kind == 'writeoff' %}<label class="form-label w-100">Причина списания<select class="form-select" name="reason" required><option value="">Выберите причину</option>{% for value,label in reasons %}<option value="{{ value }}"{% if form.reason == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+{% include 'vet_inventory/line_editor.html' %}
+<label class="form-label w-100">{% if kind == 'receipt' %}Примечание{% else %}Основание расхода / списания{% endif %}<textarea class="form-control" name="note" maxlength="4000"{% if kind != 'receipt' %} required{% endif %}>{{ form.note }}</textarea></label>
+{% if kind == 'receipt' or kind == 'writeoff' %}<label class="form-label w-100">{% if kind == 'receipt' %}Накладная поставщика (при наличии){% else %}Подтверждающий акт{% endif %} — PDF или XLSX<input class="form-control" type="file" name="file" accept=".pdf,.xlsx"></label>{% endif %}
+<p class="text-muted small">Сначала сохраняется черновик. Остатки изменятся после проверки и подтверждения. Для списания по акту подтверждающий файл обязателен.</p>
+<button class="btn btn-primary" type="submit">Сохранить и проверить</button></form>{% endif %}{% endblock %}

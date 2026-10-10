@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "begunici.app_types.animals",
     "begunici.app_types.veterinary",  # Приложение для ветобработки и взвешивания
+    "begunici.app_types.vet_inventory",  # VET BRIDGE: отдельный учёт препаратов
     "begunici.app_types.public_site",  # Публичный сайт
     "begunici.app_types.inventory",  # INVENTORY BRIDGE: изолированный складской учёт
     "rest_framework",  # Если используете Django REST Framework
@@ -71,6 +72,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "begunici.app_types.vet_inventory.middleware.VetInventoryActorMiddleware",  # VET BRIDGE: автор движения
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "begunici.app_types.public_site.middleware.LoginRequiredExceptPublicMiddleware",  # Middleware для авторизации

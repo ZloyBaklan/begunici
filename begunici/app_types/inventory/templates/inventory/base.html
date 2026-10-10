@@ -19,6 +19,7 @@
     {% endif %}
     {% else %}<div class="iv-heading mb-4"><a class="btn btn-outline-secondary" href="{% url 'animals:acts' %}">Акты</a><span class="text-muted">СП-55 · учёт с 01.10.2026</span></div>{% endif %}
     <div class="iv-error" id="iv-error" role="alert" tabindex="-1" hidden></div>
+    {% if section != 'home' %}{% load vet_inventory_tags %}{% vet_stock_entry %}{% endif %}
     <div{% if section != 'home' %} class="card iv-content-card"{% endif %}>
         {% block inventory_content %}{% endblock %}
     </div>

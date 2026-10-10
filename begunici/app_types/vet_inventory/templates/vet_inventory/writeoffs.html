@@ -1,0 +1,7 @@
+{% extends 'vet_inventory/base.html' %}
+{% block vet_content %}
+<div class="iv-title-row"><h1>Списания ветпрепаратов по актам</h1><a class="btn btn-outline-danger" href="{% url 'vet_inventory:writeoff-new' %}">Новый акт списания</a></div>
+<p class="text-muted">Истечение срока годности, порча, повреждение и другие причины. Склад уменьшается после загрузки акта и подтверждения. Эти списания отображаются отдельно от расхода по обработкам.</p>
+{% include 'vet_inventory/document_list.html' %}
+<div class="vet-actions">{% if documents.has_previous %}<a class="btn btn-outline-secondary" href="?page={{ documents.previous_page_number }}">Предыдущая</a>{% endif %}<span>Страница {{ documents.number }} из {{ documents.paginator.num_pages }}</span>{% if documents.has_next %}<a class="btn btn-outline-secondary" href="?page={{ documents.next_page_number }}">Следующая</a>{% endif %}</div>
+{% endblock %}

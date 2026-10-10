@@ -1,0 +1,18 @@
+.vet-actions { display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; }
+.vet-table-wrap { overflow-x:auto; margin-bottom:1rem; }
+.vet-stock td { vertical-align:middle; font-variant-numeric:tabular-nums; }
+.vet-stock small { display:block; color:#687a8c; margin-top:.3rem; }
+.vet-stock h2 { font-size:1.35rem; }
+.vet-stock .badge { font-size:.85rem; padding:.5rem .7rem; }
+.vet-quantity-input { width:205px; max-width:100%; flex-wrap:nowrap; }
+.vet-quantity-input .input-group-text { min-width:44px; justify-content:center; background:#eaf0f5; font-weight:600; }
+.vet-quantity-input input { min-width:80px; }
+.vet-line-editor th:first-child { width:37%; }
+.vet-stock [hidden] { display:none !important; }
+.vet-stock summary { cursor:pointer; }
+.vet-stock .vet-hash { overflow-wrap:anywhere; }
+.vet-number { font-size:1.2rem; color:#244b71; }
+.vet-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem; background:#edf5ff; border:1px solid #cbdff2; border-radius:6px; padding:1rem; }
+.vet-summary strong { display:block; color:#244b71; font-size:1.15rem; }
+.vet-stock .vet-search { width:300px; max-width:100%; }
+@media(max-width:600px) { .vet-stock h1 { font-size:1.6rem; } .vet-actions .btn { white-space:normal; } }

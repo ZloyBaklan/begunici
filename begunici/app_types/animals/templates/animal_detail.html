@@ -194,6 +194,8 @@
             <!-- Правая колонка -->
             <div class="col-lg-6">
                 <!-- Текущие ветобработки -->
+                <!-- VET BRIDGE: учёт и уточнение расхода по обработкам животного. -->
+                {% load vet_inventory_tags %}{% vet_stock_entry animal %}
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Активные ветобработки</h5>

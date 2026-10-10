@@ -1,0 +1,11 @@
+{% load static vet_inventory_tags %}<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Акт списания ветпрепаратов № {{ document.pk }}</title><link rel="stylesheet" href="{% static 'vet_inventory/writeoff_print.css' %}"></head><body>
+<nav class="print-actions"><a href="{% url 'vet_inventory:document' document.pk %}">Вернуться к документу</a><button type="button" data-print-act>Печать / сохранить PDF</button></nav>
+<main class="act-sheet"><h1>Акт списания ветпрепаратов № {{ document.pk }}</h1><p>Ферма Бегуницы · {{ document.date|date:'d.m.Y' }}</p>
+<p class="act-status">Версия {{ version.number }} · {{ document.get_state_display }}{% if document.state == 'draft' %} · Форма для оформления и подписания{% endif %}</p>
+<p><strong>Причина:</strong> {{ version.payload.reason_label }}</p><p><strong>Обоснование:</strong> {{ version.payload.note|linebreaksbr }}</p>
+<table><thead><tr><th>№</th><th>Номенклатура</th><th>Количество</th><th>Ед.</th><th>Упаковки, шт.</th><th>Вид упаковки</th></tr></thead><tbody>{% for line in version.payload.lines %}<tr><td>{{ forloop.counter }}</td><td>{{ line.name }}</td><td class="numeric">{{ line.amount|vet_quantity }}</td><td>{{ line.unit }}</td><td class="numeric">{{ line.packages|vet_quantity }}</td><td>{{ line.package|default:'—' }}</td></tr>{% endfor %}</tbody></table>
+<p class="act-conclusion">Указанные количества подлежат списанию со склада ветпрепаратов по указанной причине.</p>
+<p>Подготовил в программе: {{ version.created_by }} · {{ version.created_at|date:'d.m.Y H:i' }}</p>
+{% if document.posted_at %}<p>Подтверждено в программе: {{ document.posted_by }} · {{ document.posted_at|date:'d.m.Y H:i' }}</p>{% endif %}
+<div class="act-signatures"><p>Ответственный за склад: __________________ / __________________</p><p>Проверил: _______________________________ / __________________</p><p>Утвердил: _______________________________ / __________________</p></div>
+</main><script src="{% static 'vet_inventory/writeoff_print.js' %}" defer></script></body></html>
