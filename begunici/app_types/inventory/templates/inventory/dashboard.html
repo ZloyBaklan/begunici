@@ -4,10 +4,10 @@
 {% load vet_inventory_tags %}
 {% if section == 'home' %}
 <div class="iv-title-row mb-3"><h1 class="mb-0">Складской учёт</h1><span class="text-muted">Учёт с 01.10.2026</span></div>
+<!-- VET BRIDGE: отдельный раздел, не меняет сетку продукции и кормов. -->
+<div class="mb-4">{% vet_stock_card %}</div>
 <p class="text-muted mb-4">Животные к продаже, оформление актов и движение продукции.</p>
 <div class="row g-4">
-    <!-- VET BRIDGE: карточка отдельного склада препаратов. -->
-    {% vet_stock_card %}
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-header"><h5 class="mb-0">Животные и оформление</h5></div>

@@ -1,6 +1,7 @@
-{% if allowed %}<div class="col-md-6"><div class="card h-100"><div class="card-header"><h5 class="mb-0">Ветпрепараты</h5></div><div class="card-body">
-<a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'vet_inventory:home' %}">Остатки препаратов</a>
-<a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'vet_inventory:treatments' %}">Расход по ветобработкам</a>
-<a class="btn btn-outline-secondary w-100 mb-3 iv-menu-button" href="{% url 'vet_inventory:orders' %}">Входящие заявки и поступления</a>
-<p class="text-muted small mb-0">Учёт препаратов и материалов, нормы расхода и списания по актам.</p>
-</div></div></div>{% endif %}
+{% if allowed %}<div class="card"><div class="card-header"><h5 class="mb-0">Ветпрепараты</h5></div><div class="card-body">
+<div class="row g-2 mb-3">
+<div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'vet_inventory:home' %}">Остатки препаратов</a></div>
+<div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'vet_inventory:treatments' %}">Расход по ветобработкам</a></div>
+<div class="col-md-4"><a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'vet_inventory:orders' %}">Входящие заявки и поступления</a></div>
+</div><p class="text-muted small mb-0">Учёт препаратов и материалов, нормы расхода и списания по актам.</p>
+</div></div>{% endif %}
