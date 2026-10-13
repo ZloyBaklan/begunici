@@ -215,9 +215,11 @@
                                 Удалить выбранные
                             </button>
                             {% endif %}
+                            {% if user_permissions.can_archive_animals %}
                             <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">
                                 Перенести в архив
                             </button>
+                            {% endif %}
                             <button id="clear-selected-button" class="btn btn-outline-secondary btn-sm" onclick="clearSelectedEwes()">
                                 Очистить выбор
                             </button>

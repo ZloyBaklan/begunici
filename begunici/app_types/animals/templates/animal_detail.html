@@ -194,6 +194,8 @@
             <!-- Правая колонка -->
             <div class="col-lg-6">
                 <!-- Текущие ветобработки -->
+                <!-- VET BRIDGE: учёт и уточнение расхода по обработкам животного. -->
+                {% load vet_inventory_tags %}{% vet_stock_entry animal %}
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Активные ветобработки</h5>
@@ -353,7 +355,7 @@
                                 </div>
                                 <div class="col-12">
                                     <button type="button" onclick="saveMakerDetails()" class="btn btn-primary">Сохранить</button>
-                                    {% if not animal.is_archived %}
+                                    {% if not animal.is_archived and user_permissions.can_archive_animals %}
                                     <button type="button" onclick="openArchiveModal()" class="btn btn-outline-warning ms-2">Архивировать</button>
                                     {% endif %}
                                 </div>

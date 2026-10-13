@@ -1,0 +1,18 @@
+{% extends 'inventory/base.html' %}{% load static %}
+{% block title %}Корма и сено · Бегуницы{% endblock %}
+{% block inventory_content %}
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=3">
+<div class="feeds">
+<nav class="feed-actions mb-4" aria-label="Корма и сено">
+    <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:home' %}">Остатки и расход</a>
+    <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:orders' %}">Заявки на приход</a>
+    <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:writeoffs' %}">Списания по актам</a>
+    <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:products' %}">Номенклатура</a>
+    <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:history' %}">История операций</a>
+    <a class="btn btn-outline-primary" href="/#feed-plan">Кормовой план</a>
+</nav>
+{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}
+{% block feed_content %}{% endblock %}
+</div>
+<script src="{% static 'feed_inventory/feeds.js' %}?v=3" defer></script>
+{% endblock %}

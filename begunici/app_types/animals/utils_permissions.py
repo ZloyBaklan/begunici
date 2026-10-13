@@ -1,6 +1,14 @@
 from django.contrib.auth.models import User
 
 
+ANIMAL_ARCHIVE_DENIED_MESSAGE = 'Пользователю main запрещено архивировать животных'
+
+
+def can_archive_animals(user):
+    """Restrict the main account, without changing the other Main-group users."""
+    return getattr(user, 'username', None) != 'main'
+
+
 def get_user_role(user):
     """Возвращает роль пользователя"""
     if not user.is_authenticated:
@@ -49,5 +57,6 @@ def get_user_permissions(user):
         'can_view_statistics': can_view_statistics(user),
         'can_delete_objects': can_delete_objects(user),
         'can_restore_from_archive': can_restore_from_archive(user),
+        'can_archive_animals': can_archive_animals(user),
         'can_access_admin_panel': can_access_admin_panel(user),
     }

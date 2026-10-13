@@ -29,9 +29,13 @@ from begunici.app_types.animals.views_scanner import (
 )
 
 urlpatterns = [
+    # FEED BRIDGE: приход и расход кормов не меняют учёт животных и продукции.
+    path("inventory/feeds/", include("begunici.app_types.feed_inventory.urls")),
     # INVENTORY BRIDGE: все сценарии склада принадлежат отдельному приложению.
     path("inventory/", include("begunici.app_types.inventory.urls")),
     path("admin/", admin.site.urls),  # Панель администратора Django
+    # VET BRIDGE: самостоятельный склад препаратов, без зависимости от кормов.
+    path("inventory/vet/", include("begunici.app_types.vet_inventory.urls")),
     path("", index, name="index"),  # Главная страница
     path("places/map/", places_map, name="places_map"),  # Карта овчарен
     path("places/map/kalkulyator/", barn_calculator_page, name="barn_calculator"),

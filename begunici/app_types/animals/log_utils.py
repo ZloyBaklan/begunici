@@ -90,7 +90,32 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
     action = None
 
-    if path.startswith("/inventory/") and method == "POST":
+    if path.startswith(("/inventory/feeds/", "/inventory/vet/")) and method == "POST":
+        area = "склада кормов" if path.startswith("/inventory/feeds/") else "склада ветпрепаратов"
+        form_action = _params_get(params, "action")
+        if re.search(r"/products/[0-9]+/edit/$", path):
+            label = "Редактирование позиции"
+        elif path.endswith("/products/"):
+            label = "Создание позиции"
+        elif path.endswith("/orders/"):
+            label = "Создание заявки"
+        elif path.endswith("/receive/"):
+            label = "Создание приходной накладной"
+        elif path.endswith("/consume/"):
+            label = "Создание расхода"
+        elif path.endswith("/writeoffs/new/"):
+            label = "Создание акта списания"
+        elif "/norms/" in path:
+            label = "Изменение норм расхода"
+        elif "/treatments/" in path:
+            label = {"adjust": "Уточнение расхода обработки", "recalculate": "Пересчёт расхода обработки",
+                     "exclude": "Исключение расхода обработки"}.get(form_action, "Изменение расхода обработки")
+        else:
+            label = {"confirm": "Подтверждение документа", "edit": "Редактирование документа",
+                     "cancel": "Отмена черновика", "reverse": "Сторно документа"}.get(form_action, "Изменение данных")
+        action = f"{label} {area}"
+
+    elif path.startswith("/inventory/") and method == "POST":
         inventory_actions = (
             (r"/receipts/prepare/$", "Подготовка складского акта"),
             (r"/receipts/[0-9]+/save/$", "Сохранение складского акта"),
@@ -314,6 +339,10 @@ def resolve_log_object_type(method, path):
     path = _normalize_path(path)
 
     if path.startswith("/inventory/"):
+        if path.startswith("/inventory/feeds/"):
+            return "Склад кормов"
+        if path.startswith("/inventory/vet/"):
+            return "Склад ветпрепаратов"
         for segment, label in (("invoices", "Товарная накладная"), ("receipts", "Складской акт"),
                                ("documents", "Складской документ"), ("orders", "Складская заявка"),
                                ("lots", "Складская партия")):
@@ -472,6 +501,9 @@ def format_log_details(raw_details, parsed_details, fallback_action, status_code
 
         if parsed_details.get("type"):
             details_text += f" ({parsed_details['type']})"
+
+        if parsed_details.get("error"):
+            details_text += f"; причина: {parsed_details['error']}"
 
         changed_fields = parsed_details.get("changed_fields")
         if isinstance(changed_fields, list) and changed_fields:

@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.shortcuts import render, redirect
 from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
@@ -39,6 +39,8 @@ from .models import (
     SheepBodyConditionRecord,
     TemporaryTag,
     DashboardPlanParameter,
+    DashboardCullingSnapshot,
+    record_dashboard_culling_snapshot,
     ArchiveAct,
     CalendarNote,
     ShiftTransferNote,
@@ -88,6 +90,7 @@ from .archive_acts import (
 from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
 from .monthly_breeding_acts import monthly_breeding_act_response
 from .age_utils import age_months_for_export, filter_queryset_by_age, format_age
+from .utils_permissions import ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals
 from .weight_acts import get_weight_acts_page, weight_act_response
 from .progeny_acts import get_progeny_acts_page, progeny_act_response
 from .livestock_movement_acts import livestock_movement_act_response
@@ -517,6 +520,8 @@ class AnimalBaseViewSet(viewsets.ModelViewSet):
     pagination_class = PaginationSetting  # Добавляем пагинацию
 
     def handle_exception(self, exc):
+        if isinstance(exc, PermissionDenied):
+            return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         return Response(_normalize_exception_response_data(exc), status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
@@ -4140,9 +4145,10 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             default=None,
         )
 
-    def _build_calendar_weighing_groups_for_date(self, target_date):
+    def _build_calendar_weighing_groups_for_date(self, target_date, end_date=None):
         from dateutil.relativedelta import relativedelta
 
+        end_date = end_date or target_date
         animals = []
         animal_sources = [
             (Maker, 'maker', False),
@@ -4209,8 +4215,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     sum(group_event['weighing_date'].toordinal() for group_event in group_events)
                     / len(group_events)
                 )
-                if datetime.fromordinal(average_ordinal).date() == target_date:
-                    groups_for_target.extend(group_events)
+                calendar_date = datetime.fromordinal(average_ordinal).date()
+                if target_date <= calendar_date <= end_date:
+                    groups_for_target.extend({**item, 'calendar_date': calendar_date} for item in group_events)
 
                 group_events = [event]
                 group_start_date = event['weighing_date']
@@ -4220,8 +4227,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     sum(group_event['weighing_date'].toordinal() for group_event in group_events)
                     / len(group_events)
                 )
-                if datetime.fromordinal(average_ordinal).date() == target_date:
-                    groups_for_target.extend(group_events)
+                calendar_date = datetime.fromordinal(average_ordinal).date()
+                if target_date <= calendar_date <= end_date:
+                    groups_for_target.extend({**item, 'calendar_date': calendar_date} for item in group_events)
 
         return groups_for_target
 
@@ -4321,6 +4329,141 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             )
 
         return groups
+
+    def _build_upcoming_calendar_events(self, start_date, end_date, today):
+        events = []
+        if start_date > end_date:
+            return events
+
+        def add_event(event_date, event_type, animal=None, animal_type=None, details=''):
+            if animal is not None and animal.is_archived:
+                return
+            events.append({
+                'date': event_date, 'event_type': event_type, 'animal': animal,
+                'animal_type': animal_type or self._get_calendar_animal_type_key(animal),
+                'details': details,
+            })
+
+        lambings = Lambing.objects.filter(
+            is_active=True, planned_lambing_date__range=(start_date, end_date),
+        ).select_related('sheep__tag', 'ewe__tag', 'maker__tag', 'ram__tag')
+        for lambing in lambings:
+            mother, father = lambing.get_mother(), lambing.get_father()
+            mother_tag = mother.tag.tag_number if mother else (lambing.mother_tag_text or '-')
+            father_tag = father.tag.tag_number if father else '-'
+            details = f'Мать: {mother_tag}; отец: {father_tag}'
+            if mother:
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', mother, details=details)
+            elif not father:
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', details=details)
+            if father:
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', father, details=details)
+
+        animal_cache = {}
+        vets = Veterinary.objects.filter(duration_days__gt=0, is_hidden=False, date_of_care__date__lte=today).select_related('veterinary_care')
+        for vet in vets:
+            if self._is_shearing_care(vet.veterinary_care):
+                continue
+            expiry = vet.get_expiry_date()
+            if expiry is None or not start_date <= expiry <= end_date:
+                continue
+            if vet.tag_id not in animal_cache:
+                animal_cache[vet.tag_id] = self._get_calendar_animal_by_tag_id(vet.tag_id)
+            animal, animal_type = animal_cache[vet.tag_id]
+            if animal:
+                details = (
+                    f'{self._format_calendar_export_vet_name(vet)}; '
+                    f'срок действия: {self._format_calendar_export_duration(vet.duration_days)}; '
+                    f'дата обработки: {vet.get_care_date():%d.%m.%Y}'
+                )
+                add_event(expiry, 'Окончание срока ветобработки', animal, animal_type, details)
+
+        weighings = self._build_calendar_weighing_groups_for_date(start_date, end_date)
+        if weighings:
+            # Load measurements once, keeping the calendar's +/-15-day completion rule.
+            records_by_tag = defaultdict(list)
+            min_date = min(item['weighing_date'] for item in weighings) - timedelta(days=15)
+            max_date = min(today, max(item['weighing_date'] for item in weighings) + timedelta(days=15))
+            records = WeightRecord.objects.filter(
+                tag_id__in=[item['animal'].tag_id for item in weighings],
+                weight_date__range=(min_date, max_date),
+            ).values_list('tag_id', 'weight_date')
+            for tag_id, weight_date in records:
+                records_by_tag[tag_id].append(weight_date)
+            labels = {'primary': 'Первичное взвешивание (3 месяца)',
+                      'secondary': 'Вторичное взвешивание (5 месяцев)',
+                      'final': 'Заключительное взвешивание (10 месяцев)'}
+            for event in weighings:
+                if any(abs((measured - event['weighing_date']).days) <= 15
+                       for measured in records_by_tag[event['animal'].tag_id]):
+                    continue
+                add_event(event['calendar_date'], labels[event['weighing_type']], event['animal'],
+                          event['animal_type'], f"Плановая дата: {event['weighing_date']:%d.%m.%Y}; допуск: 15 дней")
+
+        for month in (4, 10):
+            reminder_date = date(start_date.year, month, 15)
+            if start_date <= reminder_date <= end_date:
+                for reminder in self._get_shearing_reminder_animals(reminder_date):
+                    last_date = reminder['last_shearing_date']
+                    details = f'Последняя стрижка: {last_date:%d.%m.%Y}' if last_date else 'Стрижка ещё не проводилась'
+                    add_event(reminder_date, 'Напоминание о стрижке', reminder['animal'], reminder['animal_type'], details)
+
+        for note in CalendarNote.objects.filter(date__range=(start_date, end_date)):
+            add_event(note.date, 'Заметка', details=note.text)
+
+        return sorted(events, key=lambda item: (
+            item['date'], item['event_type'],
+            item['animal'].tag.tag_number if item['animal'] else '', item['details'],
+        ))
+
+    @action(detail=False, methods=['get'], url_path='calendar-upcoming-export-excel')
+    def calendar_upcoming_export_excel(self, request):
+        today = timezone.localdate()
+        try:
+            year = int(request.query_params.get('year', today.year))
+            month = int(request.query_params.get('month', today.month))
+            month_start = date(year, month, 1)
+            next_month = month_start + relativedelta(months=1)
+        except (TypeError, ValueError, OverflowError):
+            return Response({'error': 'Укажите корректный год и месяц (от 1 до 12).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from io import BytesIO
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        end_date = next_month - timedelta(days=1)
+        start_date = max(today, month_start)
+        events = self._build_upcoming_calendar_events(start_date, end_date, today)
+        headers = ['№', 'Дата события', 'Событие'] + self.CALENDAR_EXPORT_HEADERS[1:] + ['Подробности события']
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Предстоящие события'
+        header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF')
+        for column, header in enumerate(headers, 1):
+            cell = worksheet.cell(1, column, header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            worksheet.column_dimensions[get_column_letter(column)].width = 15
+        for index, event in enumerate(events, 1):
+            animal_data = self._calendar_export_row(index, event['animal'], event['animal_type'])[1:] if event['animal'] else ['-'] * (len(self.CALENDAR_EXPORT_HEADERS) - 1)
+            values = [index, event['date'], event['event_type']] + animal_data + [event['details']]
+            for column, value in enumerate(values, 1):
+                if column in (2, 11, 13):
+                    cell = _write_excel_cell(worksheet, index + 1, column, value)
+                else:
+                    cell = worksheet.cell(index + 1, column, value)
+                if isinstance(cell.value, str):
+                    cell.data_type = 's'
+        if not events:
+            worksheet.cell(2, 1, 'Предстоящих событий нет')
+        output = BytesIO()
+        workbook.save(output)
+        response = HttpResponse(output.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="calendar_upcoming_{year:04d}-{month:02d}.xlsx"'
+        return response
 
     @action(detail=False, methods=['get'], url_path='calendar-export-excel')
     def calendar_export_excel(self, request):
@@ -4994,6 +5137,9 @@ class AnimalActionsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk_archive")
     def bulk_archive(self, request):
+        if not can_archive_animals(request.user):
+            return Response({'error': ANIMAL_ARCHIVE_DENIED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
+
         animal_ids = request.data.get("animal_ids", [])
         status_id = request.data.get("status_id")
 
@@ -5022,7 +5168,10 @@ class AnimalActionsViewSet(viewsets.ViewSet):
         for model in animal_models:
             # Мы используем tag__id, так как animal_ids - это ID бирок
             queryset = model.objects.filter(tag__id__in=animal_ids)
-            updated_count += queryset.update(animal_status=archive_status)
+            model_updated_count = queryset.update(animal_status=archive_status, is_archived=True)
+            updated_count += model_updated_count
+            if model is Sheep and model_updated_count:
+                record_dashboard_culling_snapshot()
 
         return Response(
             {"success": f"Статус обновлен для {updated_count} животных."},
@@ -8631,10 +8780,46 @@ def _get_dashboard_mother_key(lambing):
     return None
 
 
-def _calculate_dashboard_plan_actuals(year):
+def _parse_dashboard_plan_period(request):
+    year = int(request.GET.get('year') or timezone.localdate().year)
+    date(year, 1, 1)
+    raw_month = request.GET.get('month')
+    month = None if raw_month in (None, '', 'all') else int(raw_month)
+    if month is not None and not 1 <= month <= 12:
+        raise ValueError('Invalid month')
+    return year, month
+
+
+def _get_dashboard_plan_cutoff(year, month=None):
+    from calendar import monthrange
+
     today = timezone.localdate()
-    year_end = date(year, 12, 31)
-    cutoff_date = min(today, year_end)
+    if date(year, month or 1, 1) > today:
+        return None
+    period_end = date(year, month, monthrange(year, month)[1]) if month else date(year, 12, 31)
+    return min(today, period_end)
+
+
+def _get_dashboard_culling_percent(cutoff_date):
+    if cutoff_date >= timezone.localdate():
+        population = Sheep.objects.filter(is_archived=False).aggregate(
+            active=Count('pk'), rejected=Count('pk', filter=Q(is_reject=True)),
+        )
+        active, rejected = population['active'], population['rejected']
+    else:
+        snapshot = DashboardCullingSnapshot.objects.filter(
+            recorded_at__date__lte=cutoff_date,
+        ).order_by('-recorded_at', '-id').first()
+        if snapshot is None:
+            return None
+        active, rejected = snapshot.active_sheep_count, snapshot.rejected_sheep_count
+    return Decimal(rejected) * Decimal('100') / Decimal(active) if active else None
+
+
+def _calculate_dashboard_plan_actuals(year, month=None):
+    cutoff_date = _get_dashboard_plan_cutoff(year, month)
+    if cutoff_date is None:
+        return {definition['key']: None for definition in _get_dashboard_plan_definitions()}
     # Retain juvenile measurements after promotion to a breeding animal.
     male_weight_animals = _get_dashboard_animals_with_birth_date([Ram, Maker])
     female_weight_animals = _get_dashboard_animals_with_birth_date([Ewe, Sheep])
@@ -8729,12 +8914,7 @@ def _calculate_dashboard_plan_actuals(year):
         if live_born_count else None
     )
 
-    active_sheep_count = Sheep.objects.filter(is_archived=False).count()
-    reject_sheep_count = Sheep.objects.filter(is_archived=False, is_reject=True).count()
-    actuals["ewe_culling_percent"] = (
-        Decimal(reject_sheep_count) * Decimal("100") / Decimal(active_sheep_count)
-        if active_sheep_count else None
-    )
+    actuals["ewe_culling_percent"] = _get_dashboard_culling_percent(cutoff_date)
 
     actuals["daily_gain_before_weaning"] = _calculate_dashboard_daily_gain(
         children_born_in_year,
@@ -8783,9 +8963,9 @@ def _get_dashboard_actual_class(actual_value, plan_value, decimal_places=None, c
     return "plan-actual-danger"
 
 
-def _build_dashboard_plan_payload(year):
+def _build_dashboard_plan_payload(year, month=None):
     definitions_by_key = _ensure_dashboard_plan_parameters()
-    actuals = _calculate_dashboard_plan_actuals(year)
+    actuals = _calculate_dashboard_plan_actuals(year, month)
     parameters_by_key = {
         parameter.key: parameter
         for parameter in DashboardPlanParameter.objects.filter(key__in=definitions_by_key.keys())
@@ -8814,8 +8994,18 @@ def _build_dashboard_plan_payload(year):
             "suffix": "",
         })
 
+    cutoff_date = _get_dashboard_plan_cutoff(year, month)
+    history_start = DashboardCullingSnapshot.objects.order_by('recorded_at', 'id').values_list('recorded_at', flat=True).first()
+    period_label = (
+        f'Фактически накопительно с 01.01.{year} по {cutoff_date:%d.%m.%Y}'
+        if cutoff_date else f'{DASHBOARD_MONTH_NAMES[month - 1] + " " if month else ""}{year}: период ещё не наступил'
+    )
     return {
         "year": year,
+        "month": month,
+        "cutoff_date": cutoff_date.isoformat() if cutoff_date else None,
+        "period_label": period_label,
+        "culling_history_start": timezone.localtime(history_start).date().isoformat() if history_start else None,
         "parameters": rows,
     }
 
@@ -8841,9 +9031,9 @@ def _log_dashboard_plan_parameters_update(request, year, changed_labels):
 @api_view(["GET", "POST"])
 def dashboard_plan_parameters(request):
     try:
-        year = int(request.GET.get("year") or timezone.localdate().year)
+        year, month = _parse_dashboard_plan_period(request)
     except (TypeError, ValueError):
-        return Response({"error": "Неверный формат года"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Укажите корректный год и месяц от 1 до 12"}, status=status.HTTP_400_BAD_REQUEST)
 
     definitions_by_key = _ensure_dashboard_plan_parameters()
     if request.method == "POST":
@@ -8892,7 +9082,52 @@ def dashboard_plan_parameters(request):
 
         _log_dashboard_plan_parameters_update(request, year, changed_labels)
 
-    return Response(_build_dashboard_plan_payload(year))
+    return Response(_build_dashboard_plan_payload(year, month))
+
+
+@api_view(['GET'])
+def dashboard_plan_export_excel(request):
+    try:
+        year, _month = _parse_dashboard_plan_period(request)
+    except (TypeError, ValueError):
+        return Response({'error': 'Укажите корректный год и месяц от 1 до 12'}, status=status.HTTP_400_BAD_REQUEST)
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    definitions = _get_dashboard_plan_definitions()
+    plans = dict(DashboardPlanParameter.objects.values_list('key', 'plan_value'))
+    monthly_actuals = [_calculate_dashboard_plan_actuals(year, month) for month in range(1, 13)]
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = 'Плановые параметры'
+    headers = ['Параметр', 'План'] + DASHBOARD_MONTH_NAMES
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
+    for column, label in enumerate(headers, 1):
+        cell = worksheet.cell(1, column, label)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        worksheet.column_dimensions[get_column_letter(column)].width = 58 if column == 1 else 15
+
+    for row_number, definition in enumerate(definitions, 2):
+        key = definition['key']
+        values = [definition['label'], plans.get(key, Decimal(definition['default']))]
+        quant = Decimal('1').scaleb(-definition['actual_decimals'])
+        for actuals in monthly_actuals:
+            actual = actuals.get(key)
+            values.append(Decimal(actual).quantize(quant) if actual is not None else '-')
+        for column, value in enumerate(values, 1):
+            cell = worksheet.cell(row_number, column, value)
+            if isinstance(value, str):
+                cell.data_type = 's'
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="plan_parameters_{year}.xlsx"'
+    workbook.save(response)
+    return response
 
 
 @api_view(['GET'])

@@ -1,5 +1,7 @@
 ﻿from django.db import models, transaction
 from django.db.models import Q
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.auth.models import User
 from datetime import timedelta
@@ -372,6 +374,7 @@ class AnimalBase(models.Model):
         old_status = None
         old_note = None
         old_dorper_percentage = None
+        old_culling_state = None
         
         # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
         skip_status_history = kwargs.pop('skip_status_history', False)
@@ -400,11 +403,17 @@ class AnimalBase(models.Model):
                 old_status = old_instance.animal_status
                 old_note = old_instance.note
                 old_dorper_percentage = old_instance.dorper_percentage
+                old_culling_state = (old_instance.is_reject, old_instance.is_archived)
             except self.__class__.DoesNotExist:
                 pass  # old_place и old_status останутся None
 
         # 🔹 Сохранение объекта
         super().save(*args, **kwargs)
+
+        if self.get_animal_type() == 'Sheep' and (
+            is_new or old_culling_state != (self.is_reject, self.is_archived)
+        ):
+            record_dashboard_culling_snapshot(using=self._state.db or 'default')
 
         # 🔹 Создание записи в `StatusHistory`, если статус изменился (только если не пропускаем)
         if not is_new and self.animal_status and old_status != self.animal_status and not skip_status_history:
@@ -651,6 +660,29 @@ class DashboardPlanParameter(models.Model):
 
     def __str__(self):
         return f"{self.label}: {self.plan_value}"
+
+
+class DashboardCullingSnapshot(models.Model):
+    recorded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    active_sheep_count = models.PositiveIntegerField()
+    rejected_sheep_count = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ['recorded_at', 'id']
+
+
+def record_dashboard_culling_snapshot(using='default'):
+    with transaction.atomic(using=using):
+        # Lock the initial row to serialize concurrent population changes.
+        DashboardCullingSnapshot.objects.using(using).select_for_update().order_by('id').first()
+        counts = Sheep.objects.using(using).filter(is_archived=False).aggregate(
+            active_sheep_count=models.Count('pk'),
+            rejected_sheep_count=models.Count('pk', filter=Q(is_reject=True)),
+        )
+        previous = DashboardCullingSnapshot.objects.using(using).order_by('-recorded_at', '-id').first()
+        if previous and all(getattr(previous, key) == value for key, value in counts.items()):
+            return previous
+        return DashboardCullingSnapshot.objects.using(using).create(recorded_at=timezone.now(), **counts)
 
 
 class Maker(AnimalBase):
@@ -1462,6 +1494,11 @@ class Sheep(AnimalBase):
         return not self.lambing_history.filter(
             actual_lambing_date__isnull=True
         ).exists()  # Проверяем, есть ли незаконченный окот
+
+
+@receiver(post_delete, sender=Sheep)
+def record_culling_after_sheep_delete(sender, using, **kwargs):
+    record_dashboard_culling_snapshot(using=using)
 
 
 class CalendarNote(models.Model):

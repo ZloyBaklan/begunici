@@ -1,0 +1,37 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=3">
+<section class="plan-parameters-card feed-plan" id="feed-plan">
+    <div class="plan-parameters-header feed-actions">
+        <div><h4>Кормовой план</h4><small data-feed-period-label data-month-caption="{{ plan.month|capfirst }} {{ plan.year }} · по текущему поголовью на {{ plan.date_label }} · {{ plan.days }} дн." data-year-caption="По текущему поголовью · {{ plan.date_label }}–{{ plan.year_end_label }} · {{ plan.year_days }} дн.">{{ plan.month|capfirst }} {{ plan.year }} · по текущему поголовью на {{ plan.date_label }} · {{ plan.days }} дн.</small></div>
+        <div class="feed-actions">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-feed-toggle aria-expanded="false" aria-controls="feed-plan-content">Развернуть</button>
+            <a class="btn btn-outline-success btn-sm" href="{% url 'feed_inventory:export' %}" data-feed-export data-month-url="{% url 'feed_inventory:export' %}" data-year-url="{% url 'feed_inventory:export' %}?period=yearly">Скачать Excel за месяц</a>
+        </div>
+    </div>
+    {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}">{{ message }}</div>{% endfor %}
+    <div id="feed-plan-content" {% if not editing %}hidden{% endif %}>
+        <p class="text-muted mt-3">Прогноз по текущему поголовью и нормам: на сутки, месяц или с сегодняшнего дня до 31 декабря включительно. Будущие изменения состава стада не учитываются. Фактическое списание подтверждается отдельно на складе.</p>
+        {% if plan.unclassified %}<div class="alert alert-warning">Животных без кормовой категории: {{ plan.unclassified }}. Они не включены в расчёт; проверьте тип, возраст и статус животных.</div>{% endif %}
+        {% if plan.missing %}<p class="feed-warning">Есть незаданные нормы при наличии животных. Пустые ячейки не включаются в итог. Укажите 0, если корм не требуется.</p>{% endif %}
+        <form method="post" action="{% url 'feed_inventory:norms' %}" data-feed-norms data-editing="{{ editing|yesno:'true,false' }}" data-year-explanation="С {{ plan.date_label }} по {{ plan.year_end_label }} включительно · {{ plan.year_days }} дн.">
+            {% csrf_token %}<input type="hidden" name="revision" value="{{ plan.revision }}">
+            <div class="feed-plan-controls mb-3">
+                <div class="feed-view-buttons" role="group" aria-label="Показатель кормового плана">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-feed-mode="norm" aria-pressed="true">Норма на голову</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-feed-mode="daily" aria-pressed="false">На поголовье / сутки</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-feed-mode="monthly" aria-pressed="false">На поголовье / месяц</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-feed-mode="yearly" aria-pressed="false">На поголовье / год</button>
+                </div>
+                <span class="feed-view-explanation" data-feed-view-explanation aria-live="polite">На одну голову в день</span>
+            </div>
+            {% if can_edit %}<div class="feed-actions mb-3">
+                <button type="button" class="btn btn-outline-primary btn-sm" data-feed-edit {% if editing %}hidden{% endif %}>Редактировать потребление</button>
+                <button type="submit" class="btn btn-success btn-sm" data-feed-save {% if not editing %}hidden{% endif %}>Сохранить нормы</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-feed-cancel {% if not editing %}hidden{% endif %}>Отмена</button>
+            </div>{% endif %}
+            {% include 'feed_inventory/plan_table.html' %}
+            <p class="text-muted small" data-feed-norm-hint hidden>После сохранения итоги за сутки, месяц и до конца года будут пересчитаны. Ранее подтверждённые списания не меняются.</p>
+        </form>
+    </div>
+</section>
+<script src="{% static 'feed_inventory/feeds.js' %}?v=3" defer></script>

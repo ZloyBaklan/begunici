@@ -30,6 +30,7 @@ from .views import (
     EweDetailView,
     SheepDetailView,
     dashboard_plan_parameters,
+    dashboard_plan_export_excel,
     dashboard_statistics,
     yearly_statistics,
     tags_management,
@@ -291,6 +292,7 @@ urlpatterns = [
     ),
     path("api/dashboard-statistics/", dashboard_statistics, name="dashboard-statistics"),  # API статистики
     path("api/dashboard-plan-parameters/", dashboard_plan_parameters, name="dashboard-plan-parameters"),
+    path("api/dashboard-plan-parameters/export-excel/", dashboard_plan_export_excel, name="dashboard-plan-export-excel"),
     path("api/yearly-statistics/", yearly_statistics, name="yearly-statistics"),  # API годовой статистики
     path("api/all-tags/", get_all_tags, name="all-tags"),  # API всех бирок
     path("api/all-statuses/", get_all_statuses, name="all-statuses"),  # API всех статусов

@@ -89,6 +89,7 @@
         window.userPermissions = {
             can_view_statistics: {{ user_permissions.can_view_statistics|yesno:"true,false" }},
             can_delete_animals: {{ user_permissions.can_delete_animals|yesno:"true,false" }},
+            can_archive_animals: {{ user_permissions.can_archive_animals|yesno:"true,false" }},
             can_restore_from_archive: {{ user_permissions.can_restore_from_archive|yesno:"true,false" }},
             can_delete_vet_data: {{ user_permissions.can_delete_vet_data|yesno:"true,false" }},
             can_access_admin_panel: {{ user_permissions.can_access_admin_panel|yesno:"true,false" }}

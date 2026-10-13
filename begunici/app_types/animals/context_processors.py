@@ -1,8 +1,12 @@
+from .utils_permissions import can_archive_animals
+
+
 def user_permissions(request):
     """Context processor для передачи прав пользователя в шаблоны"""
     permissions = {
         'can_view_statistics': True,
         'can_delete_animals': True,
+        'can_archive_animals': can_archive_animals(request.user),
         'can_restore_from_archive': True,
         'can_delete_vet_data': True,
         'can_access_admin_panel': False,

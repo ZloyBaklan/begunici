@@ -25,6 +25,7 @@ class LambingCalendar {
     
     init() {
         this.bindEvents();
+        this.updateUpcomingExportLink();
         // Загружаем данные параллельно
         Promise.all([
             this.loadLambingData(),
@@ -48,7 +49,9 @@ class LambingCalendar {
         
         if (prevBtn) {
             prevBtn.addEventListener('click', async () => {
+                this.currentDate.setDate(1);
                 this.currentDate.setMonth(this.currentDate.getMonth() - 1);
+                this.updateUpcomingExportLink();
                 await Promise.all([
                     this.loadNotesData(),
                     this.loadVetData(),
@@ -60,7 +63,9 @@ class LambingCalendar {
         
         if (nextBtn) {
             nextBtn.addEventListener('click', async () => {
+                this.currentDate.setDate(1);
                 this.currentDate.setMonth(this.currentDate.getMonth() + 1);
+                this.updateUpcomingExportLink();
                 await Promise.all([
                     this.loadNotesData(),
                     this.loadVetData(),
@@ -85,6 +90,16 @@ class LambingCalendar {
         }
     }
     
+    updateUpcomingExportLink() {
+        const link = document.getElementById('calendarUpcomingExport');
+        if (!link) return;
+        const params = new URLSearchParams({
+            year: this.currentDate.getFullYear(),
+            month: this.currentDate.getMonth() + 1
+        });
+        link.href = `/animals/notes/calendar-upcoming-export-excel/?${params}`;
+    }
+
     async loadLambingData() {
         try {
             const response = await fetch('/animals/lambing/calendar/');

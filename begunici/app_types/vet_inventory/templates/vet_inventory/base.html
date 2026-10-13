@@ -1,0 +1,21 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Ветпрепараты · Бегуницы{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'vet_inventory/vet.css' %}?v=1">
+<div class="inventory container mt-4 vet-stock">
+    <div class="card mb-4"><div class="card-header">Складской учёт · Ветпрепараты</div><nav class="card-body vet-actions" aria-label="Разделы склада">
+        {% if can_finance %}<a class="btn btn-outline-secondary" href="{% url 'inventory:home' %}">Все разделы склада</a>{% endif %}
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:home' %}">Остатки</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:treatments' %}">Расход по обработкам</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:orders' %}">Заявки и поступления</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:writeoffs' %}">Списания по актам</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:products' %}">Номенклатура</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:norms' %}">Нормы расхода</a>
+        <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:history' %}">История операций</a>
+    </nav></div>
+    {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}
+    <div class="card iv-content-card">{% block vet_content %}{% endblock %}</div>
+</div>
+<script src="{% static 'vet_inventory/vet.js' %}?v=1" defer></script>
+{% endblock %}

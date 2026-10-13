@@ -1,0 +1,12 @@
+{% extends 'feed_inventory/base.html' %}
+{% load feed_tags %}
+{% block feed_content %}
+<div class="iv-title-row"><h1>Корма и сено</h1><div class="feed-actions"><a class="btn btn-primary" href="{% url 'feed_inventory:orders' %}#new-order">Оформить приход</a><a class="btn btn-success" href="{% url 'feed_inventory:consume' %}">Расход на кормление</a><a class="btn btn-outline-danger" href="{% url 'feed_inventory:writeoff-new' %}">Списать по акту</a></div></div>
+<p class="text-muted">Накладная пополняет склад после проверки. Расход предлагается по нормам; фактические количества вы подтверждаете сами.</p>
+{% if not consumption_confirmed %}<p class="text-muted">Расход за сегодня ещё не подтверждён.</p>{% endif %}
+<div class="feed-table-wrap"><table class="table table-striped table-hover feed-stock-table"><thead><tr><th>Номенклатура</th><th>Остаток</th><th>Упаковки, шт.</th><th>Норма / сутки</th><th>Кормление сегодня</th><th>По актам сегодня</th><th>Запас, дней</th></tr></thead><tbody>
+{% for row in stock %}<tr{% if row.shortage %} class="table-warning"{% endif %}><td><strong>{{ row.name }}</strong><small>{{ row.package|default:'Без упаковок' }}</small></td><td><strong>{{ row.available|feed_quantity }}</strong> {{ row.unit }}</td><td>{{ row.packages|feed_quantity }}</td><td>{{ row.daily|feed_quantity }} {{ row.unit }}</td><td>{{ row.actual|feed_quantity }} {{ row.unit }}</td><td>{{ row.written_off|feed_quantity }} {{ row.unit }}</td><td>{{ row.days_left|feed_quantity }}{% if row.shortage %}<small>Меньше суточной нормы</small>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="text-muted small">Оценка запаса учитывает текущее поголовье и заполненные нормы. {% if plan.unclassified %}Без кормовой категории: {{ plan.unclassified }} животных.{% endif %} {% if plan.missing %}Есть незаполненные нормы — проверьте кормовой план.{% endif %} Килограммы и упаковки учитываются отдельно по фактическим количествам.</p>
+<h2 class="mt-4">Последние документы</h2>{% include 'feed_inventory/document_list.html' %}
+{% endblock %}

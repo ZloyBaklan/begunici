@@ -1,0 +1,8 @@
+{% extends 'vet_inventory/base.html' %}
+{% block vet_content %}
+<div class="iv-title-row"><h1>Заявка № {{ order.pk }}</h1><a class="btn btn-primary" href="{% url 'vet_inventory:receive' order.pk %}">Добавить приходную накладную</a></div>
+<p><strong>{{ order.supplier }}</strong> · {{ order.created_at|date:'d.m.Y H:i' }} · {{ order.created_by }}</p><p>{{ order.note }}</p>
+<div class="alert {% if progress.complete %}alert-success{% elif progress.partial %}alert-warning{% else %}alert-secondary{% endif %}">{{ progress.label }}. {% if not progress.complete %}Недостающие позиции можно принять дополнительной накладной.{% endif %}</div>
+<div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Номенклатура</th><th>Заявлено</th><th>Принято</th><th>Осталось принять</th><th>Упаковки: заявлено / принято / осталось</th></tr></thead><tbody>{% for row in progress.rows %}<tr class="{% if row.covered %}table-success{% elif progress.partial %}table-warning{% endif %}"><td>{{ row.name }}</td><td>{{ row.amount }} {{ row.unit }}</td><td>{{ row.received }} {{ row.unit }}</td><td>{{ row.missing }} {{ row.unit }}</td><td>{{ row.packages }} / {{ row.received_packages }} / {{ row.missing_packages }}</td></tr>{% endfor %}</tbody></table></div>
+<h2>Документы по заявке</h2>{% include 'vet_inventory/document_list.html' %}
+{% endblock %}

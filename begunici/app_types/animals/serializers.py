@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from django.db import models
 from django.urls import reverse
@@ -6,6 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 from .age_utils import as_local_date, format_age
+from .utils_permissions import ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals
 from .models import (
     ARCHIVE_DEATH_REASONS,
     ARCHIVE_STATUS_NAMES,
@@ -536,6 +538,19 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
         if "animal_status" in attrs:
             selected_status = attrs.get("animal_status")
+            request = self.context.get("request")
+            if (
+                selected_status
+                and selected_status.status_type in ARCHIVE_STATUS_NAMES
+                and (
+                    self.instance is None
+                    or not self.instance.is_archived
+                    or selected_status.pk != self.instance.animal_status_id
+                )
+                and request is not None
+                and not can_archive_animals(request.user)
+            ):
+                raise PermissionDenied(ANIMAL_ARCHIVE_DENIED_MESSAGE)
             allow_archive_status = bool(
                 self.instance is not None
                 and selected_status

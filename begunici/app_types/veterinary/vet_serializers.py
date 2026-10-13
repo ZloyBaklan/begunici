@@ -416,7 +416,8 @@ class VeterinarySerializer(serializers.ModelSerializer):
         return expiry_date.isoformat() if expiry_date else None
 
     def validate_date_of_care(self, value):
-        if value > timezone.now():
+        care_date = timezone.localtime(value).date() if timezone.is_aware(value) else value.date()
+        if care_date > timezone.localdate():
             raise serializers.ValidationError("Дата и время обработки не может быть в будущем.")
         return value
 

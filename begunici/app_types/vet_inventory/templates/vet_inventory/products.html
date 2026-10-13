@@ -1,0 +1,14 @@
+{% extends 'vet_inventory/base.html' %}
+{% block vet_content %}
+<h1>Номенклатура ветпрепаратов</h1>
+<p class="text-muted">Откройте «Изменить» в нужной строке. Название и категорию можно исправить; история документов сохранится.</p>
+<div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Название</th><th>Категория</th><th>Основная единица</th><th>Упаковка</th><th>Действия</th></tr></thead><tbody>{% for product in products %}<tr><td>{{ product.name }}</td><td>{{ product.get_category_display }}</td><td>{{ product.get_unit_display }}</td><td>{{ product.package|default:'—' }}</td><td><a class="btn btn-outline-primary btn-sm" href="{% url 'vet_inventory:product-edit' product.pk %}" aria-label="Изменить: {{ product.name }}">Изменить</a></td></tr>{% endfor %}</tbody></table></div>
+{% if can_finance %}<div class="card mt-4"><div class="card-header"><h2 class="h5 mb-0">Добавить препарат или материал</h2></div><form class="card-body" method="post">{% csrf_token %}
+<label class="form-label w-100">Название<input class="form-control" name="name" value="{{ form.name }}" maxlength="120" required></label>
+<div class="row"><label class="form-label col-md-4">Категория<select class="form-select" name="category">{% for value,label in categories %}<option value="{{ value }}"{% if form.category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="form-label col-md-3">Единица измерения<select class="form-select" name="unit">{% for value,label in units %}<option value="{{ value }}"{% if form.unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="form-label col-md-5">Упаковка (если нужна)<input class="form-control" name="package" value="{{ form.package }}" maxlength="40" placeholder="Флакон, коробка, ампула…"></label></div>
+<p class="text-muted small">Единица фиксируется при создании, чтобы сохранить корректную историю движения. Выберите единицу содержимого (мл, г, шт., дозы) и название упаковки. Например: 100 мл и 1 флакон.</p>
+<button class="btn btn-primary" type="submit">Добавить номенклатуру</button>
+</form></div>{% endif %}
+{% endblock %}

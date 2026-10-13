@@ -1,0 +1,19 @@
+{% extends 'feed_inventory/base.html' %}
+{% block feed_content %}
+<h1>{% if kind == 'receipt' %}Приходная накладная{% elif kind == 'writeoff' %}Акт списания кормов{% else %}Расход кормов{% endif %}</h1>
+{% if order %}<p>Заявка <a href="{% url 'feed_inventory:order' order.pk %}">№ {{ order.pk }}</a> · {{ order.supplier }}</p>{% elif kind == 'writeoff' %}
+<p>Укажите причину и фактическое количество корма, которое покидает кормовой склад. Для подтверждения понадобится акт в PDF или XLSX. Можно сначала сохранить черновик и открыть его печатную форму.</p>
+{% else %}
+<div class="alert alert-info">Предложено на одни сутки по текущему поголовью на {{ plan.date }} ({{ plan.heads }} голов). Поправьте фактические количества перед сохранением. {% if plan.unclassified %}Внимание: {{ plan.unclassified }} животных без категории.{% endif %} {% if plan.missing %}Есть незаданные нормы: проверьте рацион.{% endif %}</div>
+<p>Упаковки списываются по факту: 0 означает, что упаковка ещё не израсходована. На одну дату можно подтвердить один суточный расход. Для прошлого дня внесите фактические данные — предложение рассчитано по сегодняшнему поголовью.</p>{% endif %}
+<form method="post" enctype="multipart/form-data">
+{% csrf_token %}<input type="hidden" name="token" value="{{ token }}">
+<div class="row mb-3"><label class="col-md-4 form-label">Дата<input class="form-control" type="date" name="date" value="{{ date }}" required></label>{% if kind == 'receipt' %}<label class="col-md-8 form-label">Номер накладной поставщика<input class="form-control" name="number" maxlength="100" value="{{ form.number }}" required></label>{% endif %}</div>
+{% if kind == 'writeoff' %}<label class="form-label w-100">Причина списания<select class="form-select" name="reason" required><option value="">Выберите причину</option>{% for value,label in reasons %}<option value="{{ value }}"{% if form.reason == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+{% include 'feed_inventory/line_editor.html' %}
+<label class="form-label w-100">{% if kind == 'writeoff' %}Обоснование списания{% else %}Примечание{% endif %}<textarea class="form-control" name="note" maxlength="4000"{% if kind == 'writeoff' %} required{% endif %}>{{ form.note }}</textarea></label>
+{% if kind == 'receipt' %}<label class="form-label w-100">Накладная поставщика — PDF или XLSX, до 10 МБ (при наличии)<input class="form-control" type="file" name="file" accept=".pdf,.xlsx"></label><p class="text-muted small">Количество прихода берётся из строк выше. Сверьте их с файлом перед подтверждением.</p>{% endif %}
+{% if kind == 'writeoff' %}<label class="form-label w-100">Подтверждающий акт — PDF или XLSX, до 10 МБ<input class="form-control" type="file" name="file" accept=".pdf,.xlsx"></label><p class="text-muted small">Файл можно приложить сейчас или в черновике. Склад изменится только после проверки и подтверждения акта.</p>{% endif %}
+<button class="btn btn-primary" type="submit">Сохранить и проверить</button>
+</form>
+{% endblock %}

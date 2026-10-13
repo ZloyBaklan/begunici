@@ -1,6 +1,7 @@
 ﻿{% extends 'base.html' %}
 {% load static %}
 {% load inventory_tags %}
+{% load feed_tags %}
 
 {% block title %}Главная{% endblock %}
 
@@ -61,9 +62,25 @@
             <div class="plan-parameters-header">
                 <div>
                     <h4>Плановые параметры</h4>
-                    <small id="plan-parameters-year">Фактически за текущий год</small>
+                    <small id="plan-parameters-year">Фактически за {% now "Y" %} год</small>
                 </div>
                 <div class="plan-parameters-actions">
+                    <select id="plan-month-select" class="form-select form-select-sm" aria-label="Месяц плановых параметров" onchange="changePlanMonth()" style="display: none; width: auto;">
+                        <option value="">Все месяцы</option>
+                        <option value="1">Январь</option>
+                        <option value="2">Февраль</option>
+                        <option value="3">Март</option>
+                        <option value="4">Апрель</option>
+                        <option value="5">Май</option>
+                        <option value="6">Июнь</option>
+                        <option value="7">Июль</option>
+                        <option value="8">Август</option>
+                        <option value="9">Сентябрь</option>
+                        <option value="10">Октябрь</option>
+                        <option value="11">Ноябрь</option>
+                        <option value="12">Декабрь</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-success btn-sm" id="export-plan-btn" onclick="exportPlanParameters()" style="display: none;">Экспорт Excel</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" id="toggle-plan-parameters-btn" onclick="togglePlanParameters()">
                         Развернуть
                     </button>
@@ -98,6 +115,9 @@
                 </div>
             </div>
         </div>
+
+        <!-- FEED BRIDGE: самостоятельный кормовой план между планом и статистикой. -->
+        {% feed_plan_card %}
 
         <div class="yearly-statistics-card" id="yearly-statistics-card">
             <div class="yearly-statistics-header">
@@ -249,6 +269,8 @@ function getSelectedStatisticsMonth() {
 
 let planParameters = [];
 let planEditing = false;
+let planParametersYear = new Date().getFullYear();
+let planRequestSequence = 0;
 let yearlyStatisticsLoaded = false;
 const statisticsCurrentYear = new Date().getFullYear();
 const statisticsMonthNames = [
@@ -277,6 +299,37 @@ function updatePlanActionButtons() {
     document.getElementById('edit-plan-btn').style.display = isExpanded && !planEditing ? 'inline-block' : 'none';
     document.getElementById('save-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
     document.getElementById('cancel-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
+    const monthSelect = document.getElementById('plan-month-select');
+    monthSelect.style.display = isExpanded ? 'inline-block' : 'none';
+    monthSelect.disabled = planEditing;
+    const exportButton = document.getElementById('export-plan-btn');
+    exportButton.style.display = isExpanded ? 'inline-block' : 'none';
+    exportButton.disabled = planEditing;
+}
+
+function getPlanPeriodParams() {
+    const params = new URLSearchParams({ year: String(planParametersYear) });
+    const month = document.getElementById('plan-month-select')?.value || '';
+    if (month) params.set('month', month);
+    return params;
+}
+
+function changePlanMonth() {
+    if (!planEditing) loadPlanParameters(planParametersYear);
+}
+
+function exportPlanParameters() {
+    if (planEditing) return;
+    const params = new URLSearchParams({ year: String(planParametersYear) });
+    window.location.href = `/animals/api/dashboard-plan-parameters/export-excel/?${params}`;
+}
+
+function applyPlanResponse(data) {
+    planParameters = data.parameters || [];
+    planParametersYear = data.year;
+    const yearLabel = document.getElementById('plan-parameters-year');
+    if (yearLabel) yearLabel.textContent = `Фактически за ${data.year} год`;
+    renderPlanParameters();
 }
 
 function togglePlanParameters() {
@@ -334,27 +387,26 @@ function renderPlanParameters() {
 }
 
 async function loadPlanParameters(year) {
+    planParametersYear = year || planParametersYear;
+    const sequence = ++planRequestSequence;
     const tbody = document.getElementById('plan-parameters-body');
-    if (tbody && !planParameters.length) {
+    if (tbody) {
         tbody.innerHTML = '<tr><td colspan="3">Загрузка...</td></tr>';
     }
 
     try {
-        const params = new URLSearchParams({ year: String(year || new Date().getFullYear()) });
+        const params = getPlanPeriodParams();
         const response = await fetch(`/animals/api/dashboard-plan-parameters/?${params.toString()}`);
         const data = await response.json();
+        if (sequence !== planRequestSequence) return;
 
         if (!response.ok || data.error) {
             throw new Error(data.error || 'Не удалось загрузить плановые параметры');
         }
 
-        planParameters = data.parameters || [];
-        const yearLabel = document.getElementById('plan-parameters-year');
-        if (yearLabel) {
-            yearLabel.textContent = `Фактически за ${data.year} год`;
-        }
-        renderPlanParameters();
+        applyPlanResponse(data);
     } catch (error) {
+        if (sequence !== planRequestSequence) return;
         console.error('Ошибка загрузки плановых параметров:', error);
         if (tbody) {
             tbody.innerHTML = `<tr><td colspan="3">Ошибка загрузки: ${error.message}</td></tr>`;
@@ -383,7 +435,7 @@ async function savePlanParameters() {
     });
 
     try {
-        const params = new URLSearchParams({ year: String(getSelectedStatisticsYear()) });
+        const params = getPlanPeriodParams();
         const response = await fetch(`/animals/api/dashboard-plan-parameters/?${params.toString()}`, {
             method: 'POST',
             headers: {
@@ -401,10 +453,9 @@ async function savePlanParameters() {
             throw new Error(errors);
         }
 
-        planParameters = data.parameters || [];
         planEditing = false;
         updatePlanActionButtons();
-        renderPlanParameters();
+        applyPlanResponse(data);
         showPlanMessage('Плановые значения сохранены.', 'success');
     } catch (error) {
         console.error('Ошибка сохранения плановых параметров:', error);

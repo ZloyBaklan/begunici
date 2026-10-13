@@ -235,7 +235,9 @@
                             {% if user_permissions.can_delete_animals %}
                             <button id="delete-selected-button" class="btn btn-outline-danger btn-sm" onclick="deleteSelectedAnimals()">Удалить выбранные</button>
                             {% endif %}
+                            {% if user_permissions.can_archive_animals %}
                             <button id="archive-selected-button" class="btn btn-outline-warning btn-sm" onclick="openArchiveModal()">Перенести в архив</button>
+                            {% endif %}
                             <button id="clear-selected-button" class="btn btn-outline-secondary btn-sm" onclick="clearSelectedAnimals()">Очистить выбор</button>
                         </div>
                     </div>

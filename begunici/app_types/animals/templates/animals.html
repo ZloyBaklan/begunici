@@ -129,9 +129,12 @@
     <div class="row mt-4">
         <div class="col-md-12">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5>Календарь</h5>
-                    <a href="{% url 'animals:calendar-notes' %}" class="btn btn-success btn-sm">Открыть заметки</a>
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">Календарь</h5>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'animals:calendar-notes' %}" class="btn btn-success btn-sm">Открыть заметки</a>
+                        <a id="calendarUpcomingExport" href="{% url 'animals:calendarnote-calendar-upcoming-export-excel' %}" class="btn btn-outline-success btn-sm">Экспорт предстоящих событий</a>
+                    </div>
                 </div>
                 <div class="card-body">
                     <!-- Навигация по месяцам -->
@@ -369,6 +372,6 @@
 }
 </style>
 
-<script src="{% static 'js/calendar.js' %}"></script>
+<script src="{% static 'js/calendar.js' %}?v=2"></script>
 {% endblock %}
 

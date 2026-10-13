@@ -1,0 +1,1 @@
+{% if allowed %}<div class="my-3"><a class="btn btn-outline-primary" href="{% if tag_id %}{% url 'vet_inventory:treatments' %}?tag={{ tag_id }}{% else %}{% url 'vet_inventory:home' %}{% endif %}">{% if tag_id %}Расход препаратов этого животного{% else %}Склад ветпрепаратов{% endif %}</a></div>{% endif %}

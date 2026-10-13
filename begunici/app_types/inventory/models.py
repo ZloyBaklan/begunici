@@ -4,6 +4,7 @@ Deleting/restoring an animal through the existing service must neither cascade i
 accounting history nor acquire new restrictions from this optional module.
 """
 import uuid
+from datetime import date
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -12,6 +13,87 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .animal_types import ANIMAL_TYPE_CHOICES, type_requirement
+
+
+def write_stock_audit_log(user, area, action, data):
+    from begunici.app_types.animals.models_user_log import UserActionLog
+
+    if user is None or not user.is_authenticated:
+        return
+    labels = {"document": "Документ", "order": "Заявка", "product": "Позиция",
+              "treatment": "Учёт обработки", "care": "Ветобработка", "revision": "Версия",
+              "reversal": "Сторно", "name": "Название", "quantity": "Расход",
+              "unit": "Единица", "reason": "Причина"}
+    details = [action]
+    details.extend(f"{label}: {data[key]}" for key, label in labels.items() if key in data)
+    if "changes" in data:
+        details.append(f"Изменено норм: {len(data['changes'])}")
+        for change in data["changes"]:
+            before = change.get("before") if change.get("before") is not None else "не задано"
+            after = change.get("after") if change.get("after") is not None else "не задано"
+            details.append(f"{change.get('name', '')}, {change.get('label', change.get('group', ''))}: {before} -> {after}")
+    for key, label in (("before", "Было"), ("after", "Стало")):
+        if isinstance(data.get(key), dict):
+            field_labels = {"name": "Название", "category": "Категория", "unit": "Единица", "package": "Упаковка",
+                            "mode_label": "Способ расчёта", "rate": "Норма", "bands": "Диапазоны веса", "revision": "Версия"}
+            values = []
+            for field, title in field_labels.items():
+                if field not in data[key]:
+                    continue
+                value = data[key][field]
+                if field == "bands":
+                    value = "; ".join(f"{band['from']} - {band['to'] or 'без ограничения'} кг: {band['amount']}" for band in value)
+                values.append(f"{title}: {value if value not in (None, '') else '-'}")
+            details.append(label + ": " + ", ".join(values))
+        elif key in data and data[key] is None:
+            details.append(label + ": не задано")
+    details.extend(stock_audit_context(area, data))
+    object_id = next((str(data[key]) for key in ("document", "order", "product", "treatment", "care") if key in data), "")
+    UserActionLog.objects.create(
+        user=user, action_type=action[:50], object_type=area, object_id=object_id[:100],
+        description="; ".join(details), additional_data={"stock_area": area, "data": data},
+    )
+
+
+def stock_audit_context(area, data):
+    from django.apps import apps
+
+    prefix = {"Склад кормов": "Feed", "Склад ветпрепаратов": "Vet"}.get(area)
+    if prefix is None:
+        return []
+    app = "feed_inventory" if prefix == "Feed" else "vet_inventory"
+    details, lines = [], []
+    document = apps.get_model(app, prefix + "Document").objects.filter(pk=data.get("document")).first() if data.get("document") else None
+    if document:
+        details.append(f"{document.get_kind_display()} № {document.number or document.pk}; дата: {document.date:%d.%m.%Y}")
+        version = document.versions.defer("content").first()
+        lines = version.payload.get("lines", []) if version else []
+        if document.order_id:
+            details.append("Поставщик: " + document.order.supplier)
+    elif data.get("order"):
+        order = apps.get_model(app, prefix + "Order").objects.filter(pk=data["order"]).first()
+        if order:
+            details.append("Поставщик: " + order.supplier)
+            lines = order.lines
+    elif data.get("product"):
+        product = apps.get_model(app, prefix + "Product").objects.filter(pk=data["product"]).first()
+        if product:
+            details.append("Позиция: " + product.name)
+    for line in lines:
+        item = f"{line['name']}: {line['amount']} {line['unit']}"
+        if line.get("package"):
+            item += f"; упаковки ({line['package']}): {line.get('packages', '0')}"
+        details.append(item)
+    if prefix == "Vet" and data.get("treatment"):
+        entry = apps.get_model(app, "VetTreatment").objects.filter(pk=data["treatment"]).first()
+        animal = data.get("animal") or (entry.snapshot if entry else {})
+        if animal:
+            try:
+                care_date = date.fromisoformat(str(animal.get("date", ""))).strftime("%d.%m.%Y")
+            except ValueError:
+                care_date = animal.get("date", "-")
+            details.append(f"Животное: {animal.get('tag', '-')}; обработка: {animal.get('care', '-')}; дата: {care_date}")
+    return details
 
 
 class AppendOnlyQuerySet(models.QuerySet):
@@ -208,6 +290,24 @@ class AuditEvent(AppendOnly):
             tags = list(self.document.animals.values_list("tag_number", flat=True))
             if tags:
                 details.append("Животные: " + ", ".join(tags))
+            details.append(f"Дата документа: {self.document.date:%d.%m.%Y}")
+            payload = self.document.payload
+            if self.document.kind == "invoice":
+                details.append("Получатель: " + str(payload.get("customer", "")))
+                lines = payload.get("lines", [])
+                lots = {lot.pk: lot for lot in StockLot.objects.select_related("animal", "product").filter(pk__in=[line["lot_id"] for line in lines])}
+                for line in lines:
+                    lot = lots.get(line["lot_id"])
+                    if lot:
+                        details.append(f"{lot.animal.tag_number}, {lot.product.name}: {line['weight']} кг / {line['quantity']} шт.")
+            else:
+                cases = {str(case.pk): case.tag_number for case in self.document.animals.all()}
+                products = dict(Product.objects.values_list("code", "name"))
+                for line in payload.get("outputs", []):
+                    label = "Брак" if line.get("rejected") else "Выход"
+                    details.append(f"{label}: {cases.get(str(line['animal_id']), '-')}, {products.get(line['product'], line['product'])}: {line['weight']} кг / {line['quantity']} шт.")
+            if self.order_id:
+                details.append(f"Заявка № {self.order_id}")
         elif self.order_id:
             object_type, object_id = "Складская заявка", str(self.order_id)
             details.append(f"Заявка № {self.order_id}; получатель: {self.order.customer}")
@@ -215,6 +315,12 @@ class AuditEvent(AppendOnly):
             object_type, object_id = "Складской учёт", ""
         if self.summary:
             details.append(self.summary)
+        if self.action == "cut":
+            lots = StockLot.objects.filter(pk__in=self.data.get("outputs", [])).select_related("product")
+            for lot in lots:
+                movement = lot.movements.filter(kind="cut_in", operation=self.data.get("operation")).first()
+                if movement:
+                    details.append(f"Получено: {lot.product.name}: {movement.weight} кг / {movement.quantity} шт.")
         UserActionLog.objects.create(
             user=self.actor, action_type=self.action_label[:50],
             object_type=object_type, object_id=object_id,

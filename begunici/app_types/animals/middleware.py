@@ -55,7 +55,8 @@ class UserActionLogMiddleware(MiddlewareMixin):
             additional_data={
                 "method": request.method,
                 "path": request.path,
-                "status_code": response.status_code,
+                "status_code": 400 if getattr(request, "_stock_audit_error", None) else response.status_code,
+                "http_status_code": response.status_code,
             },
         )
 
@@ -222,7 +223,13 @@ class UserActionLogMiddleware(MiddlewareMixin):
         method = request.method.upper()
         path = request.path
 
+        if getattr(request, "_stock_audit_error", None):
+            return False
+
         if getattr(request, "_inventory_logged", False):
+            return True
+
+        if method == "POST" and path.startswith(("/inventory/feeds/", "/inventory/vet/")):
             return True
 
         if method == "POST" and path.rstrip("/") == "/veterinary/api/barn-calculator/save":
@@ -275,11 +282,14 @@ class UserActionLogMiddleware(MiddlewareMixin):
         ):
             params["action"] = request.POST.get("action")
 
+        if request.path.startswith(("/inventory/feeds/", "/inventory/vet/")):
+            params["action"] = request.POST.get("action")
+
         return resolve_log_action(
             request.method,
             request.path,
             params=params,
-            status_code=getattr(response, "status_code", None),
+            status_code=400 if getattr(request, "_stock_audit_error", None) else getattr(response, "status_code", None),
         )
 
     def get_object_type(self, request):
@@ -293,13 +303,26 @@ class UserActionLogMiddleware(MiddlewareMixin):
             "action": action,
             "method": request.method,
             "path": request.path,
-            "status_code": response.status_code,
+            "status_code": 400 if getattr(request, "_stock_audit_error", None) else response.status_code,
         }
 
-        if request.GET and len(request.GET) <= 10:
-            details["params"] = dict(request.GET)
+        stock_request = request.path.startswith("/inventory/")
+        if stock_request:
+            error = getattr(request, "_stock_audit_error", None)
+            if not error and response.status_code >= 400 and not response.streaming:
+                try:
+                    error = json.loads(response.content).get("error")
+                except (ValueError, AttributeError):
+                    pass
+            if error:
+                details["error"] = str(error)
+            if request.POST.get("action"):
+                details["params"] = {"action": request.POST["action"]}
 
-        if request.POST:
+        if request.GET and len(request.GET) <= 10:
+            details.setdefault("params", {}).update(dict(request.GET))
+
+        if request.POST and not details.get("error"):
             # Store only field names, not values.
             details["changed_fields"] = list(request.POST.keys())
 
