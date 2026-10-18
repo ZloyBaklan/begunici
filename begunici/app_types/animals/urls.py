@@ -71,6 +71,8 @@ from .views import (
     weight_act_download,
     progeny_acts_api,
     progeny_act_download,
+    rejection_acts_api,
+    rejection_act_download,
     monthly_breeding_act_download,
     livestock_movement_act_download,
     non_auto_act_templates_api,
@@ -314,6 +316,7 @@ urlpatterns = [
     path("acts/transfer/", TemplateView.as_view(template_name="transfer_acts_list.html"), name="acts-transfer"),
     path("acts/weight/", TemplateView.as_view(template_name="weight_acts_list.html"), name="acts-weight"),
     path("acts/progeny/", TemplateView.as_view(template_name="progeny_acts_list.html"), name="acts-progeny"),
+    path("acts/rejection/", TemplateView.as_view(template_name="rejection_acts_list.html"), name="acts-rejection"),
     path("journals/", journals_menu, name="journals"),  # Меню журналов
     path("journals/progeny/", journal_progeny, name="journal-progeny"),  # Журнал приплода
     path("journals/insemination/", journal_insemination, name="journal-insemination"),  # Журнал осеменения
@@ -348,6 +351,8 @@ urlpatterns = [
     path("api/acts/weight/<int:act_number>/", weight_act_download, name="weight-act-download"),
     path("api/acts/progeny/", progeny_acts_api, name="progeny-acts-api"),
     path("api/acts/progeny/<int:act_number>/", progeny_act_download, name="progeny-act-download"),
+    path("api/acts/rejection/", rejection_acts_api, name="rejection-acts-api"),
+    path("api/acts/rejection/<int:act_number>/", rejection_act_download, name="rejection-act-download"),
     path("api/acts/monthly-breeding/", monthly_breeding_act_download, name="monthly-breeding-act-download"),
     path("api/acts/livestock-movement/", livestock_movement_act_download, name="livestock-movement-act-download"),
     path("api/acts/templates/", non_auto_act_templates_api, name="act-templates-api"),

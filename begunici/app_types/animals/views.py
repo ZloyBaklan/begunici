@@ -93,6 +93,7 @@ from .age_utils import age_months_for_export, filter_queryset_by_age, format_age
 from .utils_permissions import ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals
 from .weight_acts import get_weight_acts_page, weight_act_response
 from .progeny_acts import get_progeny_acts_page, progeny_act_response
+from .rejection_acts import get_rejection_acts_page, rejection_act_response
 from .livestock_movement_acts import livestock_movement_act_response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
@@ -11115,6 +11116,35 @@ def progeny_act_download(request, act_number):
             {"error": "Акт оприходования приплода не найден"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def rejection_acts_api(request):
+    page_size = request.GET.get("page_size", 10)
+    try:
+        page_size = max(1, min(int(page_size), 100))
+    except (TypeError, ValueError):
+        page_size = 10
+    return Response(get_rejection_acts_page(
+        page_number=request.GET.get("page", 1),
+        page_size=page_size,
+        act_date=request.GET.get("act_date"),
+        month=request.GET.get("month"),
+        year=request.GET.get("year"),
+    ))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def rejection_act_download(request, act_number):
+    try:
+        response = rejection_act_response(act_number)
+    except FileNotFoundError:
+        return Response({"error": "Шаблон акта 406-АПК не найден"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    if response is None:
+        return Response({"error": "Акт выбраковки не найден"}, status=status.HTTP_404_NOT_FOUND)
     return response
 
 

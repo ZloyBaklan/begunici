@@ -6,11 +6,12 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
+import xlrd
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -166,7 +167,7 @@ def _parse_optional_weight(value):
         return None
     try:
         parsed = Decimal(str(value).strip().replace(",", "."))
-    except (InvalidOperation, ValueError) as exc:
+    except (InvalidOperation, ValueError):
         raise ValueError("Вес должен быть числом")
     if parsed <= 0:
         raise ValueError("Вес должен быть больше 0")
@@ -344,13 +345,41 @@ def _move_group_to_place_with_history(group, target_place):
     return moved_count
 
 
+def _read_xls_workbook(uploaded_file):
+    workbook = Workbook()
+    target = workbook.active
+    with xlrd.open_workbook(file_contents=uploaded_file.read()) as source:
+        sheet = source.sheet_by_index(0)
+        target.title = sheet.name
+        for row in sheet.get_rows():
+            values = []
+            for cell in row:
+                # Match XLSX values before passing them to the shared validators.
+                if cell.ctype == xlrd.XL_CELL_DATE:
+                    value = xlrd.xldate_as_datetime(cell.value, source.datemode)
+                elif cell.ctype == xlrd.XL_CELL_ERROR:
+                    value = xlrd.error_text_from_code.get(cell.value, "#VALUE!")
+                elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                    value = bool(cell.value)
+                elif cell.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                    value = None
+                else:
+                    value = cell.value
+                values.append(value)
+            target.append(values)
+    return workbook
+
+
 def _read_workbook_from_request(request):
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
         raise ValueError("Файл не загружен")
-    if not uploaded_file.name.lower().endswith(".xlsx"):
-        raise ValueError("Поддерживается только формат .xlsx")
+    extension = Path(uploaded_file.name).suffix.lower()
+    if extension not in (".xlsx", ".xls"):
+        raise ValueError("Поддерживаются только форматы .xlsx и .xls")
     try:
+        if extension == ".xls":
+            return _read_xls_workbook(uploaded_file)
         return load_workbook(uploaded_file, data_only=True)
     except Exception as exc:
         raise ValueError(f"Не удалось прочитать Excel-файл: {exc}") from exc

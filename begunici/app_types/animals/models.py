@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 from .age_utils import calculate_age_months, format_age, get_age_delta
+from .models_user_log import UserActionLog
 from begunici.app_types.veterinary.vet_models import (
     Tag,
     Status,
@@ -660,6 +661,48 @@ class DashboardPlanParameter(models.Model):
 
     def __str__(self):
         return f"{self.label}: {self.plan_value}"
+
+
+class AnimalRejectionHistory(models.Model):
+    SOURCE_CHANGE = "change"
+    SOURCE_LOG = "log"
+    SOURCE_LEGACY = "legacy"
+    SOURCE_MANUAL = "manual"
+    SOURCE_CHOICES = (
+        (SOURCE_CHANGE, "Изменение отметки"),
+        (SOURCE_LOG, "Восстановлено из лога"),
+        (SOURCE_LEGACY, "Дата изменения неизвестна"),
+        (SOURCE_MANUAL, "Дата согласована пользователем"),
+    )
+
+    tag = models.ForeignKey(
+        Tag, on_delete=models.CASCADE, related_name="rejection_history",
+        verbose_name="Бирка",
+    )
+    animal_type = models.CharField(max_length=10, verbose_name="Тип животного на момент записи")
+    old_is_reject = models.BooleanField(null=True, blank=True, verbose_name="Брак: было")
+    new_is_reject = models.BooleanField(verbose_name="Брак: стало")
+    change_date = models.DateTimeField(null=True, blank=True, db_index=True, verbose_name="Дата изменения")
+    recorded_at = models.DateTimeField(default=timezone.now, verbose_name="Дата записи истории")
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=SOURCE_CHANGE)
+    source_log = models.OneToOneField(
+        UserActionLog, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rejection_history_entry", verbose_name="Исходный лог",
+    )
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "История назначения брака"
+        verbose_name_plural = "История назначения брака"
+        indexes = [models.Index(fields=["tag", "-id"], name="reject_history_tag_id_idx")]
+        constraints = [models.CheckConstraint(
+            check=(Q(source="legacy", change_date__isnull=True)
+                   | (Q(source__in=["change", "log", "manual"]) & Q(change_date__isnull=False))),
+            name="reject_history_known_date",
+        )]
+
+    def __str__(self):
+        return f"{self.tag.tag_number}: брак {'Да' if self.new_is_reject else 'Нет'}"
 
 
 class DashboardCullingSnapshot(models.Model):

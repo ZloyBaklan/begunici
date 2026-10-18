@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Акты выбраковки{% endblock %}
+
+{% block content %}
+<div class="container-fluid" id="rejection-acts"
+     data-list-url="{% url 'animals:rejection-acts-api' %}">
+    <h1 class="mb-4">Акты выбраковки (406-АПК)</h1>
+    <div class="card mb-4">
+        <div class="card-header">
+            <form id="rejection-act-filters" class="row align-items-end g-3">
+                <div class="col-md-3">
+                    <label for="rejection-date" class="form-label">Дата назначения брака:</label>
+                    <input type="date" id="rejection-date" name="act_date" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label for="rejection-month" class="form-label">Месяц:</label>
+                    <select id="rejection-month" name="month" class="form-select">
+                        <option value="">Все месяцы</option>
+                        <option value="1">Январь</option>
+                        <option value="2">Февраль</option>
+                        <option value="3">Март</option>
+                        <option value="4">Апрель</option>
+                        <option value="5">Май</option>
+                        <option value="6">Июнь</option>
+                        <option value="7">Июль</option>
+                        <option value="8">Август</option>
+                        <option value="9">Сентябрь</option>
+                        <option value="10">Октябрь</option>
+                        <option value="11">Ноябрь</option>
+                        <option value="12">Декабрь</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="rejection-year" class="form-label">Год:</label>
+                    <select id="rejection-year" name="year" class="form-select">
+                        <option value="">Все годы</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Применить</button>
+                </div>
+                <div class="col-md-2">
+                    <button type="reset" class="btn btn-secondary w-100">Сбросить</button>
+                </div>
+            </form>
+        </div>
+        <div class="card-body">
+            <div id="rejection-unknown-dates" class="alert alert-warning" role="status" hidden></div>
+            <div id="rejection-error" class="alert alert-danger" role="alert" hidden></div>
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>№ Акта</th>
+                            <th>Дата назначения брака</th>
+                            <th>Количество животных</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rejection-acts-list" aria-live="polite"></tbody>
+                </table>
+            </div>
+            <nav id="rejection-pagination" class="d-flex justify-content-center align-items-center gap-3 flex-wrap mt-3"
+                 aria-label="Страницы актов выбраковки"></nav>
+        </div>
+    </div>
+</div>
+<script type="module" src="{% static 'js/rejection_acts.js' %}"></script>
+{% endblock %}
