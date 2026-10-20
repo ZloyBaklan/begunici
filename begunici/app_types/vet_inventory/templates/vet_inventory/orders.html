@@ -2,7 +2,8 @@
 {% block vet_content %}
 <h1>Заявки на приход ветпрепаратов</h1>
 <div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Заявка</th><th>Поставщик</th><th>Дата</th><th>Состояние</th></tr></thead><tbody>{% for row in orders %}<tr class="{% if row.progress.complete %}table-success{% elif row.progress.partial %}table-warning{% endif %}"><td><a class="btn btn-outline-primary btn-sm" href="{% url 'vet_inventory:order' row.order.pk %}">Заявка № {{ row.order.pk }}</a></td><td>{{ row.order.supplier }}</td><td>{{ row.order.created_at|date:'d.m.Y' }}</td><td>{{ row.progress.label }}</td></tr>{% empty %}<tr><td colspan="4">Заявок пока нет.</td></tr>{% endfor %}</tbody></table></div>
-{% if can_finance %}<div class="card mt-4" id="new-order"><div class="card-header"><h2 class="h5 mb-0">Новая входящая заявка</h2></div><form method="post" class="card-body">
+{% if not rows %}<div class="alert alert-info"><p{% if not can_finance %} class="mb-0"{% endif %}>{% if can_finance %}Сначала добавьте номенклатуру{% else %}Номенклатура пуста. Добавить её может финансовый сотрудник или администратор{% endif %}</p>{% if can_finance %}<a class="btn btn-outline-primary" href="{% url 'vet_inventory:products' %}">Добавить номенклатуру</a>{% endif %}</div>{% endif %}
+{% if can_finance and rows %}<div class="card mt-4" id="new-order"><div class="card-header"><h2 class="h5 mb-0">Новая входящая заявка</h2></div><form method="post" class="card-body">
 {% csrf_token %}<input type="hidden" name="token" value="{{ token }}">
 <label class="form-label w-100">Поставщик<input name="supplier" class="form-control" maxlength="200" value="{{ form.supplier }}" required></label>
 {% include 'vet_inventory/line_editor.html' %}

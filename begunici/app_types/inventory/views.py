@@ -76,8 +76,10 @@ def dashboard(request, section="home"):
 @require_GET
 @access_required(slaughter=True)
 def slaughter(request):
+    animals = pending_animals(meat_only=True)
     return render(request, "inventory/slaughter.html", {
-        "animals": pending_animals(meat_only=True), "documents": Document.objects.filter(kind="sp55"),
+        "animals": animals, "documents": Document.objects.filter(kind="sp55"),
+        "has_unassigned_animals": any(not animal["document"] for animal in animals),
         "drafts": Document.objects.filter(kind="sp55", state__in=["draft", "ready"]),
         "prepare_slaughter": can_prepare_slaughter(request.user),
     })

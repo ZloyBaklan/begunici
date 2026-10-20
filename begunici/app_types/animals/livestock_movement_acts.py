@@ -30,7 +30,6 @@ DATA_ROWS = {
 }
 
 ARCHIVE_STATUS_COLUMNS = {
-    "Продажа на племя": "AB",
     "Реализация в живом весе": "AD",
     "Вынужденная прирезка": "AF",
     "Убой на мясо": "AH",
@@ -135,7 +134,11 @@ def build_archive_dates_map(tag_ids, history_map):
         for history in histories:
             status_name = history.new_status.status_type if history.new_status else ""
             history_date = normalize_date(history.change_date)
-            if status_name in ARCHIVE_STATUS_NAMES and history_date:
+            if (
+                status_name in ARCHIVE_STATUS_NAMES
+                and history_date
+                and history.old_status_id != history.new_status_id
+            ):
                 archive_dates[tag_id].append(history_date)
 
     acts = (
@@ -279,6 +282,7 @@ def get_archive_events_for_period(tag_ids, history_map, archive_dates_map, perio
             history_date = normalize_date(history.change_date)
             if (
                 status_name in ARCHIVE_STATUS_NAMES
+                and history.old_status_id != history.new_status_id
                 and history_date
                 and period_start <= history_date <= period_end
             ):
@@ -454,6 +458,8 @@ def fill_livestock_movement_sheet(sheet, group):
         set_count_cell(sheet, f"C{row}", beginning_count)
         set_count_cell(sheet, f"I{row}", incoming_count, blank_zero=True)
         set_count_cell(sheet, f"V{row}", outgoing_count, blank_zero=True)
+        # Keep the original SP-51 layout; the retired sale column stays empty.
+        sheet[f"AB{row}"] = ""
 
         for status_name, column in ARCHIVE_STATUS_COLUMNS.items():
             set_count_cell(

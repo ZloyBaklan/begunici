@@ -60,19 +60,42 @@
     function fields(row) {
         return Object.fromEntries($$('[data-field]', row).map(node => [node.dataset.field, node.type === 'checkbox' ? node.checked : node.value]));
     }
+    function bindSelectionButton(form, selector) {
+        const button = form && $('[type="submit"]', form);
+        if (!button) return;
+        const update = () => { button.disabled = !$(selector + ':checked:not(:disabled)', form); };
+        form.addEventListener('change', update);
+        update();
+    }
     function confirmReplacement(file) {
         if (!file) return true;
         return window.confirm('Вы уверены, что хотите заменить текущий документ? Старый файл останется в истории. Проверьте соответствие нового файла количественным данным.');
     }
     $$('.iv-nav a').forEach(link => { if (window.location.pathname === new URL(link.href).pathname) link.setAttribute('aria-current', 'page'); });
-    $$('[data-filter-table]').forEach(field => field.addEventListener('input', () => {
-        const search = field.value.toLocaleLowerCase();
-        document.querySelectorAll(`#${field.dataset.filterTable} tbody tr`).forEach(row => { row.hidden = !row.textContent.toLocaleLowerCase().includes(search); });
-    }));
+    $$('[data-filter-table]').forEach(field => {
+        const table = document.getElementById(field.dataset.filterTable);
+        if (!table) return;
+        const rows = $$('tbody tr[data-search-row]', table);
+        const noResults = $('[data-filter-empty]', table);
+        const emptyList = $('[data-source-empty]', table);
+        const filter = () => {
+            const search = field.value.trim().toLocaleLowerCase();
+            let matches = 0;
+            rows.forEach(row => {
+                row.hidden = !row.textContent.toLocaleLowerCase().includes(search);
+                if (!row.hidden) matches++;
+            });
+            if (noResults) noResults.hidden = !search || matches > 0;
+            if (emptyList) emptyList.hidden = Boolean(search);
+        };
+        field.addEventListener('input', filter);
+        filter();
+    });
     $$('[data-prepare-tag]').forEach(button => button.addEventListener('click', () => run(async () => {
         follow(await post(button.dataset.url, {kind: 'sp54', tags: [Number(button.dataset.prepareTag)]}));
     })));
     const slaughter = $('#iv-slaughter-select');
+    bindSelectionButton(slaughter, 'input[name="tag"]');
     slaughter?.addEventListener('submit', event => { event.preventDefault(); run(async () => {
         const tags = $$('input[name="tag"]:checked', slaughter).map(node => Number(node.value));
         if (!tags.length) throw new Error('Выберите животных.');
@@ -170,9 +193,11 @@
             }
         }
         updateOrder(true);
+        bindSelectionButton(invoiceForm, '[data-field="selected"]');
         orderField.addEventListener('change', () => updateOrder());
         invoiceForm.addEventListener('submit', event => { event.preventDefault(); run(async () => {
             const lines = lotRows.filter(row => $('[data-field="selected"]', row).checked).map(row => ({...fields(row), lot_id: Number(row.dataset.lotId)}));
+            if (!lines.length) throw new Error('Выберите продукцию для отгрузки.');
             const file = invoiceForm.elements.file?.files[0];
             if (!confirmReplacement(file)) return;
             follow(await post(invoiceForm.dataset.url, {

@@ -63,6 +63,14 @@ class Status(models.Model):
         max_length=7, verbose_name="Цвет статуса", default="#FFFFFF"
     )  # Цвет статуса, по умолчанию белый
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(status_type="Продажа на племя"),
+                name="status_no_breeding_sale",
+            ),
+        ]
+
     def __str__(self):
         return self.status_type
 

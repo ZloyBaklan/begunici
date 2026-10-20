@@ -658,7 +658,7 @@ async function loadArchiveStatuses() {
         const statuses = response.results || response;
 
         const archiveStatuses = statuses.filter((status) =>
-            ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Продажа на племя", "Убой на мясо"].includes(status.status_type)
+            ["Падеж", "Вынужденная прирезка", "Реализация в живом весе", "Убой на мясо"].includes(status.status_type)
         );
 
         const statusSelect = document.getElementById("archive-status-select");

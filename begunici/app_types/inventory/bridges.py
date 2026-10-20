@@ -21,6 +21,8 @@ from begunici.app_types.veterinary.vet_models import StatusHistory, WeightRecord
 ANIMAL_MODELS = {"maker": Maker, "ram": Ram, "ewe": Ewe, "sheep": Sheep}
 SALE_STATUS = "Реализация в живом весе"
 MEAT_STATUS = "Убой на мясо"
+MEAT_STATUSES = frozenset({MEAT_STATUS, "Вынужденная прирезка"})
+ARCHIVE_STATUSES = MEAT_STATUSES | {SALE_STATUS}
 
 
 def start_date():
@@ -122,7 +124,7 @@ def source_info(animal):
     return {
         "tag_id": animal.tag_id, "tag_number": animal.tag.tag_number,
         "animal_type": animal_type, "status": status, "archive_date": archive_date,
-        "kind": "meat" if status == MEAT_STATUS else "live",
+        "kind": "meat" if status in MEAT_STATUSES else "live",
         "for_sale": animal.is_for_sale, "is_archived": animal.is_archived,
         "snapshot": plain(snapshot), "fingerprint": fingerprint(signature),
         "source_act_id": act.pk if act else None,
@@ -134,12 +136,12 @@ def source_info(animal):
 
 
 def eligible(info):
-    return info["is_archived"] and info["for_sale"] and info["status"] in {MEAT_STATUS, SALE_STATUS}
+    return info["is_archived"] and info["for_sale"] and info["status"] in ARCHIVE_STATUSES
 
 
 def require_eligible(info):
     if not eligible(info):
-        raise ValidationError("Сначала животное должно получить назначение «К продаже», затем статус «Убой на мясо» либо «Реализация в живом весе».")
+        raise ValidationError("Для склада нужны назначение «К продаже» и архивный статус «Убой на мясо», «Вынужденная прирезка» либо «Реализация в живом весе».")
     if not info["archive_date"]:
         raise ValidationError("В основном архиве не указана дата выбытия. Уточните её до оформления склада.")
     if info["archive_date"] < start_date():
@@ -153,7 +155,7 @@ def discover(section):
         if section == "live":
             queryset = queryset.filter(is_archived=False, is_for_sale=True)
         else:
-            queryset = queryset.filter(is_archived=True, animal_status__status_type__in=[SALE_STATUS, MEAT_STATUS])
+            queryset = queryset.filter(is_archived=True, animal_status__status_type__in=ARCHIVE_STATUSES)
         for animal in queryset:
             info = source_info(animal)
             if section == "live":

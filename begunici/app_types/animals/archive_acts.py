@@ -37,12 +37,7 @@ ARCHIVE_ACT_TEMPLATES = {
         "filename": "prodaja.xlsx",
         "reason": "Реализация в живом весе",
         "row": 20,
-        "layout": "sale",
-    },
-    "Продажа на племя": {
-        "filename": "prodaja.xlsx",
-        "reason": "Продажа на племя",
-        "row": 20,
+        "row_span": 2,
         "layout": "sale",
     },
 }
@@ -416,15 +411,15 @@ def write_archive_act_row(sheet, context, row=None):
     sheet[f"AJ{row}"] = context.get("responsible_person") or ""
 
 
-def _get_single_row_merge_ranges(sheet, row):
+def _get_archive_row_merge_ranges(sheet, row, row_span):
     return [
-        (merged.min_col, merged.max_col)
+        copy(merged)
         for merged in sheet.merged_cells.ranges
-        if merged.min_row == row and merged.max_row == row
+        if row <= merged.min_row and merged.max_row < row + row_span
     ]
 
 
-def _copy_row_layout(sheet, source_row, target_row, merge_ranges):
+def _copy_row_layout(sheet, source_row, target_row):
     sheet.row_dimensions[target_row].height = sheet.row_dimensions[source_row].height
     for column in range(1, sheet.max_column + 1):
         source_cell = sheet.cell(source_row, column)
@@ -444,27 +439,35 @@ def _copy_row_layout(sheet, source_row, target_row, merge_ranges):
         if source_cell.protection:
             target_cell.protection = copy(source_cell.protection)
 
-    for min_col, max_col in merge_ranges:
-        try:
-            sheet.merge_cells(
-                start_row=target_row,
-                start_column=min_col,
-                end_row=target_row,
-                end_column=max_col,
-            )
-        except ValueError:
-            # Если openpyxl уже перенес объединение, повторно его создавать не нужно.
-            pass
-
-
-def _prepare_rows_for_archive_act(sheet, row, rows_count):
+def _prepare_rows_for_archive_act(sheet, row, rows_count, row_span=1):
     if rows_count <= 1:
         return
 
-    merge_ranges = _get_single_row_merge_ranges(sheet, row)
-    sheet.insert_rows(row + 1, amount=rows_count - 1)
+    merge_ranges = _get_archive_row_merge_ranges(sheet, row, row_span)
+    insert_at = row + row_span
+    inserted_rows = (rows_count - 1) * row_span
+    # openpyxl moves cells on insertion, but not merged ranges or row heights.
+    shifted_merges = [copy(merged) for merged in sheet.merged_cells.ranges if merged.min_row >= insert_at]
+    shifted_dimensions = [(index, copy(dimension)) for index, dimension in sheet.row_dimensions.items() if index >= insert_at]
+    for merged in shifted_merges:
+        sheet.unmerge_cells(str(merged))
+    for index, _dimension in shifted_dimensions:
+        del sheet.row_dimensions[index]
+    sheet.insert_rows(insert_at, amount=inserted_rows)
+    for index, dimension in shifted_dimensions:
+        dimension.index = index + inserted_rows
+        sheet.row_dimensions[dimension.index] = dimension
+    for merged in shifted_merges:
+        merged.shift(row_shift=inserted_rows)
+        sheet.merge_cells(str(merged))
     for offset in range(1, rows_count):
-        _copy_row_layout(sheet, row, row + offset, merge_ranges)
+        row_shift = offset * row_span
+        for block_row in range(row, row + row_span):
+            _copy_row_layout(sheet, block_row, block_row + row_shift)
+        for merged in merge_ranges:
+            shifted_merge = copy(merged)
+            shifted_merge.shift(row_shift=row_shift)
+            sheet.merge_cells(str(shifted_merge))
 
 
 def _shift_cell_reference(cell_reference, inserted_after_row, row_offset):
@@ -507,8 +510,9 @@ def generate_archive_act_workbook(animal, user=None):
     workbook = load_workbook(template_path)
     sheet = workbook.active
     start_row = context["config"]["row"]
-    _prepare_rows_for_archive_act(sheet, start_row, len(contexts))
-    inserted_rows_count = max(len(contexts) - 1, 0)
+    row_span = context["config"].get("row_span", 1)
+    _prepare_rows_for_archive_act(sheet, start_row, len(contexts), row_span=row_span)
+    inserted_rows_count = max(len(contexts) - 1, 0) * row_span
 
     write_act_number(sheet, context)
     write_archive_sender(sheet, context)
@@ -520,7 +524,7 @@ def generate_archive_act_workbook(animal, user=None):
             cells=_shift_cell_references(("AO8", "AQ8", "AR8"), start_row, inserted_rows_count),
         )
         for offset, row_context in enumerate(contexts):
-            write_archive_act_row(sheet, row_context, row=start_row + offset)
+            write_archive_act_row(sheet, row_context, row=start_row + offset * row_span)
         write_date_parts(
             sheet,
             download_date,
@@ -533,7 +537,7 @@ def generate_archive_act_workbook(animal, user=None):
             cells=_shift_cell_references(("AN7", "AO7", "AP7"), start_row, inserted_rows_count),
         )
         for offset, row_context in enumerate(contexts):
-            write_archive_act_row(sheet, row_context, row=start_row + offset)
+            write_archive_act_row(sheet, row_context, row=start_row + offset * row_span)
         write_date_parts(
             sheet,
             download_date,

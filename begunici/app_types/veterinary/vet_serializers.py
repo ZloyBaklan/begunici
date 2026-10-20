@@ -89,6 +89,10 @@ class StatusSerializer(serializers.ModelSerializer):
 
     def validate_status_type(self, value):
         """Проверяем, что статус с таким названием уникален."""
+        if value.strip().casefold() == "Продажа на племя".casefold():
+            raise serializers.ValidationError(
+                "Статус больше не используется. Выберите «Реализация в живом весе»."
+            )
         # Получаем текущий экземпляр, если он существует
         instance = getattr(self, "instance", None)
         if instance:

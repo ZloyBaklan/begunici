@@ -8,7 +8,7 @@ from django.views.generic import TemplateView
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.db import transaction
-from django.db.models import Max, Min, Q
+from django.db.models import F, Max, Min, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.utils.html import escape
@@ -9170,6 +9170,7 @@ def dashboard_statistics(request):
             change_date__date__lte=month_end,
         )
         .exclude(tag_id__in=tags_with_archive_acts)
+        .exclude(old_status_id=F("new_status_id"))
         .values_list('tag_id', flat=True)
     )
 
@@ -9275,7 +9276,6 @@ DASHBOARD_ARCHIVE_STATUSES_ORDER = [
     "Падеж",
     "Вынужденная прирезка",
     "Реализация в живом весе",
-    "Продажа на племя",
     "Убой на мясо",
 ]
 
@@ -9488,6 +9488,7 @@ def _get_dashboard_period_archive_stats(period_start, period_end, acts_only=Fals
             change_date__date__lte=period_end,
         )
         .exclude(tag_id__in=tags_with_archive_acts)
+        .exclude(old_status_id=F("new_status_id"))
         .select_related("new_status")
     )
     for history in fallback_histories:
