@@ -1,0 +1,15 @@
+{% extends 'inventory/catalog/base.html' %}
+{% block inventory_content %}
+<h1>Номенклатура мясной продукции</h1>
+<p class="text-muted">Общий справочник для склада, СП-55, заявок и товарных накладных. Масса учитывается в килограммах; для штучных позиций дополнительно ведётся количество.</p>
+{% if not product %}
+<div class="iv-table-wrap"><table class="table table-striped"><thead><tr><th>Название</th><th>Категория</th><th>Единицы</th><th>Штук с животного</th><th>Действия</th></tr></thead><tbody>
+{% for item in products %}<tr><td>{{ item.name }}</td><td>{{ item.get_category_display }}</td><td>{% if item.counted %}кг и шт.{% else %}кг{% endif %}</td><td>{{ item.parts_per_animal|default_if_none:'—' }}</td><td><a class="btn btn-outline-primary btn-sm" href="{% url 'inventory_catalog:meat-product-edit' item.pk %}">Изменить</a></td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+<h2>{% if product %}Изменить: {{ product.name }}{% else %}Добавить продукцию{% endif %}</h2>
+{% if unit_locked %}<p class="alert alert-info">Позиция уже используется. Название и предел количества можно уточнить. Для другой единицы или категории создайте отдельную позицию; история документов сохранится.</p>{% endif %}
+<form method="post">{% csrf_token %}{{ form.non_field_errors }}{{ form.revision }}
+<div class="iv-fields">{% for field in form.visible_fields %}<label>{{ field.label }}{{ field }}{{ field.errors }}{% if field.help_text %}<small class="text-muted d-block mt-2">{{ field.help_text }}</small>{% endif %}</label>{% endfor %}</div>
+<div class="iv-actions"><button class="btn btn-primary" type="submit">{% if product %}Сохранить изменения{% else %}Добавить номенклатуру{% endif %}</button>{% if product %}<a class="btn btn-outline-secondary" href="{% url 'inventory_catalog:meat-products' %}">Отмена</a>{% endif %}</div>
+</form>
+{% endblock %}

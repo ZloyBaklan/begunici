@@ -74,6 +74,10 @@ def slaughter_workbook(document):
     sheet["K3"] = f"УЧЕТНЫЙ ЛИСТ № {document.number or document.pk}"
     sheet["AD6"] = document.date
     sheet["AD6"].number_format = "dd.mm.yyyy"
+    sheet.column_dimensions["AD"].width = max(sheet.column_dimensions["AD"].width or 0, 12)
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 1
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet["E8"] = "Убойный цех"
     sheet["F9"] = "См. строки животных и приложение"
     sheet["V12"] = "Склад продукции"
@@ -114,19 +118,53 @@ def slaughter_workbook(document):
     case_map = {case.pk: case for case in animals}
     outputs, rejected = [], []
     totals = defaultdict(Decimal)
+    offal = defaultdict(Decimal)
+    meat_by_animal = defaultdict(Decimal)
     for item in document.payload.get("outputs", []):
         product = products[item["product"]]
         case = case_map[int(item["animal_id"])]
-        row = [case.tag_number, product.name, int(item.get("quantity", 0)), numeric(item["weight"]), item.get("reason", "")]
+        name = item.get("name") or product.name
+        category = item.get("category") or product.category
+        row = [case.tag_number, name, int(item.get("quantity", 0)), numeric(item["weight"]), item.get("reason", "")]
         if item.get("rejected"):
             rejected.append(row)
         else:
             outputs.append(row)
-            totals[product.category] += numeric(item["weight"])
-    sheet["X16"] = totals["meat"]
-    sheet["R19"] = "Субпродукты — см. приложение"
-    sheet["X19"] = totals["offal"]
-    sheet["X25"] = totals["meat"] + totals["offal"]
+            totals[category] += numeric(item["weight"])
+            if category == "meat":
+                meat_by_animal[case.pk] += numeric(item["weight"])
+            elif category == "offal":
+                offal[name] += numeric(item["weight"])
+    # Carcass mass is separate from live mass. Never add the entered cuts to
+    # their full carcass mass a second time. Rejected meat is not accepted.
+    meat_weight = Decimal(0)
+    for case in animals:
+        details = document.payload.get("animals", {}).get(str(case.pk), {})
+        declared = numeric(details.get("carcass_weight") or case.snapshot.get("carcass_weight"))
+        all_meat = [item for item in document.payload.get("outputs", [])
+                    if int(item["animal_id"]) == case.pk and (item.get("category") or products[item["product"]].category) == "meat"]
+        if all_meat:
+            meat_weight += meat_by_animal[case.pk]
+        elif declared is not None and not any(int(item["animal_id"]) == case.pk for item in document.payload.get("outputs", [])):
+            meat_weight += declared
+    sheet["X16"] = meat_weight
+    # Five rows on the printed source form. Overflow stays itemized in the
+    # existing dynamic output sheet and is summarized only on the source form.
+    offal_rows = list(offal.items())
+    offal_slots = [19, 20, 21, 22, 23]
+    for row_index in offal_slots:
+        sheet[f"R{row_index}"] = None
+        sheet[f"X{row_index}"] = None
+    display_offal = offal_rows if len(offal_rows) <= 5 else offal_rows[:4] + [("Прочие — см. приложение", sum((value for _, value in offal_rows[4:]), Decimal(0)))]
+    for row_index, (name, weight) in zip(offal_slots, display_offal):
+        text_cell(sheet, row_index, 18, name)
+        sheet[f"R{row_index}"].alignment = Alignment(wrap_text=True, vertical="center")
+        sheet[f"X{row_index}"] = weight
+        sheet.row_dimensions[row_index].height = max(sheet.row_dimensions[row_index].height or 0, 30)
+    sheet["X25"] = meat_weight + totals["offal"]
+    for row_index in [16, *offal_slots, 25]:
+        sheet[f"X{row_index}"].number_format = '#,##0.000'
+        sheet[f"X{row_index}"].alignment = Alignment(horizontal="center", vertical="center")
     table_sheet(workbook, "Животные", ["Бирка", "С участка", "Голов", "Масса, кг", "Заключение ветврача"], animal_rows)
     table_sheet(workbook, "Выход продукции", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Примечание"], outputs)
     table_sheet(workbook, "Брак — не поступает", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Причина брака"], rejected)
@@ -155,7 +193,7 @@ def invoice_workbook(document):
     rows = []
     for item in document.payload.get("lines", []):
         lot = StockLot.objects.select_related("product", "animal").get(pk=item["lot_id"])
-        rows.append([lot.animal.tag_number, lot.product.name, item["quantity"], numeric(item["weight"]), item.get("order_line_id") or ""])
+        rows.append([lot.animal.tag_number, item.get("name") or lot.product.name, item["quantity"], numeric(item["weight"]), item.get("order_line_id") or ""])
     sheet = table_sheet(workbook, "Товарная накладная", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Строка заявки"], rows)
     text_cell(sheet, len(rows) + 4, 1, f"Тестовый шаблон товарной накладной № {document.number or document.pk} от {document.date:%d.%m.%Y}")
     text_cell(sheet, len(rows) + 5, 1, f"Получатель: {document.payload.get('customer', '')}")

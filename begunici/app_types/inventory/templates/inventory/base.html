@@ -1,35 +1,18 @@
 {% extends 'base.html' %}{% load static inventory_tags %}
 {% block title %}Складской учёт · Бегуницы{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=6">
 <div class="inventory container mt-4" id="inventory-app">
     {% inventory_access as inventory_allowed %}
     {% if inventory_allowed %}
     {% if section != 'home' %}
-    <div class="card mb-4">
-        <div class="card-header iv-heading"><a href="{% url 'inventory:home' %}" class="text-dark text-decoration-none">Складской учёт</a><span class="text-muted small">Учёт с 01.10.2026</span></div>
-        <!-- FEED BRIDGE: у каждого склада своё меню операций. -->
-        <nav class="card-body d-flex flex-wrap gap-2" aria-label="Разделы складского учёта">
-            <a class="btn {% if section == 'feeds' %}btn-outline-secondary{% else %}btn-secondary{% endif %}" href="{% url 'inventory:home' %}"{% if section != 'feeds' %} aria-current="true"{% endif %}>Склад продукции и животных</a>
-            <a class="btn {% if section == 'feeds' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'feed_inventory:home' %}"{% if section == 'feeds' %} aria-current="true"{% endif %}>Склад кормов</a>
-        </nav>
-        {% if section != 'feeds' %}
-        <nav class="card-body pt-0 iv-nav" aria-label="Склад продукции и животных">
-            <a class="btn btn-outline-secondary" href="{% url 'inventory:live' %}">Живые к продаже</a>
-            <a class="btn btn-outline-secondary" href="{% url 'inventory:pending' %}">К оформлению</a>
-            <a class="btn btn-outline-secondary" href="{% url 'inventory:orders' %}">Входящие заявки</a>
-            <a class="btn btn-outline-secondary" href="{% url 'inventory:stock' %}">К реализации</a>
-            <a class="btn btn-outline-secondary" href="{% url 'inventory:archive' %}">Реализованный архив</a>
-        </nav>
-        {% endif %}
-    </div>
+    {% warehouse_navigation section %}
     {% endif %}
     {% else %}<div class="iv-heading mb-4"><a class="btn btn-outline-secondary" href="{% url 'animals:acts' %}">Акты</a><span class="text-muted">СП-55 · учёт с 01.10.2026</span></div>{% endif %}
     <div class="iv-error" id="iv-error" role="alert" tabindex="-1" hidden></div>
-    {% if section != 'home' %}{% load vet_inventory_tags %}{% vet_stock_entry %}{% endif %}
     <div{% if section != 'home' %} class="card iv-content-card"{% endif %}>
         {% block inventory_content %}{% endblock %}
     </div>
 </div>
-<script src="{% static 'inventory/inventory.js' %}?v=5" defer></script>
+<script src="{% static 'inventory/inventory.js' %}?v=6" defer></script>
 {% endblock %}

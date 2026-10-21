@@ -9,6 +9,7 @@ from .bridges import validate_case_source
 from .models import AuditEvent, Product, StockLot, StockMovement
 from .permissions import require_inventory
 from .validation import amount, count, rows
+from .yield_rules import validate_parts
 
 
 def balance(lot):
@@ -53,7 +54,7 @@ def cut_lot(user, lot_id, *, weight, quantity, outputs, loss_weight="0", reason=
     loss = amount(loss_weight, "Потери", allow_zero=True)
     if loss and not str(reason).strip():
         raise ValidationError("Укажите причину потерь при разделке.")
-    product_map = {product.code: product for product in Product.objects.filter(category="meat")}
+    product_map = {product.code: product for product in Product.objects.select_for_update().order_by("pk") if product.category == "meat"}
     clean, seen = [], set()
     for row in rows(outputs):
         product = product_map.get(row.get("product"))
@@ -70,8 +71,10 @@ def cut_lot(user, lot_id, *, weight, quantity, outputs, loss_weight="0", reason=
         if product.code == "half" and qty > 2 * quantity:
             raise ValidationError("Из одной туши можно получить не более двух полутуш.")
         clean.append((product, amount(row.get("weight")), qty))
-    if "half" in seen and len(seen) > 1:
-        raise ValidationError("Сначала разделите тушу на полутуши, затем нужную полутушу на части.")
+    if lot.product.code in {"carcass", "half"}:
+        validate_parts([(product, {"quantity": qty}) for product, _, qty in clean],
+                       tag=lot.animal.tag_number, fraction=quantity if lot.product.code == "carcass" else quantity / 2,
+                       allow_carcass=False)
     if sum((item[1] for item in clean), Decimal(0)) + loss != weight:
         raise ValidationError("Вес полученных частей плюс потери должен точно равняться весу, переданному в разделку.")
     operation = uuid.uuid4()

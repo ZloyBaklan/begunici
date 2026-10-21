@@ -119,7 +119,7 @@ def document(request, pk):
         case.source_url = current_urls.get(case.source_tag_id)
     context = {
         "document": doc, "animals": animals,
-        "products": list(Product.objects.values("code", "name", "category", "counted")),
+        "products": list(Product.objects.values("code", "name", "category", "counted", "parts_per_animal")),
         "payload": doc.payload, "versions": doc.versions.defer("content").select_related("created_by"),
         "events": doc.events.select_related("actor"),
         "can_confirm": can_manage_inventory(request.user),

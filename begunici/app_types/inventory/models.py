@@ -126,6 +126,8 @@ class Product(models.Model):
         ("live", "Животное"), ("meat", "Мясо"), ("offal", "Субпродукт"),
     ])
     counted = models.BooleanField(default=True)
+    parts_per_animal = models.PositiveSmallIntegerField(null=True, blank=True)
+    revision = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["id"]
@@ -337,6 +339,7 @@ class AuditEvent(AppendOnly):
             "invoice_confirmed": "Товарная накладная проведена", "invoice_reversed": "Сторно товарной накладной",
             "order_created": "Заявка создана", "order_closed": "Заявка закрыта",
             "returned_to_vet": "Акт возвращён ветврачу", "cut": "Разделка продукции",
+            "product_created": "Добавлена номенклатура", "product_updated": "Изменена номенклатура",
         }.get(self.action, self.action)
 
     @property
