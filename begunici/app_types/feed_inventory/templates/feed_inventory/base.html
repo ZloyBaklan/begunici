@@ -1,9 +1,9 @@
 {% extends feed_base_template|default:'inventory/base.html' %}{% load static %}
 {% block title %}Корма и сено · Бегуницы{% endblock %}
-{% block inventory_content %}
-<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=4">
-<div class="feeds">
-{% if not catalog_mode %}<nav class="feed-actions mb-4" aria-label="Корма и сено">
+{% block inventory_navigation %}
+<div class="card mb-4 iv-card-feeds">
+<div class="card-header">Складской учёт · Корма и сено</div>
+<nav class="card-body iv-nav" aria-label="Корма и сено">
     <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:home' %}">Остатки и расход</a>
     <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:orders' %}">Заявки на приход</a>
     <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:writeoffs' %}">Списания по актам</a>
@@ -11,6 +11,12 @@
     <a class="btn btn-outline-secondary" href="{% url 'feed_inventory:history' %}">История операций</a>
     <a class="btn btn-outline-primary" href="/#feed-plan">Кормовой план</a>
 </nav>
+</div>
+{% endblock %}
+{% block inventory_content %}
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=4">
+<div class="feeds">
+{% if not catalog_mode %}
 {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}{% endif %}
 {% block feed_content %}{% endblock %}
 </div>

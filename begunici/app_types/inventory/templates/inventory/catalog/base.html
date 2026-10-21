@@ -1,13 +1,8 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}Номенклатура · Бегуницы{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=6">
+<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=7">
 <div class="inventory container mt-4" id="inventory-app">
-    <nav class="iv-nav mb-4" aria-label="Управление номенклатурой">
-        <a class="btn btn-outline-secondary" href="{% url 'veterinary:veterinary-management' %}">К технической информации</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory_catalog:meat-products' %}">Мясная продукция</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory_catalog:feed-products' %}">Корма</a>
-    </nav>
     {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}
     <div class="card iv-content-card">{% block inventory_content %}{% endblock %}</div>
 </div>

@@ -15,7 +15,7 @@ class ProductForm(forms.Form):
     category = forms.ChoiceField(label="Категория", choices=[("meat", "Мясная часть"), ("offal", "Субпродукт")])
     unit = forms.ChoiceField(label="Единицы учёта", choices=[("kg_pcs", "кг и шт."), ("kg", "кг (только вес)")])
     parts_per_animal = forms.IntegerField(label="Максимум штук с одного животного", min_value=1, max_value=1000, required=False,
-        help_text="Для мясной части одна полутуша занимает половину этого количества. Для весовой продукции оставьте пустым.")
+        help_text="Для весовой продукции оставьте пустым.")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

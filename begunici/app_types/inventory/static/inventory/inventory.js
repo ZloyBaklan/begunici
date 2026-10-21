@@ -169,8 +169,7 @@
                 let maximum = product.parts_per_animal == null ? null : Math.floor(product.parts_per_animal *
                     (product.category === 'meat' && !['carcass', 'half'].includes(product.code) ? 1 - halves / 2 : 1));
                 if (product.code === 'half' && otherMeat.some(item => item.product !== 'half')) maximum = 1;
-                if (maximum !== null) { qty.max = String(Math.max(0, maximum - used(product.code))); hint = `Доступно для этой строки: ${qty.max} шт. `; }
-                if (product.category === 'offal') hint += 'Субпродукты учитываются отдельно от туши.';
+                if (maximum !== null) { qty.max = String(Math.max(0, maximum - used(product.code))); hint = `Максимум выбранной позиции: ${qty.max} шт.`; }
             }
             $('.iv-output-hint', row).textContent = hint;
         }

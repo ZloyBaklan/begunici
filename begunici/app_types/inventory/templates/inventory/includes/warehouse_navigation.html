@@ -8,13 +8,4 @@
         {% endif %}
         {% if veterinary %}<a class="btn {% if area == 'vet' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'vet_inventory:home' %}"{% if area == 'vet' %} aria-current="page"{% endif %}>Склад ветпрепаратов</a>{% endif %}
     </nav>
-    {% if area == 'products' and finance %}
-    <nav class="card-body pt-0 iv-nav" aria-label="Склад продукции и животных">
-        <a class="btn btn-outline-secondary" href="{% url 'inventory:live' %}">Живые к продаже</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory:pending' %}">К оформлению</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory:orders' %}">Входящие заявки</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory:stock' %}">К реализации</a>
-        <a class="btn btn-outline-secondary" href="{% url 'inventory:archive' %}">Реализованный архив</a>
-    </nav>
-    {% endif %}
 </div>

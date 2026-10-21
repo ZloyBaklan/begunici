@@ -8,7 +8,7 @@
 <div class="row"><label class="form-label col-md-4">Категория<select class="form-select" name="category">{% for value,label in categories %}<option value="{{ value }}"{% if form.category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
 <label class="form-label col-md-3">Единица измерения<select class="form-select" name="unit">{% for value,label in units %}<option value="{{ value }}"{% if form.unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
 <label class="form-label col-md-5">Упаковка (если нужна)<input class="form-control" name="package" value="{{ form.package }}" maxlength="40" placeholder="Мешок, тюк, стог, глыба…"></label></div>
-<p class="text-muted small">Для сена, мешков корма и соли выберите кг и название упаковки. Единицу можно изменить до использования позиции в документах или нормах.</p>
+<p class="text-muted small">Единицу можно изменить до использования позиции в документах или нормах.</p>
 <button class="btn btn-primary" type="submit">Добавить номенклатуру</button>
 </form></div>
 {% endblock %}
