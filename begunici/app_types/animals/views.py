@@ -12,7 +12,7 @@ from django.db.models import F, Max, Min, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.utils.html import escape
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
@@ -6297,7 +6297,7 @@ def _split_sheep_last_lambing(animal):
     return lambing_date, f"{children_text}; м/р: {summary.get('dead_lambs_count', 0)}"
 
 
-def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None, row_fills=None):
+def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None, row_fills=None, text_columns=None):
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill
@@ -6352,7 +6352,11 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
             else None
         )
         for col_index, value in enumerate(data_row, start=1):
-            _write_excel_cell(worksheet, data_row_idx, col_index, value)
+            if text_columns and col_index in text_columns:
+                cell = worksheet.cell(row=data_row_idx, column=col_index, value=str(value))
+                cell.data_type = "s"
+            else:
+                _write_excel_cell(worksheet, data_row_idx, col_index, value)
             if data_fill:
                 worksheet.cell(row=data_row_idx, column=col_index).fill = data_fill
 
@@ -10472,6 +10476,112 @@ def otbivka_list(request):
 def vet_list(request):
     """Страница списка ветобработок"""
     return render(request, 'vet_list.html')
+
+
+def weight_list(request):
+    return render(request, "weight_list.html")
+
+
+def _get_weight_list_queryset(params):
+    queryset = WeightRecord.objects.select_related("tag").order_by("-weight_date", "-id")
+    search = params.get("tag_search", "").strip()
+    if search:
+        queryset = queryset.filter(_build_tag_or_rshn_relation_filter("tag", search))
+
+    dates = {}
+    for key, lookup in (("weight_date_from", "gte"), ("weight_date_to", "lte")):
+        raw_value = params.get(key, "").strip()
+        if not raw_value:
+            continue
+        value = _parse_filter_date(raw_value)
+        if value is None:
+            raise DRFValidationError({key: "Укажите корректную дату взвешивания."})
+        dates[key] = value
+        queryset = queryset.filter(**{f"weight_date__{lookup}": value})
+    if len(dates) == 2 and dates["weight_date_from"] > dates["weight_date_to"]:
+        raise DRFValidationError({"weight_date_to": "Дата «по» не может быть раньше даты «с»."})
+
+    weights = {}
+    for key, lookup in (("weight_min", "gte"), ("weight_max", "lte")):
+        raw_value = params.get(key, "").strip()
+        if not raw_value:
+            continue
+        try:
+            value = Decimal(raw_value.replace(",", "."))
+        except InvalidOperation:
+            raise DRFValidationError({key: "Укажите корректный вес."})
+        if not value.is_finite() or value < 0 or value > Decimal("999.99"):
+            raise DRFValidationError({key: "Укажите вес от 0 до 999,99 кг."})
+        weights[key] = value
+        queryset = queryset.filter(**{f"weight__{lookup}": value})
+    if len(weights) == 2 and weights["weight_min"] > weights["weight_max"]:
+        raise DRFValidationError({"weight_max": "Вес «до» не может быть меньше веса «от»."})
+    return queryset
+
+
+def _build_weight_list_rows(records):
+    records = list(records)
+    tag_ids = {record.tag_id for record in records}
+    animals_by_tag = {}
+    for code, (model, label) in COMMON_ANIMAL_TYPE_MAP.items():
+        for animal in model.objects.filter(tag_id__in=tag_ids).values("tag_id", "rshn_tag"):
+            animals_by_tag[animal["tag_id"]] = (code, label, animal["rshn_tag"])
+
+    rows = []
+    for record in records:
+        animal = animals_by_tag.get(record.tag_id)
+        rows.append({
+            "id": record.id,
+            "tag_number": record.tag.tag_number,
+            "animal_type": animal[1] if animal else "Не определено",
+            "rshn_tag": (animal[2] or "") if animal else "",
+            "animal_url": reverse(
+                f"animals:{animal[0]}-detail", kwargs={"tag_number": record.tag.tag_number}
+            ) if animal else None,
+            "weight_date": record.weight_date.isoformat(),
+            "weight": str(record.weight),
+        })
+    return rows
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def weight_list_api(request):
+    queryset = _get_weight_list_queryset(request.query_params)
+    try:
+        page_number = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 10))
+    except (ValueError, TypeError):
+        raise DRFValidationError({"error": "Некорректные параметры страницы."})
+    if page_number < 1 or not 1 <= page_size <= 100:
+        raise DRFValidationError({"error": "Номер страницы должен быть положительным, размер страницы — от 1 до 100."})
+    paginator = Paginator(queryset, page_size)
+    page = paginator.get_page(page_number)
+    return Response({
+        "results": _build_weight_list_rows(page.object_list),
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page.number,
+        "has_next": page.has_next(),
+        "has_previous": page.has_previous(),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def weight_list_export_excel(request):
+    records = _build_weight_list_rows(_get_weight_list_queryset(request.query_params))
+    return _build_excel_response(
+        filename_prefix="weight_list",
+        sheet_title="Взвешивания",
+        headers=["Бирка", "Тип", "Бирка РСХН", "Дата взвешивания", "Вес, кг"],
+        rows=[[
+            record["tag_number"], record["animal_type"], record["rshn_tag"] or "-",
+            date.fromisoformat(record["weight_date"]), Decimal(record["weight"]),
+        ] for record in records],
+        summary_lines=[f"Итого записей: {len(records)}"],
+        text_columns={1, 2, 3},
+    )
 
 
 def _parse_filter_date(raw_value):

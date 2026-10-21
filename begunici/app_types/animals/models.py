@@ -681,6 +681,7 @@ class AnimalRejectionHistory(models.Model):
     animal_type = models.CharField(max_length=10, verbose_name="Тип животного на момент записи")
     old_is_reject = models.BooleanField(null=True, blank=True, verbose_name="Брак: было")
     new_is_reject = models.BooleanField(verbose_name="Брак: стало")
+    reason = models.TextField(blank=True, default="", verbose_name="Причина выбраковки")
     change_date = models.DateTimeField(null=True, blank=True, db_index=True, verbose_name="Дата изменения")
     recorded_at = models.DateTimeField(default=timezone.now, verbose_name="Дата записи истории")
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=SOURCE_CHANGE)

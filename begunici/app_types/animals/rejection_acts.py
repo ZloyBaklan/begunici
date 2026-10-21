@@ -2,6 +2,7 @@ from collections import defaultdict
 from copy import copy
 from io import BytesIO
 from pathlib import Path
+from textwrap import wrap
 
 from django.conf import settings
 from django.core.paginator import Paginator
@@ -38,7 +39,7 @@ def build_rejection_act_groups():
     for event in events:
         # Keep historical assignments, even after unmarking, retagging or archiving.
         act_date = timezone.localdate(event.change_date)
-        days[act_date].setdefault(event.tag_id, event)
+        days[act_date][event.tag_id] = event
 
     return [
         {
@@ -138,6 +139,7 @@ def build_rejection_act_rows(group):
             "condition": condition.condition_index if condition else None,
             "weight_display": weight_display,
             "weight": weight.weight if weight else None,
+            "reason": event.reason,
         })
     return rows
 
@@ -171,7 +173,7 @@ def generate_rejection_act_workbook(group):
     for row_number, item in enumerate(rows, start=DATA_START_ROW):
         values = (
             row_number - DATA_START_ROW + 1, item["identifier"], item["age_years"],
-            item["sex"], item["condition"], item["weight_display"], None, None,
+            item["sex"], item["condition"], item["weight_display"], None, item["reason"],
         )
         for column, value in zip(DATA_COLUMNS, values):
             coordinate = f"{column}{row_number}"
@@ -181,7 +183,8 @@ def generate_rejection_act_workbook(group):
             alignment.vertical = "center"
             sheet[coordinate].alignment = alignment
         sheet[f"AO{row_number}"].number_format = "0.00"
-        sheet.row_dimensions[row_number].height = 36
+        reason_lines = sum(max(1, len(wrap(line, width=40))) for line in item["reason"].splitlines())
+        sheet.row_dimensions[row_number].height = max(36, min(409, reason_lines * 12))
 
     total_row = TOTAL_ROW + extra_rows
     known_weights = [item["weight"] for item in rows if item["weight"] is not None]

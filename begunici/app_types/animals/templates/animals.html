@@ -98,23 +98,26 @@
                 <div class="card-header">
                     <h5>Дополнительные элементы управления</h5>
                 </div>
-                <div class="card-body text-center">
-                    <a href="{% url 'places_map' %}" class="btn btn-primary btn-lg me-3">
+                <div id="animal-management-links" class="card-body d-flex flex-wrap justify-content-center gap-3 text-center">
+                    <a href="{% url 'places_map' %}" class="btn btn-primary btn-lg">
                         Карта овчарен
                     </a>
-                    <a href="{% url 'animals:tags-management' %}" class="btn btn-primary btn-lg me-3">
+                    <a href="{% url 'animals:tags-management' %}" class="btn btn-primary btn-lg">
                         Бирки
                     </a>
-                    <a href="{% url 'animals:lambings' %}" class="btn btn-primary btn-lg me-3">
+                    <a href="{% url 'animals:lambings' %}" class="btn btn-primary btn-lg">
                         Управление окотами и осеменениями
                     </a>
-                    <a href="{% url 'animals:otbivka' %}" class="btn btn-primary btn-lg me-3">
+                    <a href="{% url 'animals:otbivka' %}" class="btn btn-primary btn-lg">
                         Отбивка
                     </a>
-                    <a href="{% url 'animals:vet-list' %}" class="btn btn-primary btn-lg me-3">
+                    <a href="{% url 'animals:vet-list' %}" class="btn btn-primary btn-lg">
                         Ветобработки
                     </a>
-                    <a href="{% url 'animals:journals' %}" class="btn btn-primary btn-lg me-3">
+                    <a href="{% url 'animals:weight-list' %}" class="btn btn-primary btn-lg">
+                        Взвешивания
+                    </a>
+                    <a href="{% url 'animals:journals' %}" class="btn btn-primary btn-lg">
                         Журналы
                     </a>
                     <a href="{% url 'animals:acts' %}" class="btn btn-primary btn-lg">

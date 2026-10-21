@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Список взвешиваний{% endblock %}
+
+{% block content %}
+<div class="container-fluid" id="weight-list-page"
+     data-api-url="{% url 'animals:weight-list-api' %}"
+     data-export-url="{% url 'animals:weight-list-export-excel' %}">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Список взвешиваний</h1>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-lg-3 mb-4 mobile-form-column">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Фильтры</h5>
+                </div>
+                <div class="card-body">
+                    <form id="weight-filters">
+                        <div class="mb-3">
+                            <label for="tag-search" class="form-label">Бирка / РСХН:</label>
+                            <input type="text" id="tag-search" name="tag_search" class="form-control"
+                                   placeholder="Поиск по бирке или бирке РСХН">
+                        </div>
+                        <div class="mb-3">
+                            <label for="weight-date-from" class="form-label">Дата взвешивания с:</label>
+                            <input type="date" id="weight-date-from" name="weight_date_from" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="weight-date-to" class="form-label">Дата взвешивания по:</label>
+                            <input type="date" id="weight-date-to" name="weight_date_to" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="weight-min" class="form-label">Вес от, кг:</label>
+                            <input type="number" id="weight-min" name="weight_min" class="form-control"
+                                   min="0" max="999.99" step="0.01" inputmode="decimal">
+                        </div>
+                        <div class="mb-3">
+                            <label for="weight-max" class="form-label">Вес до, кг:</label>
+                            <input type="number" id="weight-max" name="weight_max" class="form-control"
+                                   min="0" max="999.99" step="0.01" inputmode="decimal">
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Поиск</button>
+                            <button type="reset" class="btn btn-outline-secondary">Сбросить</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-9 mobile-list-column">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="card-title mb-0">Взвешивания</h5>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <button type="button" class="btn btn-success btn-sm" id="weight-export">Экспорт</button>
+                        <div class="text-muted">Всего записей: <span id="total-count">0</span></div>
+                    </div>
+                </div>
+                <div class="card-body" id="weight-results" aria-live="polite">
+                    <div class="alert alert-danger" id="weight-error" role="alert" hidden></div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Бирка</th>
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Бирка РСХН</th>
+                                    <th scope="col">Дата взвешивания</th>
+                                    <th scope="col">Вес, кг</th>
+                                </tr>
+                            </thead>
+                            <tbody id="weight-list"></tbody>
+                        </table>
+                    </div>
+                    <div id="loading" class="text-center py-3" hidden>
+                        <div class="spinner-border" role="status"><span class="visually-hidden">Загрузка...</span></div>
+                        <div class="mt-2">Загрузка данных...</div>
+                    </div>
+                    <div id="no-data" class="text-center text-muted py-3" hidden>Нет данных для отображения</div>
+                    <nav id="weight-pagination" class="mt-3" aria-label="Страницы взвешиваний"></nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="{% static 'js/weight_list.js' %}?v=20261021-pagination"></script>
+{% endblock %}

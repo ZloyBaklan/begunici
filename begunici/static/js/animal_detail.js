@@ -31,6 +31,7 @@ const API_ERROR_FIELD_LABELS = {
     place_id: 'Овчарня',
     plemstatus: 'Племенной статус',
     rshn_tag: 'Бирка РСХН',
+    rejection_reason: 'Причина выбраковки',
     status_date: 'Дата статуса',
     tag: 'Бирка',
     tag_number: 'Бирка',
@@ -471,6 +472,8 @@ async function loadAnimalDetails(animalType, tagNumber) {
         const rejectField = document.getElementById('is_reject');
         if (rejectField) {
             rejectField.checked = Boolean(animal.is_reject);
+            rejectField.dataset.savedValue = String(Boolean(animal.is_reject));
+            updateRejectionReasonField();
         }
 
         const forSaleField = document.getElementById('is_for_sale');
@@ -719,10 +722,52 @@ async function hideVetTreatment(treatmentId) {
 
 
 
+function isNewRejectionSelected() {
+    const checkbox = document.getElementById('is_reject');
+    return Boolean(checkbox?.checked && checkbox.dataset.savedValue !== 'true');
+}
+
+function updateRejectionReasonField(focus = false) {
+    const checkbox = document.getElementById('is_reject');
+    const input = document.getElementById('rejection-reason');
+    if (!checkbox || !input) return;
+    const newRejection = isNewRejectionSelected();
+    input.hidden = !checkbox.checked;
+    input.disabled = !checkbox.checked;
+    input.required = newRejection;
+    input.readOnly = checkbox.checked && !newRejection;
+    input.setCustomValidity('');
+    if (!checkbox.checked) input.value = '';
+    else if (input.readOnly) input.value = input.dataset.savedReason || '';
+    input.placeholder = input.readOnly ? 'Причина не указана' : 'Укажите причину выбраковки';
+    if (focus && newRejection) input.focus();
+}
+
+function setupRejectionReasonField() {
+    const checkbox = document.getElementById('is_reject');
+    const input = document.getElementById('rejection-reason');
+    if (!checkbox || !input) return;
+    input.dataset.savedReason = input.value;
+    checkbox.addEventListener('change', () => updateRejectionReasonField(true));
+    input.addEventListener('input', () => input.setCustomValidity(''));
+    updateRejectionReasonField();
+}
+
 async function saveAnimalDetails() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
     const animalType = animalDetail.dataset.animalType;
+
+    const reasonField = document.getElementById('rejection-reason');
+    updateRejectionReasonField();
+    const rejectionReason = reasonField?.value.trim() || '';
+    if (isNewRejectionSelected()) {
+        reasonField?.setCustomValidity(rejectionReason ? '' : 'Укажите причину выбраковки');
+        if (!reasonField || !reasonField.reportValidity()) {
+            reasonField?.focus();
+            return;
+        }
+    }
 
     const animalStatusValue = document.getElementById('animal_status').value;
     const placeValue = document.getElementById('place').value;
@@ -740,6 +785,9 @@ async function saveAnimalDetails() {
 
     if (animalStatusValue) {
         data.animal_status_id = parseInt(animalStatusValue);
+    }
+    if (isNewRejectionSelected()) {
+        data.rejection_reason = rejectionReason;
     }
 
     // Добавляем специфичные поля для Maker
@@ -2662,6 +2710,7 @@ async function completeLambing(lambingId) {
 
 // Добавляем загрузку окотов в основную функцию загрузки страницы
 document.addEventListener('DOMContentLoaded', async () => {
+    setupRejectionReasonField();
     console.log('=== НАЧАЛО ЗАГРУЗКИ СТРАНИЦЫ ===');
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail ? animalDetail.dataset.tagNumber : null;

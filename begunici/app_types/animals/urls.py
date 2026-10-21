@@ -57,6 +57,9 @@ from .views import (
     vet_list,
     vet_list_api,
     vet_list_export_excel,
+    weight_list,
+    weight_list_api,
+    weight_list_export_excel,
     vet_filter_options,
     lambings_export_excel,
     lambing_groups_export_excel,
@@ -311,6 +314,7 @@ urlpatterns = [
     path("young-stock/", young_stock, name="young-stock"),
     path("otbivka/", otbivka_list, name="otbivka"),  # Страница списка отбивки
     path("vet-list/", vet_list, name="vet-list"),  # Страница списка ветобработок
+    path("weight-list/", weight_list, name="weight-list"),
     path("acts/", TemplateView.as_view(template_name="acts_menu.html"), name="acts"),
     path("acts/archive/", TemplateView.as_view(template_name="archive_acts_list.html"), name="acts-archive"),
     path("acts/transfer/", TemplateView.as_view(template_name="transfer_acts_list.html"), name="acts-transfer"),
@@ -326,6 +330,8 @@ urlpatterns = [
     path("api/otbivka/export-excel/", otbivka_export_excel, name="otbivka-export-excel"),  # API экспорта отбивки
     path("api/vet-list/", vet_list_api, name="vet-list-api"),  # API для списка ветобработок
     path("api/vet-list/export-excel/", vet_list_export_excel, name="vet-list-export-excel"),  # API экспорта ветобработок
+    path("api/weight-list/", weight_list_api, name="weight-list-api"),
+    path("api/weight-list/export-excel/", weight_list_export_excel, name="weight-list-export-excel"),
     path("api/vet-filter-options/", vet_filter_options, name="vet-filter-options"),  # API для опций фильтров ветобработок
     path("api/lambings/export-excel/", lambings_export_excel, name="lambings-export-excel"),  # API экспорта окотов
     path("api/lambing-groups/export-excel/", lambing_groups_export_excel, name="lambing-groups-export-excel"),  # API экспорта групп

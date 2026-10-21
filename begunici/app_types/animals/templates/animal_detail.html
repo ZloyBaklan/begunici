@@ -308,13 +308,16 @@
                                     <label for="place" class="form-label">Овчарня:</label>
                                     <select id="place" class="form-select"></select>
                                 </div>
-                                <div class="col-md-6 d-flex align-items-end">
+                                <div class="col-12">
                                     <div class="mb-2">
-                                        <div class="form-check">
-                                            <input type="checkbox" id="is_reject" class="form-check-input" {% if animal.is_reject %}checked{% endif %}>
-                                            <label for="is_reject" class="form-check-label">Назначение: Брак</label>
-                                            <span id="reject-warning-display" class="text-warning small ms-2"></span>
+                                        <div class="rejection-assignment-row">
+                                            <div class="form-check mb-0">
+                                                <input type="checkbox" id="is_reject" class="form-check-input" data-saved-value="{{ animal.is_reject|yesno:'true,false' }}" {% if animal.is_reject %}checked{% endif %}>
+                                                <label for="is_reject" class="form-check-label">Назначение: Брак</label>
+                                            </div>
+                                            <input type="text" id="rejection-reason" class="form-control form-control-sm" maxlength="1000" aria-label="Укажите причину выбраковки" placeholder="Укажите причину выбраковки" value="{% if animal.is_reject %}{{ animal.tag.rejection_history.first.reason|default:'' }}{% endif %}" hidden disabled>
                                         </div>
+                                        <span id="reject-warning-display" class="text-warning small d-block"></span>
                                         <div class="form-check mt-2">
                                             <input type="checkbox" id="is_for_sale" class="form-check-input" {% if animal.is_for_sale %}checked{% endif %}>
                                             <label for="is_for_sale" class="form-check-label">Назначение: К продаже</label>
@@ -938,10 +941,32 @@
 .remove-lamb-btn:hover {
     background-color: #c82333;
 }
+
+.rejection-assignment-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.rejection-assignment-row .form-check {
+    flex: 0 0 auto;
+}
+
+#rejection-reason {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 0;
+    max-width: 420px;
+}
+
+#rejection-reason[hidden] {
+    display: none !important;
+}
 </style>
 
 {% include 'includes/archive_modal.html' %}
 
 <script src="{% static 'js/archive_act_modal.js' %}"></script>
-<script src="{% static 'js/animal_detail.js' %}"></script>
+<script src="{% static 'js/animal_detail.js' %}?v=20261021-rejection-inline"></script>
 {% endblock %}

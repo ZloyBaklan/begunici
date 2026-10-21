@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
-from django.db import models
+from django.db import models, transaction
 from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
@@ -19,6 +19,7 @@ from .models import (
     LambingGroup,
     AnimalBase,
     AnimalNoteHistory,
+    AnimalRejectionHistory,
     SheepBodyConditionRecord,
     CalendarNote,
     ArchiveAct,
@@ -375,6 +376,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     archive_act_group_key = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     archive_act_fatness_changed = serializers.BooleanField(write_only=True, required=False, default=False)
     confirm_group_place_move = serializers.BooleanField(write_only=True, required=False, default=False)
+    rejection_reason = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, max_length=1000,
+    )
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
@@ -514,6 +518,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return rshn_tag
 
     def validate(self, attrs):
+        if attrs.get("is_reject") and not (self.instance and self.instance.is_reject):
+            if not attrs.get("rejection_reason", "").strip():
+                raise serializers.ValidationError({"rejection_reason": "Укажите причину выбраковки."})
         attrs = super().validate(attrs)
         if "tag" in attrs:
             normalized_tag = self._normalize_tag_number(attrs.get("tag"))
@@ -589,7 +596,21 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             raise serializers.ValidationError("Вес туши не может быть отрицательным.")
         return value
 
+    @staticmethod
+    def _store_rejection_reason(instance, reason):
+        event = AnimalRejectionHistory.objects.filter(
+            tag_id=instance.tag_id, source=AnimalRejectionHistory.SOURCE_CHANGE,
+            new_is_reject=True,
+        ).order_by("-id").first()
+        if event is None:
+            raise serializers.ValidationError({
+                "rejection_reason": "Не удалось сохранить причину выбраковки. Повторите сохранение.",
+            })
+        AnimalRejectionHistory.objects.filter(pk=event.pk).update(reason=reason)
+
+    @transaction.atomic
     def create(self, validated_data):
+        rejection_reason = validated_data.pop("rejection_reason", "")
         tag_data = validated_data.pop('tag')
         for service_field in (
             "status_date",
@@ -631,6 +652,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
         validated_data['tag'] = tag
         instance = super().create(validated_data)
+        if instance.is_reject:
+            self._store_rejection_reason(instance, rejection_reason)
         
         # Создаем подробный лог создания
         from .models_user_log import UserActionLog
@@ -668,6 +691,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                 details.append(f"Статус: {status_name}")
             if instance.rshn_tag:
                 details.append(f"Бирка РСХН: {instance.rshn_tag}")
+            if instance.is_reject:
+                details.append(f"Причина выбраковки: {rejection_reason}")
             
             details_text = "; ".join(details)
             
@@ -681,7 +706,17 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         
         return instance
 
+    @transaction.atomic
     def update(self, instance, validated_data):
+        # Use the same tag-first lock order as retagging and type conversions.
+        Tag.objects.select_for_update().get(pk=instance.tag_id)
+        instance.is_reject = type(instance).objects.select_for_update().values_list(
+            "is_reject", flat=True,
+        ).get(pk=instance.pk)
+        rejection_reason = validated_data.pop("rejection_reason", "")
+        new_rejection = validated_data.get("is_reject", instance.is_reject) and not instance.is_reject
+        if new_rejection and not rejection_reason.strip():
+            raise serializers.ValidationError({"rejection_reason": "Укажите причину выбраковки."})
         # Сохраняем старые значения для истории
         old_status = instance.animal_status
         old_place = instance.place
@@ -932,6 +967,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             if archive_act_details:
                 changes.append("Акт архивации: " + "; ".join(archive_act_details))
         
+        if new_rejection:
+            changes.append(f"Причина выбраковки: {rejection_reason}")
+
         # Проверяем изменения родителей
         if 'mother' in validated_data:
             old_mother = instance.mother
@@ -986,6 +1024,8 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             setattr(instance, attr, value)
         
         instance.save(skip_status_history=skip_status_history)
+        if new_rejection:
+            self._store_rejection_reason(instance, rejection_reason)
         
         # Если изменился статус и передана дата статуса
         if status_will_change and status_date:
