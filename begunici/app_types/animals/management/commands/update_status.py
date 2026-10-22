@@ -3,6 +3,7 @@ from datetime import date
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from begunici.app_types.veterinary.vet_models import Status
 
@@ -55,7 +56,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
         self.statuses = self._load_statuses()
-        self.today = date.today()
+        self.today = timezone.localdate()
         self.updated = 0
         self.reject_marked = 0
         self.unchanged = 0

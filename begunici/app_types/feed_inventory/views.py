@@ -183,29 +183,33 @@ def version_download(request, pk):
 
 @require_http_methods(["GET", "POST"])
 @access_required()
-def products(request):
+def products(request, catalog_mode=False):
     if request.method == "POST":
         try:
             services.create_product(request.user, request.POST.get("name"), request.POST.get("category"),
                                     request.POST.get("unit"), request.POST.get("package"))
+            request._inventory_logged = True
             messages.success(request, "Номенклатура добавлена. Нормы можно задать в кормовом плане на главной.")
-            return redirect("feed_inventory:products")
+            return redirect("inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products")
         except (ValidationError, IntegrityError) as exc:
             error(request, exc)
     return page(request, "products", products=FeedProduct.objects.all(), form=request.POST,
+                catalog_mode=catalog_mode, feed_base_template="inventory/catalog/base.html" if catalog_mode else "inventory/base.html",
+                product_edit_route="inventory_catalog:feed-product-edit" if catalog_mode else "feed_inventory:product-edit",
                 categories=FeedProduct._meta.get_field("category").choices, units=FeedProduct._meta.get_field("unit").choices)
 
 
 @require_http_methods(["GET", "POST"])
 @access_required()
-def product_edit(request, pk):
+def product_edit(request, pk, catalog_mode=False):
     product = get_object_or_404(FeedProduct, pk=pk)
     if request.method == "POST":
         try:
             services.update_product(request.user, pk, request.POST.get("revision"), request.POST.get("name"),
                 request.POST.get("category"), request.POST.get("unit"), request.POST.get("package"))
+            request._inventory_logged = True
             messages.success(request, "Номенклатура изменена. Ранее оформленные документы сохранены без изменений.")
-            return redirect("feed_inventory:products")
+            return redirect("inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products")
         except (ValidationError, IntegrityError) as exc:
             error(request, exc)
     values = request.POST if request.method == "POST" else {
@@ -213,6 +217,8 @@ def product_edit(request, pk):
         "package": product.package, "revision": product.revision,
     }
     return page(request, "product_edit", product=product, form=values,
+                catalog_mode=catalog_mode, feed_base_template="inventory/catalog/base.html" if catalog_mode else "inventory/base.html",
+                products_route="inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products",
                 **services.product_restrictions(product),
                 categories=FeedProduct._meta.get_field("category").choices, units=FeedProduct._meta.get_field("unit").choices)
 

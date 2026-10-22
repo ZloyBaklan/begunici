@@ -48,7 +48,8 @@ def normalize_invoice(payload, order):
         elif line_id is not None:
             raise ValidationError("Сначала выберите заявку.")
         validate_withdrawal(lot, weight, quantity)
-        clean.append({"lot_id": lot_id, "weight": str(weight), "quantity": quantity, "order_line_id": line_id})
+        clean.append({"lot_id": lot_id, "weight": str(weight), "quantity": quantity, "order_line_id": line_id,
+                      "name": lot.product.name, "unit": "кг и шт." if lot.product.counted else "кг"})
     customer = str(payload.get("customer", "")).strip()[:200] or (order.customer if order else "")
     if not customer:
         raise ValidationError("Укажите получателя накладной.")

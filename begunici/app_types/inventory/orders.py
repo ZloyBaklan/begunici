@@ -38,7 +38,7 @@ def create_order(user, data, *, external_key=None):
         required_heads=count(data.get("required_heads", 0), "Количество животных", allow_zero=True),
         external_key=external_key, created_by=user,
     )
-    product_map = {product.code: product for product in Product.objects.all()}
+    product_map = {product.code: product for product in Product.objects.select_for_update().order_by("pk")}
     for item in rows(data.get("lines")):
         product = product_map.get(item.get("product"))
         if not product or (product.category == "live") != (kind == "live"):

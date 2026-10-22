@@ -29,6 +29,8 @@ from begunici.app_types.animals.views_scanner import (
 )
 
 urlpatterns = [
+    # CATALOG BRIDGE: общие справочники, доступные из технической информации.
+    path("catalog/", include("begunici.app_types.inventory.catalog_urls")),
     # FEED BRIDGE: приход и расход кормов не меняют учёт животных и продукции.
     path("inventory/feeds/", include("begunici.app_types.feed_inventory.urls")),
     # INVENTORY BRIDGE: все сценарии склада принадлежат отдельному приложению.

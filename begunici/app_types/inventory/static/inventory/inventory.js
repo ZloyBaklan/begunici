@@ -56,7 +56,7 @@
         return node;
     }
     function cell(row, node) { const td = element('td'); td.append(node); row.append(td); }
-    function removeButton(row) { const button = element('button', 'Удалить', {type: 'button', class: 'btn btn-outline-secondary btn-sm'}); button.addEventListener('click', () => { if (doc?.contains(row)) documentDirty = true; row.remove(); }); return button; }
+    function removeButton(row) { const button = element('button', 'Удалить', {type: 'button', class: 'btn btn-outline-secondary btn-sm'}); button.addEventListener('click', () => { if (doc?.contains(row)) documentDirty = true; const parent = row.parentElement; row.remove(); parent?.dispatchEvent(new Event('change', {bubbles: true})); }); return button; }
     function fields(row) {
         return Object.fromEntries($$('[data-field]', row).map(node => [node.dataset.field, node.type === 'checkbox' ? node.checked : node.value]));
     }
@@ -110,8 +110,10 @@
         const kind = doc?.dataset.kind;
         const choices = products.filter(p => (p.category === 'live') === (kind === 'sp54'));
         cell(row, select('animal_id', animalChoices, value.animal_id));
-        const productField = select('product', choices.map(p => [p.code, p.name]), value.product);
+        const productField = select('product', [['', 'Выберите продукцию…'], ...choices.map(p => [p.code, p.name])], value.product);
+        productField.required = true;
         cell(row, productField);
+        productField.parentElement.append(element('small', '', {class: 'iv-output-hint'}));
         cell(row, input('weight', value.weight, 'number', {step: '0.001', min: '0.001', 'aria-label': 'Вес, кг'}));
         const quantity = input('quantity', value.quantity ?? 1, 'number', {step: '1', min: '0', 'aria-label': 'Количество, шт.'});
         cell(row, quantity);
@@ -119,14 +121,66 @@
         cell(row, rejected);
         cell(row, input('reason', value.reason || '', 'text', {class: 'form-control iv-reason', 'aria-label': 'Причина брака'}));
         cell(row, removeButton(row));
-        productField.addEventListener('change', () => { if (!products.find(p => p.code === productField.value)?.counted) quantity.value = '0'; });
+        productField.addEventListener('change', () => {
+            if (!products.find(p => p.code === productField.value)?.counted) quantity.value = '0';
+            else if (Number(quantity.value) <= 0) quantity.value = '1';
+        });
         if (outputs.dataset.readonly) $$('input,select,button', row).forEach(node => { node.disabled = true; });
         outputs.append(row);
     }
     if (outputs) (payload.outputs || []).forEach(addOutput);
-    $('#iv-add-output')?.addEventListener('click', () => { documentDirty = true; addOutput(); });
+    function updateOutputChoices() {
+        if (!outputs || outputs.dataset.readonly || doc?.dataset.kind !== 'sp55') return;
+        const rows = $$('tr', outputs);
+        for (const row of rows) {
+            const current = fields(row);
+            const others = rows.filter(other => other !== row && fields(other).animal_id === current.animal_id).map(fields);
+            const used = code => others.filter(item => item.product === code).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+            const carcasses = used('carcass'), halves = used('half');
+            const otherMeat = others.filter(item => products.find(p => p.code === item.product)?.category === 'meat');
+            const productField = $('[data-field="product"]', row);
+            const animal = document.querySelector(`#iv-animal-options option[value="${current.animal_id}"]`);
+            for (const option of productField.options) {
+                const product = products.find(p => p.code === option.value);
+                if (!product) continue;
+                let blocked = false;
+                if (product.code === 'carcass') blocked = otherMeat.length > 0;
+                else if (product.code === 'half') {
+                    blocked = carcasses > 0 || halves >= 2 || otherMeat.some(item => {
+                        const part = products.find(p => p.code === item.product);
+                        return part.code !== 'half' && (halves + 1 >= 2 ||
+                            (part.parts_per_animal != null && used(part.code) > Math.floor(part.parts_per_animal * (1 - (halves + 1) / 2))));
+                    });
+                } else if (product.category === 'meat') blocked = carcasses > 0 || halves >= 2;
+                let maximum = product.parts_per_animal == null ? null : Math.floor(product.parts_per_animal *
+                    (product.category === 'meat' && !['carcass', 'half'].includes(product.code) ? 1 - halves / 2 : 1));
+                if (product.code === 'half' && otherMeat.some(item => item.product !== 'half')) maximum = 1;
+                if (maximum !== null && used(product.code) >= maximum) blocked = true;
+                if (product.code === 'testes' && animal?.dataset.sex !== 'male') blocked = true;
+                option.disabled = blocked && option.value !== current.product;
+            }
+            const product = products.find(p => p.code === current.product);
+            const qty = $('[data-field="quantity"]', row);
+            qty.disabled = product ? !product.counted : false;
+            qty.min = product?.counted ? '1' : '0';
+            qty.removeAttribute('max');
+            let hint = '';
+            if (product) {
+                let maximum = product.parts_per_animal == null ? null : Math.floor(product.parts_per_animal *
+                    (product.category === 'meat' && !['carcass', 'half'].includes(product.code) ? 1 - halves / 2 : 1));
+                if (product.code === 'half' && otherMeat.some(item => item.product !== 'half')) maximum = 1;
+                if (maximum !== null) { qty.max = String(Math.max(0, maximum - used(product.code))); hint = `Максимум выбранной позиции: ${qty.max} шт.`; }
+            }
+            $('.iv-output-hint', row).textContent = hint;
+        }
+    }
+    outputs?.addEventListener('change', updateOutputChoices);
+    outputs?.addEventListener('input', updateOutputChoices);
+    updateOutputChoices();
+    $('#iv-add-output')?.addEventListener('click', () => { documentDirty = true; addOutput(); updateOutputChoices(); });
     const receiptForm = $('#iv-receipt-save');
     receiptForm?.addEventListener('submit', event => { event.preventDefault(); const submit = event.submitter?.value === 'submit'; run(async () => {
+        if ($$('input, select', outputs).some(field => !field.disabled && !field.reportValidity())) throw new Error('Проверьте номенклатуру и количество в строках выхода.');
         const file = receiptForm.elements.file.files[0];
         if (!confirmReplacement(file)) return;
         const animals = Object.fromEntries($$('#iv-receipt-animals tr').map(row => [row.dataset.animalId, fields(row)]));

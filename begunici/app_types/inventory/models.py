@@ -126,6 +126,8 @@ class Product(models.Model):
         ("live", "Животное"), ("meat", "Мясо"), ("offal", "Субпродукт"),
     ])
     counted = models.BooleanField(default=True)
+    parts_per_animal = models.PositiveSmallIntegerField(null=True, blank=True)
+    revision = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["id"]
@@ -299,18 +301,23 @@ class AuditEvent(AppendOnly):
                 for line in lines:
                     lot = lots.get(line["lot_id"])
                     if lot:
-                        details.append(f"{lot.animal.tag_number}, {lot.product.name}: {line['weight']} кг / {line['quantity']} шт.")
+                        name = line.get("name") or lot.product.name
+                        details.append(f"{lot.animal.tag_number}, {name}: {line['weight']} кг / {line['quantity']} шт.")
             else:
                 cases = {str(case.pk): case.tag_number for case in self.document.animals.all()}
                 products = dict(Product.objects.values_list("code", "name"))
                 for line in payload.get("outputs", []):
                     label = "Брак" if line.get("rejected") else "Выход"
-                    details.append(f"{label}: {cases.get(str(line['animal_id']), '-')}, {products.get(line['product'], line['product'])}: {line['weight']} кг / {line['quantity']} шт.")
+                    name = line.get("name") or products.get(line['product'], line['product'])
+                    details.append(f"{label}: {cases.get(str(line['animal_id']), '-')}, {name}: {line['weight']} кг / {line['quantity']} шт.")
             if self.order_id:
                 details.append(f"Заявка № {self.order_id}")
         elif self.order_id:
             object_type, object_id = "Складская заявка", str(self.order_id)
             details.append(f"Заявка № {self.order_id}; получатель: {self.order.customer}")
+        elif self.action in {"product_created", "product_updated"}:
+            object_type, object_id = "Номенклатура мясной продукции", str(self.data["product"])
+            details.append("Позиция: " + self.data["after"]["name"])
         else:
             object_type, object_id = "Складской учёт", ""
         if self.summary:
@@ -337,11 +344,25 @@ class AuditEvent(AppendOnly):
             "invoice_confirmed": "Товарная накладная проведена", "invoice_reversed": "Сторно товарной накладной",
             "order_created": "Заявка создана", "order_closed": "Заявка закрыта",
             "returned_to_vet": "Акт возвращён ветврачу", "cut": "Разделка продукции",
+            "product_created": "Добавлена номенклатура", "product_updated": "Изменена номенклатура",
         }.get(self.action, self.action)
 
     @property
     def summary(self):
         parts = []
+        if self.action in {"product_created", "product_updated"}:
+            before, after = self.data.get("before") or {}, self.data.get("after") or {}
+            labels = {"name": "Название", "category": "Категория", "unit": "Единицы учёта", "parts_per_animal": "Штук с животного"}
+            display = {"meat": "Мясная часть", "offal": "Субпродукт", "kg_pcs": "кг и шт.", "kg": "кг"}
+            for key, label in labels.items():
+                if before and before.get(key) == after.get(key):
+                    continue
+                old_value = display.get(before.get(key), before.get(key))
+                new_value = display.get(after.get(key), after.get(key))
+                value = str(new_value) if new_value is not None else "Не задано"
+                if before:
+                    value = f"{old_value if old_value is not None else 'Не задано'} -> {value}"
+                parts.append(f"{label}: {value}")
         if self.data.get("version") or self.data.get("revision"):
             parts.append(f"Версия {self.data.get('version') or self.data.get('revision')}")
         if self.action == "cut":

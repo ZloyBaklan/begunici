@@ -4,12 +4,10 @@
 {% load vet_inventory_tags %}
 {% if section == 'home' %}
 <div class="iv-title-row mb-3"><h1 class="mb-0">Складской учёт</h1><span class="text-muted">Учёт с 01.10.2026</span></div>
-<!-- VET BRIDGE: отдельный раздел, не меняет сетку продукции и кормов. -->
-<div class="mb-4">{% vet_stock_card %}</div>
 <p class="text-muted mb-4">Животные к продаже, оформление актов и движение продукции.</p>
 <div class="row g-4">
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
+    <div class="col-md-6">
+        <div class="card h-100 iv-card-animals">
             <div class="card-header"><h5 class="mb-0">Животные и оформление</h5></div>
             <div class="card-body">
                 <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'inventory:live' %}">Список живых животных к продаже</a>
@@ -18,8 +16,8 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
+    <div class="col-md-6">
+        <div class="card h-100 iv-card-products">
             <div class="card-header"><h5 class="mb-0">Продукция и реализация</h5></div>
             <div class="card-body">
                 <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'inventory:orders' %}">Список входящих заявок на продукцию</a>
@@ -29,18 +27,20 @@
             </div>
         </div>
     </div>
-    <!-- FEED BRIDGE: третий независимый раздел склада. -->
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100">
+    <div class="col-12">
+        <div class="card iv-card-feeds">
             <div class="card-header"><h5 class="mb-0">Корма и сено</h5></div>
             <div class="card-body">
-                <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'feed_inventory:home' %}">Остатки и потребление кормов</a>
-                <a class="btn btn-secondary w-100 mb-2 iv-menu-button" href="{% url 'feed_inventory:orders' %}">Входящие заявки и приход</a>
-                <a class="btn btn-outline-secondary w-100 mb-3 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a>
+                <div class="row g-2 mb-3">
+                <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:home' %}">Остатки и потребление кормов</a></div>
+                <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:orders' %}">Входящие заявки и приход</a></div>
+                <div class="col-md-4"><a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a></div>
+                </div>
                 <p class="text-muted small mb-0">Сено, мешки кормов, соль и другие корма. Приход по накладным и подтверждение фактического расхода.</p>
             </div>
         </div>
     </div>
+    <div class="col-12">{% vet_stock_card %}</div>
 </div>
 {% elif section == 'live' or section == 'pending' %}
 <div class="iv-title-row"><h1>{% if section == 'live' %}Живые животные к продаже{% else %}Складская база к оформлению{% endif %}</h1>

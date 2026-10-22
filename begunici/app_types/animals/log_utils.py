@@ -90,7 +90,12 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
     action = None
 
-    if path.startswith(("/inventory/feeds/", "/inventory/vet/")) and method == "POST":
+    if path.startswith(("/catalog/meat/", "/catalog/feeds/")) and method == "POST":
+        area = "склада кормов" if path.startswith("/catalog/feeds/") else "склада продукции"
+        label = "Редактирование позиции" if re.search(r"/[0-9]+/$", path) else "Создание позиции"
+        action = f"{label} {area}"
+
+    elif path.startswith(("/inventory/feeds/", "/inventory/vet/")) and method == "POST":
         area = "склада кормов" if path.startswith("/inventory/feeds/") else "склада ветпрепаратов"
         form_action = _params_get(params, "action")
         if re.search(r"/products/[0-9]+/edit/$", path):
@@ -337,6 +342,11 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
 def resolve_log_object_type(method, path):
     path = _normalize_path(path)
+
+    if path.startswith("/catalog/meat/"):
+        return "Номенклатура мясной продукции"
+    if path.startswith("/catalog/feeds/"):
+        return "Склад кормов"
 
     if path.startswith("/inventory/"):
         if path.startswith("/inventory/feeds/"):

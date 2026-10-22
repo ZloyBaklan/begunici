@@ -60,3 +60,12 @@
 
 /* Read-only flags in the animal snapshot stay legible. */
 .inventory .iv-flag:disabled { opacity: 1; }
+
+.inventory .iv-card-animals { background: #f7f8fa; border-color: #d9dfe5; }
+.inventory .iv-card-products { background: #fff1ef; border-color: #ebc9c5; }
+.inventory .iv-card-feeds { background: #fff9e6; border-color: #e9dba4; }
+.inventory .iv-card-vet { background: #eef8ef; border-color: #c4dfca; }
+.inventory .iv-card-products .card-header { background: #f7dfdb; }
+.inventory .iv-card-feeds .card-header { background: #f6edcc; }
+.inventory .iv-card-vet .card-header { background: #daeddd; }
+.iv-output-hint { display: block; margin-top: .35rem; font-size: .8rem; color: #6c757d; }

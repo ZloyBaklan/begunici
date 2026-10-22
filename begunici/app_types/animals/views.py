@@ -14,6 +14,7 @@ from django.core.paginator import Paginator
 from django.utils.html import escape
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
+from functools import wraps
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from rest_framework import filters
@@ -107,6 +108,19 @@ from pathlib import Path
 
 TRUTHY_FILTER_VALUES = {"1", "true", "yes", "on"}
 EWE_RAM_CONVERSION_ALLOWED_USERS = {"admin", "main"}
+
+
+def _atomic_animal_action(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        with transaction.atomic():
+            response = view(*args, **kwargs)
+            # Validation errors returned as responses must also undo partial writes.
+            if response.status_code >= 400:
+                transaction.set_rollback(True)
+            return response
+
+    return wrapped
 
 
 def _is_truthy_filter_value(value):
@@ -2938,6 +2952,17 @@ class LambingViewSet(viewsets.ModelViewSet):
     search_fields = ['^sheep__tag__tag_number', '^ewe__tag__tag_number', '^maker__tag__tag_number', '^ram__tag__tag_number']
     pagination_class = PaginationSetting
 
+    def _get_locked_lambing(self):
+        lambing = self.get_object()
+        parent_tag_ids = [
+            parent.tag_id
+            for parent in (lambing.get_mother(), lambing.get_father())
+            if parent is not None
+        ]
+        # Retagging also locks tags first. Keep the same order before changing parents.
+        list(Tag.objects.select_for_update().filter(pk__in=parent_tag_ids).order_by("pk"))
+        return Lambing.objects.select_for_update().get(pk=lambing.pk)
+
     def get_queryset(self):
         """Фильтрация по активности окота и датам"""
         queryset = super().get_queryset()
@@ -3011,14 +3036,13 @@ class LambingViewSet(viewsets.ModelViewSet):
         return queryset
 
     @action(detail=True, methods=['post'], url_path='complete')
+    @_atomic_animal_action
     def complete_lambing(self, request, pk=None):
         """Завершить окот (простое завершение без детей)"""
         try:
-            lambing = self.get_object()
-            
-            # Получаем информацию для лога до завершения
-            mother_tag = lambing.get_mother_tag()
-            father_tag = lambing.get_father_tag()
+            lambing = self._get_locked_lambing()
+            if not lambing.is_active:
+                return Response({"error": "Окот уже завершен"}, status=status.HTTP_400_BAD_REQUEST)
             
             lambing.complete_lambing()
             
@@ -3039,13 +3063,14 @@ class LambingViewSet(viewsets.ModelViewSet):
                     
                     start_date_str = lambing.start_date.strftime('%d.%m.%Y')
                     
-                    UserActionLog.objects.create(
-                        user=request.user,
-                        action_type="Завершение окота",
-                        object_type="Окот",
-                        object_id=f"{mother_tag}, {father_tag}",
-                        description=f"Завершен окот: Дата начала: {start_date_str}"
-                    )
+                    with transaction.atomic():
+                        UserActionLog.objects.create(
+                            user=request.user,
+                            action_type="Завершение окота",
+                            object_type="Окот",
+                            object_id=f"{mother_tag}, {father_tag}",
+                            description=f"Завершен окот: Дата начала: {start_date_str}"
+                        )
             except Exception as log_error:
                 # Если логирование не удалось, не прерываем основную операцию
                 print(f"Ошибка логирования завершения окота: {log_error}")
@@ -3061,10 +3086,13 @@ class LambingViewSet(viewsets.ModelViewSet):
             )
 
     @action(detail=True, methods=['post'], url_path='complete-with-children')
+    @_atomic_animal_action
     def complete_lambing_with_children(self, request, pk=None):
         """Завершить окот с созданием детей"""
         try:
-            lambing = self.get_object()
+            lambing = self._get_locked_lambing()
+            if not lambing.is_active:
+                return Response({"error": "Окот уже завершен"}, status=status.HTTP_400_BAD_REQUEST)
             
             # Получаем данные из запроса
             actual_date_str = request.data.get('actual_lambing_date')
@@ -3398,13 +3426,14 @@ class LambingViewSet(viewsets.ModelViewSet):
                     else:
                         children_info = "без детей"
                     
-                    UserActionLog.objects.create(
-                        user=request.user,
-                        action_type="Завершение окота с детьми",
-                        object_type="Окот",
-                        object_id=f"{mother_tag}, {father_tag}",
-                        description=f"Завершен окот: Дата окота: {actual_date_str_formatted}; {children_info}"
-                    )
+                    with transaction.atomic():
+                        UserActionLog.objects.create(
+                            user=request.user,
+                            action_type="Завершение окота с детьми",
+                            object_type="Окот",
+                            object_id=f"{mother_tag}, {father_tag}",
+                            description=f"Завершен окот: Дата окота: {actual_date_str_formatted}; {children_info}"
+                        )
             except Exception as log_error:
                 # Если логирование не удалось, не прерываем основную операцию
                 print(f"Ошибка логирования завершения окота: {log_error}")
@@ -3424,10 +3453,11 @@ class LambingViewSet(viewsets.ModelViewSet):
             )
 
     @action(detail=True, methods=['post'], url_path='complete-early-failure')
+    @_atomic_animal_action
     def complete_early_failure(self, request, pk=None):
         """Досрочно завершить случку/окот без создания детей и без преобразования ярки."""
         try:
-            lambing = self.get_object()
+            lambing = self._get_locked_lambing()
             if not lambing.is_active:
                 return Response(
                     {"error": "Окот уже завершен"},
@@ -3470,16 +3500,17 @@ class LambingViewSet(viewsets.ModelViewSet):
                     mother_tag = lambing.get_mother_tag() or 'Неизвестно'
                     father = lambing.get_father()
                     father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
-                    UserActionLog.objects.create(
-                        user=request.user,
-                        action_type="Досрочное завершение окота",
-                        object_type="Окот",
-                        object_id=f"{mother_tag}, {father_tag}",
-                        description=(
-                            f"Досрочно завершен окот: дата {actual_date.strftime('%d.%m.%Y')}; "
-                            f"дети не создавались"
-                        ),
-                    )
+                    with transaction.atomic():
+                        UserActionLog.objects.create(
+                            user=request.user,
+                            action_type="Досрочное завершение окота",
+                            object_type="Окот",
+                            object_id=f"{mother_tag}, {father_tag}",
+                            description=(
+                                f"Досрочно завершен окот: дата {actual_date.strftime('%d.%m.%Y')}; "
+                                f"дети не создавались"
+                            ),
+                        )
             except Exception as log_error:
                 print(f"Ошибка логирования досрочного завершения окота: {log_error}")
 
@@ -3512,10 +3543,11 @@ class LambingViewSet(viewsets.ModelViewSet):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='complete-unsuccessful-insemination')
+    @_atomic_animal_action
     def complete_unsuccessful_insemination(self, request, pk=None):
         """Завершить случку как неудачное осеменение без даты окота и без детей."""
         try:
-            lambing = self.get_object()
+            lambing = self._get_locked_lambing()
             if not lambing.is_active:
                 return Response(
                     {"error": "Окот уже завершен"},
@@ -3550,16 +3582,17 @@ class LambingViewSet(viewsets.ModelViewSet):
                     mother_tag = lambing.get_mother_tag() or 'Неизвестно'
                     father = lambing.get_father()
                     father_tag = father.tag.tag_number if father and father.tag else 'Неизвестно'
-                    UserActionLog.objects.create(
-                        user=request.user,
-                        action_type="Неудачное осеменение",
-                        object_type="Окот",
-                        object_id=f"{mother_tag}, {father_tag}",
-                        description=(
-                            f"Отмечено неудачное осеменение; "
-                            f"подряд: {count}; дети не создавались"
-                        ),
-                    )
+                    with transaction.atomic():
+                        UserActionLog.objects.create(
+                            user=request.user,
+                            action_type="Неудачное осеменение",
+                            object_type="Окот",
+                            object_id=f"{mother_tag}, {father_tag}",
+                            description=(
+                                f"Отмечено неудачное осеменение; "
+                                f"подряд: {count}; дети не создавались"
+                            ),
+                        )
             except Exception as log_error:
                 print(f"Ошибка логирования неудачного осеменения: {log_error}")
 
@@ -7578,6 +7611,7 @@ def retagging_unmark_api(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@_atomic_animal_action
 def retagging_change_tag_api(request):
     animal_type = request.data.get("animal_type")
     tag_number = request.data.get("tag_number")
@@ -7596,6 +7630,17 @@ def retagging_change_tag_api(request):
 
     with transaction.atomic():
         tag = Tag.objects.select_for_update().get(pk=animal.tag_id)
+        if tag.tag_number != old_tag_number:
+            return Response(
+                {"error": "Бирка уже изменена другим сотрудником. Обновите страницу"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        animal = config["model"].objects.select_for_update().get(pk=animal.pk)
+        if animal.is_archived:
+            return Response({"error": "Животное уже архивировано"}, status=status.HTTP_409_CONFLICT)
+        new_tag_number, error = _validate_tag_number_for_retagging(new_tag_number_raw, current_tag=tag)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
         tag.tag_number = new_tag_number
         tag.save(update_fields=["tag_number"])
         old_note = animal.note or ""

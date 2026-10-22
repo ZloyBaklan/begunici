@@ -18,6 +18,14 @@ def inventory_access(context):
     return can_manage_inventory(context_user(context))
 
 
+@register.inclusion_tag("inventory/includes/warehouse_navigation.html", takes_context=True)
+def warehouse_navigation(context, section=""):
+    from begunici.app_types.vet_inventory.permissions import can_view
+    user = context_user(context)
+    return {"finance": can_manage_inventory(user), "veterinary": can_view(user),
+            "area": section if section in {"feeds", "vet"} else "products"}
+
+
 @register.inclusion_tag("inventory/includes/archive_hint.html", takes_context=True)
 def inventory_archive_hint(context):
     return {"allowed": can_access_slaughter(context_user(context))}

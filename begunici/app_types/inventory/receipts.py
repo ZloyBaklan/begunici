@@ -9,6 +9,7 @@ from .documents import add_version, assert_editable, assert_revision
 from .models import AnimalCase, AuditEvent, Document, Product, StockLot, StockMovement
 from .permissions import require_inventory, require_slaughter
 from .validation import amount, count, rows
+from .yield_rules import validate_parts
 
 
 def _check_permission(user, kind):
@@ -62,12 +63,18 @@ def prepare_receipt(user, tag_ids, *, kind, document_id=None, expected_revision=
         snapshot = source["snapshot"]
         document.payload["animals"][str(case.pk)] = {
             "weight": snapshot.get("live_weight") or snapshot.get("last_weight") or "",
+            "carcass_weight": snapshot.get("carcass_weight") or "",
             "fatness": snapshot.get("fatness", ""), "comment": snapshot.get("vet_comment", ""),
         }
         if kind == "sp54":
             document.payload["outputs"].append({
                 "animal_id": case.pk, "product": "live", "quantity": 1,
                 "weight": snapshot.get("live_weight") or "", "rejected": False, "reason": "",
+            })
+        elif snapshot.get("carcass_weight"):
+            document.payload["outputs"].append({
+                "animal_id": case.pk, "product": "carcass", "quantity": 1,
+                "weight": str(snapshot["carcass_weight"]), "rejected": False, "reason": "",
             })
     document.state = "ready" if kind == "sp54" else "draft"
     original = bridges.original_sp54(bridges.source_animal(sources[0]["tag_id"]), user) if kind == "sp54" else None
@@ -79,7 +86,7 @@ def normalize_receipt_payload(document, payload, *, complete=False):
     if not isinstance(payload, dict):
         raise ValidationError("Некорректные данные акта.")
     cases = {case.pk: case for case in document.animals.all()}
-    products = {product.code: product for product in Product.objects.all()}
+    products = {product.code: product for product in Product.objects.select_for_update().order_by("pk")}
     result = {"animals": {}, "outputs": []}
     animal_values = payload.get("animals", {})
     if not isinstance(animal_values, dict):
@@ -96,6 +103,11 @@ def normalize_receipt_payload(document, payload, *, complete=False):
             "weight": str(amount(weight)) if weight not in (None, "") else "",
             "fatness": fatness[:200], "comment": comment[:3000],
         }
+        carcass = details.get("carcass_weight") or case.snapshot.get("carcass_weight")
+        if document.kind == "sp55":
+            result["animals"][str(case_id)]["carcass_weight"] = str(amount(carcass, "Масса туши")) if carcass not in (None, "") else ""
+            if carcass not in (None, "") and weight not in (None, "") and amount(carcass) > amount(weight):
+                raise ValidationError(f"{case.tag_number}: масса туши превышает живую массу.")
         if complete and document.kind == "sp55" and not result["animals"][str(case_id)]["weight"]:
             raise ValidationError(f"{case.tag_number}: не указана живая масса.")
     output_rows = payload.get("outputs", [])
@@ -129,7 +141,8 @@ def normalize_receipt_payload(document, payload, *, complete=False):
             raise ValidationError("Объедините одинаковую номенклатуру одного животного в одну строку.")
         seen.add(key)
         clean = {"animal_id": animal_id, "product": product.code, "weight": str(weight),
-                 "quantity": quantity, "rejected": rejected, "reason": reason}
+                 "quantity": quantity, "rejected": rejected, "reason": reason,
+                 "name": product.name, "category": product.category, "counted": product.counted}
         result["outputs"].append(clean)
         per_animal[animal_id].append((product, clean))
     for case_id, outputs in per_animal.items():
@@ -141,19 +154,14 @@ def normalize_receipt_payload(document, payload, *, complete=False):
                 raise ValidationError("Для СП-54 нужна ровно одна голова на каждое животное.")
         else:
             meat = [(product, row) for product, row in outputs if product.category == "meat"]
-            codes = {product.code for product, row in meat}
-            if ("carcass" in codes and len(codes) > 1) or ("half" in codes and len(codes) > 1):
-                raise ValidationError(f"{case.tag_number}: нельзя одновременно оприходовать тушу/полутуши и их части. Используйте разделку.")
-            for code, maximum in [("carcass", 1), ("half", 2)]:
-                if sum(row["quantity"] for product, row in meat if product.code == code) > maximum:
-                    raise ValidationError(f"{case.tag_number}: максимум {maximum} для «{products[code].name}».")
+            validate_parts(outputs, tag=case.tag_number)
             live = result["animals"][str(case_id)]["weight"]
             total_weight = sum((Decimal(row["weight"]) for product, row in outputs), Decimal(0))
             if live and total_weight > Decimal(live):
                 raise ValidationError(f"{case.tag_number}: выход вместе с браком превышает живую массу.")
-            carcass = case.snapshot.get("carcass_weight")
+            carcass = result["animals"][str(case_id)].get("carcass_weight")
             if carcass and sum((Decimal(row["weight"]) for product, row in meat), Decimal(0)) > Decimal(carcass):
-                raise ValidationError(f"{case.tag_number}: мясо вместе с браком превышает указанную в архиве массу туши.")
+                raise ValidationError(f"{case.tag_number}: мясо вместе с браком превышает указанную массу туши.")
     return result
 
 

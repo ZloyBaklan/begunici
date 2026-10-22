@@ -1,7 +1,7 @@
 from calendar import monthrange
-from datetime import date
 
 from django.db.models import Q
+from django.utils import timezone
 
 from begunici.app_types.veterinary.vet_models import Status
 
@@ -197,7 +197,7 @@ def is_lambing_old_enough_to_close_missing_children(lambing, as_of_date=None):
     if not lambing or not lambing.actual_lambing_date:
         return False
 
-    as_of_date = as_of_date or date.today()
+    as_of_date = as_of_date or timezone.localdate()
     close_date = add_calendar_months(
         lambing.actual_lambing_date,
         LAMBED_STATUS_MISSING_CHILDREN_GRACE_MONTHS,
@@ -308,7 +308,7 @@ def is_archive_status(status):
 
 
 def is_young_child_without_weaning(animal, as_of_date=None):
-    as_of_date = as_of_date or date.today()
+    as_of_date = as_of_date or timezone.localdate()
     if not animal or not animal.birth_date or animal.date_otbivka:
         return False
     return 0 <= (as_of_date - animal.birth_date).days < 100

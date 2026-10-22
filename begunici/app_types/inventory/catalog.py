@@ -18,4 +18,5 @@ PRODUCTS = [
     ("testes", "Семенники", "offal", True),
     ("head", "Голова", "offal", True),
     ("heart", "Сердце", "offal", True),
+    ("tongue", "Язык", "offal", True),
 ]

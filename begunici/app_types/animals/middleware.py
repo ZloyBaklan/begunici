@@ -306,7 +306,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
             "status_code": 400 if getattr(request, "_stock_audit_error", None) else response.status_code,
         }
 
-        stock_request = request.path.startswith("/inventory/")
+        stock_request = request.path.startswith(("/inventory/", "/catalog/meat/", "/catalog/feeds/"))
         if stock_request:
             error = getattr(request, "_stock_audit_error", None)
             if not error and response.status_code >= 400 and not response.streaming:

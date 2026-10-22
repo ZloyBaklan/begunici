@@ -1,9 +1,8 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %}{% load inventory_tags %}
 
 {% block content %}
 <div class="container">
     <h1>Управление технической информацией</h1>
-    {% load vet_inventory_tags %}{% vet_stock_entry %}
     
     <div class="navigation-section">
         <h3>Выберите раздел:</h3>
@@ -23,6 +22,11 @@
                     Управление ветеринарным уходом
                 </a>
             </div>
+            {% inventory_access as catalog_allowed %}
+            {% if catalog_allowed %}
+            <div class="col-md-6"><a href="{% url 'inventory_catalog:meat-products' %}" class="btn btn-outline-primary w-100 py-3">Управление номенклатурой мясной продукции</a></div>
+            <div class="col-md-6"><a href="{% url 'inventory_catalog:feed-products' %}" class="btn btn-outline-primary w-100 py-3">Управление кормовой номенклатурой</a></div>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -8,11 +8,19 @@
 {% if document.state == 'confirmed' and document.kind != 'invoice' and can_confirm and invoice_lots %}<a class="btn btn-outline-primary" href="{% url 'inventory:invoice-new' %}?lots={{ invoice_lots }}">Составить товарную накладную</a>{% endif %}</div>
 {% if document.kind != 'invoice' %}
 <div class="card iv-panel"><h2>Животные в акте · {{ animals|length }} голов</h2>
-<div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Бирка</th><th>Участок</th><th>Статус</th><th>Масса, кг</th><th>Упитанность</th><th>Заключение ветврача</th></tr></thead><tbody id="iv-receipt-animals">
-{% for case in animals %}{% with details=payload.animals|item:case.pk %}<tr data-animal-id="{{ case.pk }}"><td>{% if case.source_url %}<a href="{{ case.source_url }}">{{ case.tag_number }}</a>{% else %}{{ case.tag_number }}{% endif %}<small>{{ case.animal_type|animal_type_label }}</small></td><td>{{ case.snapshot.place }}</td><td>{{ case.snapshot.status }}</td><td><input type="number" class="form-control" step="0.001" min="0.001" data-field="weight" value="{{ details.weight }}" aria-label="Масса {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}></td><td><input class="form-control" data-field="fatness" value="{{ details.fatness }}" aria-label="Упитанность {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}></td><td><textarea class="form-control" data-field="comment" aria-label="Заключение по {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}>{{ details.comment }}</textarea></td></tr>{% endwith %}{% endfor %}
+<div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Бирка</th><th>Участок</th><th>Статус</th><th>Живая масса, кг</th>{% if document.kind == 'sp55' %}<th>Вес туши, кг</th>{% endif %}<th>Упитанность</th><th>Заключение ветврача</th></tr></thead><tbody id="iv-receipt-animals">
+{% for case in animals %}{% with details=payload.animals|item:case.pk %}
+<tr data-animal-id="{{ case.pk }}">
+    <td>{% if case.source_url %}<a href="{{ case.source_url }}">{{ case.tag_number }}</a>{% else %}{{ case.tag_number }}{% endif %}<small>{{ case.animal_type|animal_type_label }}</small></td>
+    <td>{{ case.snapshot.place }}</td><td>{{ case.snapshot.status }}</td>
+    <td><input type="number" class="form-control" step="0.001" min="0.001" data-field="weight" value="{{ details.weight }}" aria-label="Масса {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}></td>
+    {% if document.kind == 'sp55' %}<td><input type="number" class="form-control" step="0.001" min="0.001" data-field="carcass_weight" value="{{ details.carcass_weight|default_if_none:'' }}" aria-label="Вес туши {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}><small>Полная масса туши после убоя</small></td>{% endif %}
+    <td><input class="form-control" data-field="fatness" value="{{ details.fatness }}" aria-label="Упитанность {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}></td>
+    <td><textarea class="form-control" data-field="comment" aria-label="Заключение по {{ case.tag_number }}" {% if not can_edit or document.state == 'confirmed' %}disabled{% endif %}>{{ details.comment }}</textarea></td>
+</tr>{% endwith %}{% endfor %}
 </tbody></table></div>
 <h2>{% if document.kind == 'sp54' %}Реализация живьём{% else %}Выход продукции и брак{% endif %}</h2>
-{% if document.kind == 'sp55' %}<p class="iv-flow">Можно принять тушу, полутуши либо фактические части. Туша и её части не приходуются одновременно. Забракованная продукция сохраняется в акте и не поступает на склад.</p>{% endif %}
+{% if document.kind == 'sp55' %}<p class="iv-flow">Туша включает все мясные части; одна полутуша оставляет половину частей (например, 2 голени из 4). Печень, почки, язык и другие субпродукты добавляются отдельно. Брак также учитывается в выходе, но на склад не поступает.</p>{% endif %}
 <div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Животное</th><th>Номенклатура</th><th>Вес, кг</th><th>Шт.</th><th>Брак</th><th>Причина</th><th></th></tr></thead><tbody id="iv-outputs" {% if not can_edit or document.state == 'confirmed' %}data-readonly="true"{% endif %}></tbody></table></div>
 {% if can_edit and document.state != 'confirmed' %}<button type="button" class="btn btn-outline-primary" id="iv-add-output">Добавить продукцию</button>
 <form id="iv-receipt-save" data-url="{% url 'inventory:receipt-save' document.pk %}">{% csrf_token %}
@@ -39,5 +47,5 @@
 <details><summary>Журнал действий</summary><div class="iv-table-wrap"><table class="table iv-history"><thead><tr><th>Время</th><th>Сотрудник</th><th>Действие</th><th>Данные</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at|date:'d.m.Y H:i:s' }}</td><td>{{ event.actor.username }}</td><td>{{ event.action_label }}</td><td>{{ event.summary }}</td></tr>{% endfor %}</tbody></table></div></details>
 </article>
 {{ products|json_script:'iv-products-data' }}{{ payload|json_script:'iv-payload-data' }}
-<select id="iv-animal-options" hidden>{% for case in animals %}<option value="{{ case.pk }}">{{ case.tag_number }}</option>{% endfor %}</select>
+<select id="iv-animal-options" hidden>{% for case in animals %}<option value="{{ case.pk }}" data-sex="{{ case.snapshot.sex }}">{{ case.tag_number }}</option>{% endfor %}</select>
 {% endblock %}
