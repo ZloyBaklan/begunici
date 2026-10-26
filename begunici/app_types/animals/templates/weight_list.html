@@ -6,7 +6,9 @@
 {% block content %}
 <div class="container-fluid" id="weight-list-page"
      data-api-url="{% url 'animals:weight-list-api' %}"
-     data-export-url="{% url 'animals:weight-list-export-excel' %}">
+     data-export-url="{% url 'animals:weight-list-export-excel' %}"
+     data-import-preview-url="{% url 'animals:import-preview' 'weight' %}"
+     data-import-confirm-url="{% url 'animals:import-confirm' 'weight' %}">
     <div class="row mb-4">
         <div class="col-12">
             <h1 class="mb-3">Список взвешиваний</h1>
@@ -50,6 +52,25 @@
                     </form>
                 </div>
             </div>
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Импорт</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'animals:import-template-download' 'weight' %}" class="btn btn-outline-success w-100 mb-3">
+                        Скачать шаблон
+                    </a>
+                    <div class="mb-3">
+                        <label for="weight-import-file" class="form-label">Файл импорта</label>
+                        <input type="file" class="form-control" id="weight-import-file" accept=".xlsx,.xls">
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-primary" id="weight-import-preview-btn">Прочитать файл</button>
+                        <button type="button" class="btn btn-success" id="weight-import-confirm-btn" disabled>Подтвердить</button>
+                    </div>
+                    <div id="weight-import-result" class="mt-3" role="status" aria-live="polite" style="display: none;"></div>
+                </div>
+            </div>
         </div>
         <div class="col-lg-9 mobile-list-column">
             <div class="card">
@@ -87,5 +108,5 @@
         </div>
     </div>
 </div>
-<script src="{% static 'js/weight_list.js' %}?v=20261021-pagination"></script>
+<script src="{% static 'js/weight_list.js' %}?v=20261026-import"></script>
 {% endblock %}

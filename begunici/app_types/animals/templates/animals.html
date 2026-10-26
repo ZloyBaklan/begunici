@@ -169,10 +169,14 @@
                     
                     <!-- Легенда -->
                     <div class="calendar-legend mt-2">
-                        <div class="d-flex align-items-center justify-content-center">
+                        <div class="d-flex flex-wrap align-items-center justify-content-center">
                             <div class="legend-item me-3">
                                 <span class="legend-color" style="background-color: #dc3545;"></span>
                                 <small>Ожидаемые роды</small>
+                            </div>
+                            <div class="legend-item me-3">
+                                <span class="legend-color" style="background-color: #ead8b8;"></span>
+                                <small>Напоминание о снятии барана</small>
                             </div>
                             <div class="legend-item me-3">
                                 <span class="legend-color" style="background-color: #57ad68;"></span>
@@ -293,6 +297,12 @@
     font-weight: bold;
 }
 
+.calendar-table td.has-ram-removal {
+    background-color: #ead8b8 !important;
+    color: #3f3529;
+    font-weight: bold;
+}
+
 .calendar-table td.has-multiple-events {
     position: relative;
 }
@@ -333,7 +343,8 @@
 
 .calendar-table td.has-vet-treatment:hover,
 .calendar-table td.has-vet-expiring:hover,
-.calendar-table td.has-shearing-treatment:hover {
+.calendar-table td.has-shearing-treatment:hover,
+.calendar-table td.has-ram-removal:hover {
     filter: brightness(0.95);
 }
 
@@ -367,6 +378,7 @@
 }
 
 .legend-color {
+    flex-shrink: 0;
     width: 15px;
     height: 15px;
     display: inline-block;
@@ -375,6 +387,6 @@
 }
 </style>
 
-<script src="{% static 'js/calendar.js' %}?v=2"></script>
+<script src="{% static 'js/calendar.js' %}?v=4"></script>
 {% endblock %}
 

@@ -6,6 +6,7 @@
         <a class="btn {% if area == 'products' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'inventory:stock' %}"{% if area == 'products' %} aria-current="page"{% endif %}>Склад продукции и животных</a>
         <a class="btn {% if area == 'feeds' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'feed_inventory:home' %}"{% if area == 'feeds' %} aria-current="page"{% endif %}>Склад кормов</a>
         {% endif %}
+        {% if slaughter %}<a class="btn {% if area == 'slaughter' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'inventory:slaughter' %}"{% if area == 'slaughter' %} aria-current="page"{% endif %}>Убой и выход продукции (СП-55)</a>{% endif %}
         {% if veterinary %}<a class="btn {% if area == 'vet' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'vet_inventory:home' %}"{% if area == 'vet' %} aria-current="page"{% endif %}>Склад ветпрепаратов</a>{% endif %}
     </nav>
 </div>

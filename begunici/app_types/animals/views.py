@@ -3919,6 +3919,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     search_fields = ['^text']
     ordering_fields = ['date', 'created_at']
     pagination_class = PaginationSetting
+    RAM_REMOVAL_REMINDER_DAYS = 60
 
     CALENDAR_EXPORT_HEADERS = [
         '№',
@@ -3944,6 +3945,9 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         'sheep': 'Овцематка',
     }
     CALENDAR_EXPORT_EXTRA_HEADERS = {
+        'Напоминание о снятии барана': [
+            '№ группы', 'Дата постановки в группу', 'Плановая дата снятия барана',
+        ],
         'Ветобработка': [
             'Выполненная ветобработка',
             'Срок действия',
@@ -3965,6 +3969,52 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             'Вес',
         ],
     }
+
+    def _get_ram_removal_reminders(self, start_date, end_date):
+        if start_date > end_date:
+            return []
+        interval = timedelta(days=self.RAM_REMOVAL_REMINDER_DAYS)
+        groups = (
+            LambingGroup.objects.filter(
+                is_active=True,
+                removal_date__isnull=True,
+                placement_date__range=(start_date - interval, end_date - interval),
+            )
+            .filter(Q(maker__is_archived=False) | Q(ram__is_archived=False))
+            .select_related(
+                'maker__tag', 'maker__place', 'maker__animal_status',
+                'ram__tag', 'ram__place', 'ram__animal_status',
+            )
+            .order_by('placement_date', 'pk')
+        )
+        reminders = []
+        for group in groups:
+            father = group.get_father()
+            if not father or father.is_archived:
+                continue
+            reminders.append({
+                'group_id': group.pk,
+                'animal': father,
+                'animal_type': self._get_calendar_animal_type_key(father),
+                'placement_date': group.placement_date,
+                'reminder_date': group.placement_date + interval,
+            })
+        return reminders
+
+    def _serialize_ram_removal_reminder(self, reminder):
+        father = reminder['animal']
+        animal_type = reminder['animal_type']
+        return {
+            'group_id': reminder['group_id'],
+            'tag_number': father.tag.tag_number,
+            'display_name': father.get_display_name() if animal_type == 'maker' else father.tag.tag_number,
+            'animal_type': animal_type,
+            'animal_type_display': self.CALENDAR_EXPORT_TYPE_LABELS[animal_type],
+            'url': reverse(f'animals:{animal_type}-detail', kwargs={'tag_number': father.tag.tag_number}),
+            'placement_date': reminder['placement_date'].isoformat(),
+            'placement_date_display': reminder['placement_date'].strftime('%d.%m.%Y'),
+            'reminder_date': reminder['reminder_date'].isoformat(),
+        }
 
     @staticmethod
     def _is_shearing_care(care):
@@ -4270,6 +4320,19 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     def _build_calendar_export_groups(self, target_date):
         groups = {}
 
+        for reminder in self._get_ram_removal_reminders(target_date, target_date):
+            self._add_calendar_export_animal(
+                groups,
+                'Напоминание о снятии барана',
+                reminder['animal'],
+                reminder['animal_type'],
+                extra_values=[
+                    reminder['group_id'],
+                    _format_date_for_excel(reminder['placement_date']),
+                    _format_date_for_excel(reminder['reminder_date']),
+                ],
+            )
+
         for reminder in self._get_shearing_reminder_animals(target_date):
             self._add_calendar_export_animal(
                 groups,
@@ -4377,6 +4440,14 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 'animal_type': animal_type or self._get_calendar_animal_type_key(animal),
                 'details': details,
             })
+
+        for reminder in self._get_ram_removal_reminders(start_date, end_date):
+            add_event(
+                reminder['reminder_date'], 'Напоминание о снятии барана',
+                reminder['animal'], reminder['animal_type'],
+                f"Группа № {reminder['group_id']}; дата постановки: {reminder['placement_date']:%d.%m.%Y}; "
+                f"снять барана через {self.RAM_REMOVAL_REMINDER_DAYS} дней после постановки",
+            )
 
         lambings = Lambing.objects.filter(
             is_active=True, planned_lambing_date__range=(start_date, end_date),
@@ -4695,6 +4766,27 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 {"error": str(e)}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=False, methods=['get'], url_path='ram-removal-calendar-data')
+    def ram_removal_calendar_data(self, request):
+        today = timezone.localdate()
+        try:
+            year = int(request.query_params.get('year', today.year))
+            month = int(request.query_params.get('month', today.month))
+            month_start = date(year, month, 1)
+            month_end = month_start + relativedelta(months=1) - timedelta(days=1)
+            reminders = self._get_ram_removal_reminders(month_start, month_end)
+        except (TypeError, ValueError, OverflowError):
+            return Response(
+                {'error': 'Укажите корректный год и месяц (от 1 до 12).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        calendar_data = {}
+        for reminder in reminders:
+            calendar_data.setdefault(reminder['reminder_date'].isoformat(), []).append(
+                self._serialize_ram_removal_reminder(reminder)
+            )
+        return Response(calendar_data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='vet-calendar-data')
     def vet_calendar_data(self, request):
@@ -6780,9 +6872,11 @@ def journal_progeny(request):
     total_dead = 0
     ewe_birth_weights = []
     ram_birth_weights = []
+    lambed_mothers = {"Ярка": set(), "Овцематка": set()}
 
     for lambing in lambings:
         mother_tag, mother_url = _get_mother_link_data(lambing)
+        mother_age_group = _get_progeny_mother_age_group(lambing, first_completed_map)
         grouped_children = _get_lambing_grouped_children(lambing, children_map)
         ewe_tag_links = []
         for child in grouped_children["ewes"]:
@@ -6847,11 +6941,19 @@ def journal_progeny(request):
                 ram_birth_weights.append(Decimal(weight))
 
         live_count = lambing.number_of_lambs or 0
+        if (
+            lambing.completion_type not in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES
+            and (live_count + dead_count > 0 or ewe_tags or ram_tags)
+            and mother_age_group in lambed_mothers
+        ):
+            mother_key = _get_lambing_mother_key(lambing)
+            if mother_key:
+                lambed_mothers[mother_age_group].add(mother_key)
         rows.append(
             {
                 "mother_tag": mother_tag,
                 "mother_url": mother_url,
-                "mother_age_group": _get_progeny_mother_age_group(lambing, first_completed_map),
+                "mother_age_group": mother_age_group,
                 "actual_lambing_date": lambing.actual_lambing_date,
                 "total_born": live_count + dead_count,
                 "ewe_tags": ewe_tags,
@@ -6875,6 +6977,8 @@ def journal_progeny(request):
     )
 
     totals = {
+        "lambed_ewes_count": len(lambed_mothers["Ярка"]),
+        "lambed_sheep_count": len(lambed_mothers["Овцематка"]),
         "ewes_count": total_ewes,
         "rams_count": total_rams,
         "dead_count": total_dead,
@@ -6908,6 +7012,8 @@ def journal_progeny(request):
                 row_fills[idx - 1] = "FFF1F1"
 
         summary_lines = [
+            f"Итого объягнилось ярок: {totals['lambed_ewes_count']}",
+            f"Итого объягнилось овцематок: {totals['lambed_sheep_count']}",
             f"Итого родившихся ярок: {totals['ewes_count']}",
             f"Итого родившихся баранчиков: {totals['rams_count']}",
             f"Итого мертвых ягнят: {totals['dead_count']}",

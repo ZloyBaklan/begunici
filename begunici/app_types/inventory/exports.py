@@ -4,6 +4,7 @@ The source workbooks are only read. Every generated version is a separate byte
 stream and is frozen in DocumentVersion before the user can approve it.
 """
 from collections import defaultdict
+from copy import copy
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -67,6 +68,75 @@ def generate_document(document):
     return output.getvalue()
 
 
+def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offal_weight):
+    rows = [(name, weight, False) for name, weight in meat_rows]
+    if not rows:
+        rows.append(("Мясо", Decimal(0), False))
+    rows.extend([
+        ("Итого мясо", meat_weight, True),
+        ("Субпродукты по видам:", None, False),
+    ])
+    for name, items in offal_rows.items():
+        rows.extend((f"{name} ({tag})", weight, False) for tag, weight in items)
+        rows.append((f"Итого {name.lower()}", sum((weight for _, weight in items), Decimal(0)), True))
+    rows.append(("Итого субпродукты", offal_weight, True))
+
+    styles = {column: copy(sheet.cell(19, column)._style) for column in range(17, 33)}
+    extra_rows = max(0, len(rows) - 9)
+    # Inserting cells alone does not move merged ranges or row dimensions.
+    footer_merges = [copy(merged) for merged in sheet.merged_cells.ranges if merged.min_row >= 25]
+    body_merges = [str(merged) for merged in sheet.merged_cells.ranges
+                   if merged.min_row >= 16 and merged.max_row <= 24 and merged.min_col >= 17]
+    for merged in body_merges:
+        sheet.unmerge_cells(merged)
+    if extra_rows:
+        footer_dimensions = [(index, copy(dimension)) for index, dimension in sheet.row_dimensions.items() if index >= 25]
+        for merged in footer_merges:
+            sheet.unmerge_cells(str(merged))
+        for index, _ in footer_dimensions:
+            del sheet.row_dimensions[index]
+        sheet.insert_rows(25, amount=extra_rows)
+        for index, dimension in footer_dimensions:
+            dimension.index = index + extra_rows
+            sheet.row_dimensions[dimension.index] = dimension
+        for merged in footer_merges:
+            merged.shift(row_shift=extra_rows)
+            sheet.merge_cells(str(merged))
+
+    for row_index in range(16, 25 + extra_rows):
+        for column, style in styles.items():
+            cell = sheet.cell(row_index, column)
+            cell.value = None
+            cell._style = copy(style)
+        for first_column, last_column in ((18, 21), (22, 23), (25, 28), (29, 32)):
+            sheet.merge_cells(start_row=row_index, start_column=first_column,
+                              end_row=row_index, end_column=last_column)
+        sheet.row_dimensions[row_index].height = max(sheet.row_dimensions[row_index].height or 0, 30)
+    for row_index, (name, weight, is_total) in enumerate(rows, 16):
+        label = text_cell(sheet, row_index, 18, name)
+        label.alignment = Alignment(wrap_text=True, vertical="center")
+        font = copy(label.font)
+        font.bold = is_total
+        label.font = font
+        sheet.cell(row_index, 24, weight)
+        # Leave enough height for long product names and identifiers, without shrinking text.
+        sheet.row_dimensions[row_index].height = max(30, ((len(name) + 17) // 18) * 12 + 6)
+    total_row = 25 + extra_rows
+    total_label = text_cell(sheet, total_row, 18, "Итого мясо и субпродукты")
+    total_label.alignment = Alignment(wrap_text=True, vertical="center")
+    total_font = copy(total_label.font)
+    total_font.bold = True
+    total_label.font = total_font
+    sheet.row_dimensions[total_row].height = max(sheet.row_dimensions[total_row].height or 0, 42)
+    sheet.cell(total_row, 24, meat_weight + offal_weight)
+    for row_index in [*range(16, total_row), total_row]:
+        sheet.cell(row_index, 24).number_format = '#,##0.000'
+        sheet.cell(row_index, 24).alignment = Alignment(horizontal="center", vertical="center")
+    sheet.print_area = f"A1:AF{33 + extra_rows}"
+    sheet.print_title_rows = "1:15"
+    sheet.page_setup.fitToHeight = 0
+
+
 def slaughter_workbook(document):
     template = Path(settings.BASE_DIR) / "begunici/app_types/animals/excel_templates/non_auto/СП-55.xlsx"
     workbook = load_workbook(template)
@@ -118,7 +188,7 @@ def slaughter_workbook(document):
     case_map = {case.pk: case for case in animals}
     outputs, rejected = [], []
     totals = defaultdict(Decimal)
-    offal = defaultdict(Decimal)
+    offal = defaultdict(list)
     meat_by_animal = defaultdict(Decimal)
     for item in document.payload.get("outputs", []):
         product = products[item["product"]]
@@ -134,37 +204,25 @@ def slaughter_workbook(document):
             if category == "meat":
                 meat_by_animal[case.pk] += numeric(item["weight"])
             elif category == "offal":
-                offal[name] += numeric(item["weight"])
+                offal[name].append((case.tag_number, numeric(item["weight"])))
     # Carcass mass is separate from live mass. Never add the entered cuts to
     # their full carcass mass a second time. Rejected meat is not accepted.
     meat_weight = Decimal(0)
+    meat_rows = []
     for case in animals:
         details = document.payload.get("animals", {}).get(str(case.pk), {})
         declared = numeric(details.get("carcass_weight") or case.snapshot.get("carcass_weight"))
         all_meat = [item for item in document.payload.get("outputs", [])
                     if int(item["animal_id"]) == case.pk and (item.get("category") or products[item["product"]].category) == "meat"]
         if all_meat:
-            meat_weight += meat_by_animal[case.pk]
+            accepted_weight = meat_by_animal[case.pk]
+            meat_weight += accepted_weight
+            if accepted_weight:
+                meat_rows.append((f"Мясо ({case.tag_number})", accepted_weight))
         elif declared is not None and not any(int(item["animal_id"]) == case.pk for item in document.payload.get("outputs", [])):
             meat_weight += declared
-    sheet["X16"] = meat_weight
-    # Five rows on the printed source form. Overflow stays itemized in the
-    # existing dynamic output sheet and is summarized only on the source form.
-    offal_rows = list(offal.items())
-    offal_slots = [19, 20, 21, 22, 23]
-    for row_index in offal_slots:
-        sheet[f"R{row_index}"] = None
-        sheet[f"X{row_index}"] = None
-    display_offal = offal_rows if len(offal_rows) <= 5 else offal_rows[:4] + [("Прочие — см. приложение", sum((value for _, value in offal_rows[4:]), Decimal(0)))]
-    for row_index, (name, weight) in zip(offal_slots, display_offal):
-        text_cell(sheet, row_index, 18, name)
-        sheet[f"R{row_index}"].alignment = Alignment(wrap_text=True, vertical="center")
-        sheet[f"X{row_index}"] = weight
-        sheet.row_dimensions[row_index].height = max(sheet.row_dimensions[row_index].height or 0, 30)
-    sheet["X25"] = meat_weight + totals["offal"]
-    for row_index in [16, *offal_slots, 25]:
-        sheet[f"X{row_index}"].number_format = '#,##0.000'
-        sheet[f"X{row_index}"].alignment = Alignment(horizontal="center", vertical="center")
+            meat_rows.append((f"Мясо ({case.tag_number})", declared))
+    _write_slaughter_output_rows(sheet, meat_rows, offal, meat_weight, totals["offal"])
     table_sheet(workbook, "Животные", ["Бирка", "С участка", "Голов", "Масса, кг", "Заключение ветврача"], animal_rows)
     table_sheet(workbook, "Выход продукции", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Примечание"], outputs)
     table_sheet(workbook, "Брак — не поступает", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Причина брака"], rejected)

@@ -20,8 +20,10 @@ from rest_framework.response import Response
 from begunici.app_types.veterinary.vet_models import (
     Place,
     PlaceMovement,
+    Tag,
     Veterinary,
     VeterinaryCare,
+    WeightRecord,
 )
 from begunici.app_types.veterinary.vet_serializers import (
     VeterinarySerializer,
@@ -39,6 +41,7 @@ from .status_logic import (
 
 
 IMPORT_TEMPLATE_FILENAMES = {
+    "weight": "import_weight.xlsx",
     "vet": "import_vet.xlsx",
     "otbivka": "import_otbivka.xlsx",
     "group": "import_group.xlsx",
@@ -46,6 +49,7 @@ IMPORT_TEMPLATE_FILENAMES = {
 }
 
 IMPORT_TYPE_LABELS = {
+    "weight": "взвешиваний",
     "vet": "ветобработок",
     "otbivka": "отбивки",
     "group": "групп осеменения",
@@ -169,6 +173,8 @@ def _parse_optional_weight(value):
         parsed = Decimal(str(value).strip().replace(",", "."))
     except (InvalidOperation, ValueError):
         raise ValueError("Вес должен быть числом")
+    if not parsed.is_finite():
+        raise ValueError("Вес должен быть конечным числом")
     if parsed <= 0:
         raise ValueError("Вес должен быть больше 0")
     if parsed >= Decimal("1000"):
@@ -188,18 +194,23 @@ def _animal_type_label(model):
     return labels.get(model, model.__name__)
 
 
-def _find_active_animal_by_tag(tag_number, allowed_models=None):
+def _find_active_animal_by_tag(tag_number, allowed_models=None, tag_ids_by_number=None):
     tag_number = _clean_text(tag_number)
     if not tag_number:
         return None, None, "Бирка обязательна для заполнения"
 
     models = allowed_models or [Maker, Ram, Ewe, Sheep]
+    tag_filter = (
+        {"tag_id__in": tag_ids_by_number.get(tag_number.casefold(), [])}
+        if tag_ids_by_number is not None
+        else {"tag__tag_number__iexact": tag_number}
+    )
     matches = []
     for model in models:
         matches.extend(
             list(
                 model.objects.select_related("tag", "animal_status", "place")
-                .filter(tag__tag_number__iexact=tag_number)
+                .filter(**tag_filter)
             )
         )
 
@@ -453,6 +464,111 @@ def _care_label(care):
 
 def _make_noon_datetime(import_date):
     return timezone.make_aware(datetime.combine(import_date, time(hour=12)))
+
+
+def _parse_weight_import(workbook):
+    sheet = workbook.active
+    headers = [_clean_text(sheet.cell(1, column).value).casefold() for column in range(1, 4)]
+    if not all(
+        value.startswith(prefix)
+        for value, prefix in zip(headers, ("бирка", "дата взвешивания", "вес"))
+    ):
+        raise ValueError("Неверный шаблон. Нужны колонки: Бирка, Дата взвешивания, Вес")
+    # PostgreSQL's C locale does not fold Cyrillic case for iexact lookups.
+    tag_ids_by_number = defaultdict(list)
+    for tag_id, tag_number in Tag.objects.values_list("id", "tag_number"):
+        tag_ids_by_number[tag_number.casefold()].append(tag_id)
+    errors, valid_rows, seen_keys = [], [], set()
+    for row_number, values in _iter_rows(sheet, 3):
+        tag_value, date_value, weight_value = values
+        try:
+            weight_date = _parse_import_date(date_value, "Дата взвешивания")
+            weight = _parse_optional_weight(weight_value)
+            if weight is None:
+                raise ValueError("Поле «Вес» обязательно для заполнения")
+        except ValueError as exc:
+            _add_row_error(errors, row_number, str(exc))
+            continue
+        animal, model, error = _find_active_animal_by_tag(
+            tag_value, tag_ids_by_number=tag_ids_by_number,
+        )
+        if error:
+            _add_row_error(errors, row_number, error)
+            continue
+        if animal.birth_date and weight_date < animal.birth_date:
+            _add_row_error(errors, row_number, "Дата взвешивания не может быть раньше даты рождения")
+            continue
+        key = (animal.tag_id, weight_date)
+        if key in seen_keys:
+            _add_row_error(errors, row_number, "Дубль взвешивания животного за ту же дату в загруженном файле")
+            continue
+        if WeightRecord.objects.filter(tag_id=animal.tag_id, weight_date=weight_date).exists():
+            _add_row_error(
+                errors, row_number,
+                f"У животного {animal.tag.tag_number} уже есть взвешивание за {weight_date:%d.%m.%Y}",
+            )
+            continue
+        seen_keys.add(key)
+        valid_rows.append({
+            "row": row_number,
+            "tag": animal.tag.tag_number,
+            "tag_id": animal.tag_id,
+            "model": model,
+            "weight_date": weight_date,
+            "weight": weight,
+        })
+    return valid_rows, errors, []
+
+
+@transaction.atomic
+def _apply_weight_import(request, valid_rows):
+    created, errors, tags, dates = 0, [], [], []
+    # Stable tag locks prevent two imports from overwriting the same measurement.
+    locked_tags = {
+        tag.pk: tag for tag in Tag.objects.select_for_update().filter(
+            pk__in=[item["tag_id"] for item in valid_rows]
+        ).order_by("pk")
+    }
+    for item in valid_rows:
+        try:
+            with transaction.atomic():
+                tag = locked_tags.get(item["tag_id"])
+                if not tag or tag.tag_number != item["tag"]:
+                    raise ValueError("Бирка животного изменилась. Прочитайте файл повторно")
+                animal = item["model"].objects.select_for_update().filter(tag_id=tag.pk).first()
+                if not animal or animal.is_archived:
+                    raise ValueError("Животное изменилось или находится в архиве. Прочитайте файл повторно")
+                if animal.birth_date and item["weight_date"] < animal.birth_date:
+                    raise ValueError("Дата взвешивания не может быть раньше даты рождения")
+                if WeightRecord.objects.filter(tag=tag, weight_date=item["weight_date"]).exists():
+                    raise ValueError(
+                        f"У животного {tag.tag_number} уже есть взвешивание за {item['weight_date']:%d.%m.%Y}"
+                    )
+                serializer = WeightRecordSerializer(
+                    data={
+                        "tag_write": tag.tag_number,
+                        "weight": item["weight"],
+                        "weight_date": item["weight_date"],
+                    },
+                    context={"request": request},
+                )
+                serializer.is_valid(raise_exception=True)
+                record = serializer.save()
+                animal.weight_records.add(record)
+        except Exception as exc:
+            _add_row_error(errors, item["row"], f"Строка не импортирована: {exc}")
+            continue
+        created += 1
+        tags.append(item["tag"])
+        dates.append(item["weight_date"].strftime("%d.%m.%Y"))
+    if created:
+        unique_tags = _unique_preserve_order(tags)
+        _log_import(
+            request, "Импорт взвешиваний", "Запись о весе", unique_tags,
+            f"Импортировано взвешиваний: {created}; даты: {_short_tags(_unique_preserve_order(dates), limit=6)}; "
+            f"бирки: {_short_tags(unique_tags, limit=20)}",
+        )
+    return {"created_count": created, "errors": errors}
 
 
 def _parse_vet_import(workbook):
@@ -1156,6 +1272,8 @@ def _apply_group_import(request, valid_rows):
 
 
 def _parse_import(import_type, workbook):
+    if import_type == "weight":
+        return _parse_weight_import(workbook)
     if import_type == "vet":
         return _parse_vet_import(workbook)
     if import_type == "otbivka":
@@ -1168,6 +1286,8 @@ def _parse_import(import_type, workbook):
 
 
 def _apply_import(import_type, request, valid_rows):
+    if import_type == "weight":
+        return _apply_weight_import(request, valid_rows)
     if import_type == "vet":
         return _apply_vet_import(request, valid_rows)
     if import_type == "otbivka":

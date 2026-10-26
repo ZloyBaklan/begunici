@@ -164,6 +164,107 @@
             const params = readFilters();
             if (params) window.location.assign(`${root.dataset.exportUrl}?${params}`);
         });
+        const importFile = document.getElementById('weight-import-file');
+        const previewImport = document.getElementById('weight-import-preview-btn');
+        const confirmImport = document.getElementById('weight-import-confirm-btn');
+        const importResult = document.getElementById('weight-import-result');
+        if (root.dataset.importPreviewUrl && importFile && previewImport && confirmImport && importResult) {
+            let approvedFile = null;
+            let importing = false;
+
+            function setImportBusy(value) {
+                importing = value;
+                importFile.disabled = value;
+                previewImport.disabled = value;
+                confirmImport.disabled = value || !approvedFile;
+                importResult.setAttribute('aria-busy', String(value));
+            }
+
+            function renderImport(data, title, fatal = false) {
+                const issues = [...(data.errors || []), ...(data.warnings || [])];
+                importResult.replaceChildren();
+                importResult.className = `mt-3 alert alert-${fatal ? 'danger' : issues.length ? 'warning' : 'success'}`;
+                importResult.style.display = 'block';
+                const heading = document.createElement('div');
+                heading.className = 'fw-semibold mb-1';
+                heading.textContent = title;
+                importResult.appendChild(heading);
+                if (!fatal && data.created_count === undefined) {
+                    const count = document.createElement('div');
+                    count.textContent = `Готово к импорту: ${data.valid_count || 0}`;
+                    importResult.appendChild(count);
+                }
+                if (issues.length) {
+                    const label = document.createElement('div');
+                    label.className = 'fw-semibold mt-2 mb-1';
+                    label.textContent = 'Проверка файла:';
+                    importResult.appendChild(label);
+                    const list = document.createElement('ul');
+                    list.className = 'mb-0';
+                    issues.forEach(message => {
+                        const item = document.createElement('li');
+                        item.textContent = message;
+                        list.appendChild(item);
+                    });
+                    importResult.appendChild(list);
+                }
+            }
+
+            async function uploadImport(url, file) {
+                const body = new FormData();
+                body.append('file', file);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                    body,
+                });
+                if (!(response.headers.get('content-type') || '').includes('application/json')) {
+                    throw new Error('Не удалось выполнить импорт. Обновите страницу и повторите попытку.');
+                }
+                const data = await response.json();
+                if (!response.ok) throw new Error(errorMessage(data));
+                return data;
+            }
+
+            importFile.addEventListener('change', () => {
+                approvedFile = null;
+                confirmImport.disabled = true;
+                importResult.style.display = 'none';
+                importResult.replaceChildren();
+            });
+            previewImport.addEventListener('click', async () => {
+                if (importing) return;
+                approvedFile = null;
+                const file = importFile.files?.[0];
+                setImportBusy(true);
+                try {
+                    if (!file) throw new Error('Выберите файл импорта');
+                    const data = await uploadImport(root.dataset.importPreviewUrl, file);
+                    renderImport(data, 'Файл взвешиваний прочитан');
+                    if (data.can_confirm && importFile.files?.[0] === file) approvedFile = file;
+                } catch (error) {
+                    renderImport({ errors: [error.message] }, 'Ошибка чтения файла', true);
+                } finally {
+                    setImportBusy(false);
+                }
+            });
+            confirmImport.addEventListener('click', async () => {
+                if (importing || !approvedFile || approvedFile !== importFile.files?.[0]) return;
+                if (!window.confirm('Подтвердить импорт взвешиваний? Ошибочные строки будут пропущены.')) return;
+                const file = approvedFile;
+                approvedFile = null;
+                setImportBusy(true);
+                try {
+                    const data = await uploadImport(root.dataset.importConfirmUrl, file);
+                    renderImport(data, `Импорт завершен. Создано взвешиваний: ${data.created_count || 0}`);
+                    loadPage();
+                } catch (error) {
+                    renderImport({ errors: [error.message] }, 'Ошибка импорта', true);
+                } finally {
+                    setImportBusy(false);
+                }
+            });
+        }
         loadPage();
     });
 })();

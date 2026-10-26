@@ -5,6 +5,7 @@ class LambingCalendar {
         this.notesData = {};
         this.vetData = {};
         this.weighingData = {};
+        this.ramRemovalData = {};
         this.monthNames = [
             'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
             'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
@@ -17,7 +18,8 @@ class LambingCalendar {
             weighing: '#007bff',
             weighing_completed: '#003f8c',
             shearing: '#9b5cf6',
-            shearing_treatments: '#3b1d6d'
+            shearing_treatments: '#3b1d6d',
+            ram_removal: '#ead8b8'
         };
         
         this.init();
@@ -31,7 +33,8 @@ class LambingCalendar {
             this.loadLambingData(),
             this.loadNotesData(),
             this.loadVetData(),
-            this.loadWeighingData()
+            this.loadWeighingData(),
+            this.loadRamRemovalData()
         ]).then(() => {
             // После загрузки всех данных рендерим календарь
             this.renderCalendar();
@@ -55,7 +58,8 @@ class LambingCalendar {
                 await Promise.all([
                     this.loadNotesData(),
                     this.loadVetData(),
-                    this.loadWeighingData()
+                    this.loadWeighingData(),
+                    this.loadRamRemovalData()
                 ]);
                 this.renderCalendar();
             });
@@ -69,7 +73,8 @@ class LambingCalendar {
                 await Promise.all([
                     this.loadNotesData(),
                     this.loadVetData(),
-                    this.loadWeighingData()
+                    this.loadWeighingData(),
+                    this.loadRamRemovalData()
                 ]);
                 this.renderCalendar();
             });
@@ -83,7 +88,8 @@ class LambingCalendar {
                     this.loadLambingData(),
                     this.loadNotesData(),
                     this.loadVetData(),
-                    this.loadWeighingData()
+                    this.loadWeighingData(),
+                    this.loadRamRemovalData()
                 ]);
                 this.renderCalendar();
             });
@@ -159,6 +165,24 @@ class LambingCalendar {
         }
     }
 
+    async loadRamRemovalData() {
+        const requestId = (this.ramRemovalRequestId || 0) + 1;
+        this.ramRemovalRequestId = requestId;
+        try {
+            const params = new URLSearchParams({
+                year: this.currentDate.getFullYear(),
+                month: this.currentDate.getMonth() + 1
+            });
+            const response = await fetch(`/animals/notes/ram-removal-calendar-data/?${params}`);
+            if (!response.ok) throw new Error(response.statusText);
+            const data = await response.json();
+            if (requestId === this.ramRemovalRequestId) this.ramRemovalData = data;
+        } catch (error) {
+            console.error('Ошибка загрузки напоминаний о снятии барана:', error);
+            if (requestId === this.ramRemovalRequestId) this.ramRemovalData = {};
+        }
+    }
+
     isShearingDate(month, day) {
         return (month === 3 && day === 15) || (month === 9 && day === 15);
     }
@@ -230,6 +254,8 @@ class LambingCalendar {
                     const hasOnlyCompletedWeighings = hasWeighing && hasWeighing.length > 0 && hasWeighing.every(item => item.is_completed);
                     const hasShearing = this.isShearingDate(month, date);
                     const shearingReminders = (hasVet && hasVet.shearing_reminders) || [];
+                    const ramRemovalReminders = (this.ramRemovalData && this.ramRemovalData[currentDateStr]) || [];
+                    const hasRamRemoval = ramRemovalReminders.length > 0;
                     
                     // Определяем типы событий
                     const eventTypes = [];
@@ -240,6 +266,7 @@ class LambingCalendar {
                     if (hasVet && hasVet.shearing_treatments && hasVet.shearing_treatments.length > 0) eventTypes.push('shearing_treatments');
                     if (hasWeighing) eventTypes.push(hasOnlyCompletedWeighings ? 'weighing_completed' : 'weighing');
                     if (hasShearing) eventTypes.push('shearing');
+                    if (hasRamRemoval) eventTypes.push('ram_removal');
                     
                     let totalCount = 0;
                     if (hasLambing) totalCount += hasLambing.length;
@@ -249,6 +276,7 @@ class LambingCalendar {
                     if (hasVet && hasVet.shearing_treatments) totalCount += hasVet.shearing_treatments.length;
                     if (hasWeighing) totalCount += hasWeighing.length;
                     if (hasShearing) totalCount += shearingReminders.length || 1;
+                    totalCount += ramRemovalReminders.length;
                     
                     if (eventTypes.length > 1) {
                         // Многоцветная ячейка - делим на части
@@ -296,6 +324,8 @@ class LambingCalendar {
                             cell.classList.add('has-weighing-completed');
                         } else if (eventType === 'shearing') {
                             cell.classList.add('has-shearing');
+                        } else if (eventType === 'ram_removal') {
+                            cell.classList.add('has-ram-removal');
                         }
                         
                         cell.innerHTML += `<div class="lambing-count">${totalCount}</div>`;
@@ -306,10 +336,12 @@ class LambingCalendar {
                         cell.addEventListener('click', async () => {
                             if (hasShearing) {
                                 await this.loadVetData();
-                                this.renderCalendar();
                             }
+                            if (hasRamRemoval) await this.loadRamRemovalData();
+                            if (hasShearing || hasRamRemoval) this.renderCalendar();
                             const currentVetData = hasShearing ? this.vetData[currentDateStr] : hasVet;
-                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, currentVetData, hasWeighing, hasShearing);
+                            const currentRamRemovalData = this.ramRemovalData[currentDateStr] || [];
+                            this.showDayDetails(currentDateStr, hasLambing, hasNotes, currentVetData, hasWeighing, hasShearing, currentRamRemovalData);
                         });
                     }
                     
@@ -328,7 +360,7 @@ class LambingCalendar {
         }
     }
     
-    showDayDetails(dateStr, lambings, notes, vetData, weighingData, hasShearing = false) {
+    showDayDetails(dateStr, lambings, notes, vetData, weighingData, hasShearing = false, ramRemovalReminders = []) {
         const modalElement = document.getElementById('lambingModal');
         if (!modalElement) {
             console.warn('Модальное окно календаря не найдено на странице');
@@ -355,6 +387,23 @@ class LambingCalendar {
         modalTitle.textContent = `События на ${formattedDate}`;
         
         let content = '';
+
+        if (ramRemovalReminders.length > 0) {
+            content += '<h6 style="color: #6b563d;">Напоминание о снятии барана:</h6>';
+            content += '<div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">';
+            ramRemovalReminders.forEach(reminder => {
+                content += `
+                    <div class="list-group-item">
+                        <div>
+                            <a href="${this.escapeHtml(reminder.url)}" class="text-decoration-none">${this.escapeHtml(reminder.display_name)}</a>
+                            <span class="text-muted ms-2">${this.escapeHtml(reminder.animal_type_display)}</span>
+                        </div>
+                        <small>Дата постановки в группу: ${this.escapeHtml(reminder.placement_date_display)}</small>
+                    </div>
+                `;
+            });
+            content += '</div>';
+        }
 
         if (hasShearing) {
             content += `

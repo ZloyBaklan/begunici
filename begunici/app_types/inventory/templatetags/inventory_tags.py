@@ -23,7 +23,8 @@ def warehouse_navigation(context, section=""):
     from begunici.app_types.vet_inventory.permissions import can_view
     user = context_user(context)
     return {"finance": can_manage_inventory(user), "veterinary": can_view(user),
-            "area": section if section in {"feeds", "vet"} else "products"}
+            "slaughter": can_access_slaughter(user),
+            "area": section if section in {"feeds", "vet", "slaughter"} else "products"}
 
 
 @register.inclusion_tag("inventory/includes/archive_hint.html", takes_context=True)
@@ -33,7 +34,8 @@ def inventory_archive_hint(context):
 
 @register.inclusion_tag("inventory/includes/home_button.html", takes_context=True)
 def inventory_home_button(context):
-    return {"allowed": can_manage_inventory(context_user(context))}
+    user = context_user(context)
+    return {"allowed": can_access_slaughter(user), "finance": can_manage_inventory(user)}
 
 
 @register.inclusion_tag("inventory/includes/acts_button.html", takes_context=True)

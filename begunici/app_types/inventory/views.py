@@ -78,6 +78,7 @@ def dashboard(request, section="home"):
 def slaughter(request):
     animals = pending_animals(meat_only=True)
     return render(request, "inventory/slaughter.html", {
+        "section": "slaughter",
         "animals": animals, "documents": Document.objects.filter(kind="sp55"),
         "has_unassigned_animals": any(not animal["document"] for animal in animals),
         "drafts": Document.objects.filter(kind="sp55", state__in=["draft", "ready"]),
