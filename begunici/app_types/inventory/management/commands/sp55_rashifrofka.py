@@ -1,16 +1,16 @@
-"""One-off SP-55 Excel update. Preview: python sp55_rashifrofka.py
+"""One-off SP-55 Excel update. Preview: python manage.py sp55_rashifrofka
 
-Apply: python sp55_rashifrofka.py --apply
+Apply: python manage.py sp55_rashifrofka --apply
 Only content and sha256 are replaced. Frozen snapshots and stock are untouched.
 No backup files, audit events or user action logs are created.
 """
 
-import argparse
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
 import hashlib
 from io import BytesIO
-import os
+
+from django.core.management.base import BaseCommand, CommandError
 
 
 class UnsafeVersion(ValueError):
@@ -255,36 +255,28 @@ def run(*, apply=False, document_ids=None, emit=print):
     return {"updated": len(plan), "planned": len(plan)}
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Расшифровка старых Excel СП-55 без изменения весов и сумм"
-    )
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Применить обновление (по умолчанию только проверка)",
-    )
-    parser.add_argument(
-        "--document-id",
-        type=int,
-        action="append",
-        help="Обработать только этот акт; можно повторять",
-    )
-    args = parser.parse_args()
-    try:
-        run(
-            apply=args.apply,
-            document_ids=args.document_id,
+class Command(BaseCommand):
+    help = "Расшифровка старых Excel СП-55 без изменения весов и сумм"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--apply",
+            action="store_true",
+            help="Применить обновление (по умолчанию только проверка)",
         )
-    except Exception as exc:
-        print(f"ОШИБКА: {exc}. Изменения базы отменены.")
-        return 1
-    return 0
+        parser.add_argument(
+            "--document-id",
+            type=int,
+            action="append",
+            help="Обработать только этот акт; можно повторять",
+        )
 
-
-if __name__ == "__main__":
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "begunici.settings")
-    import django
-
-    django.setup()
-    raise SystemExit(main())
+    def handle(self, *args, **options):
+        try:
+            run(
+                apply=options["apply"],
+                document_ids=options["document_id"],
+                emit=self.stdout.write,
+            )
+        except Exception as exc:
+            raise CommandError(f"{exc}. Изменения базы отменены.") from exc
