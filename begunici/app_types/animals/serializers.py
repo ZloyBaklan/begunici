@@ -27,6 +27,7 @@ from .models import (
     build_unsuccessful_insemination_mother_warning,
     format_birth_type_for_animal,
     get_current_unsuccessful_insemination_count_for_mother,
+    build_lambing_tracking_data,
 )
 from begunici.app_types.veterinary.vet_models import (
     Place,
@@ -34,6 +35,7 @@ from begunici.app_types.veterinary.vet_models import (
     Tag,
     Status,
     Veterinary,
+    VeterinaryCare,
     WeightRecord,
     StatusHistory,
 )
@@ -382,6 +384,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
+    dorper_calculation_note = serializers.SerializerMethodField()
     unsuccessful_insemination_warning = serializers.SerializerMethodField()
     primary_weighing_display = serializers.SerializerMethodField()
     secondary_weighing_display = serializers.SerializerMethodField()
@@ -412,6 +415,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             
         return formatted
 
+    def get_dorper_calculation_note(self, obj):
+        if obj.is_manual_dorper:
+            return "Задано вручную"
+        if obj.dorper_uses_default:
+            return "Расчёт с допущением: неизвестная кровность родителей или предков принята за 50%"
+        return "Рассчитано по родителям"
+
     def get_unsuccessful_insemination_warning(self, obj):
         if not isinstance(obj, (Sheep, Ewe)):
             return ""
@@ -433,7 +443,9 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             return "Автоматически"
 
         value = Decimal(value)
-        formatted = f"{value.normalize():f}".rstrip("0").rstrip(".")
+        formatted = f"{value.normalize():f}"
+        if "." in formatted:
+            formatted = formatted.rstrip("0").rstrip(".")
         if not formatted:
             formatted = "0"
 
@@ -522,6 +534,14 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             if not attrs.get("rejection_reason", "").strip():
                 raise serializers.ValidationError({"rejection_reason": "Укажите причину выбраковки."})
         attrs = super().validate(attrs)
+        is_manual = attrs.get("is_manual_dorper", getattr(self.instance, "is_manual_dorper", False))
+        percentage = attrs.get("dorper_percentage", getattr(self.instance, "dorper_percentage", None))
+        if is_manual and percentage is None and (
+            "dorper_percentage" in attrs or "is_manual_dorper" in attrs or self.instance is None
+        ):
+            raise serializers.ValidationError({
+                "dorper_percentage": "Укажите кровность для ручного значения или включите автоматический расчёт.",
+            })
         if "tag" in attrs:
             normalized_tag = self._normalize_tag_number(attrs.get("tag"))
             current_tag = (
@@ -784,8 +804,6 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
 
             if get_archive_act_template_config(selected_status_name):
                 required_errors = {}
-                if not act_number:
-                    required_errors["act_number"] = "Укажите номер акта."
                 if not archive_act_date:
                     required_errors["archive_act_date"] = "Укажите дату акта."
                 if not archive_act_fatness:
@@ -825,6 +843,11 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         archive_act_stored_diagnosis = archive_act_diagnosis
         if selected_status_name == "Падеж" and archive_act_death_reason:
             archive_act_stored_diagnosis = f"{archive_act_death_reason}: {archive_act_diagnosis}"
+
+        if selected_status_name in archive_status_names and archive_act_date:
+            from .act_numbering import Source, number_for
+            source_key = f"group:{archive_act_group_key}" if archive_act_group_key else f"tag:{instance.tag_id}"
+            act_number = number_for(Source("archive", source_key, archive_act_date))
 
         if selected_status and selected_status.status_type == "Падеж" and act_number:
             prefix = f"Номер акта: {act_number}"
@@ -1488,7 +1511,35 @@ class SheepSerializer(AnimalBaseSerializer):
         return build_sheep_last_lambing_summary(obj)
 
 
-class LambingSerializer(serializers.ModelSerializer):
+class LambingTrackingListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        if hasattr(data, "all"):
+            data = data.all()
+        if isinstance(data, models.QuerySet):
+            if self.child.Meta.model == LambingGroup:
+                data = data.select_related("tracked_veterinary_care").prefetch_related("sheep__tag", "ewes__tag")
+            else:
+                data = data.select_related("tracked_veterinary_care", "source_group", "sheep__tag", "ewe__tag")
+        objects = list(data)
+        self.child._tracking_data = build_lambing_tracking_data(objects)
+        return super().to_representation(objects)
+
+
+class LambingTrackingSerializer(serializers.ModelSerializer):
+    tracked_veterinary = serializers.SerializerMethodField()
+
+    def tracking_for(self, obj):
+        if not hasattr(self, "_tracking_data"):
+            self._tracking_data = {}
+        if id(obj) not in self._tracking_data:
+            self._tracking_data.update(build_lambing_tracking_data([obj]))
+        return self._tracking_data[id(obj)]
+
+    def get_tracked_veterinary(self, obj):
+        return {key: value for key, value in self.tracking_for(obj).items() if key != "mother_results"}
+
+
+class LambingSerializer(LambingTrackingSerializer):
     # Поля для чтения (отображения)
     mother_tag = serializers.SerializerMethodField()
     father_tag = serializers.SerializerMethodField()
@@ -1501,16 +1552,22 @@ class LambingSerializer(serializers.ModelSerializer):
     # Поля для записи
     mother_tag_number = serializers.CharField(write_only=True, required=False)
     father_tag_number = serializers.CharField(write_only=True, required=True)
+    tracked_veterinary_care_id = serializers.PrimaryKeyRelatedField(
+        source="tracked_veterinary_care", queryset=VeterinaryCare.objects.all(),
+        required=False, allow_null=True,
+    )
     
     class Meta:
         model = Lambing
+        list_serializer_class = LambingTrackingListSerializer
         fields = [
             'id', 'start_date', 'planned_lambing_date', 'actual_lambing_date',
             'number_of_lambs', 'dead_lambs_count', 'note', 'completion_type',
             'completion_type_display', 'mother_category_at_start', 'is_active', 'created_at',
             'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
-            'mother_tag_text', 'mother_type_text', 'source_group'  # Добавляем новые поля
+            'mother_tag_text', 'mother_type_text', 'source_group',
+            'tracked_veterinary_care_id', 'tracked_veterinary_from_date', 'tracked_veterinary',
         ]
         read_only_fields = [
             'id',
@@ -1518,6 +1575,7 @@ class LambingSerializer(serializers.ModelSerializer):
             'created_at',
             'source_group',
             'mother_category_at_start',
+            'tracked_veterinary_from_date',
         ]
     
     def get_mother_tag(self, obj):
@@ -1644,15 +1702,17 @@ class LambingSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-class LambingGroupSerializer(serializers.ModelSerializer):
+class LambingGroupSerializer(LambingTrackingSerializer):
     father_tag = serializers.SerializerMethodField()
     father_display_name = serializers.SerializerMethodField()
     father_type = serializers.SerializerMethodField()
     mothers = serializers.SerializerMethodField()
     mother_tags = serializers.SerializerMethodField()
+    tracked_veterinary_care_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = LambingGroup
+        list_serializer_class = LambingTrackingListSerializer
         fields = [
             "id",
             "placement_date",
@@ -1665,6 +1725,8 @@ class LambingGroupSerializer(serializers.ModelSerializer):
             "father_type",
             "mothers",
             "mother_tags",
+            "tracked_veterinary_care_id",
+            "tracked_veterinary",
         ]
         read_only_fields = fields
 
@@ -1699,6 +1761,10 @@ class LambingGroupSerializer(serializers.ModelSerializer):
                     "tag_number": mother.tag.tag_number,
                     "animal_type": "Ярка" if animal_type == "Ewe" else "Овцематка",
                     "type_code": "ewe" if animal_type == "Ewe" else "sheep",
+                    "tracked_veterinary_done": (
+                        self.tracking_for(obj)["mother_results"].get(mother.tag_id, False)
+                        if obj.tracked_veterinary_care_id else None
+                    ),
                     "url": reverse(url_name, kwargs={"tag_number": mother.tag.tag_number})
                     if url_name
                     else None,
@@ -1805,6 +1871,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         if isinstance(instance, dict):
             if instance.get("group_animals") is not None:
                 return {
+                    "act_number": instance.get("act_number") or "",
                     "tag_number": instance.get("tag_number") or "Нет данных",
                     "animal_type": instance.get("animal_type") or "Unknown",
                     "display_name": instance.get("display_name") or "Нет данных",

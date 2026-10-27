@@ -283,6 +283,7 @@ def get_act_number_from_note(note):
 
 
 def get_archive_act_context(animal, user=None, act=None):
+    from .act_numbering import archive_number
     act = act or get_archive_act_for_animal(animal)
     status_name = (
         act.status_name
@@ -302,7 +303,7 @@ def get_archive_act_context(animal, user=None, act=None):
         "config": config,
         "status_name": status_name,
         "status_date": status_date,
-        "act_number": (act.act_number if act else "") or get_act_number_from_note(animal.note),
+        "act_number": archive_number(act, animal),
         "act_date": act.act_date if act else None,
         "live_weight": live_weight,
         "fatness": format_body_condition_display((act.fatness if act else "") or ""),

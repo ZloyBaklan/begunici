@@ -215,6 +215,73 @@
         follow(await post(event.target.dataset.url, {revision: revision(), reason}));
     }));
 
+    function planInvoiceAllocations(order, entries) {
+        const grams = value => Math.round(Number(String(value ?? 0).replace(',', '.')) * 1000);
+        const lines = order?.lines || [];
+        const actual = new Map(lines.map(line => [Number(line.id), {
+            weight: grams(line.weight_actual), quantity: Number(line.quantity_actual || 0),
+        }]));
+        const assignments = new Map();
+        const errors = new Map();
+        const compatible = (line, entry) => {
+            if (line.product !== entry.product) return false;
+            if (order.kind !== 'live') return true;
+            if (line.animal_type && line.animal_type !== entry.animal_type) return false;
+            if (line.sex && line.sex !== entry.sex) return false;
+            for (const [value, lower, upper] of [
+                [entry.age, line.age_min, line.age_max],
+                [entry.purity, line.purity_min, line.purity_max],
+            ]) {
+                const hasLower = lower !== null && lower !== undefined && lower !== '';
+                const hasUpper = upper !== null && upper !== undefined && upper !== '';
+                if (!hasLower && !hasUpper) continue;
+                if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) return false;
+                if ((hasLower && Number(value) < Number(lower)) || (hasUpper && Number(value) > Number(upper))) return false;
+            }
+            return true;
+        };
+        const capacity = (line, entry, used = actual.get(Number(line.id))) => Number(line.quantity)
+            ? used.quantity < Number(line.quantity) && used.quantity + entry.quantity <= Number(line.quantity)
+            : used.weight < grams(line.weight);
+        const reserve = (entry, line) => {
+            const used = actual.get(Number(line.id));
+            used.weight += grams(entry.weight);
+            used.quantity += entry.quantity;
+            assignments.set(entry.key, Number(line.id));
+        };
+        const valid = entries.filter(entry => {
+            if (!Number.isFinite(grams(entry.weight)) || grams(entry.weight) <= 0 ||
+                !Number.isInteger(entry.quantity) || entry.quantity < (entry.counted ? 1 : 0) ||
+                (!entry.counted && entry.quantity !== 0)) {
+                errors.set(entry.key, 'Укажите корректные вес и количество.');
+                return false;
+            }
+            return true;
+        });
+        if (!order) return {assignments, errors, actual, compatible, capacity};
+        for (const entry of valid.filter(item => item.requested)) {
+            const line = lines.find(item => Number(item.id) === Number(entry.requested));
+            if (!line || !compatible(line, entry) || !capacity(line, entry)) {
+                errors.set(entry.key, 'Строка уже покрыта, не подходит животному или недостаточна по количеству.');
+            } else reserve(entry, line);
+        }
+        const pending = valid.filter(entry => !entry.requested);
+        while (pending.length) {
+            const candidates = new Map(pending.map(entry => [entry.key,
+                lines.filter(line => compatible(line, entry) && capacity(line, entry))]));
+            pending.sort((a, b) => candidates.get(a.key).length - candidates.get(b.key).length ||
+                b.quantity - a.quantity || a.index - b.index);
+            const entry = pending.shift();
+            const matches = candidates.get(entry.key);
+            matches.sort((a, b) =>
+                [...candidates.values()].filter(choices => choices.includes(a)).length -
+                [...candidates.values()].filter(choices => choices.includes(b)).length || Number(a.id) - Number(b.id));
+            if (matches.length) reserve(entry, matches[0]);
+            else errors.set(entry.key, 'Нет подходящей незаполненной строки заявки для выбранного количества.');
+        }
+        return {assignments, errors, actual, compatible, capacity};
+    }
+
     const invoiceForm = $('#iv-invoice-form');
     if (invoiceForm) {
         const orders = json('iv-orders-data') || [];
@@ -224,32 +291,98 @@
         const oldLines = new Map((payload.lines || []).map(line => [String(line.lot_id), line]));
         const selected = new Set(json('iv-selected-lots') || []);
         const lotRows = $$('#iv-invoice-lots tr[data-lot-id]');
+        const manualChoices = new Map();
         for (const row of lotRows) {
             const old = oldLines.get(row.dataset.lotId);
             $('[data-field="selected"]', row).checked = Boolean(old) || selected.has(row.dataset.lotId);
             $('[data-field="weight"]', row).value = old?.weight ?? row.dataset.weight;
             $('[data-field="quantity"]', row).value = old?.quantity ?? row.dataset.quantity;
+            if (old?.order_line_id) manualChoices.set(row.dataset.lotId, Number(old.order_line_id));
+        }
+        let allocation;
+        const entryFor = (row, index) => ({
+            key: row.dataset.lotId, index, product: row.dataset.product,
+            animal_type: row.dataset.animalType, sex: row.dataset.sex,
+            age: row.dataset.age, purity: row.dataset.purity,
+            weight: $('[data-field="weight"]', row).value,
+            quantity: Number($('[data-field="quantity"]', row).value),
+            counted: row.dataset.counted === 'true', requested: manualChoices.get(row.dataset.lotId),
+        });
+        function updateAllocations() {
+            const order = orders.find(item => String(item.id) === orderField.value);
+            const entries = lotRows.map(entryFor).filter((entry, index) =>
+                $('[data-field="selected"]', lotRows[index]).checked);
+            allocation = planInvoiceAllocations(order, entries);
+            const reserved = new Map((order?.lines || []).map(line => [Number(line.id), {
+                weight: Math.round(Number(line.weight_actual || 0) * 1000),
+                quantity: Number(line.quantity_actual || 0),
+            }]));
+            for (const entry of entries) {
+                const assigned = allocation.assignments.get(entry.key);
+                if (assigned && manualChoices.has(entry.key)) {
+                    reserved.get(assigned).weight += Math.round(Number(entry.weight) * 1000);
+                    reserved.get(assigned).quantity += entry.quantity;
+                }
+            }
+            for (const [index, row] of lotRows.entries()) {
+                const entry = entryFor(row, index);
+                const checked = $('[data-field="selected"]', row).checked;
+                const assigned = allocation.assignments.get(entry.key);
+                const field = $('[data-field="order_line_id"]', row);
+                field.replaceChildren(element('option', order ? 'Автоматически' : 'Без заявки', {value: ''}));
+                for (const line of (order?.lines || []).filter(item => item.product === entry.product)) {
+                    const used = reserved.get(Number(line.id));
+                    const own = manualChoices.has(entry.key) && assigned === Number(line.id);
+                    const withoutOwn = {
+                        weight: used.weight - (own ? Math.round(Number(entry.weight) * 1000) : 0),
+                        quantity: used.quantity - (own ? entry.quantity : 0),
+                    };
+                    const left = [];
+                    if (Number(line.weight)) left.push(`${Math.max(0, Number(line.weight) - withoutOwn.weight / 1000).toLocaleString('ru-RU', {maximumFractionDigits: 3})} кг`);
+                    if (Number(line.quantity)) left.push(`${Math.max(0, Number(line.quantity) - withoutOwn.quantity)} шт.`);
+                    let quality = '';
+                    if (order.kind === 'live') {
+                        quality = ` · ${line.type_requirement || 'Любой тип'}`;
+                        if (line.age_min != null || line.age_max != null) quality += `, ${line.age_min ?? '—'}–${line.age_max ?? '—'} мес.`;
+                        if (line.purity_min !== '' || line.purity_max !== '') quality += `, ${line.purity_min || '—'}–${line.purity_max || '—'}%`;
+                    }
+                    const option = element('option', `№ ${line.id}: ${line.name}${quality} · осталось ${left.join(' / ')}`, {value: line.id});
+                    option.disabled = !allocation.compatible(line, entry) || !allocation.capacity(line, entry, withoutOwn);
+                    field.append(option);
+                }
+                field.value = String(manualChoices.get(entry.key) || assigned || '');
+                field.disabled = !order || !checked;
+                const message = checked ? allocation.errors.get(entry.key) || '' : '';
+                field.setCustomValidity(message);
+                const hint = $('.iv-allocation-hint', row);
+                hint.textContent = message || (assigned && !manualChoices.has(entry.key) ? 'Выбрано автоматически' : '');
+                hint.classList.toggle('text-danger', Boolean(message));
+            }
         }
         function updateOrder(initial = false) {
             const order = orders.find(item => String(item.id) === orderField.value);
             if (order && (!initial || !$('#iv-invoice-customer').value)) $('#iv-invoice-customer').value = order.customer;
-            for (const row of lotRows) {
-                const field = $('[data-field="order_line_id"]', row);
-                field.replaceChildren(element('option', '—', {value: ''}));
-                const matches = (order?.lines || []).filter(line => line.product === row.dataset.product);
-                for (const line of matches) {
-                    const quality = line.animal_type || line.age_min !== null || line.age_max !== null || line.purity_min !== '' || line.purity_max !== ''
-                        ? ` · ${line.animal_type || 'Любой тип'}, ${line.age_min ?? '—'}–${line.age_max ?? '—'} мес., ${line.purity_min || '—'}–${line.purity_max || '—'}%` : '';
-                    field.append(element('option', `№ ${line.id}: ${line.name}, ${line.weight} кг / ${line.quantity} шт.${quality}`, {value: line.id}));
-                }
-                if (matches.length === 1) field.value = String(matches[0].id);
-                if (initial && oldLines.get(row.dataset.lotId)?.order_line_id) field.value = String(oldLines.get(row.dataset.lotId).order_line_id);
-            }
+            if (!initial) manualChoices.clear();
+            updateAllocations();
         }
         updateOrder(true);
+        for (const row of lotRows) {
+            $('[data-field="selected"]', row).addEventListener('change', updateAllocations);
+            for (const name of ['weight', 'quantity']) {
+                $('[data-field="' + name + '"]', row).addEventListener('input', updateAllocations);
+                $('[data-field="' + name + '"]', row).addEventListener('change', updateAllocations);
+            }
+            $('[data-field="order_line_id"]', row).addEventListener('change', event => {
+                if (event.target.value) manualChoices.set(row.dataset.lotId, Number(event.target.value));
+                else manualChoices.delete(row.dataset.lotId);
+                updateAllocations();
+            });
+        }
         bindSelectionButton(invoiceForm, '[data-field="selected"]');
         orderField.addEventListener('change', () => updateOrder());
         invoiceForm.addEventListener('submit', event => { event.preventDefault(); run(async () => {
+            updateAllocations();
+            if (allocation.errors.size) throw new Error([...allocation.errors.values()][0]);
             const lines = lotRows.filter(row => $('[data-field="selected"]', row).checked).map(row => ({...fields(row), lot_id: Number(row.dataset.lotId)}));
             if (!lines.length) throw new Error('Выберите продукцию для отгрузки.');
             const file = invoiceForm.elements.file?.files[0];

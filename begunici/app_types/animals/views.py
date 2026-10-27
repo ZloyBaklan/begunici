@@ -50,6 +50,9 @@ from .models import (
     format_birth_type_for_animal,
     get_next_unsuccessful_insemination_count,
     get_previous_unsuccessful_insemination_count,
+    get_default_lambing_tracking_care,
+    build_lambing_tracking_data,
+    format_lambing_tracking_result,
 )
 from .serializers import (
     MakerSerializer,
@@ -324,6 +327,7 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "date_otbivka": source_animal.date_otbivka,
         "dorper_percentage": source_animal.dorper_percentage,
         "is_manual_dorper": source_animal.is_manual_dorper,
+        "dorper_uses_default": source_animal.dorper_uses_default,
         "is_reject": source_animal.is_reject,
         "is_for_sale": source_animal.is_for_sale,
         "needs_retagging": source_animal.needs_retagging,
@@ -2340,7 +2344,7 @@ def _get_group_statuses():
 class LambingGroupViewSet(viewsets.ModelViewSet):
     queryset = (
         LambingGroup.objects.all()
-        .select_related("maker__tag", "ram__tag")
+        .select_related("maker__tag", "ram__tag", "tracked_veterinary_care")
         .prefetch_related("sheep__tag", "ewes__tag")
         .order_by("-is_active", "-placement_date", "-id")
     )
@@ -2405,6 +2409,13 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             father_tag_number = (request.data.get("father_tag_number") or "").strip()
             mother_tag_numbers = request.data.get("mother_tag_numbers") or []
             note = (request.data.get("note") or "").strip()
+            tracked_care = None
+            if "tracked_veterinary_care_id" in request.data:
+                try:
+                    tracked_care = VeterinaryCare.objects.get(pk=request.data["tracked_veterinary_care_id"])
+                except (TypeError, ValueError, VeterinaryCare.DoesNotExist):
+                    return Response({"error": "Выберите существующую ветобработку для отслеживания"},
+                                    status=status.HTTP_400_BAD_REQUEST)
             place_id = request.data.get("place_id") or request.data.get("target_place_id")
             target_place = None
 
@@ -2508,6 +2519,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 group_data = {
                     "placement_date": placement_date,
                     "note": note,
+                    "tracked_veterinary_care": tracked_care,
                 }
                 if father_type == "maker":
                     group_data["maker"] = father
@@ -2828,6 +2840,8 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         "start_date": removal_date,
                         "planned_lambing_date": removal_date + timedelta(days=150),
                         "source_group": group,
+                        "tracked_veterinary_care": group.tracked_veterinary_care,
+                        "tracked_veterinary_from_date": group.placement_date,
                         "note": group.note or "",
                         "is_active": True,
                     }
@@ -2945,7 +2959,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
 
 
 class LambingViewSet(viewsets.ModelViewSet):
-    queryset = Lambing.objects.all().order_by('-start_date')
+    queryset = Lambing.objects.select_related(
+        'sheep__tag', 'ewe__tag', 'maker__tag', 'ram__tag', 'source_group', 'tracked_veterinary_care'
+    ).order_by('-start_date')
     serializer_class = LambingSerializer
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
@@ -5317,6 +5333,8 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
 
     def _build_archive_act_rows(self, animals_list):
         """Группирует архивные животные в строки актов для страницы актов выбытия."""
+        from .act_numbering import act_sort_key, archive_number, archive_source
+        from .age_utils import as_local_date
         rows_by_key = {}
 
         for animal in animals_list:
@@ -5368,23 +5386,29 @@ class ArchiveViewSet(ListModelMixin, GenericViewSet):
                     }
                 )
 
+            archived_date = ArchiveAnimalSerializer._get_archive_date_from_act(
+                first_tag, first_status.status_type if first_status else None,
+            )
             rows_by_key[row_key] = {
+                "act_number": archive_number(archive_act, first_animal),
+                "act_date": archive_source(archive_act).date if archive_act else as_local_date(archived_date),
                 "tag_number": first_tag.tag_number if first_tag else "",
                 "animal_type": first_animal.get_animal_type(),
                 "display_name": ", ".join(item["display_name"] for item in tag_items) or (first_tag.tag_number if first_tag else ""),
                 "group_animals": tag_items,
                 "status": first_status.status_type if first_status else "Нет данных",
                 "status_color": first_status.color if first_status else "#FFFFFF",
-                "archived_date": ArchiveAnimalSerializer._get_archive_date_from_act(
-                    first_tag,
-                    first_status.status_type if first_status else None,
-                ),
+                "archived_date": archived_date,
                 "can_download_act": bool(
                     get_archive_act_template_config(first_status.status_type if first_status else "")
                 ),
             }
 
-        return list(rows_by_key.values())
+        return sorted(
+            rows_by_key.values(),
+            key=lambda row: act_sort_key(row["act_number"], row["act_date"]),
+            reverse=True,
+        )
 
     def get_queryset(self):
         """
@@ -10842,7 +10866,9 @@ def _format_group_mother_age_group(mother):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def lambings_export_excel(request):
-    queryset = Lambing.objects.all().select_related('sheep__tag', 'ewe__tag', 'maker__tag', 'ram__tag').order_by('-start_date')
+    queryset = Lambing.objects.select_related(
+        'sheep__tag', 'ewe__tag', 'maker__tag', 'ram__tag', 'source_group', 'tracked_veterinary_care'
+    ).order_by('-start_date')
 
     is_active = request.GET.get('is_active', None)
     start_date_from = _parse_filter_date(request.GET.get('start_date_from', None))
@@ -10887,8 +10913,13 @@ def lambings_export_excel(request):
         queryset = queryset.filter(father_filter)
 
     lambings = list(queryset)
+    tracking = build_lambing_tracking_data(lambings)
+    row_fills = {}
     rows = []
     for idx, lambing in enumerate(lambings, start=1):
+        treatment = tracking[id(lambing)]
+        if treatment['done'] is False:
+            row_fills[idx - 1] = 'FFF1F1'
         mother_value = lambing.get_mother_tag() or '-'
 
         father_value = '-'
@@ -10907,6 +10938,7 @@ def lambings_export_excel(request):
                 father_value,
                 _format_date_for_excel(lambing.start_date),
                 _format_date_for_excel(lambing.planned_lambing_date),
+                treatment['display'],
                 lambing.note or '-',
             ]
         )
@@ -10921,10 +10953,12 @@ def lambings_export_excel(request):
             'Бирка отца',
             'Дата снятия барана',
             'Планируемые роды',
+            'Отслеживаемая ветобработка',
             'Примечание',
         ],
         rows=rows,
         summary_lines=[f'Итого записей: {len(rows)}'],
+        row_fills=row_fills,
     )
 
 
@@ -10933,7 +10967,7 @@ def lambings_export_excel(request):
 def lambing_groups_export_excel(request):
     queryset = (
         LambingGroup.objects.all()
-        .select_related('maker__tag', 'ram__tag')
+        .select_related('maker__tag', 'ram__tag', 'tracked_veterinary_care')
         .prefetch_related('sheep__tag', 'ewes__tag')
         .order_by('-is_active', '-placement_date', '-id')
     )
@@ -10973,7 +11007,10 @@ def lambing_groups_export_excel(request):
 
     rows = []
     groups = list(queryset.distinct())
+    tracking = build_lambing_tracking_data(groups)
+    row_fills = {}
     for idx, group in enumerate(groups, start=1):
+        treatment = tracking[id(group)]
         father_value = '-'
         father = group.get_father()
         if father and father.tag:
@@ -10991,12 +11028,16 @@ def lambing_groups_export_excel(request):
                     '-',
                     father_value,
                     _format_date_for_excel(group.placement_date),
+                    '-',
                     group.note or '-',
                 ]
             )
             continue
 
         for mother in mothers:
+            done = treatment['mother_results'].get(mother.tag_id, False)
+            if treatment['care_id'] and not done:
+                row_fills[len(rows)] = 'FFF1F1'
             rows.append(
                 [
                     idx,
@@ -11004,6 +11045,7 @@ def lambing_groups_export_excel(request):
                     _format_group_mother_age_group(mother),
                     father_value,
                     _format_date_for_excel(group.placement_date),
+                    format_lambing_tracking_result(treatment['name'], done),
                     group.note or '-',
                 ]
             )
@@ -11017,10 +11059,12 @@ def lambing_groups_export_excel(request):
             'Половозрастная группа',
             'Отец',
             'Дата постановки в группу',
+            'Отслеживаемая ветобработка',
             'Примечание',
         ],
         rows=rows,
         summary_lines=[f'Итого групп: {len(groups)}'],
+        row_fills=row_fills,
     )
 
 
@@ -11777,6 +11821,7 @@ def vet_filter_options(request):
             'care_names': list(care_names),
             'medications': list(medications),
             'care_options': care_options,
+            'default_lambing_tracking_care_id': getattr(get_default_lambing_tracking_care(), 'pk', None),
         })
         
     except Exception as e:

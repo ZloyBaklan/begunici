@@ -457,17 +457,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
             workingConditionField.value = animal.working_condition || '';
         }
 
-        // Поле кровности по основной породе
-        const dorperField = document.getElementById('dorper_percentage');
-        if (dorperField) {
-            dorperField.value = animal.dorper_percentage || '';
-        }
-
-        // Отображение кровности по основной породе в основной информации
-        const dorperDisplay = document.getElementById('dorper-display');
-        if (dorperDisplay) {
-            dorperDisplay.textContent = animal.dorper_display || '-';
-        }
+        renderDorperPercentage(animal);
 
         const rejectField = document.getElementById('is_reject');
         if (rejectField) {
@@ -982,6 +972,18 @@ async function applyArchiveStatus() {
     }
 }
 
+function renderDorperPercentage(animal) {
+    const input = document.getElementById('dorper_percentage');
+    if (input) {
+        input.value = animal?.is_manual_dorper ? (animal.dorper_percentage ?? '') : '';
+    }
+    const display = document.getElementById('dorper-display');
+    if (display) {
+        display.textContent = animal?.dorper_display || '-';
+        display.title = animal?.dorper_calculation_note || '';
+    }
+}
+
 async function saveDorperPercentage() {
     const animalDetail = document.getElementById('animal-detail');
     const tagNumber = animalDetail.dataset.tagNumber;
@@ -1010,14 +1012,7 @@ async function saveDorperPercentage() {
 
     try {
         const updatedAnimal = await apiRequest(`/animals/${animalType}/${tagNumber}/`, 'PATCH', data);
-        if (dorperInput) {
-            dorperInput.value = dorperValue ? (updatedAnimal?.dorper_percentage || '') : '';
-        }
-
-        const dorperDisplay = document.getElementById('dorper-display');
-        if (dorperDisplay) {
-            dorperDisplay.textContent = updatedAnimal?.dorper_display || '-';
-        }
+        renderDorperPercentage(updatedAnimal);
 
         alert('Кровность успешно сохранена');
     } catch (error) {

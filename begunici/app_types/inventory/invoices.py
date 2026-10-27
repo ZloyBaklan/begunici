@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from .documents import add_version, assert_editable, assert_revision
 from .models import AuditEvent, Document, Order, StockLot, StockMovement
-from .orders import fulfillment, refresh_state
+from .orders import allocate_order_lines, fulfillment, refresh_state
 from .permissions import require_inventory
 from .stock import validate_withdrawal
 from .validation import amount, count, rows
@@ -23,7 +23,6 @@ def normalize_invoice(payload, order):
     lots = {lot.pk: lot for lot in StockLot.objects.select_related("product", "animal").filter(
         pk__in=[count(row.get("lot_id"), "Партия") for row in source_rows],
     )}
-    order_lines = {line.pk: line for line in order.lines.all()} if order else {}
     clean, seen = [], set()
     for item in source_rows:
         lot_id = count(item.get("lot_id"), "Партия")
@@ -37,19 +36,18 @@ def normalize_invoice(payload, order):
         if order:
             if (lot.product.category == "live") != (order.kind == "live"):
                 raise ValidationError("Тип продукции не соответствует заявке.")
-            if line_id is None:
-                matching = [line.pk for line in order_lines.values() if line.product_id == lot.product_id]
-                if len(matching) == 1:
-                    line_id = matching[0]
-                else:
-                    raise ValidationError("Выберите строку заявки для каждой позиции накладной.")
-            if line_id not in order_lines or order_lines[line_id].product_id != lot.product_id:
-                raise ValidationError("Строка заявки не принадлежит этой заявке или содержит другую номенклатуру.")
         elif line_id is not None:
             raise ValidationError("Сначала выберите заявку.")
         validate_withdrawal(lot, weight, quantity)
         clean.append({"lot_id": lot_id, "weight": str(weight), "quantity": quantity, "order_line_id": line_id,
                       "name": lot.product.name, "unit": "кг и шт." if lot.product.counted else "кг"})
+    if order:
+        assignments = allocate_order_lines(order, [
+            (row["order_line_id"], lots[row["lot_id"]], amount(row["weight"]), row["quantity"])
+            for row in clean
+        ])
+        for row, line_id in zip(clean, assignments):
+            row["order_line_id"] = line_id
     customer = str(payload.get("customer", "")).strip()[:200] or (order.customer if order else "")
     if not customer:
         raise ValidationError("Укажите получателя накладной.")

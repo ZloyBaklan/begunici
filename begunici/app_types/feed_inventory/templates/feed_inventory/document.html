@@ -1,7 +1,7 @@
 {% extends 'feed_inventory/base.html' %}
 {% block feed_content %}
 <div class="iv-title-row"><h1>{{ document }}</h1><span class="badge {% if document.state == 'posted' %}bg-success{% else %}bg-secondary{% endif %}">{{ document.get_state_display }}</span></div>
-<p>{{ document.date|date:'d.m.Y' }} · Создал: {{ document.created_by }}{% if document.number %} · Номер поставщика: {{ document.number }}{% endif %}{% if document.order_id %} · <a href="{% url 'feed_inventory:order' document.order_id %}">Заявка № {{ document.order_id }}</a>{% endif %}</p>
+<p>{{ document.date|date:'d.m.Y' }} · Создал: {{ document.created_by }}{% if document.number and document.kind != 'writeoff' %} · Номер поставщика: {{ document.number }}{% endif %}{% if document.order_id %} · <a href="{% url 'feed_inventory:order' document.order_id %}">Заявка № {{ document.order_id }}</a>{% endif %}</p>
 {% if document.posted_at %}<p>Подтвердил: {{ document.posted_by }} · {{ document.posted_at|date:'d.m.Y H:i' }}</p>{% endif %}
 {% if document.reversal_of %}<p>Сторно документа <a href="{% url 'feed_inventory:document' document.reversal_of_id %}">{{ document.reversal_of }}</a>. Причина: {{ version.payload.note }}</p>{% endif %}
 <div class="feed-table-wrap"><table class="table table-striped"><thead><tr><th>Номенклатура</th><th>Количество</th><th>Упаковки, шт.</th></tr></thead><tbody>{% for line in version.payload.lines %}<tr><td>{{ line.name }}</td><td>{{ line.amount }} {{ line.unit }}</td><td>{{ line.packages }}<small>{{ line.package }}</small></td></tr>{% endfor %}</tbody></table></div>

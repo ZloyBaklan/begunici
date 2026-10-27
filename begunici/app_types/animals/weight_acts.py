@@ -123,7 +123,7 @@ def latest_records_by_tag_and_date():
     return latest_by_key.values()
 
 
-def build_weight_act_groups():
+def build_weight_act_groups(numbered=True):
     records_by_tag = defaultdict(list)
     for record in latest_records_by_tag_and_date():
         records_by_tag[record.tag_id].append(record)
@@ -173,12 +173,16 @@ def build_weight_act_groups():
                 item["current"].id,
             )
         )
+    if numbered:
+        from .act_numbering import number_groups
+        number_groups("weight", groups)
     return groups
 
 
 def serialize_weight_act_group(group):
     return {
-        "act_number": group["act_number"],
+        "act_number": group.get("display_number", group["act_number"]),
+        "act_id": group["act_number"],
         "weighing_date": group["weighing_date"].isoformat(),
         "previous_weight_date": group["previous_weight_date"].isoformat(),
         "animal_count": len(group["records"]),
@@ -224,6 +228,8 @@ def get_weight_acts_page(
     month=None,
     year=None,
 ):
+    from .act_numbering import act_sort_key
+
     all_groups = build_weight_act_groups()
     years = sorted({group["weighing_date"].year for group in all_groups}, reverse=True)
     groups = sorted(
@@ -234,12 +240,7 @@ def get_weight_acts_page(
             month=month,
             year=year,
         ),
-        key=lambda item: (
-            item["weighing_date"],
-            item["previous_weight_date"],
-            item["last_record_id"],
-            item["act_number"],
-        ),
+        key=lambda item: act_sort_key(item.get("display_number"), item["weighing_date"]),
         reverse=True,
     )
     paginator = Paginator(groups, page_size)
@@ -383,7 +384,7 @@ def fill_weight_act_sheet(sheet, group, user=None):
     footer_date_row = FOOTER_DATE_BASE_ROW + extra_rows
     download_date = timezone.localdate()
 
-    sheet["W4"] = group["act_number"]
+    sheet["W4"] = group.get("display_number", group["act_number"])
     fill_split_date(sheet, "AN7", "AO7", "AP7", group["weighing_date"])
     sheet["O12"] = get_responsible_person_for_user(user)
     fill_previous_weight_date_headers(sheet, group["previous_weight_date"])
@@ -457,7 +458,7 @@ def weight_act_response(act_number, user=None):
         return None
 
     filename = (
-        f"akt_vzveshivaniya_{group['act_number']}_{group['weighing_date'].strftime('%Y-%m-%d')}.xlsx"
+        f"akt_vzveshivaniya_{group.get('display_number', group['act_number'])}_{group['weighing_date'].strftime('%Y-%m-%d')}.xlsx"
     )
     response = HttpResponse(
         output.getvalue(),

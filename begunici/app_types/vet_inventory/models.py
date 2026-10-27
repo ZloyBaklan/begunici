@@ -80,7 +80,14 @@ class VetDocument(models.Model):
         ordering = ["-pk"]
 
     def __str__(self):
-        return f"{self.get_kind_display()} № {self.pk}"
+        return f"{self.get_kind_display()} № {self.act_number if self.kind == 'writeoff' else self.pk}"
+
+    @property
+    def act_number(self):
+        if self.kind != "writeoff" or not self.pk:
+            return self.number or str(self.pk)
+        from begunici.app_types.animals.act_numbering import writeoff_number
+        return writeoff_number(self, "vet_writeoff")
 
 
 class VetVersion(AppendOnly):

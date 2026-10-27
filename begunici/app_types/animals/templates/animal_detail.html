@@ -376,7 +376,7 @@
                             <div class="col-12">
                                 <label for="dorper_percentage" class="form-label">Кровность по основной породе (%):</label>
                                 <input type="number" id="dorper_percentage" class="form-control" min="0" max="100" step="0.01" placeholder="Оставьте пустым для автоматического расчета">
-                                <div class="form-text">Если поле пустое, кровность будет рассчитываться автоматически на основе родителей.</div>
+                                <div class="form-text">Базовое значение кровности - 50%. Если поле пустое - автоматический расчёт</div>
                             </div>
                             <div class="col-12">
                                 <button type="button" onclick="saveDorperPercentage()" class="btn btn-primary">Сохранить кровность</button>
@@ -967,6 +967,6 @@
 
 {% include 'includes/archive_modal.html' %}
 
-<script src="{% static 'js/archive_act_modal.js' %}"></script>
+<script src="{% static 'js/archive_act_modal.js' %}?v=20261026-numbering"></script>
 <script src="{% static 'js/animal_detail.js' %}?v=20261021-rejection-inline"></script>
 {% endblock %}

@@ -204,7 +204,12 @@ class Document(models.Model):
         ordering = ["-id"]
 
     def __str__(self):
-        return f"{self.get_kind_display()} № {self.number or self.pk}"
+        return f"{self.get_kind_display()} № {self.act_number}"
+
+    @property
+    def act_number(self):
+        from begunici.app_types.animals.act_numbering import inventory_number
+        return inventory_number(self) if self.kind in {"sp54", "sp55"} and self.pk else self.number or str(self.pk)
 
 
 class AnimalCase(AppendOnly):

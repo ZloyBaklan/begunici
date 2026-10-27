@@ -93,16 +93,15 @@ function displayArchiveActs(data) {
         return;
     }
 
-    data.forEach((animal, index) => {
+    data.forEach((animal) => {
         const row = document.createElement("tr");
-        const recordNumber = (currentPage - 1) * pageSize + index + 1;
         const tagNumber = animal.tag_number || "-";
         const status = animal.status || "Не указан";
         const statusColor = animal.status_color || "#FFFFFF";
         const archivedDate = formatDateToOutput(animal.archived_date) || "Не указана";
 
         row.innerHTML = `
-            <td>${recordNumber}</td>
+            <td>${escapeHtml(animal.act_number || "-")}</td>
             <td>${buildAnimalLinksCell(animal)}</td>
             <td style="background-color:${escapeHtml(statusColor)}">${escapeHtml(status)}</td>
             <td>${escapeHtml(archivedDate)}</td>

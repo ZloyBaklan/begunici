@@ -6,8 +6,25 @@ from begunici.app_types.veterinary.vet_models import Veterinary
 from begunici.app_types.inventory.validation import amount
 from .models import VetDocument, VetProduct, VetSettings, VetTreatment
 from .permissions import require_treat
-from .rules import estimate
+from .rules import estimate, is_shearing
 from .services import add_version, apply_movements, audit, normalize_lines, number, text
+
+
+SHEARING_NO_EXPENSE = "Стрижка не требует расхода ветпрепаратов"
+
+
+def requires_stock(entry, source=None):
+    if source is None:
+        source = Veterinary.objects.select_related("veterinary_care").filter(pk=entry.source_id).first()
+    if source and source.veterinary_care:
+        return not is_shearing(source.veterinary_care)
+    label = str(entry.snapshot.get("care") or "").rsplit(":", 1)[-1].strip().casefold()
+    return label != "стрижка"
+
+
+def mark_shearing_without_expense(entry):
+    entry.state, entry.issue, entry.manual = "excluded", SHEARING_NO_EXPENSE, False
+    entry.product, entry.quantity, entry.calculation = None, 0, {"mode_label": "Без расхода", "quantity": "0"}
 
 
 def snapshot(source):
@@ -34,6 +51,8 @@ def undo_expense(entry, user, reason):
 
 def post_expense(entry, user, reason):
     from datetime import date
+    if not requires_stock(entry):
+        raise ValidationError(SHEARING_NO_EXPENSE)
     if date.fromisoformat(entry.snapshot["date"]) > timezone.localdate():
         raise ValidationError("Обработка датирована будущим числом. Проверьте дату перед списанием.")
     lines = normalize_lines([{"product": entry.product_id, "amount": number(entry.quantity), "packages": "0"}], allow_empty=True)
@@ -56,17 +75,27 @@ def capture(source_id, user=None, created=False):
     if source is None:
         return
     entry = VetTreatment.objects.select_for_update().filter(source_id=source_id).first()
+    shearing = is_shearing(source.veterinary_care)
     if entry is None and (not created or source_id <= config.legacy_treatment_id):
         return  # Historical treatments are never charged retrospectively.
     current = snapshot(source)
     if entry:
         if all(entry.snapshot.get(key) == current.get(key) for key in ("tag_id", "care_id", "date_time")):
+            if shearing and entry.state == "pending" and entry.document_id is None:
+                mark_shearing_without_expense(entry)
+                entry.revision += 1
+                entry.save()
             return  # Comments, hiding and repeated saves do not alter consumption.
         undo_expense(entry, user, "Изменены животное, обработка или дата исходного мероприятия")
         entry.revision += 1
     else:
         entry = VetTreatment.objects.create(source_id=source_id, snapshot=current)
     entry.snapshot, entry.state, entry.issue = current, "pending", ""
+    if shearing:
+        mark_shearing_without_expense(entry)
+        entry.save()
+        audit(user, "Обработка без расхода", treatment=entry.pk, reason=SHEARING_NO_EXPENSE, animal=entry.snapshot)
+        return entry
     try:
         if entry.manual:
             raise ValidationError("Данные мероприятия изменились после ручного уточнения. Проверьте расход повторно.")
@@ -92,6 +121,8 @@ def adjust(user, pk, revision, product_id, quantity, reason, recalculate=False):
         raise ValidationError("Расход уже изменён. Обновите страницу.")
     if entry.state == "deleted":
         raise ValidationError("Исходная обработка удалена; расход отменён.")
+    if not requires_stock(entry):
+        raise ValidationError(SHEARING_NO_EXPENSE)
     reason = text(reason, "Причина уточнения", 2000)
     if recalculate:
         source = Veterinary.objects.select_related("tag", "veterinary_care").filter(pk=entry.source_id).first()

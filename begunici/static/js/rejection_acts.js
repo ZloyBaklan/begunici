@@ -73,7 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     row.insertCell().textContent = value;
                 });
                 const link = document.createElement("a");
-                link.href = `${root.dataset.listUrl}${encodeURIComponent(act.act_number)}/`;
+                link.href = `${root.dataset.listUrl}${encodeURIComponent(act.act_id ?? act.act_number)}/`;
                 link.className = "btn btn-outline-primary btn-sm";
                 link.textContent = "Скачать акт";
                 row.insertCell().appendChild(link);

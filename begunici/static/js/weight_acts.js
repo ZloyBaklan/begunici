@@ -122,7 +122,7 @@ function displayWeightActs(data) {
             <td>${escapeHtml(animalCount)}</td>
             <td>
                 <button class="btn btn-outline-primary btn-sm"
-                        onclick="downloadWeightActFromActs('${escapeHtml(act.act_number)}')">
+                        onclick="downloadWeightActFromActs('${escapeHtml(act.act_id ?? act.act_number)}')">
                     Скачать акт
                 </button>
             </td>

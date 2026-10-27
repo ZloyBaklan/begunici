@@ -144,7 +144,20 @@ def version_download(request, pk, number):
     content = bytes(version.content)
     if hashlib.sha256(content).hexdigest() != version.sha256:
         return HttpResponse("Контрольная сумма документа не совпадает. Файл не выдан.", status=409)
+    original_hash = version.sha256
+    if version.filename.lower().endswith(".xlsx") and version.document.kind in {"sp54", "sp55"}:
+        from begunici.app_types.animals.act_numbering import is_generated_version, numbered_excel
+        if is_generated_version(version):
+            updated = numbered_excel(content, version.document.act_number,
+                                     "sp55" if version.document.kind == "sp55" else "archive")
+            if updated is not None:
+                content = updated
+            if version.document.kind == "sp55":
+                from .exports import printable_slaughter_excel
+                content = printable_slaughter_excel(content)
     response = HttpResponse(content, content_type=version.content_type)
+    response["X-Document-Source-SHA256"] = original_hash
+    response["X-Document-SHA256"] = hashlib.sha256(content).hexdigest()
     response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(version.filename)}"
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
@@ -153,12 +166,17 @@ def version_download(request, pk, number):
 
 def invoice_context(order_id=None):
     active_orders = Order.objects.exclude(state="closed").prefetch_related("lines__product")
+    reports = {order.pk: {line["id"]: line for line in orders.fulfillment(order)["lines"]}
+               for order in active_orders}
     return {
         "available_lots": list(stock.available_lots()), "selected_order": order_id,
         "orders_data": [{"id": order.pk, "customer": order.customer, "kind": order.kind,
                          "lines": [{"id": line.pk, "product": line.product.code, "name": line.product.name,
                                     "quantity": line.quantity, "weight": str(line.weight),
-                                    "animal_type": line.type_requirement if order.kind == "live" else "",
+                                    "animal_type": line.animal_type, "sex": line.sex,
+                                    "type_requirement": line.type_requirement,
+                                    "weight_actual": reports[order.pk][line.pk]["weight_actual"],
+                                    "quantity_actual": reports[order.pk][line.pk]["quantity_actual"],
                                     "age_min": line.age_min, "age_max": line.age_max,
                                     "purity_min": str(line.purity_min) if line.purity_min is not None else "",
                                     "purity_max": str(line.purity_max) if line.purity_max is not None else ""}

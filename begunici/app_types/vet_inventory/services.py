@@ -244,6 +244,8 @@ def create_document(user, kind, document_date, number_, lines, note, request_tok
         number=text(number_, "Номер накладной", 100, kind == "receipt"), token=request_token, created_by=user)
     payload = {"lines": clean_lines, "note": text(note, "Примечание", 4000, False)}
     if kind == "writeoff":
+        document.number = document.act_number
+        document.save(update_fields=["number"])
         payload.update(writeoff_reason(reason))
         payload["note"] = text(note, "Обоснование списания", 4000)
     if kind == "consume":

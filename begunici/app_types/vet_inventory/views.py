@@ -219,6 +219,9 @@ def product_edit(request, pk):
 @access_required()
 def norm_edit(request, pk):
     care = get_object_or_404(VeterinaryCare, pk=pk)
+    if rules.is_shearing(care):
+        messages.info(request, treatments.SHEARING_NO_EXPENSE)
+        return redirect("vet_inventory:norms")
     rule = VetNorm.objects.filter(care=care).first()
     bands = [{"from": a, "to": b, "amount": c} for a, b, c in zip(
         request.POST.getlist("band_from"), request.POST.getlist("band_to"), request.POST.getlist("band_amount"))
@@ -242,7 +245,7 @@ def norm_edit(request, pk):
 @access_required()
 def norms(request):
     mapping = {r.care_id: r for r in VetNorm.objects.select_related("product")}
-    return page(request, "norms", entries=[{"care": c, "rule": mapping.get(c.pk)} for c in VeterinaryCare.objects.order_by("care_type", "care_name", "pk")])
+    return page(request, "norms", entries=[{"care": c, "rule": mapping.get(c.pk), "requires_stock": not rules.is_shearing(c)} for c in VeterinaryCare.objects.order_by("care_type", "care_name", "pk")])
 
 
 @require_GET
@@ -283,6 +286,7 @@ def treatment_detail(request, pk):
         "quantity": services.number(entry.quantity) if entry.quantity is not None else "", "revision": entry.revision}
     documents = VetDocument.objects.filter(versions__payload__treatment_id=pk).distinct().order_by("-pk")
     return page(request, "treatment", entry=entry, form=values, products=VetProduct.objects.all(), documents=documents,
+        requires_stock=treatments.requires_stock(entry),
         source_exists=Veterinary.objects.filter(pk=entry.source_id).exists(),
         events=VetAudit.objects.filter(data__treatment=pk).select_related("created_by").order_by("-pk"))
 

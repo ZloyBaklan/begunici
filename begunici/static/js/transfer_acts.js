@@ -117,7 +117,7 @@ function displayTransferActs(data) {
             <td>${escapeHtml(animalCount)}</td>
             <td>
                 <button class="btn btn-outline-primary btn-sm"
-                        onclick="downloadTransferActFromActs('${escapeHtml(act.act_number)}')">
+                        onclick="downloadTransferActFromActs('${escapeHtml(act.act_id ?? act.act_number)}')">
                     Скачать акт
                 </button>
             </td>

@@ -175,7 +175,7 @@ def get_animal_description(movement, transfer_date):
     return animal_type_label
 
 
-def build_transfer_act_groups():
+def build_transfer_act_groups(numbered=True):
     movements = (
         PlaceMovement.objects.select_related("tag", "old_place", "new_place")
         .order_by("created_at", "id")
@@ -200,6 +200,8 @@ def build_transfer_act_groups():
                 "transfer_date": transfer_date,
                 "old_place": get_place_name(movement.old_place),
                 "new_place": get_place_name(movement.new_place),
+                "old_place_id": movement.old_place_id,
+                "new_place_id": movement.new_place_id,
                 "first_created_at": transfer_dt,
                 "last_created_at": transfer_dt,
                 "first_movement_id": movement.id,
@@ -221,12 +223,16 @@ def build_transfer_act_groups():
     for index, group in enumerate(groups, start=1):
         group["act_number"] = index
 
+    if numbered:
+        from .act_numbering import number_groups
+        number_groups("transfer", groups)
     return groups
 
 
 def serialize_transfer_act_group(group):
     return {
-        "act_number": group["act_number"],
+        "act_number": group.get("display_number", group["act_number"]),
+        "act_id": group["act_number"],
         "transfer_date": group["transfer_date"].isoformat(),
         "old_place": group["old_place"],
         "new_place": group["new_place"],
@@ -282,11 +288,13 @@ def filter_transfer_act_groups(groups, transfer_date=None, month=None, year=None
 
 
 def get_transfer_acts_page(page_number=1, page_size=10, transfer_date=None, month=None, year=None):
+    from .act_numbering import act_sort_key
+
     all_groups = build_transfer_act_groups()
     years = sorted({group["transfer_date"].year for group in all_groups}, reverse=True)
     groups = sorted(
         filter_transfer_act_groups(all_groups, transfer_date=transfer_date, month=month, year=year),
-        key=lambda item: (item["transfer_date"], item["last_created_at"], item["act_number"]),
+        key=lambda item: act_sort_key(item.get("display_number"), item["transfer_date"]),
         reverse=True,
     )
     paginator = Paginator(groups, page_size)
@@ -349,6 +357,8 @@ def build_manual_transfer_act_group(animals, old_place_id, new_place_id):
     transfer_date = timezone.localdate()
     return {
         "act_number": "",
+        "old_place_id": old_place_id,
+        "new_place_id": new_place_id,
         "transfer_date": transfer_date,
         "old_place": get_place_name(old_place),
         "new_place": get_place_name(new_place),
@@ -475,7 +485,10 @@ def fill_transfer_act_sheet(sheet, group, user=None):
     footer_date_row = FOOTER_DATE_BASE_ROW + row_count - DATA_TEMPLATE_ROWS
     total_weight = None
 
-    sheet["K4"] = group["act_number"]
+    if not group.get("display_number"):
+        from .act_numbering import number_groups
+        number_groups("transfer", [group])
+    sheet["K4"] = group["display_number"]
     sheet["T8"] = f"{group['transfer_date'].day:02d}"
     sheet["U8"] = f"{group['transfer_date'].month:02d}"
     sheet["V8"] = str(group["transfer_date"].year)[-2:]
@@ -556,7 +569,7 @@ def transfer_act_response(act_number, user=None):
         return None
 
     filename = (
-        f"akt_perevoda_{group['act_number']}_{group['transfer_date'].strftime('%Y-%m-%d')}.xlsx"
+        f"akt_perevoda_{group.get('display_number', group['act_number'])}_{group['transfer_date'].strftime('%Y-%m-%d')}.xlsx"
     )
     response = HttpResponse(
         output.getvalue(),

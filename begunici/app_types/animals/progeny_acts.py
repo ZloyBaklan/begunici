@@ -267,7 +267,7 @@ def build_progeny_act_group(year, month):
     }
 
 
-def build_progeny_act_groups():
+def build_progeny_act_groups(numbered=True):
     lambing_months = (
         Lambing.objects.filter(is_active=False, actual_lambing_date__isnull=False)
         .exclude(completion_type__in=Lambing.NON_PRODUCTIVE_COMPLETION_TYPES)
@@ -283,12 +283,16 @@ def build_progeny_act_groups():
     for index, group in enumerate(groups, start=1):
         group["act_number"] = index
 
+    if numbered:
+        from .act_numbering import number_groups
+        number_groups("progeny", groups)
     return groups
 
 
 def serialize_progeny_act_group(group):
     return {
-        "act_number": group["act_number"],
+        "act_number": group.get("display_number", group["act_number"]),
+        "act_id": group["act_number"],
         "year": group["year"],
         "month": group["month"],
         "month_name": group["month_name"],
@@ -440,7 +444,7 @@ def fill_progeny_act_sheet(sheet, group):
 
     clear_data_rows(sheet, physical_row_count)
 
-    sheet["J4"] = group["act_number"]
+    sheet["J4"] = group.get("display_number", group["act_number"])
     fill_split_date(sheet, "S8", "T8", "U8", group["act_date"])
     fill_footer_date(sheet, footer_date_row, timezone.localdate())
     update_print_area(sheet, footer_date_row)
@@ -484,7 +488,7 @@ def progeny_act_response(act_number):
     if output is None:
         return None
 
-    filename = f"akt_oprihodovaniya_priploda_sp39_{group['act_number']}_{group['year']}_{group['month']:02d}.xlsx"
+    filename = f"akt_oprihodovaniya_priploda_sp39_{group.get('display_number', group['act_number'])}_{group['year']}_{group['month']:02d}.xlsx"
     response = HttpResponse(
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -224,7 +224,6 @@
 
     function resetPerAnimalFields() {
         const fields = [
-            "archive-act-number",
             "archive-act-date",
             "archive-act-diagnosis",
             "archive-act-weight-date",
@@ -244,9 +243,6 @@
 
         const statusSelect = document.getElementById("archive-status-select");
         if (statusSelect) statusSelect.disabled = false;
-
-        const actNumber = document.getElementById("archive-act-number");
-        if (actNumber) actNumber.disabled = false;
 
         const deathReason = document.getElementById("archive-act-death-reason");
         if (deathReason) deathReason.value = "Травма";
@@ -534,12 +530,6 @@
         }
 
         const groupInfo = index >= 0 ? groupInfoByEntryIndex[index] : null;
-        const actNumberInput = document.getElementById("archive-act-number");
-        if (actNumberInput && groupInfo?.commonActNumber) {
-            actNumberInput.value = groupInfo.commonActNumber;
-            actNumberInput.disabled = true;
-        }
-
         const statusDateInput = document.getElementById("archive-status-date");
         if (statusDateInput && groupInfo?.statusDate) {
             statusDateInput.value = groupInfo.statusDate;
@@ -767,7 +757,6 @@
             };
         }
 
-        const actNumber = document.getElementById("archive-act-number")?.value?.trim() || "";
         const actDate = document.getElementById("archive-status-date")?.value || "";
         const fatness = document.getElementById("archive-act-fatness")?.value || "";
         const diagnosis = document.getElementById("archive-act-diagnosis")?.value?.trim() || "";
@@ -775,7 +764,6 @@
             ? (document.getElementById("archive-act-death-reason")?.value || "")
             : "";
 
-        if (!actNumber) return buildValidationError("Укажите номер акта.");
         if (!actDate) return buildValidationError("Укажите дату присвоения статуса.");
         if (!fatness) return buildValidationError("Укажите упитанность.");
         if (statusName === "Падеж" && !deathReason) return buildValidationError("Укажите причину падежа.");
@@ -807,7 +795,7 @@
         }
 
         return {
-            act_number: actNumber,
+            act_number: "",
             archive_act_date: actDate,
             archive_act_live_weight: weightRaw || null,
             archive_act_weight_date: weightDate || null,
@@ -857,7 +845,6 @@
         }
         if (groupInfo) {
             archiveActPayload.archive_act_group_key = groupInfo.groupKey;
-            archiveActPayload.act_number = groupInfo.commonActNumber;
             if (!groupInfo.statusDate) {
                 groupInfo.statusDate = statusDate;
             }
@@ -921,14 +908,6 @@
             return `
                 <div class="border rounded p-3 mb-3">
                     <div class="fw-semibold mb-1">${escapeHtml(candidate.statusName)}</div>
-                    <label class="form-label" for="archive-act-common-number-${escapeHtml(candidate.id)}">
-                        Номер общего акта для отмеченных животных:
-                    </label>
-                    <input type="text"
-                           id="archive-act-common-number-${escapeHtml(candidate.id)}"
-                           class="form-control mb-3 archive-act-common-number"
-                           data-group-id="${escapeHtml(candidate.id)}"
-                           placeholder="Введите номер общего акта">
                     <div class="list-group">${animalsHtml}</div>
                 </div>
             `;
@@ -950,19 +929,10 @@
                 continue;
             }
 
-            const commonActNumberInput = document.querySelector(
-                `.archive-act-common-number[data-group-id="${candidate.id}"]`
-            );
-            const commonActNumber = commonActNumberInput?.value?.trim() || "";
-            if (!commonActNumber) {
-                return { error: `Укажите номер общего акта для статуса "${candidate.statusName}".` };
-            }
-
             const selectedIndexes = new Set(checked.map((checkbox) => Number.parseInt(checkbox.value, 10)));
             const groupKey = generateGroupKey();
             const groupInfo = {
                 groupKey,
-                commonActNumber,
                 statusDate: null,
             };
             pendingGroupEntries.forEach((entry, index) => {

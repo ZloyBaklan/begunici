@@ -172,7 +172,21 @@ def validate_case_source(case):
     info = source_info(source_animal(case.source_tag_id))
     require_eligible(info)
     if info["fingerprint"] != case.source_fingerprint:
-        raise ValidationError(f"{case.tag_number}: архивные данные изменились после создания складского акта. Требуется сверка с исходным архивом.")
+        current_act = info["snapshot"].get("archive_act")
+        frozen_act = case.snapshot.get("archive_act")
+        signature = None
+        if current_act and frozen_act:
+            # Renumbering is not a business change. Recheck every other original field.
+            signature = {
+                "tag_id": info["tag_id"], "status": info["status"], "archived": info["is_archived"],
+                "date": info["archive_date"],
+                "act": {key: current_act.get(key) for key in (
+                    "id", "status_date", "act_date", "act_number", "live_weight", "fatness", "diagnosis", "act_group_key",
+                )},
+            }
+            signature["act"]["act_number"] = frozen_act.get("act_number", "")
+        if signature is None or fingerprint(signature) != case.source_fingerprint:
+            raise ValidationError(f"{case.tag_number}: архивные данные изменились после создания складского акта. Требуется сверка с исходным архивом.")
     return info
 
 

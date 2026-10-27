@@ -94,6 +94,68 @@ def quality_issues(line, case):
     return issues
 
 
+def allocate_order_lines(order, entries, lines=None):
+    """Reserve explicit choices first, then assign whole lots to unmet requirements."""
+    lines = list(lines if lines is not None else order.lines.select_related("product").order_by("pk"))
+    line_map = {line.pk: line for line in lines}
+    actual = {line["id"]: {"weight": Decimal(line["weight_actual"]), "quantity": line["quantity_actual"]}
+              for line in fulfillment(order)["lines"]}
+    assignments = [None] * len(entries)
+
+    def compatible(line, entry):
+        _, lot, _, _ = entry
+        return line.product_id == lot.product_id and (
+            order.kind != "live" or not quality_issues(line, lot.animal)
+        )
+
+    def has_capacity(line, entry):
+        used = actual[line.pk]
+        if line.quantity:
+            return used["quantity"] < line.quantity and used["quantity"] + entry[3] <= line.quantity
+        # Weight is a minimum, not a maximum: the final whole carcass may weigh more.
+        return used["weight"] < line.weight
+
+    def reserve(index, line):
+        actual[line.pk]["weight"] += entries[index][2]
+        actual[line.pk]["quantity"] += entries[index][3]
+        assignments[index] = line.pk
+
+    for index, entry in enumerate(entries):
+        requested, lot, _, _ = entry
+        if requested is None:
+            continue
+        line = line_map.get(requested)
+        if line is None or line.product_id != lot.product_id:
+            raise ValidationError("Строка заявки не принадлежит этой заявке или содержит другую номенклатуру.")
+        issues = quality_issues(line, lot.animal) if order.kind == "live" else []
+        if issues:
+            raise ValidationError(f"{lot.animal.tag_number}: не подходит для строки № {line.pk}: {', '.join(issues)}.")
+        if not has_capacity(line, entry):
+            raise ValidationError(
+                f"{lot.animal.tag_number}: строка заявки № {line.pk} уже покрыта "
+                "или выбранное количество превышает её остаток. Выберите другую строку заявки."
+            )
+        reserve(index, line)
+
+    pending = {index for index, line_id in enumerate(assignments) if line_id is None}
+    while pending:
+        candidates = {index: [line for line in lines
+                              if compatible(line, entries[index]) and has_capacity(line, entries[index])]
+                      for index in pending}
+        index = min(pending, key=lambda key: (len(candidates[key]), -entries[key][3], key))
+        if not candidates[index]:
+            raise ValidationError(
+                f"{entries[index][1].animal.tag_number}: нет подходящей незаполненной строки заявки "
+                "для выбранной продукции и количества. Проверьте требования и уже поставленное количество."
+            )
+        line = min(candidates[index], key=lambda item: (
+            sum(item in choices for choices in candidates.values()), item.pk,
+        ))
+        reserve(index, line)
+        pending.remove(index)
+    return assignments
+
+
 def fulfillment(order, extra=None):
     """Accumulate allocations across confirmed, non-reversed invoices only.
 
@@ -101,7 +163,7 @@ def fulfillment(order, extra=None):
     Units/weight exceeding one line never compensate another missing SKU.
     """
     lines = {line.pk: line for line in order.lines.select_related("product")}
-    totals = {key: {"weight": Decimal(0), "quantity": 0, "issues": []} for key in lines}
+    totals = {key: {"weight": Decimal(0), "quantity": 0, "issues": [], "animals": set()} for key in lines}
     heads = set()
     movements = StockMovement.objects.filter(
         document__order=order, document__state="confirmed", kind="sale",
@@ -118,6 +180,7 @@ def fulfillment(order, extra=None):
             continue
         totals[line_id]["weight"] += weight
         totals[line_id]["quantity"] += quantity
+        totals[line_id]["animals"].add(lot.animal.tag_number)
         heads.add(lot.animal_id)
     report = []
     missing = []
@@ -140,6 +203,7 @@ def fulfillment(order, extra=None):
             "quantity_required": line.quantity, "quantity_actual": actual["quantity"],
             "weight_ok": weight_ok, "quantity_ok": quantity_ok,
             "issues": actual["issues"], "complete": complete,
+            "animals": sorted(actual["animals"]),
         })
     if len(heads) < order.required_heads:
         missing.append(f"Количество животных: {len(heads)} из {order.required_heads}.")

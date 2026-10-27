@@ -11,6 +11,11 @@ from .permissions import require_treat
 from .services import audit, number
 
 
+def is_shearing(care):
+    return bool(care and any(str(getattr(care, field) or "").strip().casefold() == "стрижка"
+                             for field in ("care_type", "care_name")))
+
+
 def clean_bands(rows):
     if not isinstance(rows, list) or not 1 <= len(rows) <= 20:
         raise ValidationError("Задайте от 1 до 20 диапазонов веса.")
@@ -32,6 +37,8 @@ def save_rule(user, care_id, revision, product_id, mode, rate, bands):
     require_treat(user)
     VetSettings.objects.select_for_update().get(pk=1)
     care = VeterinaryCare.objects.get(pk=care_id)
+    if is_shearing(care):
+        raise ValidationError("Стрижка не требует расхода ветпрепаратов. Норма не нужна.")
     rule = VetNorm.objects.filter(care=care).first()
     if str(rule.revision if rule else 0) != str(revision):
         raise ValidationError("Норма уже изменена. Обновите страницу.")
@@ -60,6 +67,8 @@ def rule_data(rule):
 
 
 def estimate(veterinary):
+    if is_shearing(veterinary.veterinary_care):
+        raise ValidationError("Стрижка не требует расхода ветпрепаратов.")
     rule = VetNorm.objects.select_related("product").filter(care_id=veterinary.veterinary_care_id).first()
     if rule is None:
         raise ValidationError("Для этой обработки ещё не задан препарат и норма расхода.")

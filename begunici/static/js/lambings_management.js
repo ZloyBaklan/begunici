@@ -7,6 +7,7 @@ let selectedFather = null;
 let fatherDropdownOptions = new Map();
 let kinshipFatherDropdownOptions = new Map();
 let activeGroupsById = new Map();
+let defaultTrackedVeterinaryCareId = null;
 let selectedGroupAddMothers = new Set();
 let selectedGroupAddMothersData = new Map();
 let currentPage = 1;
@@ -359,6 +360,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadFatherSelectOptions();
     loadKinshipFatherSelectOptions();
     loadGroupPlaceOptions();
+    loadGroupTrackedVeterinaryCareOptions();
 
     const fatherSelect = document.getElementById('father-select');
     if (fatherSelect) {
@@ -500,10 +502,10 @@ async function loadActiveGroups() {
         });
 
         if (groups.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Нет активных групп</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Нет активных групп</td></tr>';
         } else {
             groups.forEach(group => {
-                tableBody.appendChild(createGroupRow(group));
+                createGroupRows(group).forEach(row => tableBody.appendChild(row));
             });
         }
 
@@ -511,29 +513,26 @@ async function loadActiveGroups() {
     } catch (error) {
         console.error('Ошибка загрузки групп:', error);
         document.getElementById('active-groups-table').innerHTML =
-            '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки групп: ' + error.message + '</td></tr>';
+            '<tr><td colspan="6" class="text-center text-danger">Ошибка загрузки групп: ' + error.message + '</td></tr>';
     }
 }
 
-function createGroupRow(group) {
-    const row = document.createElement('tr');
+function createGroupRows(group) {
     const mothers = Array.isArray(group.mothers) ? group.mothers : [];
-    const motherLinks = mothers.length
-        ? mothers.map(mother => createAnimalLink(mother.tag_number, mother.animal_type, true)).join('<br>')
-        : '-';
+    const treatment = group.tracked_veterinary;
     const fatherTag = group.father_tag || 'Неизвестно';
     const fatherType = group.father_type || 'Неизвестно';
     const fatherDisplayName = group.father_display_name || fatherTag;
     const fatherLink = createAnimalLink(fatherTag, fatherType, true, fatherDisplayName);
     const placementDate = group.placement_date ? new Date(group.placement_date).toLocaleDateString('ru-RU') : '-';
     const note = group.note || '';
-
-    row.innerHTML = `
-        <td>${motherLinks}</td>
-        <td>${fatherLink}</td>
-        <td>${placementDate}</td>
-        <td>${note}</td>
-        <td>
+    const entries = mothers.length ? mothers : [null];
+    const sharedFather = `
+        <td rowspan="${entries.length}" class="align-top">${fatherLink}</td>
+        <td rowspan="${entries.length}" class="align-top">${placementDate}</td>`;
+    const sharedActions = `
+        <td rowspan="${entries.length}" class="align-top">${note}</td>
+        <td rowspan="${entries.length}" class="align-top">
             <div class="d-flex flex-column gap-1">
                 <button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
                     Снять барана
@@ -547,8 +546,23 @@ function createGroupRow(group) {
             </div>
         </td>
     `;
-
-    return row;
+    return entries.map((mother, index) => {
+        const row = document.createElement('tr');
+        const done = mother?.tracked_veterinary_done === true;
+        const tracked = Boolean(mother && treatment?.care_id);
+        if (tracked && !done) row.classList.add('lambing-treatment-missing');
+        const motherLink = mother ? createAnimalLink(mother.tag_number, mother.animal_type, true) : '-';
+        const treatmentDisplay = tracked
+            ? `${escapeHtml(treatment.name)}: ${done ? 'Да' : 'Нет'}`
+            : '-';
+        row.innerHTML = `
+            <td>${motherLink}</td>
+            ${index === 0 ? sharedFather : ''}
+            <td>${treatmentDisplay}</td>
+            ${index === 0 ? sharedActions : ''}
+        `;
+        return row;
+    });
 }
 
 function updateGroupsPagination(response) {
@@ -1012,7 +1026,7 @@ async function loadActiveLambings() {
         tableBody.innerHTML = '';
         
         if (lambings.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Нет активных случек</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Нет активных случек</td></tr>';
         } else {
             lambings.forEach(lambing => {
                 const row = createLambingRow(lambing);
@@ -1026,13 +1040,17 @@ async function loadActiveLambings() {
     } catch (error) {
         console.error('Ошибка загрузки активных случек:', error);
         document.getElementById('active-lambings-table').innerHTML = 
-            '<tr><td colspan="6" class="text-center text-danger">Ошибка загрузки данных: ' + error.message + '</td></tr>';
+            '<tr><td colspan="7" class="text-center text-danger">Ошибка загрузки данных: ' + error.message + '</td></tr>';
     }
 }
 
 // Создание строки таблицы для окота
 function createLambingRow(lambing) {
     const row = document.createElement('tr');
+    const treatment = lambing.tracked_veterinary;
+    if (treatment?.care_id && treatment.done === false) {
+        row.classList.add('lambing-treatment-missing');
+    }
     
     // Получаем информацию о матери и отце из сериализатора
     const motherTag = lambing.mother_tag || 'Неизвестно';
@@ -1056,6 +1074,7 @@ function createLambingRow(lambing) {
         <td>${fatherLink}</td>
         <td>${startDate}</td>
         <td>${plannedDate}</td>
+        <td>${escapeHtml(treatment?.display || '-')}</td>
         <td>${note}</td>
         <td>
             <button class="btn btn-success btn-sm" onclick="showCompleteLambingModal(${lambing.id})">
@@ -1614,6 +1633,7 @@ async function createMultipleLambings() {
     const note = document.getElementById('group-lambing-note').value.trim();
     const placeSelect = document.getElementById('group-place-select');
     const placeId = placeSelect ? placeSelect.value : '';
+    const trackedCareId = document.getElementById('group-tracked-veterinary-care')?.value;
     
     // Валидация
     if (!placementDate) {
@@ -1630,12 +1650,17 @@ async function createMultipleLambings() {
         alert('Выберите отца');
         return;
     }
+    if (!trackedCareId) {
+        alert('Выберите ветобработку для отслеживания');
+        return;
+    }
     
     try {
         const data = {
             placement_date: placementDate,
             father_tag_number: selectedFather.tag_number,
             mother_tag_numbers: window.selectedMothersForLambing.map(m => m.tag_number),
+            tracked_veterinary_care_id: Number(trackedCareId),
             note: note || ''
         };
         if (placeId) {
@@ -1672,6 +1697,8 @@ function resetForm() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('lambing-start-date').value = today;
     document.getElementById('group-lambing-note').value = '';
+    const trackedCareSelect = document.getElementById('group-tracked-veterinary-care');
+    if (trackedCareSelect) trackedCareSelect.value = String(defaultTrackedVeterinaryCareId || '');
     
     selectedMothers.clear();
     selectedMothersData.clear();
@@ -1888,8 +1915,28 @@ async function getLambVeterinaryCareOptions() {
     if (lambVeterinaryCareOptions === null) {
         const response = await apiRequest('/animals/api/vet-filter-options/');
         lambVeterinaryCareOptions = response.care_options || [];
+        defaultTrackedVeterinaryCareId = response.default_lambing_tracking_care_id || null;
     }
     return lambVeterinaryCareOptions;
+}
+
+async function loadGroupTrackedVeterinaryCareOptions() {
+    const select = document.getElementById('group-tracked-veterinary-care');
+    if (!select) return;
+    try {
+        const options = await getLambVeterinaryCareOptions();
+        select.innerHTML = '<option value="">Выберите ветобработку</option>';
+        options.forEach(care => {
+            const option = document.createElement('option');
+            option.value = care.id;
+            option.textContent = care.label;
+            select.appendChild(option);
+        });
+        select.value = String(defaultTrackedVeterinaryCareId || '');
+    } catch (error) {
+        select.innerHTML = '<option value="">Не удалось загрузить ветобработки</option>';
+        console.error('Ошибка загрузки отслеживаемых ветобработок:', error);
+    }
 }
 
 async function loadVeterinaryCaresForLamb(formElement) {

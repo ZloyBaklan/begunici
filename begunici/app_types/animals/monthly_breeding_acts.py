@@ -173,6 +173,10 @@ def generate_monthly_breeding_act_workbook(year):
 
     sheet["B1"] = year
     sheet["B11"] = year
+    from .act_numbering import report_number
+    sheet.merge_cells("A8:N8")
+    sheet["A8"] = f"Акт осеменения и окотов № {report_number('breeding', str(year))}"
+    sheet.row_dimensions[8].height = 24
     fill_monthly_block(sheet, INSEMINATION_ROWS, counts["insemination"])
     fill_monthly_block(sheet, LAMBING_ROWS, counts["lambing"])
 

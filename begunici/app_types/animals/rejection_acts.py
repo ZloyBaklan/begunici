@@ -29,7 +29,7 @@ def get_template_path():
     return Path(settings.BASE_DIR) / "begunici/app_types/animals/excel_templates/406-apk.xlsx"
 
 
-def build_rejection_act_groups():
+def build_rejection_act_groups(numbered=True):
     events = (
         AnimalRejectionHistory.objects.filter(new_is_reject=True, change_date__isnull=False)
         .select_related("tag")
@@ -41,7 +41,7 @@ def build_rejection_act_groups():
         act_date = timezone.localdate(event.change_date)
         days[act_date][event.tag_id] = event
 
-    return [
+    groups = [
         {
             "act_number": number,
             "act_date": act_date,
@@ -49,6 +49,10 @@ def build_rejection_act_groups():
         }
         for number, act_date in enumerate(sorted(days), start=1)
     ]
+    if numbered:
+        from .act_numbering import number_groups
+        number_groups("rejection", groups)
+    return groups
 
 
 def get_rejection_acts_page(page_number=1, page_size=10, act_date=None, month=None, year=None):
@@ -75,7 +79,8 @@ def get_rejection_acts_page(page_number=1, page_size=10, act_date=None, month=No
         ).count(),
         "results": [
             {
-                "act_number": group["act_number"],
+                "act_number": group.get("display_number", group["act_number"]),
+                "act_id": group["act_number"],
                 "act_date": group["act_date"].isoformat(),
                 "animal_count": len(group["events"]),
             }
@@ -162,7 +167,7 @@ def generate_rejection_act_workbook(group):
             copy_row_style(sheet, TOTAL_ROW - 1, row)
             copy_data_row_merges(sheet, TOTAL_ROW - 1, row)
 
-    sheet["CG1"] = group["act_number"]
+    sheet["CG1"] = group.get("display_number", group["act_number"])
     sheet["CG1"].alignment = Alignment(horizontal="center", vertical="center")
     for cell, value in zip(("BW7", "CC7", "CI7"), (
         f"{group['act_date'].day:02d}", f"{group['act_date'].month:02d}", str(group["act_date"].year),
@@ -208,6 +213,6 @@ def rejection_act_response(act_number):
         return None
     content = generate_rejection_act_workbook(group)
     response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    filename = f"culling_406_apk_{act_number}_{group['act_date'].isoformat()}.xlsx"
+    filename = f"culling_406_apk_{group.get('display_number', act_number)}_{group['act_date'].isoformat()}.xlsx"
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response

@@ -57,7 +57,7 @@ function displayProgenyActs(data) {
             <td>${escapeHtml(act.child_count ?? "-")}</td>
             <td>
                 <button class="btn btn-outline-primary btn-sm"
-                        onclick="downloadProgenyActFromActs('${escapeHtml(act.act_number)}')">
+                        onclick="downloadProgenyActFromActs('${escapeHtml(act.act_id ?? act.act_number)}')">
                     Скачать акт
                 </button>
             </td>

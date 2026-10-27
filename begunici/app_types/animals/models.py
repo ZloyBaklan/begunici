@@ -1,17 +1,19 @@
 ﻿from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.auth.models import User
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
-from .age_utils import calculate_age_months, format_age, get_age_delta
+from .age_utils import as_local_date, calculate_age_months, format_age, get_age_delta
+from .dorper import DorperCalculator, animal_dorper_record, recalculate_dorper_values
 from .models_user_log import UserActionLog
 from begunici.app_types.veterinary.vet_models import (
     Tag,
     Status,
     Veterinary,
+    VeterinaryCare,
     Place,
     WeightRecord,
     PlaceMovement,
@@ -24,6 +26,29 @@ ARCHIVE_STATUS_NAMES = {
     "Реализация в живом весе",
     "Убой на мясо",
 }
+
+
+class ActNumber(models.Model):
+    source_type = models.CharField(max_length=30)
+    source_key = models.CharField(max_length=200)
+    act_date = models.DateField()
+    period = models.CharField(max_length=6)
+    sequence = models.PositiveIntegerField()
+    legacy_numbers = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["source_type", "source_key"], name="act_number_source_unique"),
+            models.UniqueConstraint(fields=["source_type", "period", "sequence"], name="act_number_type_month_unique"),
+        ]
+        ordering = ["act_date", "sequence"]
+
+    @property
+    def number(self):
+        return f"{self.sequence}_{self.act_date:%m%y}"
+
+    def __str__(self):
+        return self.number
 
 ARCHIVE_DEATH_REASONS = (
     "Болезнь нервной системы",
@@ -109,6 +134,12 @@ class AnimalBase(models.Model):
         default=False,
         verbose_name="Дорперность задана вручную",
         help_text="Указывает, была ли дорперность задана вручную или рассчитана автоматически"
+    )
+    dorper_uses_default = models.BooleanField(
+        default=False,
+        editable=False,
+        verbose_name="Кровность рассчитана с допущением",
+        help_text="В расчёте животного или его предков неизвестная кровность принята за 50%",
     )
     is_reject = models.BooleanField(
         default=False,
@@ -309,56 +340,45 @@ class AnimalBase(models.Model):
                 raise ValidationError({'father': 'Номер бирки отца не должен содержать пробелы'})
 
     def calculate_dorper_percentage(self):
-        """
-        Автоматический расчет дорперности на основе родителей.
-        Рассчитывается только если не задана вручную и у обоих родителей есть дорперность.
-        """
-        if self.is_manual_dorper or not hasattr(self, 'father') or not hasattr(self, 'mother'):
+        """Average parents, substituting 50% for unknown ancestry; keep manual values."""
+        if self.is_manual_dorper:
+            self.dorper_uses_default = False
             return
-            
-        try:
-            father_dorper = None
-            mother_dorper = None
-            
-            # Получаем дорперность отца
-            if self.father:
-                father_tag = Tag.objects.filter(tag_number=self.father).first()
-                if father_tag:
-                    # Ищем животное с этой биркой среди всех типов
-                    for model in [Maker, Ram, Ewe, Sheep]:
-                        try:
-                            father_animal = model.objects.get(tag=father_tag)
-                            if father_animal.dorper_percentage is not None:
-                                father_dorper = father_animal.dorper_percentage
-                            break
-                        except model.DoesNotExist:
-                            continue
-            
-            # Получаем дорперность матери
-            if self.mother:
-                mother_tag = Tag.objects.filter(tag_number=self.mother).first()
-                if mother_tag:
-                    # Ищем животное с этой биркой среди всех типов
-                    for model in [Maker, Ram, Ewe, Sheep]:
-                        try:
-                            mother_animal = model.objects.get(tag=mother_tag)
-                            if mother_animal.dorper_percentage is not None:
-                                mother_dorper = mother_animal.dorper_percentage
-                            break
-                        except model.DoesNotExist:
-                            continue
-            
-            # Рассчитываем среднее арифметическое, если у обоих родителей есть дорперность
-            if father_dorper is not None and mother_dorper is not None:
-                self.dorper_percentage = (father_dorper + mother_dorper) / 2
-            else:
-                # Если у одного из родителей нет дорперности, не рассчитываем
-                self.dorper_percentage = None
-                
-        except Exception as e:
-            # В случае ошибки не устанавливаем дорперность
-            print(f"Ошибка при расчете дорперности для {self.tag.tag_number if self.tag else 'животного'}: {e}")
-            self.dorper_percentage = None
+
+        alias = self._state.db or "default"
+        root = animal_dorper_record(self)
+        number = self.tag.tag_number
+        parent_cache = {number: root}
+        models_by_type = {model.__name__: model for model in (Maker, Ram, Ewe, Sheep)}
+
+        def find_parent(parent_number):
+            parent_number = str(parent_number or "").strip()
+            if not parent_number:
+                return None
+            if parent_number in parent_cache:
+                return parent_cache[parent_number]
+            tags = list(Tag.objects.using(alias).filter(tag_number__iexact=parent_number))
+            tag = next((tag for tag in tags if tag.tag_number == parent_number), None)
+            if tag is None and len(tags) == 1:
+                tag = tags[0]
+            parent = None
+            if tag is not None and tag.pk == self.tag_id:
+                parent = root
+            elif tag is not None:
+                preferred = models_by_type.get(tag.animal_type)
+                candidates = ([preferred] if preferred else []) + [
+                    model for model in models_by_type.values() if model != preferred
+                ]
+                for model in candidates:
+                    parent = model.objects.using(alias).filter(tag_id=tag.pk).values(
+                        "tag_id", "dorper_percentage", "is_manual_dorper", "mother", "father",
+                    ).first()
+                    if parent is not None:
+                        break
+            parent_cache[parent_number] = parent
+            return parent
+
+        self.dorper_percentage, self.dorper_uses_default = DorperCalculator(find_parent).resolve(root)
 
     def save(self, *args, **kwargs):
         """
@@ -373,7 +393,7 @@ class AnimalBase(models.Model):
         old_place = None
         old_status = None
         old_note = None
-        old_dorper_percentage = None
+        old_dorper_state = None
         old_culling_state = None
         
         # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
@@ -387,8 +407,11 @@ class AnimalBase(models.Model):
             self.is_archived = False
         
         # 🔹 Автоматический расчет дорперности (если не задана вручную)
-        if not self.is_manual_dorper:
-            self.calculate_dorper_percentage()
+        self.calculate_dorper_percentage()
+        if kwargs.get("update_fields"):
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                "dorper_percentage", "dorper_uses_default",
+            }
 
         # 🔹 Автоматическое заполнение `animal_type` у `Tag`
         if self.tag:
@@ -402,7 +425,10 @@ class AnimalBase(models.Model):
                 old_place = old_instance.place
                 old_status = old_instance.animal_status
                 old_note = old_instance.note
-                old_dorper_percentage = old_instance.dorper_percentage
+                old_dorper_state = (
+                    old_instance.dorper_percentage, old_instance.dorper_uses_default,
+                    old_instance.is_manual_dorper,
+                )
                 old_culling_state = (old_instance.is_reject, old_instance.is_archived)
             except self.__class__.DoesNotExist:
                 pass  # old_place и old_status останутся None
@@ -432,51 +458,20 @@ class AnimalBase(models.Model):
 
         if (
             cascade_dorper
-            and not is_new
             and self.tag
-            and old_dorper_percentage != self.dorper_percentage
+            and (is_new or old_dorper_state != (
+                self.dorper_percentage, self.dorper_uses_default, self.is_manual_dorper,
+            ))
         ):
-            recalculate_descendant_dorper_percentages(self.tag.tag_number)
+            recalculate_descendant_dorper_percentages(
+                self.tag.tag_number, using=self._state.db or "default",
+            )
 
 
-def recalculate_descendant_dorper_percentages(parent_tag_number, visited=None):
-    parent_tag_number = str(parent_tag_number or "").strip()
-    if not parent_tag_number:
-        return 0
-
-    visited = visited or set()
-    parent_key = parent_tag_number.casefold()
-    if parent_key in visited:
-        return 0
-    visited.add(parent_key)
-
-    updated_count = 0
-    child_models = (Ram, Ewe, Sheep, Maker)
-
-    for model in child_models:
-        children = (
-            model.objects
-            .filter(Q(mother__iexact=parent_tag_number) | Q(father__iexact=parent_tag_number))
-            .select_related("tag", "animal_status", "place")
-        )
-        for child in children:
-            if child.is_manual_dorper:
-                continue
-
-            old_child_dorper = child.dorper_percentage
-            child.calculate_dorper_percentage()
-            if old_child_dorper == child.dorper_percentage:
-                continue
-
-            child.save(cascade_dorper=False)
-            updated_count += 1
-            if child.tag:
-                updated_count += recalculate_descendant_dorper_percentages(
-                    child.tag.tag_number,
-                    visited,
-                )
-
-    return updated_count
+def recalculate_descendant_dorper_percentages(parent_tag_number, *, using="default"):
+    return len(recalculate_dorper_values(
+        (Maker, Ram, Ewe, Sheep), using=using, parent_tag_number=parent_tag_number,
+    ))
 
 
 class ArchiveAct(models.Model):
@@ -790,6 +785,62 @@ class Maker(AnimalBase):
         return children
 
 
+def get_default_lambing_tracking_care():
+    for care in VeterinaryCare.objects.order_by("pk"):
+        medication = (care.medication or "").casefold()
+        if "пастанарм" in medication and "перв" in medication:
+            return care
+    return None
+
+
+def format_lambing_tracking_result(name, done):
+    return f"{name}: {'Да' if done else 'Нет'}" if name else "-"
+
+
+def build_lambing_tracking_data(objects):
+    """Read actual treatment history once for the whole list, using stable tag IDs."""
+    specifications = []
+    for obj in objects:
+        is_group = isinstance(obj, LambingGroup)
+        mothers = obj.get_mothers() if is_group else [obj.get_mother()]
+        mothers = [mother for mother in mothers if mother is not None]
+        start = (obj.placement_date if is_group else obj.tracked_veterinary_from_date)
+        if not start and not is_group:
+            start = obj.source_group.placement_date if obj.source_group_id else obj.start_date
+        care = obj.tracked_veterinary_care if obj.tracked_veterinary_care_id else None
+        specifications.append((obj, mothers, as_local_date(start), care, is_group))
+
+    tag_ids = {mother.tag_id for _, mothers, _, care, _ in specifications if care for mother in mothers}
+    care_ids = {care.pk for _, _, _, care, _ in specifications if care}
+    starts = [start for _, _, start, care, _ in specifications if care and start]
+    latest_dates = {}
+    if tag_ids and care_ids and starts:
+        records = (Veterinary.objects.filter(
+            tag_id__in=tag_ids, veterinary_care_id__in=care_ids,
+            date_of_care__date__gte=min(starts), date_of_care__date__lte=timezone.localdate(),
+        ).values("tag_id", "veterinary_care_id").annotate(latest=Max("date_of_care")))
+        latest_dates = {(record["tag_id"], record["veterinary_care_id"]): as_local_date(record["latest"])
+                        for record in records}
+
+    result = {}
+    for obj, mothers, start, care, is_group in specifications:
+        name = ((care.medication or care.care_name or care.care_type).strip() if care else "")
+        mother_results = {}
+        for mother in mothers:
+            treated = latest_dates.get((mother.tag_id, care.pk)) if care else None
+            mother_results[mother.tag_id] = bool(treated and start and treated >= start)
+        total = len(mothers) if is_group else 1
+        done_count = sum(mother_results.values())
+        done = bool(total and done_count == total) if care else None
+        result[id(obj)] = {
+            "care_id": care.pk if care else None, "name": name,
+            "done": done, "done_count": done_count, "total_count": total,
+            "display": format_lambing_tracking_result(name, done),
+            "mother_results": mother_results,
+        }
+    return result
+
+
 class LambingGroup(models.Model):
     """Группа матерей, к которым поставлен один баран до снятия из группы."""
 
@@ -832,6 +883,10 @@ class LambingGroup(models.Model):
         blank=True,
         db_index=True,
     )
+    tracked_veterinary_care = models.ForeignKey(
+        "veterinary.VeterinaryCare", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="tracked_lambing_groups", verbose_name="Отслеживаемая ветобработка",
+    )
     note = models.TextField(verbose_name="Примечание", null=True, blank=True)
     is_active = models.BooleanField(
         default=True,
@@ -851,6 +906,11 @@ class LambingGroup(models.Model):
     def __str__(self):
         father_tag = self.get_father_tag() or "без отца"
         return f"Группа {father_tag} от {self.placement_date}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.tracked_veterinary_care_id is None:
+            self.tracked_veterinary_care = get_default_lambing_tracking_care()
+        super().save(*args, **kwargs)
 
     def get_father(self):
         return self.maker or self.ram
@@ -931,6 +991,13 @@ class Lambing(models.Model):
         null=True,
         blank=True,
         related_name="lambings",
+    )
+    tracked_veterinary_care = models.ForeignKey(
+        "veterinary.VeterinaryCare", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="tracked_lambings", verbose_name="Отслеживаемая ветобработка",
+    )
+    tracked_veterinary_from_date = models.DateField(
+        null=True, blank=True, verbose_name="Дата начала отслеживания ветобработки",
     )
     mother_category_at_start = models.CharField(
         max_length=10,
@@ -1125,6 +1192,14 @@ class Lambing(models.Model):
         Переопределение метода save для автоматического изменения статуса матери
         """
         is_new = self.pk is None
+        if is_new and self.is_active:
+            group = self.source_group if self.source_group_id else None
+            if self.tracked_veterinary_care_id is None:
+                self.tracked_veterinary_care = (
+                    group.tracked_veterinary_care if group else get_default_lambing_tracking_care()
+                )
+            if self.tracked_veterinary_from_date is None:
+                self.tracked_veterinary_from_date = as_local_date(group.placement_date if group else self.start_date)
         was_active = False
         if not is_new:
             was_active = Lambing.objects.filter(pk=self.pk, is_active=True).exists()
@@ -1355,6 +1430,7 @@ class Ram(AnimalBase):
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
+                dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
                 needs_retagging=self.needs_retagging,
@@ -1424,6 +1500,7 @@ class Ewe(AnimalBase):
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
                 is_manual_dorper=self.is_manual_dorper,
+                dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
                 needs_retagging=self.needs_retagging,

@@ -441,7 +441,12 @@ def fill_footer_date(sheet, value):
 
 
 def fill_livestock_movement_sheet(sheet, group):
+    from .act_numbering import report_number
     counts = group["counts"]
+    sheet.unmerge_cells("S5:U5")
+    sheet.merge_cells("S5:AG5")
+    number = report_number("sp51", f"{group['year']}-{group['month']}", group["act_date"])
+    sheet["S5"] = f"ОТЧЕТ № {number}"
 
     sheet["S7"] = MONTH_NAMES.get(group["month"], str(group["month"]))
     sheet["W7"] = str(group["year"])[-2:]

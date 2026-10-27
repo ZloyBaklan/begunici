@@ -77,6 +77,7 @@ def prepare_receipt(user, tag_ids, *, kind, document_id=None, expected_revision=
                 "weight": str(snapshot["carcass_weight"]), "rejected": False, "reason": "",
             })
     document.state = "ready" if kind == "sp54" else "draft"
+    document.number = document.act_number
     original = bridges.original_sp54(bridges.source_animal(sources[0]["tag_id"]), user) if kind == "sp54" else None
     add_version(document, user, content=original, reason="Исходный акт" if kind == "sp54" else "Подготовлен СП-55")
     return document
@@ -174,7 +175,7 @@ def save_receipt(user, document_id, *, payload, expected_revision, number="", up
     assert_editable(document)
     assert_revision(document, expected_revision)
     document.payload = normalize_receipt_payload(document, payload, complete=submit)
-    document.number = str(number).strip()[:100]
+    document.number = document.act_number
     if submit and document.kind == "sp55" and upload is None:
         raise ValidationError("Для передачи СП-55 на проверку приложите заполненный акт ветврача.")
     if document.kind == "sp54" and upload is None:
