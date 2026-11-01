@@ -190,6 +190,7 @@ async function apiRequest(url, method, body) {
         console.log(`Ответ от сервера [${response.status} ${response.statusText}]:`, responseData);
 
         if (!response.ok) {
+            window.handleClinicalTransition?.(responseData);
             console.error(`Ошибка API [${response.status}]:`, responseData);
             const error = new Error(getApiErrorMessage(responseData));
             error.data = responseData;
@@ -466,6 +467,8 @@ async function loadAnimalDetails(animalType, tagNumber) {
             updateRejectionReasonField();
         }
 
+        const treatmentField = document.getElementById('is_in_treatment');
+        if (treatmentField) treatmentField.checked = Boolean(animal.is_in_treatment);
         const forSaleField = document.getElementById('is_for_sale');
         if (forSaleField) {
             forSaleField.checked = Boolean(animal.is_for_sale);
@@ -772,6 +775,9 @@ async function saveAnimalDetails() {
         is_for_sale: Boolean(document.getElementById('is_for_sale')?.checked),
         needs_retagging: Boolean(document.getElementById('needs_retagging')?.checked),
     };
+
+    const treatmentField = document.getElementById('is_in_treatment');
+    if (treatmentField && !treatmentField.disabled) data.is_in_treatment = treatmentField.checked;
 
     if (animalStatusValue) {
         data.animal_status_id = parseInt(animalStatusValue);

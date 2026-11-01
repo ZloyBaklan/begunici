@@ -153,6 +153,8 @@ class AnimalBase(models.Model):
         help_text="Отдельная отметка назначения животного, не статус.",
         db_index=True,
     )
+    # CLINICAL BRIDGE: назначение независимо от статуса и других назначений.
+    is_in_treatment = models.BooleanField(default=False, verbose_name="Лечение", db_index=True)
     needs_retagging = models.BooleanField(
         default=False,
         verbose_name="Необходимо перебиркование",
@@ -229,6 +231,8 @@ class AnimalBase(models.Model):
             labels.append("Брак")
         if self.is_for_sale:
             labels.append("К продаже")
+        if self.is_in_treatment:
+            labels.append("Лечение")
         return ", ".join(labels) if labels else empty
 
     def get_age_display(self, reference_date=None):
@@ -380,6 +384,7 @@ class AnimalBase(models.Model):
 
         self.dorper_percentage, self.dorper_uses_default = DorperCalculator(find_parent).resolve(root)
 
+    @transaction.atomic  # CLINICAL BRIDGE: назначение и поступление сохраняются вместе.
     def save(self, *args, **kwargs):
         """
         Переопределяем сохранение, учитывая:
@@ -1433,6 +1438,7 @@ class Ram(AnimalBase):
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
+                is_in_treatment=self.is_in_treatment,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
@@ -1503,6 +1509,7 @@ class Ewe(AnimalBase):
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
+                is_in_treatment=self.is_in_treatment,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,

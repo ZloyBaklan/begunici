@@ -1,0 +1,11 @@
+{% extends 'clinical/base.html' %}{% block clinical_content %}
+<div class="clinical-narrow"><h1>Добавить лечебное мероприятие</h1><p>Выбрано животных: <strong>{{ episodes|length }}</strong>. {% for episode in episodes %}<a href="{% url 'clinical:detail' episode.pk %}">{{ episode.tag_number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+{% if clinical_can_manage %}<form data-clinical-form="care" data-url="{% url 'clinical:command' 'care' %}" class="card card-body">
+{% csrf_token %}<input type="hidden" name="token" value="{{ form_token }}">
+{% for episode in episodes %}<input type="hidden" data-episode-id="{{ episode.pk }}" data-revision="{{ episode.revision }}">{% endfor %}
+<label class="form-label">Дата мероприятия<input class="form-control" type="date" name="date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" required></label>
+<label class="form-label">Исследования, клинические признаки, действия и рекомендации<textarea class="form-control" name="note" rows="5" maxlength="12000" required></textarea></label>
+<label class="form-label">Расход препаратов<select class="form-select" name="mode"><option value="head">На каждую голову</option><option value="group">На всю выбранную группу</option></select></label>
+<div class="alert alert-light border" data-group-help>При расходе на группу количество распределяется между выбранными животными с точностью 0,001; общий расход сохраняется.</div>
+{% include 'clinical/lines.html' %}<p class="mt-2" data-clinical-total></p><button class="btn btn-success align-self-start mt-3">Сохранить мероприятие</button></form>{% else %}<div class="alert alert-info">Добавлять мероприятия могут vet, zootech и admin.</div>{% endif %}
+</div>{{ products|json_script:'clinical-products' }}{% endblock %}

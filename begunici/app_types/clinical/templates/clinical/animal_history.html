@@ -1,0 +1,4 @@
+{% if clinical_visible %}<section class="card mb-4"><div class="card-header"><h5 class="mb-0">История болезни</h5></div><div class="card-body">
+{% for episode in episodes %}<div class="border-bottom pb-2 mb-2"><a href="{% url 'clinical:detail' episode.pk %}">{{ episode.admitted_on|date:'d.m.Y' }} · {{ episode.diagnosis|default:'Диагноз уточняется' }}</a>
+{% if episode.closed_on %}<p class="mb-0 text-muted">{{ episode.outcome }} · Выписка {{ episode.closed_on|date:'d.m.Y' }}{% if episode.stock_pending %} · Расход требует сверки{% endif %}</p>{% else %}<span class="badge bg-warning text-dark">На лечении</span>{% endif %}</div>{% empty %}<p class="text-muted mb-0">Заболевания не зарегистрированы.</p>{% endfor %}
+</div></section>{% endif %}

@@ -530,6 +530,14 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return rshn_tag
 
     def validate(self, attrs):
+        # CLINICAL BRIDGE: раннее предупреждение перед снятием назначения/архивацией.
+        from begunici.app_types.clinical.bridge import validate_transition
+        from begunici.app_types.clinical.permissions import require_admit
+        request = self.context.get("request")
+        if self.instance is not None:
+            validate_transition(self.instance, attrs, request.user if request else None)
+        elif attrs.get("is_in_treatment"):
+            require_admit(request.user if request else None)
         if attrs.get("is_reject") and not (self.instance and self.instance.is_reject):
             if not attrs.get("rejection_reason", "").strip():
                 raise serializers.ValidationError({"rejection_reason": "Укажите причину выбраковки."})
@@ -730,9 +738,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     def update(self, instance, validated_data):
         # Use the same tag-first lock order as retagging and type conversions.
         Tag.objects.select_for_update().get(pk=instance.tag_id)
-        instance.is_reject = type(instance).objects.select_for_update().values_list(
-            "is_reject", flat=True,
-        ).get(pk=instance.pk)
+        current_flags = type(instance).objects.select_for_update().values("is_reject", "is_in_treatment").get(pk=instance.pk)
+        instance.is_reject = current_flags["is_reject"]
+        instance.is_in_treatment = current_flags["is_in_treatment"]
+        # CLINICAL BRIDGE: повторная проверка после блокировки записи.
+        from begunici.app_types.clinical.bridge import validate_transition
+        request = self.context.get("request")
+        validate_transition(instance, validated_data, request.user if request else None)
         rejection_reason = validated_data.pop("rejection_reason", "")
         new_rejection = validated_data.get("is_reject", instance.is_reject) and not instance.is_reject
         if new_rejection and not rejection_reason.strip():
@@ -924,6 +936,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'carcass_weight': 'Вес туши (кг)',
             'is_reject': 'Назначение: Брак',
             'is_for_sale': 'Назначение: К продаже',
+            'is_in_treatment': 'Назначение: Лечение',
             'needs_retagging': 'Необходимо перебиркование',
         }
         

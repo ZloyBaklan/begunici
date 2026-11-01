@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static clinical_tags %}
 
 {% block content %}
 <div id="analytics-detail" data-tag-number="{{ animal.tag.tag_number }}" data-animal-type="{{ animal_type }}">
@@ -10,6 +10,7 @@
             </div>
         </div>
 
+        {% clinical_history animal %}
         <!-- График веса -->
         <div class="row">
             <div class="col-12 mb-4">

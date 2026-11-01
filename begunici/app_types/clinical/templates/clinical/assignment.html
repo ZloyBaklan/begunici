@@ -1,0 +1,5 @@
+{% if clinical_visible %}<div class="form-check mt-2">
+<input type="checkbox" id="is_in_treatment" class="form-check-input" {% if animal.is_in_treatment %}checked{% endif %} {% if episode %}data-finish-url="{% url 'clinical:detail' episode.pk %}?finish=1"{% endif %} {% if not clinical_can_admit or animal.is_archived %}disabled{% endif %}>
+<label class="form-check-label" for="is_in_treatment">Назначение: Лечение</label>
+{% if episode %}<a class="ms-2" href="{% url 'clinical:detail' episode.pk %}">Открыть лечение</a>{% endif %}
+</div>{% endif %}

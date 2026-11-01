@@ -43,7 +43,7 @@ def product_restrictions(product):
             if any(any(row.get("product") == product.pk for row in (lines or [])) for lines in collection.iterator()):
                 used = True
                 break
-    return {"unit_locked": used or product.norms.exists() or product.vettreatment_set.exists(), "package_locked": used}
+    return {"unit_locked": used or product.norms.exists() or product.vettreatment_set.exists() or product.clinical_doses.exists(), "package_locked": used}
 
 
 def product_name_exists(name, exclude_pk=None):
@@ -257,6 +257,8 @@ def create_document(user, kind, document_date, number_, lines, note, request_tok
 
 def checked_document(pk, revision):
     document = VetDocument.objects.select_for_update().get(pk=pk)
+    if hasattr(document, "clinical_episode"):
+        raise ValidationError("Итоговый расход лечения подтверждается в истории болезни.")
     if str(document.revision) != str(revision):
         raise ValidationError("Документ изменился. Обновите страницу и проверьте новую версию.")
     return document
@@ -337,6 +339,8 @@ def cancel_draft(user, pk, revision):
 def reverse_document(user, pk, reason):
     lock(user)
     document = VetDocument.objects.select_for_update().get(pk=pk)
+    if hasattr(document, "clinical_episode"):
+        raise ValidationError("Расход завершённого лечения сохраняется в истории болезни.")
     reason = text(reason, "Причина сторно", 2000)
     if document.state != "posted" or document.kind in {"reversal", "treatment"}:
         raise ValidationError("Сторно доступно для подтверждённого прихода или расхода.")

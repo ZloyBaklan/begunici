@@ -1,9 +1,10 @@
-{% extends 'base.html' %}{% load static inventory_tags %}
+{% extends 'base.html' %}{% load static inventory_tags clinical_tags %}
 {% block title %}Ветпрепараты · Бегуницы{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=7">
 <link rel="stylesheet" href="{% static 'vet_inventory/vet.css' %}?v=1">
 <div class="inventory container mt-4 vet-stock">
+    {% clinical_navigation 'stock' %}
     {% warehouse_navigation 'vet' %}
     <div class="card mb-4 iv-card-vet"><div class="card-header">Складской учёт · Ветпрепараты</div><nav class="card-body vet-actions" aria-label="Разделы склада">
         <a class="btn btn-outline-secondary" href="{% url 'vet_inventory:home' %}">Остатки</a>

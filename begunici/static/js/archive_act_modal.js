@@ -617,6 +617,7 @@
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
+                window.handleClinicalTransition?.(errorData);
                 throw new Error(getApiErrorMessage(errorData, "Ошибка предпросмотра акта"));
             }
 

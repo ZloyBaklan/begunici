@@ -29,6 +29,8 @@ from begunici.app_types.animals.views_scanner import (
 )
 
 urlpatterns = [
+    # CLINICAL BRIDGE: самостоятельный журнал, до общего animals router.
+    path("animals/treatment/", include("begunici.app_types.clinical.urls")),
     # CATALOG BRIDGE: общие справочники, доступные из технической информации.
     path("catalog/", include("begunici.app_types.inventory.catalog_urls")),
     # FEED BRIDGE: приход и расход кормов не меняют учёт животных и продукции.

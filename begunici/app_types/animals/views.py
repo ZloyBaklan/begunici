@@ -330,6 +330,7 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "dorper_uses_default": source_animal.dorper_uses_default,
         "is_reject": source_animal.is_reject,
         "is_for_sale": source_animal.is_for_sale,
+        "is_in_treatment": source_animal.is_in_treatment,
         "needs_retagging": source_animal.needs_retagging,
         "is_archived": source_animal.is_archived,
         "carcass_weight": source_animal.carcass_weight,
@@ -5278,6 +5279,7 @@ class AnimalActionsViewSet(viewsets.ViewSet):
     permission_classes = [AllowAny]
 
     @action(detail=False, methods=["post"], url_path="bulk_archive")
+    @transaction.atomic  # CLINICAL BRIDGE: защита от одновременного поступления.
     def bulk_archive(self, request):
         if not can_archive_animals(request.user):
             return Response({'error': ANIMAL_ARCHIVE_DENIED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
@@ -5304,6 +5306,13 @@ class AnimalActionsViewSet(viewsets.ViewSet):
                 {"error": "Для архивирования можно выбрать только архивный статус."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # CLINICAL BRIDGE: bulk QuerySet.update bypasses model signals.
+        list(Tag.objects.select_for_update().filter(pk__in=animal_ids).order_by("pk"))
+        from begunici.app_types.clinical.models import Episode
+        treatment = Episode.objects.filter(tag_id__in=animal_ids, closed_on__isnull=True).first()
+        if treatment:
+            return Response({"treatment_required": "Сначала завершите лечение и подтвердите расход.", "treatment_url": f"/animals/treatment/{treatment.pk}/?finish=1"}, status=409)
 
         updated_count = 0
         animal_models = [Maker, Ram, Ewe, Sheep]
@@ -5898,6 +5907,7 @@ def common_animals_api(request):
                 "dorper_display": _format_dorper_display(animal),
                 "is_reject": animal.is_reject,
                 "is_for_sale": animal.is_for_sale,
+                "is_in_treatment": animal.is_in_treatment,
                 "last_weight": float(last_weight.weight) if last_weight else None,
                 "last_weight_date": last_weight.weight_date.strftime("%Y-%m-%d") if last_weight else None,
                 "last_vet_date": last_vet_care_date.isoformat() if last_vet_care_date else None,
@@ -6091,6 +6101,7 @@ def _build_young_stock_row(animal_type, type_label, animal):
         "mother_url": mother_url,
         "is_reject": animal.is_reject,
         "is_for_sale": animal.is_for_sale,
+        "is_in_treatment": animal.is_in_treatment,
     }
 
 
@@ -11247,6 +11258,12 @@ def archive_act_preview(request):
             {"error": "Некорректный список животных"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    # CLINICAL BRIDGE: предупредить до заполнения обычного акта архивации.
+    from begunici.app_types.clinical.models import Episode
+    treatment = Episode.objects.filter(closed_on__isnull=True, tag__tag_number__in=[str(item.get("tag_number") or item.get("tagNumber") or "") for item in selected_animals if isinstance(item, dict)]).first()
+    if treatment:
+        return Response({"treatment_required": "Сначала завершите лечение и подтвердите расход.", "treatment_url": f"/animals/treatment/{treatment.pk}/?finish=1"}, status=409)
 
     results = []
     errors = []
