@@ -12,3 +12,7 @@
 .clinical-product-option input{flex-shrink:0}
 .clinical-product-option:has(input:disabled){opacity:.65;cursor:default}
 @media(max-width:767px){.clinical-intake-form{grid-template-columns:1fr}.clinical-product-option{align-items:flex-start}}
+
+.clinical-finish-dialog{width:min(900px,calc(100% - 24px));max-height:90vh;padding:0;border:0;border-radius:8px;overflow:auto;box-shadow:0 12px 45px #0004}
+.clinical-finish-dialog::backdrop{background:#0006}
+.clinical-finish-dialog .card-body{padding:20px}

@@ -6,10 +6,18 @@
   };
   const products = read('clinical-products');
   const error = document.getElementById('clinical-error');
+  const finishDialog = document.getElementById('clinical-finish-dialog');
+  const finishError = finishDialog?.querySelector('[data-clinical-finish-error]');
+  function openFinish() {
+    if (finishDialog && !finishDialog.open) finishDialog.showModal();
+  }
+  document.querySelectorAll('[data-clinical-finish-open]').forEach(button => button.addEventListener('click', openFinish));
+  document.querySelectorAll('[data-clinical-finish-close]').forEach(button => button.addEventListener('click', () => finishDialog.close()));
   const showError = message => {
-    error.textContent = typeof message === 'string' ? message : JSON.stringify(message);
-    error.hidden = false;
-    error.scrollIntoView({behavior: 'smooth', block: 'center'});
+    const target = finishDialog?.open ? finishError : error;
+    target.textContent = typeof message === 'string' ? message : JSON.stringify(message);
+    target.hidden = false;
+    target.scrollIntoView({behavior: 'smooth', block: 'center'});
   };
   const selectedAnimals = [...document.querySelectorAll('.clinical-selected')];
   const selectAll = document.getElementById('clinical-select-all');
@@ -153,7 +161,7 @@
       data.confirm_group_move = !!form.elements.confirm_group_move?.checked;
       if (kind === 'close') data.archive = Object.fromEntries(Object.entries(data).filter(([key]) => key.startsWith('archive_') || key === 'carcass_weight'));
       const button = form.querySelector('button[type=submit],button:not([type])');
-      form.dataset.saving = '1'; if (button) button.disabled = true; error.hidden = true;
+      form.dataset.saving = '1'; if (button) button.disabled = true; error.hidden = true; if (finishError) finishError.hidden = true;
       try {
         const response = await fetch(form.dataset.url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}, body: JSON.stringify(data)});
         const result = await response.json();
@@ -164,5 +172,11 @@
       }
     });
   });
-  if (new URLSearchParams(location.search).get('finish')) document.getElementById('finish')?.scrollIntoView();
+  function followFinishLink() {
+    if (!new URLSearchParams(location.search).get('finish') && location.hash !== '#finish') return;
+    if (finishDialog) openFinish();
+    else document.getElementById('finish')?.scrollIntoView();
+  }
+  window.addEventListener('hashchange', followFinishLink);
+  followFinishLink();
 })();
