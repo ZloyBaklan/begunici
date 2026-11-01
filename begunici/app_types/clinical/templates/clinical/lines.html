@@ -1,3 +1,9 @@
+<div class="clinical-product-picker border rounded p-3 mb-3" data-clinical-picker>
+    <label class="form-label mb-2">Поиск препаратов и материалов
+        <input type="search" class="form-control" placeholder="Название препарата или материала" data-clinical-product-search>
+    </label>
+    <div class="clinical-product-options" data-clinical-product-options></div>
+    <p class="text-muted small my-2" data-clinical-picker-empty hidden>Ничего не найдено.</p>
+    <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-clinical-add-selected disabled>Добавить выбранные</button>
+</div>
 <div class="clinical-table-wrap"><table class="table align-middle"><thead><tr><th>Препарат / материал</th><th>Количество</th><th>Единица</th><th></th></tr></thead><tbody data-clinical-lines></tbody></table></div>
-<button class="btn btn-sm btn-outline-secondary" type="button" data-clinical-add-line>+ Препарат / материал</button>
-<p class="small text-muted mt-2">Количество указывается в единицах складской номенклатуры. Списание выполняется после подтверждения итогового расхода.</p>

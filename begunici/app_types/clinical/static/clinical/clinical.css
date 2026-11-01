@@ -1,2 +1,14 @@
 .clinical-page h1{font-size:1.7rem}.clinical-narrow{max-width:960px;margin:0 auto}.clinical-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.clinical-toolbar .form-control{flex:1;min-width:220px}.clinical-table-wrap{overflow:auto}.clinical-journal{min-width:1550px;font-size:.9rem}.clinical-journal th{background:#f3f6f4;text-align:center;vertical-align:middle}.clinical-journal td{min-width:100px}.clinical-journal td:first-child{min-width:35px}.clinical-journal small{display:block;color:#667168;margin-top:4px}.clinical-chronicle{min-width:290px!important;max-width:420px}.clinical-chronicle p{margin-bottom:8px}.clinical-event{border-left:3px solid #ceded2;padding:0 0 16px 18px;margin-bottom:18px}.clinical-event:last-child{margin-bottom:0;padding-bottom:0}.clinical-preline{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.clinical-page .form-label{width:100%;margin-bottom:14px}.clinical-page .form-label:has(input[type=date]){max-width:320px}.clinical-page [data-clinical-lines] td:first-child{min-width:230px}.clinical-page [data-clinical-lines] input[type=number]{min-width:110px}.clinical-page .barn-selector-card{text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center}.clinical-page .card-header{background:#f4f7f5}.clinical-page [hidden]{display:none!important}.clinical-page .badge{white-space:normal;text-align:left}.clinical-page #finish{scroll-margin-top:25px}@media(max-width:767px){.clinical-page h1{font-size:1.4rem}.clinical-page .clinical-toolbar .form-control{min-width:100%}.clinical-page .clinical-event{padding-left:10px}.clinical-page .barns-list{display:flex;flex-direction:column}.clinical-page .barn-selector-card{width:100%}}
 .clinical-journal .clinical-tag{position:sticky;left:0;background:#fff;z-index:1;min-width:110px;box-shadow:2px 0 3px #00000012}.clinical-journal .clinical-result{position:sticky;right:0;background:#fff;z-index:1;min-width:160px;max-width:200px;box-shadow:-2px 0 3px #00000012}.clinical-journal th.clinical-tag,.clinical-journal th.clinical-result{background:#f3f6f4;z-index:2}
+
+.clinical-course-layout{max-width:1200px;margin:0 auto}
+.clinical-intake-form{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;align-items:end}
+.clinical-intake-form .form-label{margin:0;max-width:none!important}
+.clinical-intake-form .clinical-intake-confirm{grid-column:1/-1;margin:0!important}
+.clinical-intake-form button{justify-self:start}
+.clinical-product-options{max-height:210px;overflow:auto}
+.clinical-product-option{display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #e9ecef;cursor:pointer}
+.clinical-product-option:last-child{border-bottom:0}
+.clinical-product-option input{flex-shrink:0}
+.clinical-product-option:has(input:disabled){opacity:.65;cursor:default}
+@media(max-width:767px){.clinical-intake-form{grid-template-columns:1fr}.clinical-product-option{align-items:flex-start}}

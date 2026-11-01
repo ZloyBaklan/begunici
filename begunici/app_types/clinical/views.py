@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q, Count
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, render, redirect
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
@@ -48,23 +48,7 @@ def journal(request):
         episode.display_snapshot = services.animal_snapshot(episode.animal) if episode.animal and not episode.closed_on else episode.snapshot
         episode.previous_count = histories.get(episode.tag_id, 1) - 1
         episode.recent_events = [event for event in episode.events.all() if event.kind == "care"][-3:]
-    candidates = []
-    find = request.GET.get("find", "").strip()[:100]
-    if can_admit(request.user) and find:
-        for model in services.ANIMALS:
-            candidates.extend(model.objects.filter(is_archived=False, is_in_treatment=False).filter(Q(tag__tag_number__icontains=find) | Q(rshn_tag__icontains=find)).select_related("tag", "place")[:30])
-        candidates = candidates[:30]
-    return render(request, "clinical/journal.html", context(request, episodes=page, archive=archive, q=q, find=find, candidates=candidates, pending=request.GET.get("pending") == "1"))
-
-
-@require_POST
-@access_required
-def admission(request):
-    try:
-        episode = services.admit(request.user, request.POST.get("tag"))
-    except ValidationError as exc:
-        return render(request, "clinical/error.html", context(request, error="; ".join(exc.messages)), status=400)
-    return redirect("clinical:detail", pk=episode.pk)
+    return render(request, "clinical/journal.html", context(request, episodes=page, archive=archive, q=q, pending=request.GET.get("pending") == "1"))
 
 
 @require_GET

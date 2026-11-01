@@ -1,10 +1,10 @@
 {% extends 'base.html' %}{% load static clinical_tags %}
 {% block title %}Лечение/Карантин{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'clinical/clinical.css' %}">
+<link rel="stylesheet" href="{% static 'clinical/clinical.css' %}?v=20261101-picker">
 <div class="container-fluid clinical-page py-4">
 {% clinical_navigation 'clinical' %}
 {% csrf_token %}<div id="clinical-error" class="alert alert-danger" role="alert" hidden></div>
 {% block clinical_content %}{% endblock %}
-</div><script src="{% static 'clinical/clinical.js' %}"></script>
+</div><script src="{% static 'clinical/clinical.js' %}?v=20261101-picker"></script>
 {% endblock %}
