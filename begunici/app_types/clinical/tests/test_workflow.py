@@ -175,6 +175,43 @@ class Workflow(TestCase):
             self.assertFalse(animal.is_in_treatment)
             self.assertTrue(ArchiveAct.objects.filter(tag=animal.tag,status_name=label).exists())
 
+    def test_archive_completion_sale_assignment_controls_stock_discovery(self):
+        from begunici.app_types.inventory.bridges import discover, source_animal, source_info, require_eligible
+        client = Client()
+        client.force_login(self.users["vet"])
+        for index, label in enumerate(("Убой на мясо", "Вынужденная прирезка", "Реализация в живом весе")):
+            for for_sale in (False, True):
+                with self.subTest(status=label, for_sale=for_sale):
+                    animal = self.make_animal(f"SALE-{index}-{int(for_sale)}")
+                    # Check both setting and removing a pre-existing assignment.
+                    animal.is_for_sale = not for_sale
+                    animal.save()
+                    ep = self.admit(animal)
+                    status, _ = Status.objects.get_or_create(status_type=label)
+                    response = client.post(f"/animals/treatment/{ep.pk}/command/close/", data=json.dumps({
+                        "revision": ep.revision, "outcome": label, "closed_on": str(ep.admitted_on),
+                        "lines": [], "confirm_status": True, "confirm_expense": True, "status_id": status.pk,
+                        "archive": {"archive_act_date": str(ep.admitted_on), "archive_act_fatness": "3",
+                                    "archive_act_diagnosis": "Травма", "is_for_sale": for_sale},
+                    }), content_type="application/json")
+                    self.assertEqual(response.status_code, 200, response.content)
+                    animal.refresh_from_db()
+                    self.assertTrue(animal.is_archived)
+                    self.assertFalse(animal.is_in_treatment)
+                    self.assertEqual(animal.is_for_sale, for_sale)
+                    self.assertTrue(ArchiveAct.objects.filter(tag=animal.tag, status_name=label).exists())
+                    self.assertEqual(animal.tag_id in {row["tag_id"] for row in discover("pending")}, for_sale)
+                    if for_sale:
+                        require_eligible(source_info(source_animal(animal.tag_id)))
+
+    def test_completion_without_sale_field_preserves_assignment(self):
+        self.animal.is_for_sale = True
+        self.animal.save()
+        ep = self.admit()
+        self.close(ep)
+        self.animal.refresh_from_db()
+        self.assertTrue(self.animal.is_for_sale)
+
     def test_api_requires_explicit_expense_confirmation(self):
         ep=self.admit()
         client=Client();client.force_login(self.users["vet"])

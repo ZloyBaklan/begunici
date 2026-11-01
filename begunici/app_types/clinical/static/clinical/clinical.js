@@ -159,7 +159,11 @@
       data.confirm_status = !!form.elements.confirm_status?.checked;
       data.confirm_expense = !!form.elements.confirm_expense?.checked;
       data.confirm_group_move = !!form.elements.confirm_group_move?.checked;
-      if (kind === 'close') data.archive = Object.fromEntries(Object.entries(data).filter(([key]) => key.startsWith('archive_') || key === 'carcass_weight'));
+      if (kind === 'close') {
+        data.archive = Object.fromEntries(Object.entries(data).filter(([key]) => key.startsWith('archive_') || key === 'carcass_weight'));
+        const forSale = form.elements.is_for_sale;
+        if (forSale && !forSale.matches(':disabled')) data.archive.is_for_sale = forSale.checked;
+      }
       const button = form.querySelector('button[type=submit],button:not([type])');
       form.dataset.saving = '1'; if (button) button.disabled = true; error.hidden = true; if (finishError) finishError.hidden = true;
       try {

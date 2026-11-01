@@ -228,7 +228,7 @@ def close_episode(user, pk, revision, outcome, closed_on, rows, reason, status_i
     if status_id:
         data["animal_status_id"] = status_id
         data["status_date"] = str(date)
-    allowed = {"archive_act_date", "archive_act_fatness", "archive_act_death_reason", "archive_act_diagnosis", "archive_act_live_weight", "archive_act_weight_date", "archive_act_worker_name", "carcass_weight"}
+    allowed = {"archive_act_date", "archive_act_fatness", "archive_act_death_reason", "archive_act_diagnosis", "archive_act_live_weight", "archive_act_weight_date", "archive_act_worker_name", "carcass_weight", "is_for_sale"}
     data.update({k: v for k, v in (archive or {}).items() if k in allowed and v not in (None, "")})
     with completing():
         animal = change_animal(user, animal, data)
