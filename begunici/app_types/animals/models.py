@@ -68,6 +68,28 @@ STATUS_FATTENING = "Откорм"
 STATUS_REPAIR = "Ремонт"
 STATUS_IN_GROUP = "В группе"
 
+RAM_GROUP_DAYS = 60
+LAMBING_PLAN_DAYS = 145
+
+
+def planned_lambing_date_from_placement(placement_date):
+    placement_date = as_local_date(placement_date)
+    return placement_date + timedelta(days=LAMBING_PLAN_DAYS) if placement_date else None
+
+
+def get_lambing_placement_date(lambing):
+    if not lambing:
+        return None
+    placement = as_local_date(lambing.father_placement_date)
+    if placement:
+        return placement
+    group = lambing.source_group if lambing.source_group_id else None
+    if group and group.get_father_placement_date():
+        return group.get_father_placement_date()
+    # Legacy records without a placement snapshot retain the existing 60-day assumption.
+    removal = as_local_date(lambing.start_date)
+    return removal - timedelta(days=RAM_GROUP_DAYS) if removal else None
+
 ANIMAL_NOTE_MAX_LENGTH = 300
 
 
@@ -1056,7 +1078,7 @@ class Lambing(models.Model):
     
     start_date = models.DateField(verbose_name="Дата начала окота (случки)", default=timezone.now)
     father_placement_date = models.DateField(null=True, blank=True, verbose_name="Дата постановки барана")
-    planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота", default=timezone.now)
+    planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота")
     actual_lambing_date = models.DateField(
         verbose_name="Фактическая дата окота", null=True, blank=True
     )
@@ -1162,11 +1184,7 @@ class Lambing(models.Model):
         return None
 
     def calculate_planned_lambing_date(self):
-        """
-        Рассчитываем планируемую дату окота (150 дней от даты начала)
-        """
-        if self.start_date:
-            self.planned_lambing_date = self.start_date + timedelta(days=150)
+        self.planned_lambing_date = planned_lambing_date_from_placement(get_lambing_placement_date(self))
 
     def complete_lambing(self):
         """Завершить окот"""
@@ -1237,17 +1255,38 @@ class Lambing(models.Model):
         is_new = self.pk is None
         if is_new and self.is_active:
             group = self.source_group if self.source_group_id else None
-            if self.father_placement_date is None and group:
-                self.father_placement_date = group.get_father_placement_date()
+            if self.father_placement_date is None:
+                self.father_placement_date = get_lambing_placement_date(self)
             if self.tracked_veterinary_care_id is None:
                 self.tracked_veterinary_care = (
                     group.tracked_veterinary_care if group else get_default_lambing_tracking_care()
                 )
             if self.tracked_veterinary_from_date is None:
-                self.tracked_veterinary_from_date = as_local_date(group.get_father_placement_date() if group else self.start_date)
+                self.tracked_veterinary_from_date = get_lambing_placement_date(self)
         was_active = False
+        dates_changed = False
+        date_source = self
         if not is_new:
-            was_active = Lambing.objects.filter(pk=self.pk, is_active=True).exists()
+            previous = Lambing.objects.filter(pk=self.pk).values(
+                "is_active", "start_date", "father_placement_date", "source_group_id",
+            ).first()
+            if previous:
+                was_active = previous["is_active"]
+                dates = {
+                    "start_date": as_local_date(self.start_date),
+                    "father_placement_date": as_local_date(self.father_placement_date),
+                    "source_group_id": self.source_group_id,
+                }
+                if kwargs.get("update_fields") is not None:
+                    # Partial saves must calculate from dates actually being persisted.
+                    saved_fields = set(kwargs["update_fields"])
+                    dates = {
+                        field: value if field in saved_fields or field.removesuffix("_id") in saved_fields
+                        else previous[field]
+                        for field, value in dates.items()
+                    }
+                    date_source = Lambing(**dates)
+                dates_changed = any(previous[field] != value for field, value in dates.items())
 
         skip_parent_status_on_create = getattr(self, "_skip_parent_status_on_create", False)
         skip_father_status_on_complete = getattr(self, "_skip_father_status_on_complete", False)
@@ -1277,8 +1316,15 @@ class Lambing(models.Model):
                 )
         
         # Рассчитываем планируемую дату окота если нужно
-        if self.start_date and not self.planned_lambing_date:
-            self.calculate_planned_lambing_date()
+        if not self.planned_lambing_date or (self.is_active and dates_changed):
+            placement_date = get_lambing_placement_date(date_source)
+            self.planned_lambing_date = planned_lambing_date_from_placement(placement_date)
+            if self.is_active and dates_changed:
+                self.tracked_veterinary_from_date = placement_date
+            if kwargs.get("update_fields"):
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"planned_lambing_date"}
+                if self.is_active and dates_changed:
+                    kwargs["update_fields"].add("tracked_veterinary_from_date")
             
         super(Lambing, self).save(*args, **kwargs)
 
@@ -1646,13 +1692,17 @@ class Sheep(AnimalBase):
 
     # Метод для установки планируемой даты окота
     def calculate_planned_lambing_date(self):
-        """
-        Рассчитываем планируемую дату окота (150 дней от даты случки).
-        Если уже есть окот, то новая дата.
-        """
-        if not self.planned_lambing_date or self.is_new_lambing():
-            self.planned_lambing_date = timezone.localdate() + timedelta(days=150)
-        self.save()
+        lambing = self.lambings.filter(is_active=True).order_by("-start_date", "-id").first()
+        if lambing:
+            placement = get_lambing_placement_date(lambing)
+        else:
+            group = self.lambing_groups.filter(is_active=True).exclude(
+                maker__isnull=True, ram__isnull=True,
+            ).order_by("-father_placement_date", "-id").first()
+            placement = group.get_father_placement_date() if group else None
+        if placement:
+            self.planned_lambing_date = planned_lambing_date_from_placement(placement)
+            self.save(update_fields=["planned_lambing_date"])
 
     def is_new_lambing(self):
         """

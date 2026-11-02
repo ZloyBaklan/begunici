@@ -29,6 +29,7 @@ from .models import (
     format_birth_type_for_animal,
     get_current_unsuccessful_insemination_count_for_mother,
     build_lambing_tracking_data,
+    get_lambing_placement_date,
 )
 from begunici.app_types.veterinary.vet_models import (
     Place,
@@ -134,16 +135,7 @@ def _get_animal_detail_url(animal):
 
 
 def _get_lambing_placement_date(lambing):
-    if not lambing:
-        return None
-    source_group = getattr(lambing, "source_group", None)
-    if lambing.father_placement_date:
-        return lambing.father_placement_date
-    if source_group and source_group.get_father_placement_date():
-        return source_group.get_father_placement_date()
-    if lambing.start_date:
-        return lambing.start_date - timedelta(days=60)
-    return None
+    return get_lambing_placement_date(lambing)
 
 
 def build_sheep_last_insemination_data(sheep):
@@ -1714,15 +1706,6 @@ class LambingSerializer(LambingTrackingSerializer):
         
         return data
     
-    def create(self, validated_data):
-        # Рассчитываем планируемую дату окота (150 дней от начала)
-        if 'start_date' in validated_data and not validated_data.get('planned_lambing_date'):
-            from datetime import timedelta
-            validated_data['planned_lambing_date'] = validated_data['start_date'] + timedelta(days=150)
-        
-        return super().create(validated_data)
-
-
 class LambingGroupSerializer(LambingTrackingSerializer):
     placement_date = serializers.SerializerMethodField()
     father_placement_date = serializers.SerializerMethodField()

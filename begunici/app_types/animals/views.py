@@ -55,6 +55,9 @@ from .models import (
     get_default_lambing_tracking_care,
     build_lambing_tracking_data,
     format_lambing_tracking_result,
+    RAM_GROUP_DAYS,
+    get_lambing_placement_date,
+    planned_lambing_date_from_placement,
 )
 from .serializers import (
     MakerSerializer,
@@ -2988,7 +2991,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 for mother, mother_type in mothers:
                     lambing_data = {
                         "start_date": removal_date,
-                        "planned_lambing_date": removal_date + timedelta(days=150),
+                        "planned_lambing_date": planned_lambing_date_from_placement(group.get_father_placement_date()),
                         "source_group": group,
                         "tracked_veterinary_care": group.tracked_veterinary_care,
                         "tracked_veterinary_from_date": group.get_father_placement_date(),
@@ -4086,7 +4089,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     search_fields = ['^text']
     ordering_fields = ['date', 'created_at']
     pagination_class = PaginationSetting
-    RAM_REMOVAL_REMINDER_DAYS = 60
+    RAM_REMOVAL_REMINDER_DAYS = RAM_GROUP_DAYS
 
     CALENDAR_EXPORT_HEADERS = [
         '№',
@@ -7250,14 +7253,7 @@ def journal_progeny(request):
 
 
 def _get_lambing_placement_date(lambing):
-    source_group = getattr(lambing, "source_group", None)
-    if lambing.father_placement_date:
-        return lambing.father_placement_date
-    if source_group and source_group.get_father_placement_date():
-        return source_group.get_father_placement_date()
-    if lambing.start_date:
-        return lambing.start_date - timedelta(days=60)
-    return None
+    return get_lambing_placement_date(lambing)
 
 
 def _date_matches_month_year_filters(value, month=None, year=None, month_from=None, month_to=None):
@@ -10761,12 +10757,6 @@ def bulk_create_lambings(request):
                     lambing_data['maker'] = father
                 else:
                     lambing_data['ram'] = father
-                
-                # Рассчитываем планируемую дату окота (6 месяцев от начала)
-                from dateutil.relativedelta import relativedelta
-                from datetime import datetime, timedelta
-                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-                lambing_data['planned_lambing_date'] = start_date_obj + timedelta(days=150)
                 
                 lambing = Lambing.objects.create(**lambing_data)
                 

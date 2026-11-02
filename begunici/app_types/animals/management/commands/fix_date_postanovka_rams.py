@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from begunici.app_types.animals.models import Lambing, LambingGroup
+from begunici.app_types.animals.models import Lambing, LambingGroup, RAM_GROUP_DAYS
 
 
 def _animal_tag(animal):
@@ -53,7 +53,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--days",
             type=int,
-            default=60,
+            default=RAM_GROUP_DAYS,
             help="Сколько дней вычитать из даты снятия барана (по умолчанию: 60).",
         )
         parser.add_argument(
