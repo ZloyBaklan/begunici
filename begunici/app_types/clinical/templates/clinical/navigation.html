@@ -1,0 +1,6 @@
+{% load static %}<link rel="stylesheet" href="{% static 'clinical/navigation.css' %}">
+<div class="clinical-navigation lambing-management-selector barns-selector mb-4"><nav class="barns-list lambing-management-buttons" aria-label="Ветеринарные разделы">
+<a class="barn-selector-card lambing-management-card {% if active == 'planned' %}active{% endif %}" href="/animals/vet-list/" {% if active == 'planned' %}aria-current="page"{% endif %}>Проведение плановых ветобработок</a>
+{% if clinical_visible %}<a class="barn-selector-card lambing-management-card {% if active == 'clinical' %}active{% endif %}" href="{% url 'clinical:journal' %}" {% if active == 'clinical' %}aria-current="page"{% endif %}>Лечение/Карантин</a>{% endif %}
+{% if stock_visible %}<a class="barn-selector-card lambing-management-card {% if active == 'stock' %}active{% endif %}" href="{% url 'vet_inventory:home' %}" {% if active == 'stock' %}aria-current="page"{% endif %}>Склад ветпрепаратов</a>{% endif %}
+</nav></div>

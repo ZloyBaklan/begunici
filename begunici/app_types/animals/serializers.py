@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from django.db import models, transaction
+from django.db.models import Q
 from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
@@ -136,8 +137,10 @@ def _get_lambing_placement_date(lambing):
     if not lambing:
         return None
     source_group = getattr(lambing, "source_group", None)
-    if source_group and source_group.placement_date:
-        return source_group.placement_date
+    if lambing.father_placement_date:
+        return lambing.father_placement_date
+    if source_group and source_group.get_father_placement_date():
+        return source_group.get_father_placement_date()
     if lambing.start_date:
         return lambing.start_date - timedelta(days=60)
     return None
@@ -150,11 +153,12 @@ def build_sheep_last_insemination_data(sheep):
     candidates = []
     group = (
         sheep.lambing_groups.select_related("maker__tag", "ram__tag")
-        .order_by("-placement_date", "-id")
+        .filter(Q(maker__isnull=False) | Q(ram__isnull=False))
+        .order_by("-father_placement_date", "-id")
         .first()
     )
-    if group and group.placement_date:
-        candidates.append((group.placement_date, group.id, group.get_father()))
+    if group and group.get_father_placement_date():
+        candidates.append((group.get_father_placement_date(), group.id, group.get_father()))
 
     lambing = (
         Lambing.objects.filter(sheep=sheep, source_group__isnull=True)
@@ -530,6 +534,17 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         return rshn_tag
 
     def validate(self, attrs):
+        # CLINICAL BRIDGE: раннее предупреждение перед снятием назначения/архивацией.
+        from begunici.app_types.clinical.bridge import validate_transition
+        from begunici.app_types.clinical.permissions import require_admit
+        request = self.context.get("request")
+        if self.instance is not None:
+            validate_transition(self.instance, attrs, request.user if request else None)
+        elif attrs.get("is_in_treatment"):
+            require_admit(request.user if request else None)
+            selected_status = attrs.get("animal_status")
+            if attrs.get("is_archived") or (selected_status and selected_status.status_type in ARCHIVE_STATUS_NAMES):
+                raise serializers.ValidationError({"is_in_treatment": "Архивное животное нельзя направить на лечение."})
         if attrs.get("is_reject") and not (self.instance and self.instance.is_reject):
             if not attrs.get("rejection_reason", "").strip():
                 raise serializers.ValidationError({"rejection_reason": "Укажите причину выбраковки."})
@@ -730,9 +745,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     def update(self, instance, validated_data):
         # Use the same tag-first lock order as retagging and type conversions.
         Tag.objects.select_for_update().get(pk=instance.tag_id)
-        instance.is_reject = type(instance).objects.select_for_update().values_list(
-            "is_reject", flat=True,
-        ).get(pk=instance.pk)
+        current_flags = type(instance).objects.select_for_update().values("is_reject", "is_in_treatment").get(pk=instance.pk)
+        instance.is_reject = current_flags["is_reject"]
+        instance.is_in_treatment = current_flags["is_in_treatment"]
+        # CLINICAL BRIDGE: повторная проверка после блокировки записи.
+        from begunici.app_types.clinical.bridge import validate_transition
+        request = self.context.get("request")
+        validate_transition(instance, validated_data, request.user if request else None)
         rejection_reason = validated_data.pop("rejection_reason", "")
         new_rejection = validated_data.get("is_reject", instance.is_reject) and not instance.is_reject
         if new_rejection and not rejection_reason.strip():
@@ -924,6 +943,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
             'carcass_weight': 'Вес туши (кг)',
             'is_reject': 'Назначение: Брак',
             'is_for_sale': 'Назначение: К продаже',
+            'is_in_treatment': 'Назначение: Лечение',
             'needs_retagging': 'Необходимо перебиркование',
         }
         
@@ -1566,7 +1586,7 @@ class LambingSerializer(LambingTrackingSerializer):
             'completion_type_display', 'mother_category_at_start', 'is_active', 'created_at',
             'mother_tag', 'father_tag', 'father_display_name', 'mother_type', 'father_type', 'mother_found',
             'mother_tag_number', 'father_tag_number',
-            'mother_tag_text', 'mother_type_text', 'source_group',
+            'mother_tag_text', 'mother_type_text', 'source_group', 'father_placement_date',
             'tracked_veterinary_care_id', 'tracked_veterinary_from_date', 'tracked_veterinary',
         ]
         read_only_fields = [
@@ -1574,6 +1594,7 @@ class LambingSerializer(LambingTrackingSerializer):
             'planned_lambing_date',
             'created_at',
             'source_group',
+            'father_placement_date',
             'mother_category_at_start',
             'tracked_veterinary_from_date',
         ]
@@ -1703,6 +1724,10 @@ class LambingSerializer(LambingTrackingSerializer):
 
 
 class LambingGroupSerializer(LambingTrackingSerializer):
+    placement_date = serializers.SerializerMethodField()
+    father_placement_date = serializers.SerializerMethodField()
+    is_draft = serializers.BooleanField(read_only=True)
+    father_history = serializers.SerializerMethodField()
     father_tag = serializers.SerializerMethodField()
     father_display_name = serializers.SerializerMethodField()
     father_type = serializers.SerializerMethodField()
@@ -1716,6 +1741,7 @@ class LambingGroupSerializer(LambingTrackingSerializer):
         fields = [
             "id",
             "placement_date",
+            "father_placement_date", "is_draft", "place", "father_history",
             "removal_date",
             "note",
             "is_active",
@@ -1729,6 +1755,20 @@ class LambingGroupSerializer(LambingTrackingSerializer):
             "tracked_veterinary",
         ]
         read_only_fields = fields
+
+    def get_father_placement_date(self, obj):
+        value = obj.get_father_placement_date()
+        return value.isoformat() if value else None
+
+    def get_placement_date(self, obj):
+        return self.get_father_placement_date(obj)
+
+    def get_father_history(self, obj):
+        return [{"tag_number": item.tag_number, "display_name": item.display_name,
+                 "father_type": item.father_type, "placement_date": item.placement_date.isoformat(),
+                 "removal_date": item.removal_date.isoformat() if item.removal_date else None,
+                 "destination": str(item.destination) if item.destination_id else None}
+                for item in obj.father_history.all()]
 
     def get_father_tag(self, obj):
         return obj.get_father_tag()

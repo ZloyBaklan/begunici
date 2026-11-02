@@ -1,0 +1,125 @@
+{% extends 'clinical/base.html' %}
+{% load clinical_tags %}
+{% block clinical_heading %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div><h1 class="mb-2">История болезни: {{ episode.tag_number }}</h1><p class="text-muted mb-0">{{ snapshot.label }} · {{ snapshot.age|default:'Возраст не указан' }}</p></div>
+    <span class="badge {% if episode.closed_on %}bg-secondary{% else %}bg-warning text-dark{% endif %}">{% if episode.closed_on %}Завершено{% else %}На лечении{% endif %}</span>
+</div>
+{% endblock %}
+{% block clinical_content %}
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <a class="btn btn-outline-secondary" href="{{ journal_url }}">Вернуться в журнал</a>
+    {% if animal %}<a class="btn btn-outline-primary" href="/animals/{{ animal.get_animal_type|lower }}/{{ animal.tag.tag_number|urlencode }}/info/">Личная страница животного</a>{% endif %}
+    {% if clinical_can_manage and not episode.closed_on %}
+        <a class="btn btn-success" href="{% url 'clinical:care' %}?episodes={{ episode.pk }}&amp;return_url={{ detail_url|urlencode }}">Добавить лечебное мероприятие</a>
+        <button type="button" class="btn btn-outline-primary" data-clinical-finish-open {% if not episode.diagnosis %}disabled title="Сначала укажите и сохраните диагноз"{% endif %}>Завершить лечение</button>
+    {% endif %}
+</div>
+<div class="row">
+    <div class="col-lg-5 col-xl-4">
+        <section class="card mb-4" id="intake">
+            <div class="card-header"><h5 class="card-title mb-0">Поступление</h5></div>
+            <div class="card-body">
+                <dl class="clinical-info mb-3"><dt>Откуда поступило:</dt><dd>{{ episode.origin|default:'Не указано' }}</dd><dt>Длительность:</dt><dd>{{ episode.duration }} дн.</dd></dl>
+                {% if clinical_can_manage and not episode.closed_on %}
+                {% if not episode.diagnosis %}<p class="text-muted small" id="clinical-diagnosis-hint">Для завершения лечения укажите и сохраните диагноз.</p>{% endif %}
+                <form id="clinical-intake-form" data-clinical-form="intake" data-url="{% url 'clinical:episode-command' episode.pk 'intake' %}">
+                    <input type="hidden" name="revision" value="{{ episode.revision }}"><input type="hidden" name="return_url" value="{{ journal_url }}">
+                    <div class="mb-3"><label class="form-label" for="clinical-diagnosis">Диагноз:</label><input class="form-control" id="clinical-diagnosis" name="diagnosis" value="{{ episode.diagnosis }}" maxlength="1000" aria-describedby="clinical-diagnosis-hint"></div>
+                    <div class="mb-3"><label class="form-label" for="clinical-admitted-on">Дата поступления:</label><input class="form-control" id="clinical-admitted-on" name="admitted_on" type="date" value="{{ episode.admitted_on|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" required></div>
+                    <div class="mb-3"><label class="form-label" for="clinical-place">Местонахождение:</label><select class="form-select" id="clinical-place" name="place"><option value="">Оставить текущее: {{ animal.place|default:'Не указано' }}</option>{% for place in places %}<option value="{{ place.pk }}">{{ place }}</option>{% endfor %}</select></div>
+                    <div class="form-check mb-3"><input class="form-check-input" id="clinical-confirm-move" type="checkbox" name="confirm_group_move"><label class="form-check-label" for="clinical-confirm-move">Подтверждаю перемещение, если животное участвует в группе</label></div>
+                    <button type="submit" class="btn btn-primary">Сохранить данные</button>
+                </form>
+                {% else %}
+                <dl class="clinical-info mb-0"><dt>Диагноз:</dt><dd>{{ episode.diagnosis|default:'Уточняется' }}</dd><dt>Дата поступления:</dt><dd>{{ episode.admitted_on|date:'d.m.Y' }}</dd><dt>Местонахождение:</dt><dd>{% if episode.closed_on %}{{ episode.snapshot.discharge_place|default:episode.origin|default:'Не указано' }}{% else %}{{ animal.place|default:'Не указано' }}{% endif %}</dd></dl>
+                {% endif %}
+            </div>
+        </section>
+        {% if episode.closed_on %}
+        <section class="card mb-4" id="finish">
+            <div class="card-header"><h5 class="card-title mb-0">Результат лечения</h5></div>
+            <div class="card-body">
+                <dl class="clinical-info"><dt>Дата выписки:</dt><dd>{{ episode.closed_on|date:'d.m.Y' }}</dd><dt>Сотрудник:</dt><dd>{{ episode.closed_by|default:'Не указан' }}</dd><dt>Статус:</dt><dd>{{ episode.snapshot.discharge_status|default:'Не указан' }}</dd></dl>
+                <p class="clinical-preline mb-0">{{ episode.outcome }}</p>
+            </div>
+        </section>
+        {% endif %}
+        {% if previous %}
+        <section class="card mb-4" id="previous">
+            <div class="card-header"><h5 class="card-title mb-0">Другие заболевания</h5></div>
+            <div class="card-body">{% for item in previous %}<p {% if forloop.last %}class="mb-0"{% endif %}><a href="{% url 'clinical:detail' item.pk %}?return_url={{ journal_url|urlencode }}">{{ item.admitted_on|date:'d.m.Y' }} · {{ item.diagnosis|default:'Диагноз уточняется' }}</a><small class="d-block text-muted">{{ item.outcome|default:'На лечении' }}</small></p>{% endfor %}</div>
+        </section>
+        {% endif %}
+    </div>
+    <div class="col-lg-7 col-xl-8">
+        <section class="card mb-4">
+            <div class="card-header"><h5 class="card-title mb-0">Дневник лечения</h5></div>
+            <div class="card-body">
+                {% if display_events %}<div class="table-responsive"><table class="table table-striped table-hover align-middle clinical-diary">
+                    <thead class="table-light"><tr><th>Дата</th><th>Запись</th><th>Препараты / материалы</th></tr></thead>
+                    <tbody>{% for event in display_events %}<tr>
+                        <td class="text-nowrap">{{ event.date|date:'d.m.Y' }}<small class="d-block text-muted">{{ event.created_by|default:'Система' }}</small></td>
+                        <td class="clinical-record"><span class="d-block mb-1">{{ event.get_kind_display }}</span><div class="clinical-preline">{{ event.note }}</div>
+                            {% if event.kind == 'intake' %}<div class="small text-muted mt-2">Диагноз: {{ event.details.before.diagnosis|default:'Не задан' }} → {{ event.details.after.diagnosis|default:'Не задан' }}<br>Дата поступления: {{ event.details.before.admitted_on|clinical_date }} → {{ event.details.after.admitted_on|clinical_date }}<br>Место: {{ event.details.before.place|default:'Не задано' }} → {{ event.details.after.place|default:'Не задано' }}</div>{% endif %}
+                            {% if event.kind == 'discharge' %}<div class="small text-muted mt-2">Статус: {{ event.details.status }}{% if event.details.reason %}<br>Корректировка расхода: {{ event.details.reason }}{% endif %}</div>{% endif %}
+                        </td>
+                        <td>{% for dose in event.doses.all %}<div class="clinical-dose">{{ dose.name }}: {{ dose.quantity|floatformat:'-3' }} {{ dose.unit }}</div>{% empty %}<span class="text-muted">Нет расхода</span>{% endfor %}{% if event.details.mode == 'group' %}<small class="d-block text-muted mt-2">Доля расхода на группу из {{ event.details.heads }} голов</small>{% endif %}</td>
+                    </tr>{% endfor %}</tbody>
+                </table></div>{% else %}<p class="text-muted mb-0">Лечебные мероприятия ещё не зарегистрированы</p>{% endif %}
+            </div>
+        </section>
+        <section class="card mb-4" id="expense">
+            <div class="card-header"><h5 class="card-title mb-0">{% if episode.closed_on %}Подтверждённый расход{% else %}Расход по дневнику{% endif %}</h5></div>
+            <div class="card-body">
+                {% if episode.closed_on %}
+                    {% if episode.stock_pending %}<div class="alert alert-warning">Расход требует сверки: {{ episode.expense_issue }}</div>
+                        {% if clinical_can_manage %}<form class="mb-3" data-clinical-form="reconcile" data-url="{% url 'clinical:episode-command' episode.pk 'reconcile' %}"><input type="hidden" name="return_url" value="{{ journal_url }}"><button type="submit" class="btn btn-outline-primary">Повторить списание после сверки остатков</button></form>{% endif %}
+                    {% elif episode.expense_document_id %}<p class="text-success">Расход учтён на складе</p>{% endif %}
+                    {% if episode.expense_confirmed %}<div class="table-responsive"><table class="table table-striped"><thead class="table-light"><tr><th>Препарат / материал</th><th>Количество</th><th>Единица</th></tr></thead><tbody>{% for line in episode.expense_confirmed %}<tr><td>{{ line.name }}</td><td>{{ line.amount }}</td><td>{{ line.unit }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">Завершено без расхода препаратов</p>{% endif %}
+                    {% if episode.expense_document_id %}<p class="small text-muted mb-0">Складской документ № {{ episode.expense_document_id }}</p>{% endif %}
+                {% else %}
+                    {% if totals %}<div class="table-responsive"><table class="table table-striped"><thead class="table-light"><tr><th>Препарат / материал</th><th>Количество</th><th>Единица</th></tr></thead><tbody>{% for line in totals %}<tr><td>{{ line.name }}</td><td>{{ line.amount }}</td><td>{{ line.unit }}</td></tr>{% endfor %}</tbody></table></div><p class="small text-muted mb-0">Списание со склада подтверждается при завершении лечения.</p>{% else %}<p class="text-muted mb-0">Расход препаратов не зарегистрирован</p>{% endif %}
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>
+{% if clinical_can_manage and not episode.closed_on and animal %}
+<div class="modal fade clinical-finish-modal" id="clinical-finish-dialog" tabindex="-1" aria-labelledby="clinical-finish-title" aria-hidden="true" data-diagnosis-ready="{% if episode.diagnosis %}1{% endif %}">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <form class="modal-content" id="clinical-close-form" data-clinical-form="close" data-episode-id="{{ episode.pk }}" data-url="{% url 'clinical:episode-command' episode.pk 'close' %}">
+            <div class="modal-header"><h5 class="modal-title" id="clinical-finish-title">Завершение лечения: {{ episode.tag_number }}</h5><button type="button" class="btn-close" aria-label="Закрыть" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="alert alert-danger clinical-preline" role="alert" data-clinical-finish-error hidden></div>
+                <input type="hidden" name="revision" value="{{ episode.revision }}"><input type="hidden" name="return_url" value="{{ journal_url }}">
+                <div class="mb-3"><label class="form-label" for="clinical-outcome">Исход лечения:</label><textarea class="form-control" id="clinical-outcome" name="outcome" rows="2" maxlength="4000" required placeholder="Выздоровление, улучшение, гибель"></textarea></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><label class="form-label" for="clinical-closed-on">Дата выписки:</label><input class="form-control" id="clinical-closed-on" name="closed_on" type="date" value="{{ today|date:'Y-m-d' }}" min="{{ episode.admitted_on|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" required></div>
+                    <div class="col-md-8"><label class="form-label" for="clinical-status">Статус после лечения:</label><select class="form-select" id="clinical-status" name="status_id" data-clinical-status><option value="">Оставить текущий: {{ animal.animal_status|default:'Не указан' }}</option>{% for status in statuses %}<option value="{{ status.pk }}" data-archive="{% if status.status_type in archive_statuses %}1{% endif %}">{{ status }}</option>{% endfor %}</select></div>
+                </div>
+                <div class="form-check mb-3"><input class="form-check-input" id="clinical-confirm-status" type="checkbox" name="confirm_status" required><label class="form-check-label" for="clinical-confirm-status">Подтверждаю текущий или выбранный статус</label></div>
+                <fieldset data-clinical-archive hidden class="border rounded p-3 mb-3">
+                    <legend class="float-none w-auto fs-6">Данные архивации</legend>
+                    <div class="form-check mb-3"><input class="form-check-input" id="clinical-for-sale" type="checkbox" name="is_for_sale" {% if animal.is_for_sale %}checked{% endif %}><label class="form-check-label" for="clinical-for-sale">К продаже</label></div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-5"><label class="form-label" for="clinical-act-date">Дата акта:</label><input id="clinical-act-date" type="date" class="form-control" name="archive_act_date" value="{{ today|date:'Y-m-d' }}" data-archive-required></div>
+                        <div class="col-md-7"><label class="form-label" for="clinical-fatness">Упитанность:</label><select id="clinical-fatness" class="form-select" name="archive_act_fatness" data-archive-required><option value="">Выберите</option>{% for index, label in condition_choices %}<option value="{{ index }}" {% if index == latest_condition %}selected{% endif %}>{{ index }} - {{ label }}</option>{% endfor %}</select></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label" for="clinical-act-diagnosis">Диагноз / основание:</label><input id="clinical-act-diagnosis" class="form-control" name="archive_act_diagnosis" value="{{ episode.diagnosis }}" data-archive-required></div>
+                    <div class="mb-3" data-death-reason hidden><label class="form-label" for="clinical-death-reason">Причина падежа:</label><select id="clinical-death-reason" class="form-select" name="archive_act_death_reason"><option value="">Выберите</option>{% for reason in death_reasons %}<option>{{ reason }}</option>{% endfor %}</select></div>
+                    <div class="row g-3"><div class="col-md-8"><label class="form-label" for="clinical-worker">Закреплённый работник:</label><input id="clinical-worker" class="form-control" name="archive_act_worker_name"></div><div class="col-md-4"><label class="form-label" for="clinical-carcass">Вес туши, кг:</label><input id="clinical-carcass" class="form-control" type="number" min="0" step="0.1" name="carcass_weight"></div></div>
+                </fieldset>
+                <div class="border-top pt-3 mb-3">
+                    {% include 'clinical/lines.html' %}
+                    <div class="mt-3" data-clinical-reason hidden><label class="form-label" for="clinical-reason">Причина изменения итогового расхода:</label><input id="clinical-reason" class="form-control" name="reason" maxlength="2000"></div>
+                </div>
+                <div class="form-check"><input class="form-check-input" id="clinical-confirm-expense" type="checkbox" name="confirm_expense" required><label class="form-check-label" for="clinical-confirm-expense">Фактический расход проверен, подтверждаю списание</label></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button><button type="submit" class="btn btn-success">Завершить лечение</button></div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{{ products|json_script:'clinical-products' }}{{ totals|json_script:'clinical-totals' }}
+{% endblock %}

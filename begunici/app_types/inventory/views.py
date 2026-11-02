@@ -6,7 +6,7 @@ from urllib.parse import quote
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
@@ -14,7 +14,7 @@ from . import bridges, invoices, orders, receipts, stock
 from .animal_types import ANIMAL_TYPE_CHOICES
 from .documents import add_version, assert_editable, assert_revision
 from .models import AnimalCase, AuditEvent, Document, DocumentVersion, Order, Product, StockLot, StockMovement
-from .permissions import access_required, can_manage_inventory, can_prepare_slaughter, require_inventory
+from .permissions import access_required, can_access_slaughter, can_manage_inventory, can_prepare_slaughter, require_inventory
 from .presentation import animal_display
 from .selectors import archive_rows, pending_animals, stock_summary
 
@@ -48,18 +48,25 @@ def document_result(document):
     return {"id": document.pk, "url": reverse("inventory:document", args=[document.pk])}
 
 
-def document_access(user, document):
+def document_access(user, document, *, write=False):
     if document.kind == "sp55":
-        if not (can_prepare_slaughter(user) or can_manage_inventory(user)):
+        allowed = (can_prepare_slaughter(user) or can_manage_inventory(user)) if write else can_access_slaughter(user)
+        if not allowed:
             raise PermissionDenied
     else:
         require_inventory(user)
 
 
 @require_GET
-@access_required()
+@access_required(slaughter=True)
 def dashboard(request, section="home"):
-    context = {"section": section}
+    if not (can_prepare_slaughter(request.user) or can_manage_inventory(request.user)):
+        if section == "home":
+            return redirect("inventory:slaughter")
+        raise PermissionDenied
+    if section not in {"home", "live", "pending"}:
+        require_inventory(request.user)
+    context = {"section": section, "can_finance": can_manage_inventory(request.user)}
     if section == "live":
         context["animals"] = bridges.discover("live")
     elif section == "pending":
@@ -76,12 +83,14 @@ def dashboard(request, section="home"):
 @require_GET
 @access_required(slaughter=True)
 def slaughter(request):
-    animals = pending_animals(meat_only=True)
+    view_only = not (can_prepare_slaughter(request.user) or can_manage_inventory(request.user))
+    animals = [] if view_only else pending_animals(meat_only=True)
     return render(request, "inventory/slaughter.html", {
         "section": "slaughter",
+        "view_only": view_only,
         "animals": animals, "documents": Document.objects.filter(kind="sp55"),
         "has_unassigned_animals": any(not animal["document"] for animal in animals),
-        "drafts": Document.objects.filter(kind="sp55", state__in=["draft", "ready"]),
+        "drafts": Document.objects.none() if view_only else Document.objects.filter(kind="sp55", state__in=["draft", "ready"]),
         "prepare_slaughter": can_prepare_slaughter(request.user),
     })
 
@@ -118,13 +127,16 @@ def document(request, pk):
     current_urls = bridges.current_source_urls([case.source_tag_id for case in animals])
     for case in animals:
         case.source_url = current_urls.get(case.source_tag_id)
+    can_edit = can_prepare_slaughter(request.user) if doc.kind == "sp55" else can_manage_inventory(request.user)
     context = {
         "document": doc, "animals": animals,
+        "section": "slaughter" if doc.kind == "sp55" else "",
         "products": list(Product.objects.values("code", "name", "category", "counted", "parts_per_animal")),
-        "payload": doc.payload, "versions": doc.versions.defer("content").select_related("created_by"),
+        "payload": receipts.with_default_offal(doc, animals=animals) if can_edit and doc.state == "draft" else doc.payload,
+        "versions": doc.versions.defer("content").select_related("created_by"),
         "events": doc.events.select_related("actor"),
         "can_confirm": can_manage_inventory(request.user),
-        "can_edit": can_prepare_slaughter(request.user) if doc.kind == "sp55" else can_manage_inventory(request.user),
+        "can_edit": can_edit,
     }
     if doc.kind == "invoice":
         context.update(invoice_context(order_id=doc.order_id))
@@ -287,7 +299,7 @@ def replace_file_api(request, data, pk):
     from django.db import transaction
     with transaction.atomic():
         doc = Document.objects.select_for_update().get(pk=pk)
-        document_access(request.user, doc)
+        document_access(request.user, doc, write=True)
         assert_revision(doc, data.get("revision"))
         assert_editable(doc)
         if not request.FILES.get("file"):

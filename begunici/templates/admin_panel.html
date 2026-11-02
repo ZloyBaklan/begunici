@@ -133,7 +133,9 @@ function displayLogs(logs) {
         
         // Создаем ссылку на животное если есть бирка и это животное
         let objectIdCell = log.object_id || '-';
-        if (log.object_id && log.animal_link_info) {
+        if (log.object_type === 'История болезни' && /^\d+$/.test(String(log.object_id))) {
+            objectIdCell = `<a href="/animals/treatment/${log.object_id}/" target="_blank" class="text-decoration-none">${escapeHtml(log.object_id)}</a>`;
+        } else if (log.object_id && log.animal_link_info) {
             if (log.animal_link_info.pair_tags) {
                 // Обрабатываем пару биркий
                 let links = [];

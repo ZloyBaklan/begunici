@@ -1,0 +1,41 @@
+.clinical-page { padding-top: 24px; }
+.clinical-page [hidden] { display: none !important; }
+.clinical-page .form-label { margin-bottom: .5rem; }
+.clinical-page .card form { margin-bottom: 0; }
+.clinical-page .card-header { background-color: rgba(0, 0, 0, .03); }
+.clinical-page .card-title { font-weight: 500; }
+.clinical-preline { white-space: pre-wrap; overflow-wrap: anywhere; }
+.clinical-page .clinical-table-wrap { max-width: 100%; }
+.clinical-journal { margin-top: 0; min-width: 1450px; }
+.clinical-journal th, .clinical-journal td { text-align: left; }
+.clinical-journal .clinical-select-cell { width: 36px; }
+.clinical-journal .clinical-tag { white-space: nowrap; }
+.clinical-summary { min-width: 260px; max-width: 360px; overflow-wrap: anywhere; }
+.clinical-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.clinical-row-actions .btn { white-space: nowrap; }
+.clinical-selected-summary { overflow-wrap: anywhere; max-height: 140px; overflow-y: auto; }
+.clinical-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; }
+.clinical-info dt { font-weight: 500; }
+.clinical-info dd { margin: 0; overflow-wrap: anywhere; }
+.clinical-diary .clinical-record { min-width: 220px; overflow-wrap: anywhere; }
+.clinical-diary th, .clinical-diary td { text-align: left; }
+.clinical-dose { margin-bottom: 4px; overflow-wrap: anywhere; }
+.clinical-product-options { max-height: 210px; overflow-y: auto; }
+.clinical-product-option { display: flex; align-items: center; gap: 12px; padding: 8px 2px; border-bottom: 1px solid #e9ecef; cursor: pointer; }
+.clinical-product-option:last-child { border-bottom: 0; }
+.clinical-product-option input { flex-shrink: 0; }
+.clinical-product-option:has(input:disabled) { opacity: .65; cursor: default; }
+.clinical-lines-table th:first-child { width: 52%; }
+.clinical-lines-table input[type=number] { min-width: 100px; max-width: 180px; }
+.clinical-lines-table td:last-child { width: 44px; }
+.clinical-page .clinical-finish-modal .modal-content { width: 100%; max-width: none; margin: 0; padding: 0; max-height: calc(100vh - 3.5rem); }
+.clinical-page .clinical-finish-modal form { margin-bottom: 0; }
+.clinical-page .clinical-finish-modal .modal-body { padding: 20px; }
+@media (max-width: 767.98px) {
+    .clinical-page { padding-top: 16px; }
+    .clinical-info { grid-template-columns: 1fr; gap: 4px; }
+    .clinical-info dd { margin-bottom: 8px; }
+    .clinical-product-option { align-items: flex-start; }
+    .clinical-page .clinical-finish-modal .modal-content { max-height: calc(100dvh - 1rem); }
+    .clinical-page .clinical-finish-modal .modal-footer { flex-wrap: wrap; }
+}

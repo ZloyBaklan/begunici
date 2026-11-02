@@ -1,4 +1,4 @@
-﻿export function getCSRFToken() {
+export function getCSRFToken() {
     const cookies = document.cookie.split(";").map(c => c.trim());
     const tokenCookie = cookies.find(c => c.startsWith("csrftoken="));
     
@@ -85,7 +85,7 @@ const API_ERROR_FIELD_LABELS = {
     purpose: 'Цель',
     rshn_tag: 'Бирка РСХН',
     sheep: 'Овцематка',
-    start_date: 'Дата постановки в группу',
+    start_date: 'Дата постановки барана',
     status_date: 'Дата статуса',
     tag: 'Бирка',
     tag_number: 'Бирка',
@@ -278,6 +278,7 @@ export async function apiRequest(url, method = 'GET', body) {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 const errorData = await response.json();
+                window.handleClinicalTransition?.(errorData);
                 console.error(`Ошибка API [${response.status}]:`, errorData);
                 const error = new Error(getApiErrorMessage(errorData));
                 error.data = errorData;

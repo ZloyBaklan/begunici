@@ -1,0 +1,8 @@
+{% extends 'clinical/base.html' %}
+{% block clinical_heading %}<h1 class="mb-0">Лечение/Карантин</h1>{% endblock %}
+{% block clinical_content %}
+<div class="card"><div class="card-body">
+    <div class="alert alert-warning">{{ error }}</div>
+    <a class="btn btn-outline-secondary" href="{% url 'clinical:journal' %}">Вернуться в журнал</a>
+</div></div>
+{% endblock %}

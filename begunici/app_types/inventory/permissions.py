@@ -4,7 +4,7 @@ from django.core.exceptions import PermissionDenied
 
 
 def can_manage_inventory(user):
-    return bool(user.is_authenticated and user.is_active and (
+    return bool(user.is_authenticated and user.is_active and user.username != "main" and (
         user.is_superuser or user.username in {"admin", "finans"}
         or user.groups.filter(name="Admin").exists()
     ))
@@ -12,7 +12,7 @@ def can_manage_inventory(user):
 
 def can_prepare_slaughter(user):
     return bool(
-        user.is_authenticated and user.is_active and (
+        user.is_authenticated and user.is_active and user.username != "main" and (
             user.is_superuser or user.username in {"admin", "vet"}
             or user.groups.filter(name__in=["Admin", "Vet"]).exists()
         )
@@ -20,7 +20,9 @@ def can_prepare_slaughter(user):
 
 
 def can_access_slaughter(user):
-    return can_prepare_slaughter(user) or can_manage_inventory(user)
+    return bool(user.is_authenticated and user.is_active and (
+        user.username == "main" or can_prepare_slaughter(user) or can_manage_inventory(user)
+    ))
 
 
 def require_inventory(user):

@@ -1,0 +1,87 @@
+{% extends 'clinical/base.html' %}
+{% block clinical_heading %}<h1 class="mb-0">Журнал регистрации больных животных</h1>{% endblock %}
+{% block clinical_content %}
+<div class="card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h5 class="card-title mb-0">{% if archive %}Лечебный архив{% else %}Животные на лечении{% endif %}</h5>
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <span class="text-muted">Всего записей: {{ episodes.paginator.count }}</span>
+            <div class="btn-group" role="group" aria-label="Раздел журнала">
+                <a class="btn btn-sm {% if not archive %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{% url 'clinical:journal' %}?q={{ q|urlencode }}">На лечении</a>
+                <a class="btn btn-sm {% if archive %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?archive=1&amp;q={{ q|urlencode }}">Лечебный архив</a>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end mb-3">
+            {% if archive %}<input type="hidden" name="archive" value="1">{% endif %}
+            <div class="col-md">
+                <label for="clinical-search" class="form-label">Поиск:</label>
+                <input id="clinical-search" class="form-control" type="search" name="q" value="{{ q }}" placeholder="Поиск по бирке, бирке РСХН или диагнозу">
+            </div>
+            {% if archive %}<div class="col-md-auto pb-2"><div class="form-check">
+                <input class="form-check-input" id="clinical-pending" type="checkbox" name="pending" value="1" {% if pending %}checked{% endif %}>
+                <label class="form-check-label" for="clinical-pending">Расход на сверке</label>
+            </div></div>{% endif %}
+            <div class="col-auto"><button type="submit" class="btn btn-primary">Поиск</button></div>
+            <div class="col-auto"><a class="btn btn-secondary" href="{{ reset_url }}">Сбросить</a></div>
+        </form>
+        {% if clinical_can_manage and not archive %}
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3" data-clinical-selection-toolbar hidden>
+            <span>Выбрано: <strong id="clinical-selected-count">0</strong></span>
+            <button class="btn btn-success btn-sm" id="clinical-bulk-care" type="button" data-return-url="{{ journal_url }}">Добавить мероприятие выбранным</button>
+            <button class="btn btn-outline-secondary btn-sm" id="clinical-clear-selection" type="button">Очистить выбор</button>
+        </div>
+        {% endif %}
+        <div class="table-responsive clinical-table-wrap">
+            <table class="table table-striped table-hover align-middle clinical-journal">
+                <thead class="table-light"><tr>
+                    {% if clinical_can_manage and not archive %}<th rowspan="2" class="clinical-select-cell"><input class="form-check-input" type="checkbox" id="clinical-select-all" aria-label="Выбрать всех на странице" title="Выбрать всех на странице"></th>{% endif %}
+                    <th rowspan="2">№</th><th rowspan="2" class="clinical-tag">Бирка</th><th rowspan="2">Половозрастная группа</th><th rowspan="2">Возраст</th><th rowspan="2">Диагноз</th>
+                    <th colspan="2">Период болезни</th><th colspan="2">Местонахождение</th><th rowspan="2">Исследования, признаки, лечение и рекомендации</th><th rowspan="2">Исход и дата выписки</th>
+                </tr><tr><th>Поступление</th><th>Длительность</th><th>Откуда поступило</th><th>В процессе лечения</th></tr></thead>
+                <tbody>
+                {% for episode in episodes %}
+                <tr>
+                    {% if clinical_can_manage and not archive %}<td><input class="form-check-input clinical-selected" type="checkbox" value="{{ episode.pk }}" aria-label="Выбрать {{ episode.tag_number }}"></td>{% endif %}
+                    <td>{{ episode.row_number }}</td>
+                    <td class="clinical-tag"><a href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}">{{ episode.tag_number }}</a>{% if episode.previous_count %}<small class="d-block"><a href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}#previous">Болело ранее: {{ episode.previous_count }}</a></small>{% endif %}</td>
+                    <td>{{ episode.display_snapshot.label }}</td>
+                    <td>{{ episode.display_snapshot.age|default:'Не указан' }}</td>
+                    <td>{{ episode.diagnosis|default:'Уточняется' }}</td>
+                    <td class="text-nowrap">{{ episode.admitted_on|date:'d.m.Y' }}</td><td>{{ episode.duration }} дн.</td>
+                    <td>{{ episode.origin|default:'Не указано' }}</td>
+                    <td>{% if episode.closed_on %}{{ episode.snapshot.discharge_place|default:episode.snapshot.place|default:'Не указано' }}{% else %}{{ episode.animal.place|default:'Не указано' }}{% endif %}</td>
+                    <td class="clinical-summary">
+                        {% for event in episode.recent_events %}<p class="mb-2"><small class="d-block text-muted">{{ event.date|date:'d.m.Y' }}</small>{{ event.note|truncatechars:180 }}</p>{% empty %}<p class="text-muted mb-2">Мероприятия ещё не добавлены</p>{% endfor %}
+                        <div class="clinical-row-actions"><a class="btn btn-outline-primary btn-sm" href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}">Полная история</a>
+                        {% if clinical_can_manage and not archive %}<a class="btn btn-outline-success btn-sm" href="{% url 'clinical:care' %}?episodes={{ episode.pk }}&amp;return_url={{ journal_url|urlencode }}">Добавить мероприятие</a>{% endif %}</div>
+                    </td>
+                    <td>
+                        {% if episode.closed_on %}<span class="clinical-preline">{{ episode.outcome }}</span><small class="d-block text-muted">{{ episode.closed_on|date:'d.m.Y' }}</small>
+                            {% if episode.stock_pending %}<a href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}#expense">Расход требует сверки</a>{% endif %}
+                        {% elif clinical_can_manage %}
+                            {% if episode.diagnosis %}<a class="btn btn-outline-primary btn-sm" href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}&amp;finish=1">Завершить лечение</a>
+                            {% else %}<a href="{% url 'clinical:detail' episode.pk %}?return_url={{ journal_url|urlencode }}#intake">Указать диагноз для завершения</a>{% endif %}
+                        {% else %}На лечении{% endif %}
+                    </td>
+                </tr>
+                {% empty %}<tr><td colspan="{% if clinical_can_manage and not archive %}12{% else %}11{% endif %}" class="text-center text-muted py-4">
+                    {% if q or pending %}По выбранным условиям ничего не найдено{% elif archive %}Завершённых заболеваний пока нет{% else %}Животных на лечении нет{% endif %}
+                </td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if episodes.paginator.num_pages > 1 %}
+        <nav aria-label="Страницы журнала" class="mt-3"><ul class="pagination justify-content-center flex-wrap">
+            {% if previous_url %}<li class="page-item"><a class="page-link" href="{{ previous_url }}">Предыдущая</a></li>{% endif %}
+            {% for item in page_links %}
+                {% if item.url %}<li class="page-item {% if item.number == episodes.number %}active{% endif %}"><a class="page-link" href="{{ item.url }}" {% if item.number == episodes.number %}aria-current="page"{% endif %}>{{ item.number }}</a></li>
+                {% else %}<li class="page-item disabled"><span class="page-link">{{ item.number }}</span></li>{% endif %}
+            {% endfor %}
+            {% if next_url %}<li class="page-item"><a class="page-link" href="{{ next_url }}">Следующая</a></li>{% endif %}
+        </ul></nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

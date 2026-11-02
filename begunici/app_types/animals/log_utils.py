@@ -90,7 +90,12 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
     action = None
 
-    if path.startswith(("/catalog/meat/", "/catalog/feeds/")) and method == "POST":
+    if path.startswith("/animals/treatment/") and method == "POST":
+        clinical_action = path.rstrip("/").rsplit("/", 1)[-1]
+        action = {"care": "Лечебное мероприятие", "intake": "Уточнение поступления на лечение",
+                  "close": "Завершение лечения", "reconcile": "Сверка расхода лечения"}.get(clinical_action, "Изменение истории болезни")
+
+    elif path.startswith(("/catalog/meat/", "/catalog/feeds/")) and method == "POST":
         area = "склада кормов" if path.startswith("/catalog/feeds/") else "склада продукции"
         label = "Редактирование позиции" if re.search(r"/[0-9]+/$", path) else "Создание позиции"
         action = f"{label} {area}"
@@ -223,6 +228,8 @@ def resolve_log_action(method, path, params=None, status_code=None):
             action = "Перебиркование животного"
         elif method == "POST" and "/actions/bulk_archive/" in path:
             action = "Массовый перенос в архив"
+        elif method == "POST" and "/lambing-group/" in path and "/set-father/" in path:
+            action = "Изменение производителя группы"
         elif method == "POST" and "/lambing-group/" in path and "/add-mothers/" in path:
             action = "Добавление матерей в группу"
         elif method == "POST" and "/lambing-group/" in path and "/remove-mothers/" in path:
@@ -342,6 +349,9 @@ def resolve_log_action(method, path, params=None, status_code=None):
 
 def resolve_log_object_type(method, path):
     path = _normalize_path(path)
+
+    if path.startswith("/animals/treatment/"):
+        return "История болезни"
 
     if path.startswith("/catalog/meat/"):
         return "Номенклатура мясной продукции"

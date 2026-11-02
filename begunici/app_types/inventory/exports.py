@@ -82,7 +82,8 @@ def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offa
     ])
     for name, items in offal_rows.items():
         rows.extend((f"{name} ({tag})", weight, False) for tag, weight in items)
-        rows.append((f"Итого {name.lower()}", sum((weight for _, weight in items), Decimal(0)), True))
+        measured = [weight for _, weight in items if weight is not None]
+        rows.append((f"Итого {name.lower()}", sum(measured, Decimal(0)) if measured else None, True))
     rows.append(("Итого субпродукты", offal_weight, True))
 
     styles = {column: copy(sheet.cell(19, column)._style) for column in range(17, 33)}
@@ -470,11 +471,12 @@ def slaughter_workbook(document):
             rejected.append(row)
         else:
             outputs.append(row)
-            totals[category] += numeric(item["weight"])
+            if row[3] is not None:
+                totals[category] += row[3]
             if category == "meat":
-                meat_by_animal[case.pk] += numeric(item["weight"])
+                meat_by_animal[case.pk] += row[3] or Decimal(0)
             elif category == "offal":
-                offal[name].append((case.tag_number, numeric(item["weight"])))
+                offal[name].append((case.tag_number, row[3]))
     # Carcass mass is separate from live mass. Never add the entered cuts to
     # their full carcass mass a second time. Rejected meat is not accepted.
     meat_weight = Decimal(0)
@@ -489,7 +491,8 @@ def slaughter_workbook(document):
             meat_weight += accepted_weight
             if accepted_weight:
                 meat_rows.append((f"Мясо ({case.tag_number})", accepted_weight))
-        elif declared is not None and not any(int(item["animal_id"]) == case.pk for item in document.payload.get("outputs", [])):
+        elif declared is not None and not any(int(item["animal_id"]) == case.pk and item.get("weight") not in (None, "")
+                                             for item in document.payload.get("outputs", [])):
             meat_weight += declared
             meat_rows.append((f"Мясо ({case.tag_number})", declared))
     _write_slaughter_output_rows(sheet, meat_rows, offal, meat_weight, totals["offal"])

@@ -190,6 +190,7 @@ async function apiRequest(url, method, body) {
         console.log(`Ответ от сервера [${response.status} ${response.statusText}]:`, responseData);
 
         if (!response.ok) {
+            window.handleClinicalTransition?.(responseData);
             console.error(`Ошибка API [${response.status}]:`, responseData);
             const error = new Error(getApiErrorMessage(responseData));
             error.data = responseData;
@@ -466,6 +467,8 @@ async function loadAnimalDetails(animalType, tagNumber) {
             updateRejectionReasonField();
         }
 
+        const treatmentField = document.getElementById('is_in_treatment');
+        if (treatmentField) treatmentField.checked = Boolean(animal.is_in_treatment);
         const forSaleField = document.getElementById('is_for_sale');
         if (forSaleField) {
             forSaleField.checked = Boolean(animal.is_for_sale);
@@ -772,6 +775,9 @@ async function saveAnimalDetails() {
         is_for_sale: Boolean(document.getElementById('is_for_sale')?.checked),
         needs_retagging: Boolean(document.getElementById('needs_retagging')?.checked),
     };
+
+    const treatmentField = document.getElementById('is_in_treatment');
+    if (treatmentField && !treatmentField.disabled) data.is_in_treatment = treatmentField.checked;
 
     if (animalStatusValue) {
         data.animal_status_id = parseInt(animalStatusValue);
@@ -1767,8 +1773,9 @@ function displayLambingGroups(groups, container, isFatherPage) {
 }
 
 function createLambingGroupCard(group, isFatherPage) {
-    const placementDate = group.placement_date
-        ? new Date(group.placement_date).toLocaleDateString('ru-RU')
+    const groupDate = group.is_draft ? null : (group.father_placement_date || group.placement_date);
+    const placementDate = groupDate
+        ? new Date(groupDate).toLocaleDateString('ru-RU')
         : '-';
     const note = group.note || '';
     const mothers = Array.isArray(group.mothers) ? group.mothers : [];
@@ -1794,15 +1801,15 @@ function createLambingGroupCard(group, isFatherPage) {
     return `
         <div class="lambing-card active">
             <div class="lambing-info">
-                <div><strong>Дата постановки в группу:</strong> ${placementDate}</div>
-                <div><strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}</div>
+                <div><strong>Дата постановки барана:</strong> ${placementDate}</div>
+                <div><strong>Отец:</strong> ${group.is_draft ? 'Без производителя (черновик)' : `${fatherTypeDisplay} ${fatherTagContent}`}</div>
                 <div><strong>Матери:</strong><br>${motherLinks}</div>
                 ${note ? `<div><strong>Примечание:</strong> ${note}</div>` : ''}
             </div>
             <div class="lambing-actions">
-                <button type="button" class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
+                ${!group.is_draft ? `<button type="button" class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
                     Снять барана
-                </button>
+                </button>` : ''}
             </div>
         </div>
     `;
@@ -2319,38 +2326,43 @@ function createLambingCard(lambing, isActive) {
     return `
         <div class="lambing-card ${isActive ? 'active' : 'completed'}">
             <div class="lambing-info">
-                <div>
-                    <strong>Дата снятия барана:</strong> ${startDate}
-                </div>
-                <div>
-                    <strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}
-                </div>
-                <div>
-                    <strong>Планируемые роды:</strong>
-                    <span class="planned-date">${plannedDate}</span>
+                <div class="lambing-dates">
+                    <div class="lambing-date-row">
+                        <strong>Дата постановки барана:</strong>
+                        <span>${lambing.father_placement_date ? new Date(lambing.father_placement_date).toLocaleDateString('ru-RU') : '-'}</span>
+                    </div>
+                    <div class="lambing-date-row">
+                        <strong>Дата снятия барана:</strong>
+                        <span>${startDate}</span>
+                    </div>
+                    <div class="lambing-date-row">
+                        <strong>Планируемые роды:</strong>
+                        <span class="planned-date">${plannedDate}</span>
+                    </div>
                     ${actualDate ? `
-                        <div class="actual-lambing-row">
+                        <div class="lambing-date-row actual-lambing-row">
                             <strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong>
                             <span class="actual-lambing-date">${actualDate}</span>
                         </div>
                     ` : ''}
                 </div>
-                ${isEarlyFailure ? `
-                    <div style="grid-column: 2;">
-                        <strong>Статус завершения:</strong> Досрочно завершен (неудача)
+                <div class="lambing-details">
+                    <div>
+                        <strong>Отец:</strong> ${fatherTypeDisplay} ${fatherTagContent}
                     </div>
-                ` : ''}
-                ${isUnsuccessfulInsemination ? `
-                    <div style="grid-column: 2;">
-                        <strong>Статус завершения:</strong> Неудачное осеменение
-                    </div>
-                ` : ''}
-                ${!isActive && !isEarlyFailure && !isUnsuccessfulInsemination ? `
-                    <div style="grid-column: 2;">
-                        <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
-                        <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
-                    </div>
-                ` : ''}
+                    ${isEarlyFailure ? `
+                        <div><strong>Статус завершения:</strong> Досрочно завершен (неудача)</div>
+                    ` : ''}
+                    ${isUnsuccessfulInsemination ? `
+                        <div><strong>Статус завершения:</strong> Неудачное осеменение</div>
+                    ` : ''}
+                    ${!isActive && !isEarlyFailure && !isUnsuccessfulInsemination ? `
+                        <div>
+                            <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
+                            <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
+                        </div>
+                    ` : ''}
+                </div>
                 ${shouldShowNote ? `<div><strong>Примечание:</strong> ${lambing.note}</div>` : ''}
             </div>
             ${isActive ? `
@@ -2397,41 +2409,42 @@ function createFatherLambingCard(lambing) {
     return `
         <div class="lambing-card ${statusClass}">
             <div class="lambing-info">
-                <div>
-                    <strong>Статус:</strong> ${statusText}
-                </div>
-                <div>
-                    <strong>Мать:</strong> ${motherInfo}
-                </div>
-                <div>
-                    <strong>Дата снятия барана:</strong> ${startDate}
-                </div>
-                <div>
-                    <strong>Планируемые роды:</strong>
-                    <span class="planned-date">${plannedDate}</span>
+                <div class="lambing-dates">
+                    <div class="lambing-date-row">
+                        <strong>Дата постановки барана:</strong>
+                        <span>${lambing.father_placement_date ? new Date(lambing.father_placement_date).toLocaleDateString('ru-RU') : '-'}</span>
+                    </div>
+                    <div class="lambing-date-row">
+                        <strong>Дата снятия барана:</strong>
+                        <span>${startDate}</span>
+                    </div>
+                    <div class="lambing-date-row">
+                        <strong>Планируемые роды:</strong>
+                        <span class="planned-date">${plannedDate}</span>
+                    </div>
                     ${actualDate ? `
-                        <div class="actual-lambing-row">
+                        <div class="lambing-date-row actual-lambing-row">
                             <strong>${isEarlyFailure ? 'Дата завершения' : 'Фактические роды'}:</strong>
                             <span class="actual-lambing-date">${actualDate}</span>
                         </div>
                     ` : ''}
                 </div>
-                ${isEarlyFailure ? `
-                    <div style="grid-column: 2;">
-                        <strong>Статус завершения:</strong> Досрочно завершен (неудача)
-                    </div>
-                ` : ''}
-                ${isUnsuccessfulInsemination ? `
-                    <div style="grid-column: 2;">
-                        <strong>Статус завершения:</strong> Неудачное осеменение
-                    </div>
-                ` : ''}
-                ${!lambing.is_active && !isEarlyFailure && !isUnsuccessfulInsemination ? `
-                    <div style="grid-column: 2;">
-                        <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
-                        <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
-                    </div>
-                ` : ''}
+                <div class="lambing-details">
+                    <div><strong>Статус:</strong> ${statusText}</div>
+                    <div><strong>Мать:</strong> ${motherInfo}</div>
+                    ${isEarlyFailure ? `
+                        <div><strong>Статус завершения:</strong> Досрочно завершен (неудача)</div>
+                    ` : ''}
+                    ${isUnsuccessfulInsemination ? `
+                        <div><strong>Статус завершения:</strong> Неудачное осеменение</div>
+                    ` : ''}
+                    ${!lambing.is_active && !isEarlyFailure && !isUnsuccessfulInsemination ? `
+                        <div>
+                            <div><strong>Живые ягнята:</strong> ${formatLiveLambsDisplay(lambing)}</div>
+                            <div><strong>Мертвые ягнята:</strong> ${lambing.dead_lambs_count ?? 0}</div>
+                        </div>
+                    ` : ''}
+                </div>
                 ${shouldShowNote ? `<div><strong>Примечание:</strong> ${lambing.note}</div>` : ''}
             </div>
             ${lambing.is_active ? `
@@ -2480,7 +2493,7 @@ async function createLambing() {
 
     // Валидация
     if (!startDate) {
-        alert('Пожалуйста, укажите дату постановки в группу');
+        alert('Пожалуйста, укажите дату постановки барана');
         return;
     }
 

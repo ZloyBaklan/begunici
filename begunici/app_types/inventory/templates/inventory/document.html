@@ -20,7 +20,7 @@
 </tr>{% endwith %}{% endfor %}
 </tbody></table></div>
 <h2>{% if document.kind == 'sp54' %}Реализация живьём{% else %}Выход продукции и брак{% endif %}</h2>
-{% if document.kind == 'sp55' %}<p class="iv-flow">Туша включает все мясные части; одна полутуша оставляет половину частей (например, 2 голени из 4). Печень, почки, язык и другие субпродукты добавляются отдельно. Брак также учитывается в выходе, но на склад не поступает.</p>{% endif %}
+{% if document.kind == 'sp55' %}<p class="iv-flow">Туша включает все мясные части; одна полутуша оставляет половину частей (например, 2 голени из 4). Субпродукты добавляются по умолчанию, у ярок и овцематок — без семенников. Укажите фактические вес и количество, ненужные строки удалите. Пустой вес допустим только в черновике. Брак также учитывается в выходе, но на склад не поступает.</p>{% endif %}
 <div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Животное</th><th>Номенклатура</th><th>Вес, кг</th><th>Шт.</th><th>Брак</th><th>Причина</th><th></th></tr></thead><tbody id="iv-outputs" {% if not can_edit or document.state == 'confirmed' %}data-readonly="true"{% endif %}></tbody></table></div>
 {% if can_edit and document.state != 'confirmed' %}<button type="button" class="btn btn-outline-primary" id="iv-add-output">Добавить продукцию</button>
 <form id="iv-receipt-save" data-url="{% url 'inventory:receipt-save' document.pk %}">{% csrf_token %}

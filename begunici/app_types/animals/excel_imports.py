@@ -298,7 +298,8 @@ def _active_group_at_place(place, exclude_group_id=None):
     queryset = (
         LambingGroup.objects.filter(is_active=True)
         .select_related("maker__tag", "maker__place", "ram__tag", "ram__place")
-        .filter(Q(maker__place=place) | Q(ram__place=place))
+        .filter(Q(maker__place=place) | Q(ram__place=place)
+                | Q(maker__isnull=True, ram__isnull=True, place=place))
     )
     if exclude_group_id:
         queryset = queryset.exclude(pk=exclude_group_id)
@@ -986,7 +987,7 @@ def _parse_group_import(workbook):
         father_tag_text = _clean_text(father_tag_value)
 
         try:
-            placement_date = _parse_import_date(date_value, "Дата постановки в группу")
+            placement_date = _parse_import_date(date_value, "Дата постановки барана")
             barn_number = _parse_optional_int(barn_value, "Овчарня")
             section_number = _parse_optional_int(section_value, "Отсек")
             target_place = _resolve_place(barn_number, section_number)
@@ -1062,12 +1063,12 @@ def _parse_group_import(workbook):
                 _add_row_error(errors, row_number, _format_group_place_conflict(place_conflict, effective_place))
                 continue
 
-            if active_father_group.placement_date != placement_date:
+            if active_father_group.get_father_placement_date() != placement_date:
                 warnings.append({
                     "row": row_number,
                     "message": (
                         f"Отец {father.tag.tag_number} уже в группе №{active_father_group.id} "
-                        f"от {active_father_group.placement_date.strftime('%d.%m.%Y')}; "
+                        f"с постановкой барана от {active_father_group.get_father_placement_date().strftime('%d.%m.%Y')}; "
                         "мать будет добавлена в эту группу"
                     ),
                 })
@@ -1208,6 +1209,7 @@ def _apply_group_import(request, valid_rows):
 
                 group_data = {
                     "placement_date": item["placement_date"],
+                    "place": effective_place,
                     "note": "",
                 }
                 if father_type == "maker":
@@ -1215,6 +1217,12 @@ def _apply_group_import(request, valid_rows):
                 else:
                     group_data["ram"] = father
                 group = LambingGroup.objects.create(**group_data)
+                group.father_history.create(
+                    father_tag=father.tag, tag_number=father.tag.tag_number,
+                    display_name=father.get_display_name() if father_type == "maker" else father.tag.tag_number,
+                    father_type=father_type, placement_date=group.get_father_placement_date(),
+                    changed_by=request.user if request.user.is_authenticated else None,
+                )
                 created_groups[key] = group
                 set_animal_status(father, statuses["father_in_group"])
                 if target_place and _move_animal_to_place_with_history(father, target_place):
@@ -1257,7 +1265,7 @@ def _apply_group_import(request, valid_rows):
             (
                 f"В группу №{group.id} добавлены матери: {_short_tags(mother_tags, limit=20)}; "
                 f"отец {group.get_father_tag()}; "
-                f"дата постановки группы: {group.placement_date.strftime('%d.%m.%Y')}; "
+                f"дата постановки барана: {group.placement_date.strftime('%d.%m.%Y')}; "
                 f"место: {group.get_father().place.sheepfold if group.get_father() and group.get_father().place else '-'}"
             ),
         )

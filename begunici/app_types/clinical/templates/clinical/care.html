@@ -1,0 +1,30 @@
+{% extends 'clinical/base.html' %}
+{% block clinical_heading %}<h1 class="mb-0">Добавить лечебное мероприятие</h1>{% endblock %}
+{% block clinical_content %}
+<div class="mb-3"><a class="btn btn-outline-secondary" href="{{ return_url }}">Вернуться</a></div>
+<div class="row"><div class="col-lg-9 col-xl-8">
+    <div class="card">
+        <div class="card-header"><h5 class="card-title mb-0">Лечебное мероприятие</h5></div>
+        <div class="card-body">
+            <p class="clinical-selected-summary">Выбрано животных: <strong>{{ episodes|length }}</strong>. {% for episode in episodes %}<a href="{% url 'clinical:detail' episode.pk %}">{{ episode.tag_number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+            {% if clinical_can_manage %}
+            <form data-clinical-form="care" data-url="{% url 'clinical:command' 'care' %}">
+                <input type="hidden" name="token" value="{{ form_token }}">
+                <input type="hidden" name="return_url" value="{{ return_url }}">
+                {% for episode in episodes %}<input type="hidden" data-episode-id="{{ episode.pk }}" data-revision="{{ episode.revision }}">{% endfor %}
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><label class="form-label" for="care-date">Дата мероприятия:</label><input class="form-control" id="care-date" type="date" name="date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" required></div>
+                    <div class="col-md-8"><label class="form-label" for="care-mode">Количество препаратов:</label><select class="form-select" id="care-mode" name="mode"><option value="head">На каждую голову</option><option value="group">На всю выбранную группу</option></select></div>
+                </div>
+                <div class="mb-3"><label class="form-label" for="care-note">Клинические признаки, действия и рекомендации:</label><textarea class="form-control" id="care-note" name="note" rows="4" maxlength="12000" required></textarea></div>
+                <div class="alert alert-light border" data-group-help hidden>Укажите общий расход на выбранных животных. Он будет распределён между ними.</div>
+                {% include 'clinical/lines.html' with picker_open=True %}
+                <p class="small mt-2" data-clinical-total></p>
+                <div class="d-flex flex-wrap gap-2 mt-3"><button type="submit" class="btn btn-success">Сохранить мероприятие</button><a class="btn btn-secondary" href="{{ return_url }}">Отмена</a></div>
+            </form>
+            {% else %}<p class="text-muted mb-0">Добавление мероприятий доступно ветврачу, зоотехнику и администратору.</p>{% endif %}
+        </div>
+    </div>
+</div></div>
+{{ products|json_script:'clinical-products' }}
+{% endblock %}

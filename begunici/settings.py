@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "begunici.app_types.animals",
     "begunici.app_types.veterinary",  # Приложение для ветобработки и взвешивания
+    "begunici.app_types.clinical",  # CLINICAL BRIDGE: журнал лечения
     "begunici.app_types.vet_inventory",  # VET BRIDGE: отдельный учёт препаратов
     "begunici.app_types.public_site",  # Публичный сайт
     "begunici.app_types.inventory",  # INVENTORY BRIDGE: изолированный складской учёт

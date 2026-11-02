@@ -22,9 +22,9 @@ def count(value, label="Количество", *, allow_zero=False):
     return int(result)
 
 
-def rows(value):
-    if not isinstance(value, list) or not value or len(value) > 500:
-        raise ValidationError("Добавьте от 1 до 500 строк.")
+def rows(value, *, maximum=500):
+    if not isinstance(value, list) or not value or len(value) > maximum:
+        raise ValidationError(f"Добавьте от 1 до {maximum} строк.")
     if any(not isinstance(row, dict) for row in value):
         raise ValidationError("Некорректный формат строк.")
     return value

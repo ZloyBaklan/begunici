@@ -9,9 +9,10 @@
 <div class="container">
     <h2>Добро пожаловать на ферму Бегуницы</h2>
     
-    {% if user_permissions.can_view_statistics %}
+    {% if user_permissions.can_view_statistics or user_permissions.can_view_plans %}
     <!-- Статистика -->
     <div class="statistics-container">
+        {% if user_permissions.can_view_statistics %}
         <h3>Статистика</h3>
         <div class="stats-cards">
             <div class="stat-card">
@@ -58,6 +59,9 @@
             </div>
         </div>
 
+        {% endif %}
+
+        {% if user_permissions.can_view_plans %}
         <div class="plan-parameters-card" id="plan-parameters-card">
             <div class="plan-parameters-header">
                 <div>
@@ -84,6 +88,7 @@
                     <button type="button" class="btn btn-outline-primary btn-sm" id="toggle-plan-parameters-btn" onclick="togglePlanParameters()">
                         Развернуть
                     </button>
+                    {% if user_permissions.can_edit_plans %}
                     <button type="button" class="btn btn-outline-primary btn-sm" id="edit-plan-btn" onclick="enablePlanEditing()" style="display: none;">
                         Редактировать план
                     </button>
@@ -93,6 +98,7 @@
                     <button type="button" class="btn btn-secondary btn-sm" id="cancel-plan-btn" onclick="cancelPlanEditing()" style="display: none;">
                         Отмена
                     </button>
+                    {% endif %}
                 </div>
             </div>
             <div class="plan-parameters-content" id="plan-parameters-content" style="display: none;">
@@ -118,7 +124,9 @@
 
         <!-- FEED BRIDGE: самостоятельный кормовой план между планом и статистикой. -->
         {% feed_plan_card %}
+        {% endif %}
 
+        {% if user_permissions.can_view_statistics %}
         <div class="yearly-statistics-card" id="yearly-statistics-card">
             <div class="yearly-statistics-header">
                 <h4>Статистика</h4>
@@ -132,6 +140,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
     </div>
     {% endif %}
     
@@ -168,8 +177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Инициализация селекторов периода
     initYearSelector();
 
-    const statisticsContainer = document.querySelector('.statistics-container');
-    if (statisticsContainer) {
+    if (document.getElementById('total-active')) {
     try {
         const response = await fetch('/animals/api/dashboard-statistics/');
         const data = await response.json();
@@ -231,7 +239,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Ошибка загрузки статистики:', error);
     }
     
-    await loadPlanParameters(new Date().getFullYear());
+    }
+
+    if (document.getElementById('plan-parameters-card')) {
+        await loadPlanParameters(new Date().getFullYear());
     }
     
     // Проверяем нужность автобэкапа
@@ -295,9 +306,14 @@ function isYearlyStatisticsExpanded() {
 function updatePlanActionButtons() {
     const isExpanded = isPlanParametersExpanded();
     document.getElementById('toggle-plan-parameters-btn').textContent = isExpanded ? 'Свернуть' : 'Развернуть';
-    document.getElementById('edit-plan-btn').style.display = isExpanded && !planEditing ? 'inline-block' : 'none';
-    document.getElementById('save-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
-    document.getElementById('cancel-plan-btn').style.display = isExpanded && planEditing ? 'inline-block' : 'none';
+    for (const [id, visible] of [
+        ['edit-plan-btn', isExpanded && !planEditing],
+        ['save-plan-btn', isExpanded && planEditing],
+        ['cancel-plan-btn', isExpanded && planEditing],
+    ]) {
+        const button = document.getElementById(id);
+        if (button) button.style.display = visible ? 'inline-block' : 'none';
+    }
     const monthSelect = document.getElementById('plan-month-select');
     monthSelect.style.display = isExpanded ? 'inline-block' : 'none';
     monthSelect.disabled = planEditing;
@@ -414,6 +430,7 @@ async function loadPlanParameters(year) {
 }
 
 function enablePlanEditing() {
+    if (!document.getElementById('edit-plan-btn')) return;
     planEditing = true;
     updatePlanActionButtons();
     showPlanMessage('');
@@ -428,6 +445,7 @@ function cancelPlanEditing() {
 }
 
 async function savePlanParameters() {
+    if (!document.getElementById('edit-plan-btn')) return;
     const values = {};
     document.querySelectorAll('.plan-value-input').forEach((input) => {
         values[input.dataset.key] = input.value;

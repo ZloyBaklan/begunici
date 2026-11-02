@@ -153,6 +153,8 @@ class AnimalBase(models.Model):
         help_text="Отдельная отметка назначения животного, не статус.",
         db_index=True,
     )
+    # CLINICAL BRIDGE: назначение независимо от статуса и других назначений.
+    is_in_treatment = models.BooleanField(default=False, verbose_name="Лечение", db_index=True)
     needs_retagging = models.BooleanField(
         default=False,
         verbose_name="Необходимо перебиркование",
@@ -229,6 +231,8 @@ class AnimalBase(models.Model):
             labels.append("Брак")
         if self.is_for_sale:
             labels.append("К продаже")
+        if self.is_in_treatment:
+            labels.append("Лечение")
         return ", ".join(labels) if labels else empty
 
     def get_age_display(self, reference_date=None):
@@ -380,6 +384,7 @@ class AnimalBase(models.Model):
 
         self.dorper_percentage, self.dorper_uses_default = DorperCalculator(find_parent).resolve(root)
 
+    @transaction.atomic  # CLINICAL BRIDGE: назначение и поступление сохраняются вместе.
     def save(self, *args, **kwargs):
         """
         Переопределяем сохранение, учитывая:
@@ -804,9 +809,9 @@ def build_lambing_tracking_data(objects):
         is_group = isinstance(obj, LambingGroup)
         mothers = obj.get_mothers() if is_group else [obj.get_mother()]
         mothers = [mother for mother in mothers if mother is not None]
-        start = (obj.placement_date if is_group else obj.tracked_veterinary_from_date)
+        start = (obj.get_father_placement_date() if is_group else obj.tracked_veterinary_from_date)
         if not start and not is_group:
-            start = obj.source_group.placement_date if obj.source_group_id else obj.start_date
+            start = obj.source_group.get_father_placement_date() if obj.source_group_id else obj.start_date
         care = obj.tracked_veterinary_care if obj.tracked_veterinary_care_id else None
         specifications.append((obj, mothers, as_local_date(start), care, is_group))
 
@@ -837,6 +842,7 @@ def build_lambing_tracking_data(objects):
             "done": done, "done_count": done_count, "total_count": total,
             "display": format_lambing_tracking_result(name, done),
             "mother_results": mother_results,
+            "started": bool(start),
         }
     return result
 
@@ -877,6 +883,13 @@ class LambingGroup(models.Model):
         default=timezone.now,
         db_index=True,
     )
+    father_placement_date = models.DateField(
+        null=True, blank=True, db_index=True, verbose_name="Дата постановки барана",
+    )
+    place = models.ForeignKey(
+        Place, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="reproduction_groups", verbose_name="Овчарня группы",
+    )
     removal_date = models.DateField(
         verbose_name="Дата снятия барана",
         null=True,
@@ -910,7 +923,16 @@ class LambingGroup(models.Model):
     def save(self, *args, **kwargs):
         if self._state.adding and self.tracked_veterinary_care_id is None:
             self.tracked_veterinary_care = get_default_lambing_tracking_care()
+        if self._state.adding and (self.maker_id or self.ram_id) and self.father_placement_date is None:
+            self.father_placement_date = as_local_date(self.placement_date)
         super().save(*args, **kwargs)
+
+    @property
+    def is_draft(self):
+        return not (self.maker_id or self.ram_id)
+
+    def get_father_placement_date(self):
+        return as_local_date(self.father_placement_date or self.placement_date) if not self.is_draft else None
 
     def get_father(self):
         return self.maker or self.ram
@@ -932,6 +954,26 @@ class LambingGroup(models.Model):
         mothers = list(self.sheep.all()) + list(self.ewes.all())
         mothers.sort(key=lambda animal: animal.tag.tag_number if animal.tag else "")
         return mothers
+
+
+class LambingGroupFatherHistory(models.Model):
+    group = models.ForeignKey(LambingGroup, on_delete=models.CASCADE, related_name="father_history")
+    father_tag = models.ForeignKey(Tag, on_delete=models.SET_NULL, null=True, related_name="group_father_history")
+    tag_number = models.CharField(max_length=100)
+    display_name = models.CharField(max_length=250)
+    father_type = models.CharField(max_length=10)
+    placement_date = models.DateField()
+    removal_date = models.DateField(null=True, blank=True)
+    destination = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True)
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    recorded_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["placement_date", "id"]
+        constraints = [models.UniqueConstraint(
+            fields=["group"], condition=Q(removal_date__isnull=True),
+            name="one_current_group_father_history",
+        )]
 
 
 class Lambing(models.Model):
@@ -1013,6 +1055,7 @@ class Lambing(models.Model):
     )
     
     start_date = models.DateField(verbose_name="Дата начала окота (случки)", default=timezone.now)
+    father_placement_date = models.DateField(null=True, blank=True, verbose_name="Дата постановки барана")
     planned_lambing_date = models.DateField(verbose_name="Планируемая дата окота", default=timezone.now)
     actual_lambing_date = models.DateField(
         verbose_name="Фактическая дата окота", null=True, blank=True
@@ -1194,12 +1237,14 @@ class Lambing(models.Model):
         is_new = self.pk is None
         if is_new and self.is_active:
             group = self.source_group if self.source_group_id else None
+            if self.father_placement_date is None and group:
+                self.father_placement_date = group.get_father_placement_date()
             if self.tracked_veterinary_care_id is None:
                 self.tracked_veterinary_care = (
                     group.tracked_veterinary_care if group else get_default_lambing_tracking_care()
                 )
             if self.tracked_veterinary_from_date is None:
-                self.tracked_veterinary_from_date = as_local_date(group.placement_date if group else self.start_date)
+                self.tracked_veterinary_from_date = as_local_date(group.get_father_placement_date() if group else self.start_date)
         was_active = False
         if not is_new:
             was_active = Lambing.objects.filter(pk=self.pk, is_active=True).exists()
@@ -1433,6 +1478,7 @@ class Ram(AnimalBase):
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
+                is_in_treatment=self.is_in_treatment,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,
@@ -1503,6 +1549,7 @@ class Ewe(AnimalBase):
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
                 is_for_sale=self.is_for_sale,
+                is_in_treatment=self.is_in_treatment,
                 needs_retagging=self.needs_retagging,
                 is_archived=self.is_archived,
                 carcass_weight=self.carcass_weight,

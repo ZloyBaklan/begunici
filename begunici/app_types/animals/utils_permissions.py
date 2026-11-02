@@ -32,6 +32,21 @@ def can_view_statistics(user):
     return role in ['main', 'admin']
 
 
+def can_edit_dashboard_plans(user):
+    """Keep plan editing for existing unrestricted accounts, not veterinary viewers."""
+    return bool(
+        user.is_authenticated and user.is_active and user.username != 'vet'
+        and not user.groups.filter(name__in=['Vet', 'Zootech']).exists()
+    )
+
+
+def can_view_dashboard_plans(user):
+    return can_edit_dashboard_plans(user) or bool(
+        user.is_authenticated and user.is_active
+        and (user.username == 'vet' or user.groups.filter(name='Vet').exists())
+    )
+
+
 def can_delete_objects(user):
     """Проверяет, может ли пользователь удалять объекты"""
     role = get_user_role(user)
@@ -55,6 +70,8 @@ def get_user_permissions(user):
     return {
         'role': get_user_role(user),
         'can_view_statistics': can_view_statistics(user),
+        'can_view_plans': can_view_dashboard_plans(user),
+        'can_edit_plans': can_edit_dashboard_plans(user),
         'can_delete_objects': can_delete_objects(user),
         'can_restore_from_archive': can_restore_from_archive(user),
         'can_archive_animals': can_archive_animals(user),

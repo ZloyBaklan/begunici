@@ -1,3 +1,4 @@
+from copy import deepcopy
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -5,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import bridges
+from .catalog import DEFAULT_SP55_OFFAL_CODES
 from .documents import add_version, assert_editable, assert_revision
 from .models import AnimalCase, AuditEvent, Document, Product, StockLot, StockMovement
 from .permissions import require_inventory, require_slaughter
@@ -14,6 +16,36 @@ from .yield_rules import validate_parts
 
 def _check_permission(user, kind):
     (require_slaughter if kind == "sp55" else require_inventory)(user)
+
+
+def with_default_offal(document, *, animals=None):
+    """Prefill each animal once; blank weights are not measured production."""
+    payload = deepcopy(document.payload)
+    if document.kind != "sp55":
+        return payload
+    animals = list(document.animals.all()) if animals is None else animals
+    products = {product.code: product for product in Product.objects.filter(
+        code__in=DEFAULT_SP55_OFFAL_CODES, category="offal",
+    )}
+    present = {(str(row["animal_id"]), row["product"]) for row in payload.get("outputs", [])}
+    for case in animals:
+        details = payload.setdefault("animals", {}).setdefault(str(case.pk), {})
+        if details.get("offal_defaults_initialized") is True:
+            continue
+        for code in DEFAULT_SP55_OFFAL_CODES:
+            product = products.get(code)
+            if not product or (str(case.pk), code) in present:
+                continue
+            if code == "testes" and case.snapshot.get("sex") != "male":
+                continue
+            payload.setdefault("outputs", []).append({
+                "animal_id": case.pk, "product": code, "weight": "",
+                "quantity": (product.parts_per_animal or 1) if product.counted else 0,
+                "rejected": False, "reason": "", "name": product.name,
+                "category": product.category, "counted": product.counted,
+            })
+        details["offal_defaults_initialized"] = True
+    return payload
 
 
 @transaction.atomic
@@ -76,6 +108,7 @@ def prepare_receipt(user, tag_ids, *, kind, document_id=None, expected_revision=
                 "animal_id": case.pk, "product": "carcass", "quantity": 1,
                 "weight": str(snapshot["carcass_weight"]), "rejected": False, "reason": "",
             })
+    document.payload = with_default_offal(document)
     document.state = "ready" if kind == "sp54" else "draft"
     document.number = document.act_number
     original = bridges.original_sp54(bridges.source_animal(sources[0]["tag_id"]), user) if kind == "sp54" else None
@@ -104,6 +137,8 @@ def normalize_receipt_payload(document, payload, *, complete=False):
             "weight": str(amount(weight)) if weight not in (None, "") else "",
             "fatness": fatness[:200], "comment": comment[:3000],
         }
+        if document.kind == "sp55":
+            result["animals"][str(case_id)]["offal_defaults_initialized"] = True
         carcass = details.get("carcass_weight") or case.snapshot.get("carcass_weight")
         if document.kind == "sp55":
             result["animals"][str(case_id)]["carcass_weight"] = str(amount(carcass, "Масса туши")) if carcass not in (None, "") else ""
@@ -112,9 +147,10 @@ def normalize_receipt_payload(document, payload, *, complete=False):
         if complete and document.kind == "sp55" and not result["animals"][str(case_id)]["weight"]:
             raise ValidationError(f"{case.tag_number}: не указана живая масса.")
     output_rows = payload.get("outputs", [])
+    output_limit = 500 + (len(cases) * len(DEFAULT_SP55_OFFAL_CODES) if document.kind == "sp55" else 0)
     if complete:
-        rows(output_rows)
-    elif not isinstance(output_rows, list) or len(output_rows) > 500:
+        rows(output_rows, maximum=output_limit)
+    elif not isinstance(output_rows, list) or len(output_rows) > output_limit:
         raise ValidationError("Некорректные строки выхода продукции.")
     per_animal = {case_id: [] for case_id in cases}
     seen = set()
@@ -127,7 +163,11 @@ def normalize_receipt_payload(document, payload, *, complete=False):
         product = products.get(item.get("product"))
         if not product or (product.category == "live") != (document.kind == "sp54"):
             raise ValidationError("Неверная номенклатура для этого вида акта.")
-        weight = amount(item.get("weight"))
+        weight_value = item.get("weight")
+        empty_offal_weight = document.kind == "sp55" and product.category == "offal" and weight_value in (None, "")
+        if complete and empty_offal_weight:
+            raise ValidationError(f"{cases[animal_id].tag_number}: «{product.name}» — укажите фактический вес или удалите строку.")
+        weight = "" if empty_offal_weight else amount(weight_value)
         quantity = count(item.get("quantity", 0), allow_zero=not product.counted)
         if not product.counted and quantity:
             raise ValidationError("Весовая продукция учитывается в килограммах; количество штук должно быть нулевым.")
@@ -157,7 +197,7 @@ def normalize_receipt_payload(document, payload, *, complete=False):
             meat = [(product, row) for product, row in outputs if product.category == "meat"]
             validate_parts(outputs, tag=case.tag_number)
             live = result["animals"][str(case_id)]["weight"]
-            total_weight = sum((Decimal(row["weight"]) for product, row in outputs), Decimal(0))
+            total_weight = sum((Decimal(row["weight"]) for product, row in outputs if row["weight"] != ""), Decimal(0))
             if live and total_weight > Decimal(live):
                 raise ValidationError(f"{case.tag_number}: выход вместе с браком превышает живую массу.")
             carcass = result["animals"][str(case_id)].get("carcass_weight")

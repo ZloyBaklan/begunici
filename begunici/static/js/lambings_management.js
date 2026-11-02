@@ -8,6 +8,15 @@ let fatherDropdownOptions = new Map();
 let kinshipFatherDropdownOptions = new Map();
 let activeGroupsById = new Map();
 let defaultTrackedVeterinaryCareId = null;
+let editingFatherGroup = null;
+let groupFatherCandidates = new Map();
+let groupFatherRequestSequence = 0;
+
+function localDateValue() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 10);
+}
 let selectedGroupAddMothers = new Set();
 let selectedGroupAddMothersData = new Map();
 let currentPage = 1;
@@ -120,9 +129,10 @@ function showOldFatherWarningIfNeeded(animal) {
 function setSelectedFatherFromAnimal(animal, options = {}) {
     if (!animal || !animal.tag_number) {
         selectedFather = null;
+        syncGroupPlacementDate();
         const display = document.getElementById('selected-father-display');
         if (display) {
-            display.textContent = 'Не выбран';
+            display.textContent = 'Без производителя (черновик)';
             display.className = 'mt-2 text-muted';
         }
         if (options.syncSelect !== false) {
@@ -143,6 +153,7 @@ function setSelectedFatherFromAnimal(animal, options = {}) {
         first_group_placement_date: animal.first_group_placement_date || null,
         old_father_warning: animal.old_father_warning || ''
     };
+    syncGroupPlacementDate();
 
     const display = document.getElementById('selected-father-display');
     if (display) {
@@ -209,6 +220,15 @@ function setSelectedKinshipFatherFromAnimal(animal, options = {}) {
     resetKinshipResult();
 }
 
+function syncGroupPlacementDate() {
+    const input = document.getElementById('lambing-start-date');
+    if (!input) return;
+    input.disabled = !selectedFather;
+    input.required = Boolean(selectedFather);
+    if (!selectedFather) input.value = '';
+    else if (!input.value) input.value = localDateValue();
+}
+
 async function loadFatherSelectOptions() {
     const select = document.getElementById('father-select');
     if (!select) {
@@ -221,7 +241,7 @@ async function loadFatherSelectOptions() {
 
     try {
         const fathers = await apiRequest('/animals/api/all-fathers/');
-        select.innerHTML = '<option value="">Выберите производителя</option>';
+        select.innerHTML = '<option value="">Без производителя (черновик)</option>';
 
         (fathers || []).filter(father => father.type_code === 'maker').forEach(father => {
             if (!father.tag_number) {
@@ -234,14 +254,11 @@ async function loadFatherSelectOptions() {
             select.appendChild(option);
         });
 
-        if (!fatherDropdownOptions.size) {
-            select.innerHTML = '<option value="">Нет свободных производителей</option>';
-        }
     } catch (error) {
         console.error('Ошибка загрузки производителей:', error);
         select.innerHTML = '<option value="">Ошибка загрузки производителей</option>';
     } finally {
-        select.disabled = !fatherDropdownOptions.size;
+        select.disabled = false;
     }
 }
 
@@ -305,12 +322,14 @@ async function loadGroupPlaceOptions() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('group-father-search-form')?.addEventListener('submit', event => {
+        event.preventDefault();
+        searchGroupFathers();
+    });
     console.log('DOM загружен, инициализируем страницу управления окотами');
     switchLambingManagementView(getSavedManagementView());
     
-    // Устанавливаем текущую дату как дату начала окота
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('lambing-start-date').value = today;
+    syncGroupPlacementDate();
     
     // Восстанавливаем сохраненные значения фильтра дат
     if (window.lambingsDateFrom) {
@@ -518,13 +537,15 @@ async function loadActiveGroups() {
 }
 
 function createGroupRows(group) {
+    const isDraft = group.is_draft === true;
     const mothers = Array.isArray(group.mothers) ? group.mothers : [];
     const treatment = group.tracked_veterinary;
     const fatherTag = group.father_tag || 'Неизвестно';
     const fatherType = group.father_type || 'Неизвестно';
     const fatherDisplayName = group.father_display_name || fatherTag;
-    const fatherLink = createAnimalLink(fatherTag, fatherType, true, fatherDisplayName);
-    const placementDate = group.placement_date ? new Date(group.placement_date).toLocaleDateString('ru-RU') : '-';
+    const fatherLink = isDraft ? 'Без производителя (черновик)' : createAnimalLink(fatherTag, fatherType, true, fatherDisplayName);
+    const groupDate = isDraft ? null : (group.father_placement_date || group.placement_date);
+    const placementDate = groupDate ? new Date(groupDate).toLocaleDateString('ru-RU') : '-';
     const note = group.note || '';
     const entries = mothers.length ? mothers : [null];
     const sharedFather = `
@@ -534,9 +555,10 @@ function createGroupRows(group) {
         <td rowspan="${entries.length}" class="align-top">${note}</td>
         <td rowspan="${entries.length}" class="align-top">
             <div class="d-flex flex-column gap-1">
-                <button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
+                <button class="btn btn-outline-primary btn-sm" onclick="showGroupFatherModal(${group.id})">Добавить/изменить производителя</button>
+                ${!isDraft ? `<button class="btn btn-success btn-sm" onclick="showRemoveFatherModal(${group.id})">
                     Снять барана
-                </button>
+                </button>` : ''}
                 <button class="btn btn-outline-primary btn-sm" onclick="showAddMothersToGroupModal(${group.id})">
                     Добавить ярку/овцематку
                 </button>
@@ -549,7 +571,7 @@ function createGroupRows(group) {
     return entries.map((mother, index) => {
         const row = document.createElement('tr');
         const done = mother?.tracked_veterinary_done === true;
-        const tracked = Boolean(mother && treatment?.care_id);
+        const tracked = Boolean(mother && treatment?.care_id && treatment.started !== false && !isDraft);
         if (tracked && !done) row.classList.add('lambing-treatment-missing');
         const motherLink = mother ? createAnimalLink(mother.tag_number, mother.animal_type, true) : '-';
         const treatmentDisplay = tracked
@@ -563,6 +585,115 @@ function createGroupRows(group) {
         `;
         return row;
     });
+}
+
+async function showGroupFatherModal(groupId) {
+    const group = activeGroupsById.get(Number(groupId));
+    if (!group) return;
+    editingFatherGroup = group;
+    groupFatherRequestSequence++;
+    document.getElementById('group-father-search').value = '';
+    const date = document.getElementById('group-father-placement-date');
+    date.value = localDateValue();
+    date.min = group.father_placement_date || '';
+    date.max = localDateValue();
+    document.getElementById('group-father-error').hidden = true;
+    document.getElementById('old-group-father-destination').hidden = true;
+    const destination = document.getElementById('old-group-father-place');
+    destination.innerHTML = '<option value="">Выберите овчарню/отсек</option>';
+    document.getElementById('group-father-list').textContent = 'Загрузка производителей...';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('groupFatherModal')).show();
+    if ((document.getElementById('group-place-select')?.options.length || 0) <= 1) await loadGroupPlaceOptions();
+    for (const option of document.getElementById('group-place-select')?.options || []) {
+        if (option.value) destination.appendChild(option.cloneNode(true));
+    }
+    await searchGroupFathers();
+}
+
+function updateGroupFatherDestination() {
+    const chosen = document.querySelector('input[name="group-father-choice"]:checked');
+    const replacing = Boolean(editingFatherGroup?.father_tag && chosen && chosen.value !== editingFatherGroup.father_tag);
+    document.getElementById('old-group-father-destination').hidden = !replacing;
+    document.getElementById('old-group-father-place').required = replacing;
+}
+
+async function searchGroupFathers() {
+    if (!editingFatherGroup) return;
+    const groupId = editingFatherGroup.id;
+    const sequence = ++groupFatherRequestSequence;
+    const query = document.getElementById('group-father-search').value.trim();
+    const current = document.querySelector('input[name="group-father-choice"]:checked')?.value || editingFatherGroup.father_tag;
+    const list = document.getElementById('group-father-list');
+    list.textContent = 'Загрузка производителей...';
+    try {
+        const rows = await apiRequest(`/animals/api/all-fathers/?group_id=${groupId}&search=${encodeURIComponent(query)}`);
+        if (sequence !== groupFatherRequestSequence || groupId !== editingFatherGroup?.id) return;
+        groupFatherCandidates = new Map(rows.map(row => [row.tag_number, row]));
+        list.innerHTML = '';
+        const ordered = [...rows].sort((a, b) => Number(b.tag_number === current) - Number(a.tag_number === current));
+        for (const animal of ordered.slice(0, 50)) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-check mb-2';
+            const radio = document.createElement('input');
+            radio.className = 'form-check-input';
+            radio.type = 'radio'; radio.name = 'group-father-choice'; radio.value = animal.tag_number;
+            radio.id = `group-father-choice-${animal.type_code}-${animal.id}`;
+            radio.checked = animal.tag_number === current;
+            radio.addEventListener('change', () => {
+                updateGroupFatherDestination();
+                showOldFatherWarningIfNeeded(animal);
+            });
+            const label = document.createElement('label');
+            label.className = 'form-check-label'; label.htmlFor = radio.id;
+            label.textContent = getFatherOptionLabel(animal);
+            wrapper.appendChild(radio); wrapper.appendChild(label); list.appendChild(wrapper);
+        }
+        if (!rows.length) list.textContent = 'Доступные производители/баранчики не найдены';
+        updateGroupFatherDestination();
+    } catch (error) {
+        if (sequence === groupFatherRequestSequence) list.textContent = `Ошибка поиска: ${error.message}`;
+    }
+}
+
+async function confirmGroupFather() {
+    const button = document.getElementById('save-group-father');
+    if (button.disabled) return;
+    const errorBox = document.getElementById('group-father-error');
+    const showError = text => { errorBox.textContent = text; errorBox.hidden = false; };
+    const chosen = document.querySelector('input[name="group-father-choice"]:checked');
+    const placed = document.getElementById('group-father-placement-date').value;
+    const destination = document.getElementById('old-group-father-place').value;
+    if (!editingFatherGroup || !chosen) return showError('Выберите производителя/баранчика');
+    if (!placed) return showError('Укажите дату постановки барана');
+    if (editingFatherGroup.father_tag && editingFatherGroup.father_tag !== chosen.value && !destination) {
+        return showError('Укажите, куда перевести текущего производителя');
+    }
+    const group = editingFatherGroup;
+    const fatherTag = chosen.value;
+    button.disabled = true; errorBox.hidden = true;
+    try {
+        if (group.father_tag !== fatherTag) {
+            const conflicts = [];
+            for (const mother of group.mothers || []) {
+                const result = await apiRequest('/animals/api/check-kinship/', 'POST', {
+                    father_tag: fatherTag, mother_tag: mother.tag_number,
+                });
+                if (result.has_kinship) conflicts.push(result.message || mother.tag_number);
+            }
+            if (conflicts.length && !confirm(`Обнаружено родство:\n${conflicts.join('\n')}\nПродолжить постановку?`)) return;
+        }
+        await apiRequest(`/animals/lambing-group/${group.id}/set-father/`, 'POST', {
+            father_tag_number: fatherTag, father_placement_date: placed,
+            old_father_place_id: destination || null,
+            expected_father_tag: group.father_tag,
+            expected_placement_date: group.father_placement_date,
+        });
+        bootstrap.Modal.getInstance(document.getElementById('groupFatherModal')).hide();
+        editingFatherGroup = null;
+        await Promise.all([loadActiveGroups(), loadFatherSelectOptions()]);
+    } catch (error) {
+        showError(error.message || 'Не удалось сохранить производителя');
+    } finally { button.disabled = false; }
 }
 
 function updateGroupsPagination(response) {
@@ -1026,7 +1157,7 @@ async function loadActiveLambings() {
         tableBody.innerHTML = '';
         
         if (lambings.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Нет активных случек</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Нет активных случек</td></tr>';
         } else {
             lambings.forEach(lambing => {
                 const row = createLambingRow(lambing);
@@ -1040,7 +1171,7 @@ async function loadActiveLambings() {
     } catch (error) {
         console.error('Ошибка загрузки активных случек:', error);
         document.getElementById('active-lambings-table').innerHTML = 
-            '<tr><td colspan="7" class="text-center text-danger">Ошибка загрузки данных: ' + error.message + '</td></tr>';
+            '<tr><td colspan="8" class="text-center text-danger">Ошибка загрузки данных: ' + error.message + '</td></tr>';
     }
 }
 
@@ -1072,6 +1203,7 @@ function createLambingRow(lambing) {
     row.innerHTML = `
         <td>${motherLink}</td>
         <td>${fatherLink}</td>
+        <td>${lambing.father_placement_date ? new Date(lambing.father_placement_date).toLocaleDateString('ru-RU') : '-'}</td>
         <td>${startDate}</td>
         <td>${plannedDate}</td>
         <td>${escapeHtml(treatment?.display || '-')}</td>
@@ -1636,8 +1768,8 @@ async function createMultipleLambings() {
     const trackedCareId = document.getElementById('group-tracked-veterinary-care')?.value;
     
     // Валидация
-    if (!placementDate) {
-        alert('Укажите дату постановки в группу');
+    if (selectedFather && !placementDate) {
+        alert('Укажите дату постановки барана');
         return;
     }
     
@@ -1646,10 +1778,6 @@ async function createMultipleLambings() {
         return;
     }
     
-    if (!selectedFather) {
-        alert('Выберите отца');
-        return;
-    }
     if (!trackedCareId) {
         alert('Выберите ветобработку для отслеживания');
         return;
@@ -1657,8 +1785,8 @@ async function createMultipleLambings() {
     
     try {
         const data = {
-            placement_date: placementDate,
-            father_tag_number: selectedFather.tag_number,
+            placement_date: selectedFather ? placementDate : null,
+            father_tag_number: selectedFather?.tag_number || null,
             mother_tag_numbers: window.selectedMothersForLambing.map(m => m.tag_number),
             tracked_veterinary_care_id: Number(trackedCareId),
             note: note || ''
@@ -1694,8 +1822,6 @@ async function createMultipleLambings() {
 
 // Сброс формы
 function resetForm() {
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('lambing-start-date').value = today;
     document.getElementById('group-lambing-note').value = '';
     const trackedCareSelect = document.getElementById('group-tracked-veterinary-care');
     if (trackedCareSelect) trackedCareSelect.value = String(defaultTrackedVeterinaryCareId || '');
@@ -1704,11 +1830,12 @@ function resetForm() {
     selectedMothersData.clear();
     window.selectedMothersForLambing = [];
     selectedFather = null;
+    syncGroupPlacementDate();
     
     document.getElementById('selected-mothers-display').textContent = 'Не выбрано';
     document.getElementById('selected-mothers-display').className = 'mt-2 text-muted';
     
-    document.getElementById('selected-father-display').textContent = 'Не выбран';
+    document.getElementById('selected-father-display').textContent = 'Без производителя (черновик)';
     document.getElementById('selected-father-display').className = 'mt-2 text-muted';
     const fatherSelect = document.getElementById('father-select');
     if (fatherSelect) {
@@ -2620,6 +2747,8 @@ window.exportLambingsToExcel = exportLambingsToExcel;
 window.exportGroupsToExcel = exportGroupsToExcel;
 window.switchLambingManagementView = switchLambingManagementView;
 window.showRemoveFatherModal = showRemoveFatherModal;
+window.showGroupFatherModal = showGroupFatherModal;
+window.confirmGroupFather = confirmGroupFather;
 window.confirmRemoveFather = confirmRemoveFather;
 window.showAddMothersToGroupModal = showAddMothersToGroupModal;
 window.confirmAddMothersToGroup = confirmAddMothersToGroup;

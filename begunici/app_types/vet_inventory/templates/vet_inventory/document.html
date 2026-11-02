@@ -12,7 +12,8 @@
 {% if version.filename %}<a class="btn btn-outline-primary" href="{% url 'vet_inventory:download' version.pk %}">{% if document.kind == 'writeoff' %}Скачать подтверждающий акт{% else %}Скачать накладную{% endif %} · версия {{ version.number }}</a>{% endif %}
 </div>
 {% if version.payload.treatment_id %}<p><a class="btn btn-outline-primary" href="{% url 'vet_inventory:treatment' version.payload.treatment_id %}">Расход по обработке · проверить и уточнить</a></p><p>Животное {{ version.payload.animal.tag }} · {{ version.payload.animal.care }} · {{ version.payload.animal.date }}</p>{% endif %}
-{% if document.state == 'draft' and can_finance %}
+{% if version.payload.clinical_episode %}<p><a href="{% url 'clinical:detail' version.payload.clinical_episode %}#expense">История болезни и подтверждение расхода</a></p>{% endif %}
+{% if document.state == 'draft' and can_finance and not version.payload.clinical_episode %}
 {% if document.kind == 'writeoff' and not version.filename %}<div class="alert alert-warning">Чтобы подтвердить списание, прикрепите акт в форме ниже. При необходимости откройте печатную форму, оформите документ и сохраните его в PDF.</div>{% endif %}
 <form method="post" class="card card-body bg-light mb-4" data-vet-confirm>
     {% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="revision" value="{{ document.revision }}">
@@ -30,7 +31,7 @@
     <button class="btn btn-primary" type="submit">Сохранить новую версию</button>
 </form></details>
 <form method="post" data-vet-ask="Отменить этот черновик? Остатки не изменятся.">{% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="revision" value="{{ document.revision }}"><button class="btn btn-outline-danger" type="submit">Отменить черновик</button></form>
-{% elif document.state == 'posted' and document.kind != 'reversal' and document.kind != 'treatment' and can_finance %}
+{% elif document.state == 'posted' and document.kind != 'reversal' and document.kind != 'treatment' and can_finance and not version.payload.clinical_episode %}
 <details class="mt-3"><summary>Исправить подтверждённое движение через сторно</summary><form method="post" class="mt-3" data-vet-ask="Создать обратное движение и сохранить причину в истории?">{% csrf_token %}<input type="hidden" name="action" value="reverse"><label class="form-label w-100">Причина<textarea name="reason" class="form-control" maxlength="2000" required></textarea></label><button class="btn btn-outline-danger" type="submit">Сторнировать документ</button></form></details>
 {% endif %}
 {% if version.payload.calculation %}<details class="mt-4"><summary>Расчёт, сохранённый на момент обработки</summary><p>{{ version.payload.calculation.mode_label }} · {{ version.payload.calculation.rate }} {{ version.payload.calculation.unit }}</p>{% if version.payload.calculation.weight %}<p>Вес: {{ version.payload.calculation.weight }} кг · дата взвешивания: {{ version.payload.calculation.weight_date }}</p>{% endif %}{% for band in version.payload.calculation.bands %}<p>{{ band.from }}–{{ band.to|default:'∞' }} кг → {{ band.amount }} {{ version.payload.calculation.unit }}</p>{% endfor %}</details>{% endif %}

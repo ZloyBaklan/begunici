@@ -9,6 +9,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.db import transaction
 from django.db.models import F, Max, Min, Q
+from django.db.models.functions import Coalesce
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.utils.html import escape
@@ -35,6 +36,7 @@ from .models import (
     Sheep,
     Lambing,
     LambingGroup,
+    LambingGroupFatherHistory,
     AnimalBase,
     AnimalNoteHistory,
     SheepBodyConditionRecord,
@@ -79,6 +81,7 @@ from .status_logic import (
     get_allowed_active_status_names_for_animal_type,
     get_default_child_status,
     get_group_statuses,
+    get_group_place,
     get_required_status,
     get_status_by_name,
     set_animal_status,
@@ -94,7 +97,9 @@ from .archive_acts import (
 from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
 from .monthly_breeding_acts import monthly_breeding_act_response
 from .age_utils import age_months_for_export, filter_queryset_by_age, format_age
-from .utils_permissions import ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals
+from .utils_permissions import (
+    ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals, can_edit_dashboard_plans,
+)
 from .weight_acts import get_weight_acts_page, weight_act_response
 from .progeny_acts import get_progeny_acts_page, progeny_act_response
 from .rejection_acts import get_rejection_acts_page, rejection_act_response
@@ -330,6 +335,7 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "dorper_uses_default": source_animal.dorper_uses_default,
         "is_reject": source_animal.is_reject,
         "is_for_sale": source_animal.is_for_sale,
+        "is_in_treatment": source_animal.is_in_treatment,
         "needs_retagging": source_animal.needs_retagging,
         "is_archived": source_animal.is_archived,
         "carcass_weight": source_animal.carcass_weight,
@@ -2297,7 +2303,8 @@ def _active_group_at_place(place, exclude_group_id=None):
     queryset = (
         LambingGroup.objects.filter(is_active=True)
         .select_related("maker__tag", "maker__place", "ram__tag", "ram__place")
-        .filter(Q(maker__place=place) | Q(ram__place=place))
+        .filter(Q(maker__place=place) | Q(ram__place=place)
+                | Q(maker__isnull=True, ram__isnull=True, place=place))
     )
     if exclude_group_id:
         queryset = queryset.exclude(pk=exclude_group_id)
@@ -2341,16 +2348,57 @@ def _get_group_statuses():
     return get_group_statuses()
 
 
+def _filter_groups_by_placement_date(queryset, date_from=None, date_to=None):
+    if not (date_from or date_to):
+        return queryset
+    queryset = queryset.filter(Q(maker__isnull=False) | Q(ram__isnull=False)).annotate(
+        _placement=Coalesce('father_placement_date', 'placement_date'),
+    )
+    if date_from:
+        queryset = queryset.filter(_placement__gte=date_from)
+    if date_to:
+        queryset = queryset.filter(_placement__lte=date_to)
+    return queryset
+
+
+def _lock_reproduction_animal(animal):
+    return type(animal).objects.select_for_update(of=("self",)).select_related(
+        "tag", "place", "animal_status",
+    ).get(pk=animal.pk)
+
+
+def _record_group_father(group, user=None):
+    father = group.get_father()
+    if not father:
+        return None
+    current = group.father_history.filter(removal_date__isnull=True).first()
+    if current:
+        return current
+    return group.father_history.create(
+        father_tag=father.tag, tag_number=father.tag.tag_number,
+        display_name=father.get_display_name() if isinstance(father, Maker) else father.tag.tag_number,
+        father_type="maker" if isinstance(father, Maker) else "ram",
+        placement_date=group.get_father_placement_date(),
+        changed_by=user if user is not None and user.is_authenticated else None,
+    )
+
+
 class LambingGroupViewSet(viewsets.ModelViewSet):
     queryset = (
         LambingGroup.objects.all()
-        .select_related("maker__tag", "ram__tag", "tracked_veterinary_care")
-        .prefetch_related("sheep__tag", "ewes__tag")
+        .select_related("maker__tag", "ram__tag", "place", "tracked_veterinary_care")
+        .prefetch_related("sheep__tag", "ewes__tag", "father_history__destination")
         .order_by("-is_active", "-placement_date", "-id")
     )
     serializer_class = LambingGroupSerializer
     permission_classes = [AllowAny]
     pagination_class = PaginationSetting
+
+    def get_object(self):
+        obj = super().get_object()
+        if self.request.method in {"POST", "PUT", "PATCH", "DELETE"} and transaction.get_connection().in_atomic_block:
+            return super().get_queryset().select_for_update(of=("self",)).get(pk=obj.pk)
+        return obj
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -2366,21 +2414,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             elif is_active.lower() == "false":
                 queryset = queryset.filter(is_active=False)
 
-        if placement_date_from:
-            try:
-                queryset = queryset.filter(
-                    placement_date__gte=datetime.strptime(placement_date_from, "%Y-%m-%d").date()
-                )
-            except ValueError:
-                pass
-
-        if placement_date_to:
-            try:
-                queryset = queryset.filter(
-                    placement_date__lte=datetime.strptime(placement_date_to, "%Y-%m-%d").date()
-                )
-            except ValueError:
-                pass
+        queryset = _filter_groups_by_placement_date(
+            queryset, _parse_filter_date(placement_date_from), _parse_filter_date(placement_date_to),
+        )
 
         if mother_tag:
             queryset = queryset.filter(
@@ -2400,13 +2436,15 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
 
         return queryset.distinct()
 
+    @_atomic_animal_action
     def create(self, request, *args, **kwargs):
         try:
+            father_tag_number = (request.data.get("father_tag_number") or "").strip()
+            # Drafts need no breeding date; this placeholder is not exposed or used for timers.
             placement_date = _parse_iso_date(
                 request.data.get("placement_date") or request.data.get("start_date"),
-                "дату постановки в группу",
-            )
-            father_tag_number = (request.data.get("father_tag_number") or "").strip()
+                "дату постановки барана",
+            ) if father_tag_number else timezone.localdate()
             mother_tag_numbers = request.data.get("mother_tag_numbers") or []
             note = (request.data.get("note") or "").strip()
             tracked_care = None
@@ -2428,12 +2466,6 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            if not father_tag_number:
-                return Response(
-                    {"error": "Необходимо указать бирку отца"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
             if not isinstance(mother_tag_numbers, list):
                 return Response(
                     {"error": "Список матерей должен быть массивом"},
@@ -2451,8 +2483,8 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            father, father_type = _find_father_by_tag(father_tag_number)
-            if not father:
+            father, father_type = _find_father_by_tag(father_tag_number) if father_tag_number else (None, None)
+            if father_tag_number and not father:
                 return Response(
                     {"error": f"Отец с биркой {father_tag_number} не найден"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -2465,7 +2497,11 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            if LambingGroup.objects.filter(is_active=True).filter(
+            if father:
+                father = _lock_reproduction_animal(father)
+                if father.is_archived:
+                    return Response({"error": "Архивного производителя нельзя поставить в группу"}, status=400)
+            if father and LambingGroup.objects.filter(is_active=True).filter(
                 _active_group_father_filter(father, father_type)
             ).exists():
                 return Response(
@@ -2473,7 +2509,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            group_place = target_place or father.place
+            group_place = target_place or (father.place if father else None)
+            if group_place:
+                group_place = Place.objects.select_for_update().get(pk=group_place.pk)
             place_conflict = _active_group_at_place(group_place)
             if place_conflict:
                 return Response(
@@ -2484,7 +2522,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             mothers = []
             errors = []
             seen_mothers = set()
-            for mother_tag_number in mother_tag_numbers:
+            for mother_tag_number in sorted(mother_tag_numbers):
                 normalized_tag = mother_tag_number.lower()
                 if normalized_tag in seen_mothers:
                     continue
@@ -2493,6 +2531,11 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 mother, mother_type = _find_mother_by_tag(mother_tag_number)
                 if not mother:
                     errors.append(f"Мать с биркой {mother_tag_number} не найдена")
+                    continue
+
+                mother = _lock_reproduction_animal(mother)
+                if mother.is_archived:
+                    errors.append(f"Мать {mother_tag_number} находится в архиве")
                     continue
 
                 if LambingGroup.objects.filter(is_active=True).filter(
@@ -2516,14 +2559,23 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 )
 
             with transaction.atomic():
+                if not father and not group_place:
+                    mother_places = {mother.place_id for mother, _ in mothers}
+                    if len(mother_places) == 1 and None not in mother_places:
+                        group_place = Place.objects.select_for_update().get(pk=mother_places.pop())
+                        conflict = _active_group_at_place(group_place)
+                        if conflict:
+                            return Response({"error": _format_group_place_conflict(conflict, group_place)}, status=400)
                 group_data = {
                     "placement_date": placement_date,
                     "note": note,
                     "tracked_veterinary_care": tracked_care,
+                    "place": group_place,
+                    "father_placement_date": placement_date if father else None,
                 }
                 if father_type == "maker":
                     group_data["maker"] = father
-                else:
+                elif father_type == "ram":
                     group_data["ram"] = father
 
                 group = LambingGroup.objects.create(**group_data)
@@ -2531,8 +2583,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 group.ewes.set([mother for mother, mother_type in mothers if mother_type == "ewe"])
 
                 for mother, _ in mothers:
-                    _set_animal_status(mother, statuses["mother_in_group"])
+                    _set_animal_status(mother, statuses["mother_in_group"] if father else get_required_status(STATUS_NOT_INSEMINATED))
                 _set_animal_status(father, statuses["father_in_group"])
+                _record_group_father(group, request.user)
 
                 moved_count = 0
                 if target_place:
@@ -2559,9 +2612,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         object_type="Группа случки",
                         object_id=str(group.id),
                         description=(
-                            f"Поставлена группа: отец {father_tag_number}; "
+                            f"Поставлена группа: отец {father_tag_number or 'Без производителя (черновик)'}; "
                             f"матери: {', '.join(mother_tags)}; "
-                            f"дата: {placement_date.strftime('%d.%m.%Y')}"
+                            f"дата постановки: {placement_date.strftime('%d.%m.%Y') if father else 'не задана (черновик)'}"
                             f"{movement_text}"
                         ),
                     )
@@ -2612,12 +2665,12 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
     def _resolve_mothers_for_group_edit(self, mother_tag_numbers):
         mothers = []
         errors = []
-        for mother_tag_number in mother_tag_numbers:
+        for mother_tag_number in sorted(mother_tag_numbers):
             mother, mother_type = _find_mother_by_tag(mother_tag_number)
             if not mother:
                 errors.append(f"Мать с биркой {mother_tag_number} не найдена")
                 continue
-            mothers.append((mother, mother_type))
+            mothers.append((_lock_reproduction_animal(mother), mother_type))
         return mothers, errors
 
     def _group_contains_mother(self, group, mother, mother_type):
@@ -2636,7 +2689,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             description = (
                 f"{action_type}: отец {group.get_father_tag() or '-'}; "
                 f"матери: {', '.join(mother_tags)}; "
-                f"дата постановки: {group.placement_date.strftime('%d.%m.%Y')}"
+                f"дата постановки: {group.get_father_placement_date() or 'не задана (черновик)'}"
             )
             if extra_description:
                 description = f"{description}; {extra_description}"
@@ -2652,6 +2705,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             print(f"Ошибка логирования изменения состава группы: {log_error}")
 
     @action(detail=True, methods=["post"], url_path="add-mothers")
+    @_atomic_animal_action
     def add_mothers(self, request, pk=None):
         try:
             group = self.get_object()
@@ -2675,6 +2729,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             mothers, errors = self._resolve_mothers_for_group_edit(mother_tag_numbers)
             for mother, mother_type in mothers:
                 mother_tag = mother.tag.tag_number if mother.tag else "-"
+                if mother.is_archived:
+                    errors.append(f"Мать {mother_tag} находится в архиве")
+                    continue
                 if self._group_contains_mother(group, mother, mother_type):
                     errors.append(f"Мать {mother_tag} уже находится в этой группе")
                     continue
@@ -2703,7 +2760,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         group.sheep.add(mother)
                     else:
                         group.ewes.add(mother)
-                    _set_animal_status(mother, statuses["mother_in_group"])
+                    _set_animal_status(mother, get_required_status(STATUS_NOT_INSEMINATED) if group.is_draft else statuses["mother_in_group"])
 
             mother_tags = [mother.tag.tag_number for mother, _ in mothers if mother.tag]
             self._log_group_mothers_change(
@@ -2726,6 +2783,7 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=["post"], url_path="remove-mothers")
+    @_atomic_animal_action
     def remove_mothers(self, request, pk=None):
         try:
             group = self.get_object()
@@ -2785,7 +2843,94 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=["post"], url_path="set-father")
+    @_atomic_animal_action
+    def set_father(self, request, pk=None):
+        try:
+            group = self.get_object()
+            if not group.is_active or group.removal_date or group.lambings.exists():
+                return Response({"error": "Производителя можно менять только в действующей группе до снятия"}, status=400)
+            old_father = group.get_father()
+            old_tag = group.get_father_tag()
+            old_date = group.get_father_placement_date()
+            if "expected_father_tag" in request.data and (request.data["expected_father_tag"] or None) != old_tag:
+                return Response({"error": "Производитель уже изменён. Обновите список групп"}, status=409)
+            if "expected_placement_date" in request.data and (request.data["expected_placement_date"] or None) != (old_date.isoformat() if old_date else None):
+                return Response({"error": "Дата постановки уже изменена. Обновите список групп"}, status=409)
+            placed = _parse_iso_date(request.data.get("father_placement_date"), "дату постановки барана")
+            if old_date and placed < old_date:
+                return Response({"error": "Новая дата не может быть раньше предыдущей постановки барана"}, status=400)
+            if placed > timezone.localdate():
+                return Response({"error": "Дата постановки барана не может быть в будущем"}, status=400)
+            father, father_type = _find_father_by_tag(str(request.data.get("father_tag_number") or "").strip())
+            if not father:
+                return Response({"error": "Выберите существующего производителя/баранчика"}, status=400)
+            for animal in sorted([a for a in (old_father, father) if a], key=lambda a: (type(a).__name__, a.pk)):
+                _lock_reproduction_animal(animal)
+            father = _lock_reproduction_animal(father)
+            if father.is_archived:
+                return Response({"error": "Архивного производителя нельзя поставить в группу"}, status=400)
+            if LambingGroup.objects.filter(is_active=True).exclude(pk=group.pk).filter(_active_group_father_filter(father, father_type)).exists():
+                return Response({"error": "Производитель уже находится в другой группе"}, status=400)
+            replacing = bool(old_father and old_father.tag_id != father.tag_id)
+            destination = None
+            if replacing:
+                try:
+                    destination = Place.objects.get(pk=request.data.get("old_father_place_id"))
+                except (Place.DoesNotExist, TypeError, ValueError):
+                    return Response({"error": "Укажите, куда перевести текущего производителя"}, status=400)
+            group_place = group.place or get_group_place(group)
+            if not group_place:
+                places = {a.place_id for a in group.get_mothers()}
+                if len(places) == 1 and None not in places:
+                    group_place = Place.objects.get(pk=places.pop())
+            group_place = group_place or father.place
+            if group_place:
+                group_place = Place.objects.select_for_update().get(pk=group_place.pk)
+            conflict = _active_group_at_place(group_place, exclude_group_id=group.pk)
+            if conflict:
+                return Response({"error": _format_group_place_conflict(conflict, group_place)}, status=400)
+            if replacing and group_place and destination.pk == group_place.pk:
+                return Response({"error": "Прежнего производителя нужно перевести в другой отсек"}, status=400)
+            mothers = [_lock_reproduction_animal(a) for a in group.get_mothers()]
+            if not mothers or any(a.is_archived for a in mothers):
+                return Response({"error": "В группе должны быть активные матери. Уберите архивных животных из состава"}, status=400)
+            statuses, missing = _get_group_statuses()
+            if missing:
+                return Response({"error": "Не найдены статусы: " + ", ".join(missing)}, status=400)
+            if old_tag == father.tag.tag_number and old_date == placed:
+                return Response({"success": "Производитель и дата не изменились", "group": self.get_serializer(group).data})
+            if old_father:
+                stint = _record_group_father(group, request.user)
+                stint.removal_date, stint.destination = placed, destination
+                stint.save(update_fields=["removal_date", "destination"])
+            if replacing:
+                _set_animal_status(old_father, statuses["father_after_removal"])
+                _move_animal_to_place_with_history(old_father, destination)
+            group.maker = father if father_type == "maker" else None
+            group.ram = father if father_type == "ram" else None
+            group.placement_date = group.father_placement_date = placed
+            group.place = group_place
+            group.save(update_fields=["maker", "ram", "placement_date", "father_placement_date", "place"])
+            _set_animal_status(father, statuses["father_in_group"])
+            _move_animal_to_place_with_history(father, group_place)
+            for mother in mothers:
+                _set_animal_status(mother, statuses["mother_in_group"])
+            _record_group_father(group, request.user)
+            group._prefetched_objects_cache = {}
+            self._log_group_mothers_change(
+                request, "Смена производителя в группе" if old_father else "Добавление производителя в группу",
+                group, [a.tag.tag_number for a in mothers],
+                f"производитель: {old_tag or 'черновик'} → {father.tag.tag_number}; "
+                f"дата постановки барана: {old_date or '-'} → {placed}; "
+                f"прежний производитель переведён: {destination or '-'}",
+            )
+            return Response({"success": "Производитель сохранён", "group": self.get_serializer(group).data})
+        except (ValueError, DjangoValidationError) as exc:
+            return Response({"error": str(exc)}, status=400)
+
     @action(detail=True, methods=["post"], url_path="remove-father")
+    @_atomic_animal_action
     def remove_father(self, request, pk=None):
         try:
             group = self.get_object()
@@ -2814,6 +2959,8 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                     {"error": "У группы не найден отец"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            if removal_date < group.get_father_placement_date():
+                return Response({"error": "Дата снятия не может быть раньше постановки барана"}, status=400)
 
             mothers = []
             for mother in group.sheep.all():
@@ -2829,6 +2976,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
 
             created_lambings = []
             with transaction.atomic():
+                stint = _record_group_father(group, request.user)
+                stint.removal_date = removal_date
+                stint.save(update_fields=["removal_date"])
                 group.removal_date = removal_date
                 group.is_active = False
                 if removal_note:
@@ -2841,7 +2991,8 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                         "planned_lambing_date": removal_date + timedelta(days=150),
                         "source_group": group,
                         "tracked_veterinary_care": group.tracked_veterinary_care,
-                        "tracked_veterinary_from_date": group.placement_date,
+                        "tracked_veterinary_from_date": group.get_father_placement_date(),
+                        "father_placement_date": group.get_father_placement_date(),
                         "note": group.note or "",
                         "is_active": True,
                     }
@@ -3962,7 +4113,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
     }
     CALENDAR_EXPORT_EXTRA_HEADERS = {
         'Напоминание о снятии барана': [
-            '№ группы', 'Дата постановки в группу', 'Плановая дата снятия барана',
+            '№ группы', 'Дата постановки барана', 'Плановая дата снятия барана',
         ],
         'Ветобработка': [
             'Выполненная ветобработка',
@@ -3991,17 +4142,17 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             return []
         interval = timedelta(days=self.RAM_REMOVAL_REMINDER_DAYS)
         groups = (
-            LambingGroup.objects.filter(
+            LambingGroup.objects.annotate(_father_start=Coalesce('father_placement_date', 'placement_date')).filter(
                 is_active=True,
                 removal_date__isnull=True,
-                placement_date__range=(start_date - interval, end_date - interval),
+                _father_start__range=(start_date - interval, end_date - interval),
             )
             .filter(Q(maker__is_archived=False) | Q(ram__is_archived=False))
             .select_related(
                 'maker__tag', 'maker__place', 'maker__animal_status',
                 'ram__tag', 'ram__place', 'ram__animal_status',
             )
-            .order_by('placement_date', 'pk')
+            .order_by('_father_start', 'pk')
         )
         reminders = []
         for group in groups:
@@ -4012,8 +4163,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 'group_id': group.pk,
                 'animal': father,
                 'animal_type': self._get_calendar_animal_type_key(father),
-                'placement_date': group.placement_date,
-                'reminder_date': group.placement_date + interval,
+                'placement_date': group.get_father_placement_date(),
+                'reminder_date': group.get_father_placement_date() + interval,
             })
         return reminders
 
@@ -5278,6 +5429,7 @@ class AnimalActionsViewSet(viewsets.ViewSet):
     permission_classes = [AllowAny]
 
     @action(detail=False, methods=["post"], url_path="bulk_archive")
+    @transaction.atomic  # CLINICAL BRIDGE: защита от одновременного поступления.
     def bulk_archive(self, request):
         if not can_archive_animals(request.user):
             return Response({'error': ANIMAL_ARCHIVE_DENIED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
@@ -5304,6 +5456,13 @@ class AnimalActionsViewSet(viewsets.ViewSet):
                 {"error": "Для архивирования можно выбрать только архивный статус."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # CLINICAL BRIDGE: bulk QuerySet.update bypasses model signals.
+        list(Tag.objects.select_for_update().filter(pk__in=animal_ids).order_by("pk"))
+        from begunici.app_types.clinical.models import Episode
+        treatment = Episode.objects.filter(tag_id__in=animal_ids, closed_on__isnull=True).first()
+        if treatment:
+            return Response({"treatment_required": "Сначала завершите лечение и подтвердите расход.", "treatment_url": f"/animals/treatment/{treatment.pk}/?finish=1"}, status=409)
 
         updated_count = 0
         animal_models = [Maker, Ram, Ewe, Sheep]
@@ -5898,6 +6057,7 @@ def common_animals_api(request):
                 "dorper_display": _format_dorper_display(animal),
                 "is_reject": animal.is_reject,
                 "is_for_sale": animal.is_for_sale,
+                "is_in_treatment": animal.is_in_treatment,
                 "last_weight": float(last_weight.weight) if last_weight else None,
                 "last_weight_date": last_weight.weight_date.strftime("%Y-%m-%d") if last_weight else None,
                 "last_vet_date": last_vet_care_date.isoformat() if last_vet_care_date else None,
@@ -6091,6 +6251,7 @@ def _build_young_stock_row(animal_type, type_label, animal):
         "mother_url": mother_url,
         "is_reject": animal.is_reject,
         "is_for_sale": animal.is_for_sale,
+        "is_in_treatment": animal.is_in_treatment,
     }
 
 
@@ -7090,8 +7251,10 @@ def journal_progeny(request):
 
 def _get_lambing_placement_date(lambing):
     source_group = getattr(lambing, "source_group", None)
-    if source_group and source_group.placement_date:
-        return source_group.placement_date
+    if lambing.father_placement_date:
+        return lambing.father_placement_date
+    if source_group and source_group.get_father_placement_date():
+        return source_group.get_father_placement_date()
     if lambing.start_date:
         return lambing.start_date - timedelta(days=60)
     return None
@@ -7214,6 +7377,8 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
     rows = []
     for group in groups:
         father = group.get_father()
+        if not father:
+            continue
         father_tag, father_url = _get_animal_link_data(father)
         father_rshn_tag = getattr(father, "rshn_tag", "") or ""
         mothers = [(mother, "sheep") for mother in group.sheep.all()]
@@ -7240,7 +7405,7 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
                     "mother_url": mother_url,
                     "father_tag": father_tag,
                     "father_url": father_url,
-                    "placement_date": group.placement_date,
+                    "placement_date": group.get_father_placement_date(),
                     "actual_lambing_date": actual_date_map.get(
                         (group.id, mother_type, mother.id)
                     ),
@@ -7342,7 +7507,7 @@ def journal_insemination(request):
             "№",
             "Бирка матери",
             "Бирка отца",
-            "Дата постановки в группу",
+            "Дата постановки барана",
         ]
         if show_actual_lambing_date:
             headers.append("Дата фактических родов")
@@ -9210,6 +9375,11 @@ def _log_dashboard_plan_parameters_update(request, year, changed_labels):
 
 @api_view(["GET", "POST"])
 def dashboard_plan_parameters(request):
+    if request.method == "POST" and not can_edit_dashboard_plans(request.user):
+        return Response(
+            {"error": "У вас нет прав на редактирование плановых параметров"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     try:
         year, month = _parse_dashboard_plan_period(request)
     except (TypeError, ValueError):
@@ -9679,9 +9849,10 @@ def _get_dashboard_period_archive_stats(period_start, period_end, acts_only=Fals
 
 def _get_dashboard_insemination_stats(period_start, period_end):
     groups = (
-        LambingGroup.objects.filter(
-            placement_date__gte=period_start,
-            placement_date__lte=period_end,
+        LambingGroup.objects.annotate(_father_start=Coalesce('father_placement_date', 'placement_date')).filter(
+            Q(maker__isnull=False) | Q(ram__isnull=False),
+            _father_start__gte=period_start,
+            _father_start__lte=period_end,
         )
         .select_related("maker__tag", "ram__tag")
         .prefetch_related("sheep__tag", "ewes__tag")
@@ -10404,21 +10575,25 @@ def get_all_fathers(request):
         
         makers_query = Maker.objects.filter(is_archived=False)
         rams_query = Ram.objects.filter(is_archived=False)
+        busy_groups = LambingGroup.objects.filter(is_active=True)
+        editing_group_id = request.GET.get('group_id')
+        if editing_group_id:
+            busy_groups = busy_groups.exclude(pk=int(editing_group_id))
 
         if not include_busy:
-            makers_query = makers_query.exclude(lambing_groups_as_father__is_active=True)
-            rams_query = rams_query.exclude(lambing_groups_as_father__is_active=True)
+            makers_query = makers_query.exclude(pk__in=busy_groups.exclude(maker_id=None).values('maker_id'))
+            rams_query = rams_query.exclude(pk__in=busy_groups.exclude(ram_id=None).values('ram_id'))
 
         makers_query = (
             makers_query
             .select_related('tag', 'animal_status', 'place')
-            .annotate(first_group_placement_date=Min('lambing_groups_as_father__placement_date'))
+            .annotate(first_group_placement_date=Min(Coalesce('lambing_groups_as_father__father_placement_date', 'lambing_groups_as_father__placement_date')))
             .distinct()
         )
         rams_query = (
             rams_query
             .select_related('tag', 'animal_status', 'place')
-            .annotate(first_group_placement_date=Min('lambing_groups_as_father__placement_date'))
+            .annotate(first_group_placement_date=Min(Coalesce('lambing_groups_as_father__father_placement_date', 'lambing_groups_as_father__placement_date')))
             .distinct()
         )
         
@@ -10426,6 +10601,12 @@ def get_all_fathers(request):
         all_fathers = []
         today = timezone.localdate()
         old_father_threshold = today - relativedelta(years=2)
+        historical_dates = dict(LambingGroupFatherHistory.objects.values('father_tag_id')
+                                .annotate(first=Min('placement_date')).values_list('father_tag_id', 'first'))
+
+        def first_placement_for(animal):
+            dates = [value for value in (animal.first_group_placement_date, historical_dates.get(animal.tag_id)) if value]
+            return min(dates) if dates else None
 
         def build_father_age_warning(first_placement_date):
             if first_placement_date and first_placement_date < old_father_threshold:
@@ -10436,7 +10617,7 @@ def get_all_fathers(request):
             return ""
         
         for maker in makers_query:
-            first_placement_date = maker.first_group_placement_date
+            first_placement_date = first_placement_for(maker)
             all_fathers.append({
                 'id': maker.id,
                 'tag_number': maker.tag.tag_number if maker.tag else '',
@@ -10452,7 +10633,7 @@ def get_all_fathers(request):
             })
         
         for ram in rams_query:
-            first_placement_date = ram.first_group_placement_date
+            first_placement_date = first_placement_for(ram)
             all_fathers.append({
                 'id': ram.id,
                 'tag_number': ram.tag.tag_number if ram.tag else '',
@@ -10936,6 +11117,7 @@ def lambings_export_excel(request):
                 mother_value,
                 _format_lambing_mother_age_group(lambing),
                 father_value,
+                _format_date_for_excel(lambing.father_placement_date),
                 _format_date_for_excel(lambing.start_date),
                 _format_date_for_excel(lambing.planned_lambing_date),
                 treatment['display'],
@@ -10951,6 +11133,7 @@ def lambings_export_excel(request):
             'Бирка матери',
             'Половозрастная группа',
             'Бирка отца',
+            'Дата постановки барана',
             'Дата снятия барана',
             'Планируемые роды',
             'Отслеживаемая ветобработка',
@@ -10984,10 +11167,7 @@ def lambing_groups_export_excel(request):
         elif str(is_active).lower() == 'false':
             queryset = queryset.filter(is_active=False)
 
-    if placement_date_from:
-        queryset = queryset.filter(placement_date__gte=placement_date_from)
-    if placement_date_to:
-        queryset = queryset.filter(placement_date__lte=placement_date_to)
+    queryset = _filter_groups_by_placement_date(queryset, placement_date_from, placement_date_to)
 
     if mother_tag:
         queryset = queryset.filter(
@@ -11011,7 +11191,7 @@ def lambing_groups_export_excel(request):
     row_fills = {}
     for idx, group in enumerate(groups, start=1):
         treatment = tracking[id(group)]
-        father_value = '-'
+        father_value = 'Без производителя (черновик)' if group.is_draft else '-'
         father = group.get_father()
         if father and father.tag:
             if hasattr(father, 'get_display_name'):
@@ -11027,7 +11207,7 @@ def lambing_groups_export_excel(request):
                     '-',
                     '-',
                     father_value,
-                    _format_date_for_excel(group.placement_date),
+                    _format_date_for_excel(group.get_father_placement_date()),
                     '-',
                     group.note or '-',
                 ]
@@ -11036,7 +11216,7 @@ def lambing_groups_export_excel(request):
 
         for mother in mothers:
             done = treatment['mother_results'].get(mother.tag_id, False)
-            if treatment['care_id'] and not done:
+            if treatment['care_id'] and treatment['started'] and not done:
                 row_fills[len(rows)] = 'FFF1F1'
             rows.append(
                 [
@@ -11044,8 +11224,8 @@ def lambing_groups_export_excel(request):
                     mother.tag.tag_number if mother.tag else '-',
                     _format_group_mother_age_group(mother),
                     father_value,
-                    _format_date_for_excel(group.placement_date),
-                    format_lambing_tracking_result(treatment['name'], done),
+                    _format_date_for_excel(group.get_father_placement_date()),
+                    format_lambing_tracking_result(treatment['name'], done) if treatment['started'] else '-',
                     group.note or '-',
                 ]
             )
@@ -11058,7 +11238,7 @@ def lambing_groups_export_excel(request):
             'Бирка матери',
             'Половозрастная группа',
             'Отец',
-            'Дата постановки в группу',
+            'Дата постановки барана',
             'Отслеживаемая ветобработка',
             'Примечание',
         ],
@@ -11247,6 +11427,12 @@ def archive_act_preview(request):
             {"error": "Некорректный список животных"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    # CLINICAL BRIDGE: предупредить до заполнения обычного акта архивации.
+    from begunici.app_types.clinical.models import Episode
+    treatment = Episode.objects.filter(closed_on__isnull=True, tag__tag_number__in=[str(item.get("tag_number") or item.get("tagNumber") or "") for item in selected_animals if isinstance(item, dict)]).first()
+    if treatment:
+        return Response({"treatment_required": "Сначала завершите лечение и подтвердите расход.", "treatment_url": f"/animals/treatment/{treatment.pk}/?finish=1"}, status=409)
 
     results = []
     errors = []

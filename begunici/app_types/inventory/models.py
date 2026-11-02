@@ -314,6 +314,9 @@ class AuditEvent(AppendOnly):
                 for line in payload.get("outputs", []):
                     label = "Брак" if line.get("rejected") else "Выход"
                     name = line.get("name") or products.get(line['product'], line['product'])
+                    if line.get("weight") in (None, ""):
+                        details.append(f"Черновик: {cases.get(str(line['animal_id']), '-')}, {name}; вес не указан")
+                        continue
                     details.append(f"{label}: {cases.get(str(line['animal_id']), '-')}, {name}: {line['weight']} кг / {line['quantity']} шт.")
             if self.order_id:
                 details.append(f"Заявка № {self.order_id}")

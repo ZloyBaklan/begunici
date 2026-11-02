@@ -398,7 +398,7 @@ class LambingCalendar {
                             <a href="${this.escapeHtml(reminder.url)}" class="text-decoration-none">${this.escapeHtml(reminder.display_name)}</a>
                             <span class="text-muted ms-2">${this.escapeHtml(reminder.animal_type_display)}</span>
                         </div>
-                        <small>Дата постановки в группу: ${this.escapeHtml(reminder.placement_date_display)}</small>
+                        <small>Дата постановки барана: ${this.escapeHtml(reminder.placement_date_display)}</small>
                     </div>
                 `;
             });

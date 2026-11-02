@@ -143,7 +143,9 @@ def get_active_group_for_animal(animal):
 
 def get_group_place(group):
     father = group.get_father() if group else None
-    return father.place if father else None
+    if father and father.place_id:
+        return father.place
+    return group.place if group else None
 
 
 def build_group_place_warning(animal, target_place=None):

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static clinical_tags %}
+{% block title %}Лечение/Карантин{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'clinical/clinical.css' %}?v=20261102-ui">
+<div class="container-fluid clinical-page" data-clinical-selection-key="clinical-selection-{{ request.user.pk }}">
+    <div class="row mb-3"><div class="col-12">{% block clinical_heading %}{% endblock %}</div></div>
+    {% clinical_navigation 'clinical' %}
+    {% csrf_token %}
+    <div id="clinical-error" class="alert alert-danger clinical-preline" role="alert" hidden></div>
+    {% block clinical_content %}{% endblock %}
+</div>
+<script src="{% static 'clinical/clinical.js' %}?v=20261102-ui"></script>
+{% endblock %}

@@ -2,6 +2,7 @@ function getAnimalPurposeText(animal) {
     const purposes = [];
     if (animal.is_reject) purposes.push('Брак');
     if (animal.is_for_sale) purposes.push('К продаже');
+    if (animal.is_in_treatment) purposes.push('Лечение');
     return purposes.join(', ') || '-';
 }
 
@@ -10,6 +11,15 @@ function getAnimalPurposeRowClass(animal) {
     if (animal.is_for_sale) return 'animal-for-sale';
     return animal.is_reject ? 'table-warning' : '';
 }
+
+// CLINICAL BRIDGE: the server supplies a relative URL after refusing a transition.
+window.handleClinicalTransition = function(data) {
+    const raw = data?.treatment_url;
+    const url = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof url !== 'string' || !/^\/animals\/treatment\/\d+\//.test(url)) return false;
+    if (confirm('Животное находится на лечении. Сначала нужно подтвердить исход и расход препаратов. Перейти к завершению лечения?')) location.href = url;
+    return true;
+};
 
 // Функция для переключения вкладок
 function showTab(tabId) {

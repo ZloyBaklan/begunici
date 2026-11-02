@@ -226,7 +226,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
         if getattr(request, "_stock_audit_error", None):
             return False
 
-        if getattr(request, "_inventory_logged", False):
+        if getattr(request, "_inventory_logged", False) or getattr(request, "_clinical_logged", False):
             return True
 
         if method == "POST" and path.startswith(("/inventory/feeds/", "/inventory/vet/")):
@@ -240,7 +240,7 @@ class UserActionLogMiddleware(MiddlewareMixin):
                 return True
             if any(
                 group_action in path
-                for group_action in ["/remove-father/", "/add-mothers/", "/remove-mothers/"]
+                for group_action in ["/remove-father/", "/add-mothers/", "/remove-mothers/", "/set-father/"]
             ):
                 return True
 

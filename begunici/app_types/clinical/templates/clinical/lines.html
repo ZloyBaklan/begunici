@@ -1,0 +1,16 @@
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+    <h6 class="mb-0">Препараты и материалы</h6>
+    <button class="btn btn-outline-primary btn-sm" type="button" data-clinical-picker-toggle aria-expanded="{% if picker_open %}true{% else %}false{% endif %}">Добавить препараты</button>
+</div>
+<div class="clinical-product-picker border rounded p-3 mb-3" data-clinical-picker {% if not picker_open %}hidden{% endif %}>
+    <label class="form-label d-block">Поиск препаратов и материалов:
+        <input type="search" class="form-control mt-1" placeholder="Название препарата или материала" data-clinical-product-search>
+    </label>
+    <div class="clinical-product-options" data-clinical-product-options></div>
+    <p class="text-muted small my-2" data-clinical-picker-empty hidden>Ничего не найдено</p>
+    <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-clinical-add-selected disabled>Добавить выбранные</button>
+</div>
+<p class="text-muted small mb-2" data-clinical-no-lines>Препараты не добавлены</p>
+<div class="table-responsive clinical-lines-table" data-clinical-lines-table hidden><table class="table table-striped align-middle mb-2">
+    <thead class="table-light"><tr><th>Препарат / материал</th><th data-clinical-quantity-label>Количество</th><th>Единица</th><th></th></tr></thead><tbody data-clinical-lines></tbody>
+</table></div>

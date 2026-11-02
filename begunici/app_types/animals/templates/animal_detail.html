@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load inventory_tags %}
+{% load inventory_tags clinical_tags %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -74,8 +74,24 @@
     font-weight: 600;
 }
 
-.actual-lambing-row {
-    margin-top: 10px;
+.lambing-dates {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) max-content;
+    align-content: start;
+    align-items: baseline;
+    gap: 10px 6px;
+    min-width: 0;
+}
+
+.lambing-date-row {
+    display: contents;
+}
+
+.lambing-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
 }
 
 .no-lambings {
@@ -322,6 +338,7 @@
                                             <input type="checkbox" id="is_for_sale" class="form-check-input" {% if animal.is_for_sale %}checked{% endif %}>
                                             <label for="is_for_sale" class="form-check-label">Назначение: К продаже</label>
                                         </div>
+                                        {% clinical_assignment animal %}
                                         <div class="form-check mt-2">
                                             <input type="checkbox" id="needs_retagging" class="form-check-input" {% if animal.needs_retagging %}checked{% endif %}>
                                             <label for="needs_retagging" class="form-check-label">Необходимо перебиркование</label>
@@ -499,7 +516,7 @@
                             <form>
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <label for="lambing-start-date" class="form-label">Дата постановки в группу:</label>
+                                        <label for="lambing-start-date" class="form-label">Дата постановки барана:</label>
                                         <input type="date" id="lambing-start-date" required class="form-control">
                                     </div>
                                     <div class="col-md-6">
@@ -967,6 +984,7 @@
 
 {% include 'includes/archive_modal.html' %}
 
-<script src="{% static 'js/archive_act_modal.js' %}?v=20261026-numbering"></script>
-<script src="{% static 'js/animal_detail.js' %}?v=20261021-rejection-inline"></script>
+<script src="{% static 'js/archive_act_modal.js' %}?v=20261102-clinical"></script>
+<script src="{% static 'js/animal_detail.js' %}?v=20261102-clinical"></script>
+<script src="{% static 'clinical/card.js' %}?v=20261102"></script>
 {% endblock %}

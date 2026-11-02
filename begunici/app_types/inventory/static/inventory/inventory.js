@@ -132,17 +132,28 @@
     function updateOutputChoices() {
         if (!outputs || outputs.dataset.readonly || doc?.dataset.kind !== 'sp55') return;
         const rows = $$('tr', outputs);
-        for (const row of rows) {
-            const current = fields(row);
-            const others = rows.filter(other => other !== row && fields(other).animal_id === current.animal_id).map(fields);
+        const entries = rows.map(row => ({row, value: fields(row)}));
+        const byAnimal = new Map();
+        for (const entry of entries) {
+            const animalId = entry.value.animal_id;
+            if (!byAnimal.has(animalId)) byAnimal.set(animalId, []);
+            byAnimal.get(animalId).push(entry);
+        }
+        for (const {row, value: current} of entries) {
+            const others = byAnimal.get(current.animal_id).filter(entry => entry.row !== row).map(entry => entry.value);
             const used = code => others.filter(item => item.product === code).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
             const carcasses = used('carcass'), halves = used('half');
             const otherMeat = others.filter(item => products.find(p => p.code === item.product)?.category === 'meat');
             const productField = $('[data-field="product"]', row);
             const animal = document.querySelector(`#iv-animal-options option[value="${current.animal_id}"]`);
+            if (current.product === 'testes' && animal?.dataset.sex !== 'male') {
+                productField.value = '';
+                current.product = '';
+            }
             for (const option of productField.options) {
                 const product = products.find(p => p.code === option.value);
                 if (!product) continue;
+                option.hidden = product.code === 'testes' && animal?.dataset.sex !== 'male';
                 let blocked = false;
                 if (product.code === 'carcass') blocked = otherMeat.length > 0;
                 else if (product.code === 'half') {
@@ -156,7 +167,7 @@
                     (product.category === 'meat' && !['carcass', 'half'].includes(product.code) ? 1 - halves / 2 : 1));
                 if (product.code === 'half' && otherMeat.some(item => item.product !== 'half')) maximum = 1;
                 if (maximum !== null && used(product.code) >= maximum) blocked = true;
-                if (product.code === 'testes' && animal?.dataset.sex !== 'male') blocked = true;
+                if (option.hidden) blocked = true;
                 option.disabled = blocked && option.value !== current.product;
             }
             const product = products.find(p => p.code === current.product);

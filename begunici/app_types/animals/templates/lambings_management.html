@@ -51,8 +51,8 @@
                 <div class="card-body">
                     <form id="create-lambing-form">
                         <div class="mb-3">
-                            <label for="lambing-start-date" class="form-label">Дата постановки в группу</label>
-                            <input type="date" class="form-control" id="lambing-start-date" required>
+                            <label for="lambing-start-date" class="form-label">Дата постановки барана</label>
+                            <input type="date" class="form-control" id="lambing-start-date" disabled>
                         </div>
                         
                         <div class="mb-3">
@@ -236,7 +236,7 @@
                                 <tr>
                                     <th>Матери</th>
                                     <th>Отец</th>
-                                    <th>Дата постановки в группу</th>
+                                    <th>Дата постановки барана</th>
                                     <th>Ветобработка</th>
                                     <th>Примечание</th>
                                     <th>Действия</th>
@@ -315,6 +315,7 @@
                                 <tr>
                                     <th>Мать</th>
                                     <th>Отец</th>
+                                    <th>Дата постановки барана</th>
                                     <th>Дата снятия барана</th>
                                     <th>Плановый окот</th>
                                     <th>Ветобработка</th>
@@ -324,7 +325,7 @@
                             </thead>
                             <tbody id="active-lambings-table">
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted">Загрузка...</td>
+                                    <td colspan="8" class="text-center text-muted">Загрузка...</td>
                                 </tr>
                                 <!-- Данные будут загружены через JavaScript -->
                             </tbody>
@@ -408,6 +409,35 @@
 </div>
 
 <!-- Модальное окно выбора отца -->
+<div class="modal fade" id="groupFatherModal" tabindex="-1" aria-labelledby="groupFatherModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="groupFatherModalLabel">Добавить/изменить производителя</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+            <form id="group-father-search-form" class="mb-3"><div class="input-group">
+                <input type="search" id="group-father-search" class="form-control" placeholder="Введите бирку или РСХН для поиска..." aria-label="Поиск производителя">
+                <button type="submit" class="btn btn-primary">Поиск</button>
+            </div></form>
+            <div id="group-father-list" style="max-height: 320px; overflow-y: auto;"></div>
+            <div class="mt-3">
+                <label for="group-father-placement-date" class="form-label">Дата постановки барана</label>
+                <input type="date" id="group-father-placement-date" class="form-control" required>
+            </div>
+            <div class="mt-3" id="old-group-father-destination" hidden>
+                <label for="old-group-father-place" class="form-label">Куда перевести текущего производителя</label>
+                <select id="old-group-father-place" class="form-select"><option value="">Выберите овчарню/отсек</option></select>
+            </div>
+            <div id="group-father-error" class="alert alert-danger mt-3" role="alert" hidden></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" class="btn btn-primary" id="save-group-father" onclick="confirmGroupFather()">Сохранить</button>
+        </div>
+    </div></div>
+</div>
+
 <div class="modal fade" id="selectFatherModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -875,7 +905,7 @@
 }
 </style>
 
-<script type="module" src="{% static 'js/lambings_management.js' %}"></script>
+<script type="module" src="{% static 'js/lambings_management.js' %}?v=20261101-ram-date"></script>
 <script src="{% static 'js/genealogy_export.js' %}?v=2"></script>
 {% endblock %}
 

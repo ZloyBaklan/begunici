@@ -3,7 +3,7 @@ from django.contrib.auth.models import AnonymousUser
 
 from ..animal_types import type_label
 from ..models import AnimalCase
-from ..permissions import can_access_slaughter, can_manage_inventory
+from ..permissions import can_access_slaughter, can_manage_inventory, can_prepare_slaughter
 
 register = template.Library()
 register.filter("animal_type_label", type_label)
@@ -18,24 +18,33 @@ def inventory_access(context):
     return can_manage_inventory(context_user(context))
 
 
+@register.simple_tag(takes_context=True)
+def inventory_product_access(context):
+    user = context_user(context)
+    return can_manage_inventory(user) or can_prepare_slaughter(user)
+
+
 @register.inclusion_tag("inventory/includes/warehouse_navigation.html", takes_context=True)
 def warehouse_navigation(context, section=""):
     from begunici.app_types.vet_inventory.permissions import can_view
     user = context_user(context)
     return {"finance": can_manage_inventory(user), "veterinary": can_view(user),
+            "products": can_manage_inventory(user) or can_prepare_slaughter(user),
             "slaughter": can_access_slaughter(user),
             "area": section if section in {"feeds", "vet", "slaughter"} else "products"}
 
 
 @register.inclusion_tag("inventory/includes/archive_hint.html", takes_context=True)
 def inventory_archive_hint(context):
-    return {"allowed": can_access_slaughter(context_user(context))}
+    user = context_user(context)
+    return {"allowed": can_prepare_slaughter(user) or can_manage_inventory(user)}
 
 
 @register.inclusion_tag("inventory/includes/home_button.html", takes_context=True)
 def inventory_home_button(context):
     user = context_user(context)
-    return {"allowed": can_access_slaughter(user), "finance": can_manage_inventory(user)}
+    return {"allowed": can_access_slaughter(user), "finance": can_manage_inventory(user),
+            "slaughter_only": not (can_prepare_slaughter(user) or can_manage_inventory(user))}
 
 
 @register.inclusion_tag("inventory/includes/acts_button.html", takes_context=True)

@@ -1,4 +1,6 @@
 """Initial nomenclature. Actual yields are entered, never inferred from anatomy."""
+DEFAULT_SP55_OFFAL_CODES = ("lungs", "liver", "kidneys", "testes", "head", "heart", "tongue")
+
 PRODUCTS = [
     ("live", "Живое животное", "live", True),
     ("carcass", "Туша", "meat", True),
