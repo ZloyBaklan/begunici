@@ -28,30 +28,33 @@ def text_cell(sheet, row, column, value):
     return cell
 
 
-def table_sheet(workbook, name, headers, rows):
+MONEY_FORMAT = '#,##0.00'
+
+
+def table_sheet(workbook, name, headers, rows, *, header_row=1):
     sheet = workbook.create_sheet(name)
     for column, title in enumerate(headers, 1):
-        cell = text_cell(sheet, 1, column, title)
+        cell = text_cell(sheet, header_row, column, title)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="285A47")
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         sheet.column_dimensions[get_column_letter(column)].width = 23 if column < 5 else 32
-    sheet.row_dimensions[1].height = 32
-    for row_index, values in enumerate(rows, 2):
+    sheet.row_dimensions[header_row].height = 32
+    for row_index, values in enumerate(rows, header_row + 1):
         for column, value in enumerate(values, 1):
             cell = text_cell(sheet, row_index, column, value)
             cell.alignment = Alignment(wrap_text=True, vertical="top")
             if isinstance(value, (float, Decimal)):
                 cell.number_format = '#,##0.000'
         sheet.row_dimensions[row_index].height = 34
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = sheet.dimensions
+    sheet.freeze_panes = f"A{header_row + 1}"
+    sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{sheet.max_row}"
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.page_setup.orientation = "landscape"
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
     sheet.page_setup.fitToWidth = 1
     sheet.page_setup.fitToHeight = 0
-    sheet.print_title_rows = "1:1"
+    sheet.print_title_rows = f"1:{header_row}"
     sheet.print_options.horizontalCentered = True
     return sheet
 
@@ -60,9 +63,18 @@ def numeric(value):
     return Decimal(str(value)) if value not in (None, "") else None
 
 
-def generate_document(document):
+def priced_total(amounts):
+    return sum(amounts, Decimal(0)) if amounts and None not in amounts else None
+
+
+def price_columns(item):
+    unit = Product.PriceUnit(item["price_unit"]).label if item.get("price_unit") else ""
+    return unit, numeric(item.get("unit_price")), numeric(item.get("line_total"))
+
+
+def generate_document(document, *, animals=None):
     if document.kind == "sp55":
-        workbook = slaughter_workbook(document)
+        workbook = slaughter_workbook(document, animals=animals)
     elif document.kind == "sp54":
         workbook = live_workbook(document)
     else:
@@ -72,19 +84,20 @@ def generate_document(document):
     return output.getvalue()
 
 
-def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offal_weight):
-    rows = [(name, weight, False) for name, weight in meat_rows]
-    if not rows:
-        rows.append(("Мясо", Decimal(0), False))
-    rows.extend([
-        ("Итого мясо", meat_weight, True),
-        ("Субпродукты по видам:", None, False),
-    ])
+def _write_slaughter_output_rows(sheet, meat_rows, offal_rows):
+    def subtotal(name, items):
+        measured = [row for row in items if row[1] is not None]
+        return (name, sum((row[1] for row in measured), Decimal(0)), "", None,
+                priced_total([row[4] for row in measured]), True)
+
+    meat_total = subtotal("Итого мясо", meat_rows)
+    all_offal = [row for items in offal_rows.values() for row in items]
+    rows = [*meat_rows, meat_total, ("Субпродукты по видам:", None, "", None, None, False)]
     for name, items in offal_rows.items():
-        rows.extend((f"{name} ({tag})", weight, False) for tag, weight in items)
-        measured = [weight for _, weight in items if weight is not None]
-        rows.append((f"Итого {name.lower()}", sum(measured, Decimal(0)) if measured else None, True))
-    rows.append(("Итого субпродукты", offal_weight, True))
+        rows.extend(items)
+        rows.append(subtotal(f"Итого {name.lower()}", items))
+    rows.append(subtotal("Итого субпродукты", all_offal))
+    total = subtotal("Итого мясо и субпродукты", meat_rows + all_offal)
 
     styles = {column: copy(sheet.cell(19, column)._style) for column in range(17, 33)}
     extra_rows = max(0, len(rows) - 9)
@@ -117,13 +130,20 @@ def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offa
             sheet.merge_cells(start_row=row_index, start_column=first_column,
                               end_row=row_index, end_column=last_column)
         sheet.row_dimensions[row_index].height = max(sheet.row_dimensions[row_index].height or 0, 30)
-    for row_index, (name, weight, is_total) in enumerate(rows, 16):
+    for row_index, (name, weight, unit, price, total_price, is_total) in enumerate(rows, 16):
         label = text_cell(sheet, row_index, 18, name)
         label.alignment = Alignment(wrap_text=True, vertical="center")
         font = copy(label.font)
         font.bold = is_total
         label.font = font
         sheet.cell(row_index, 24, weight)
+        if price is not None:
+            cell = sheet.cell(row_index, 25, price)
+            cell.number_format = f'{MONEY_FORMAT}" / {unit}"'
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        if total_price is not None:
+            sheet.cell(row_index, 29, total_price).number_format = MONEY_FORMAT
+            sheet.cell(row_index, 29).alignment = Alignment(horizontal="center", vertical="center")
         # Leave enough height for long product names and identifiers, without shrinking text.
         sheet.row_dimensions[row_index].height = max(30, ((len(name) + 17) // 18) * 12 + 6)
     total_row = 25 + extra_rows
@@ -133,7 +153,10 @@ def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offa
     total_font.bold = True
     total_label.font = total_font
     sheet.row_dimensions[total_row].height = max(sheet.row_dimensions[total_row].height or 0, 42)
-    sheet.cell(total_row, 24, meat_weight + offal_weight)
+    sheet.cell(total_row, 24, total[1])
+    if total[4] is not None:
+        sheet.cell(total_row, 29, total[4]).number_format = MONEY_FORMAT
+        sheet.cell(total_row, 29).alignment = Alignment(horizontal="center", vertical="center")
     for row_index in [*range(16, total_row), total_row]:
         sheet.cell(row_index, 24).number_format = '#,##0.000'
         sheet.cell(row_index, 24).alignment = Alignment(horizontal="center", vertical="center")
@@ -142,15 +165,15 @@ def _write_slaughter_output_rows(sheet, meat_rows, offal_rows, meat_weight, offa
     sheet.page_setup.fitToHeight = 0
 
 
-def _sp55_print_state(sheet):
+def _print_state(sheet):
     return (str(sheet.print_area), copy(sheet.page_setup), copy(sheet.page_margins),
             copy(sheet.print_options), copy(sheet.sheet_properties.pageSetUpPr),
             sheet.sheet_view.showGridLines, str(sheet.oddFooter), str(sheet.oddHeader),
             copy(sheet.row_breaks), copy(sheet.col_breaks))
 
 
-def _sp55_print_settings(sheet, area, fit_height=0):
-    before = _sp55_print_state(sheet)
+def _print_settings(sheet, area, fit_height=0):
+    before = _print_state(sheet)
     sheet.print_area = area
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.page_setup.orientation = "landscape"
@@ -168,7 +191,7 @@ def _sp55_print_settings(sheet, area, fit_height=0):
     sheet.oddHeader.right.text = None
     sheet.row_breaks = RowBreak()
     sheet.col_breaks = ColBreak()
-    return before != _sp55_print_state(sheet)
+    return before != _print_state(sheet)
 
 
 def _sp55_merge(sheet, area, value):
@@ -186,7 +209,7 @@ def _sp55_merge(sheet, area, value):
     text_cell(sheet, target.min_row, target.min_col, value)
 
 
-def _sp55_row_height(sheet, row, fields, minimum=24):
+def _wrapped_row_height(sheet, row, fields, minimum=24):
     height = minimum
     for first, last, value in fields:
         # Excel cannot auto-fit merged cells. Reserve height for explicit and
@@ -265,10 +288,10 @@ def _sp55_finish_print(workbook, reference_workbook, total_row):
     # A short act must not send just its final date/signature to the next page.
     # Long acts retain vertical pagination instead of shrinking to tiny text.
     compact = total_row <= 32 and height <= 600
-    changed = _sp55_print_settings(sheet, f"A1:AF{total_row + 8}", fit_height=int(compact))
+    changed = _print_settings(sheet, f"A1:AF{total_row + 8}", fit_height=int(compact))
     if len(workbook.worksheets) > 1:
         reverse, reference = workbook.worksheets[1], reference_workbook.worksheets[1]
-        changed |= _sp55_print_settings(reverse, "A1:X22", fit_height=1)
+        changed |= _print_settings(reverse, "A1:X22", fit_height=1)
         if reverse.print_title_rows is not None:
             # openpyxl's public setter ignores None rather than clearing it.
             reverse._print_rows = None
@@ -290,7 +313,7 @@ def _sp55_finish_print(workbook, reference_workbook, total_row):
                         changed = True
     for appendix in workbook.worksheets[2:]:
         if appendix.title in {"Животные", "Выход продукции", "Брак — не поступает"}:
-            changed |= _sp55_print_settings(appendix, f"A1:E{appendix.max_row}")
+            changed |= _print_settings(appendix, appendix.dimensions)
     return changed
 
 
@@ -347,7 +370,7 @@ def format_slaughter_workbook(workbook):
         sheet[address].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     sheet.row_dimensions[12].height = 18
     for row in range(16, total_row + 1):
-        _sp55_row_height(sheet, row, [(1, 7, sheet.cell(row, 1).value),
+        _wrapped_row_height(sheet, row, [(1, 7, sheet.cell(row, 1).value),
                                     (10, 14, sheet.cell(row, 10).value),
                                     (18, 21, sheet.cell(row, 18).value)], minimum=20)
         for column in (1, 10, 18, 24, 8, 9):
@@ -370,7 +393,7 @@ def format_slaughter_workbook(workbook):
                     top=thin, bottom=thin, left=thin if column == first else Side(),
                     right=thin if column == last else Side())
     for row in (total_row, total_row + 1, total_row + 2):
-        _sp55_row_height(sheet, row, [(18, 21, sheet.cell(row, 18).value)], minimum=20)
+        _wrapped_row_height(sheet, row, [(18, 21, sheet.cell(row, 18).value)], minimum=20)
         sheet.cell(row, 7).alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
         sheet.cell(row, 9).number_format = '#,##0.000'
         for column in (8, 9, 24):
@@ -384,15 +407,20 @@ def format_slaughter_workbook(workbook):
     for appendix in workbook.worksheets[2:]:
         if appendix.title not in {"Животные", "Выход продукции", "Брак — не поступает"}:
             continue
-        _sp55_print_settings(appendix, f"A1:E{appendix.max_row}")
-        for column, width in enumerate([19, 32, 14, 17, 54], 1):
+        _print_settings(appendix, appendix.dimensions)
+        widths = [19, 32, 14, 17, 54]
+        if appendix.max_column == 8:
+            widths = [15, 34, 14, 14, 20, 12, 17, 19]
+        for column, width in enumerate(widths, 1):
             appendix.column_dimensions[get_column_letter(column)].width = width
-        for row in appendix.iter_rows(max_col=5):
+        for row in appendix.iter_rows():
             for cell in row:
                 font = copy(cell.font)
                 font.name, font.sz, font.scheme = "Times New Roman", 10, None
                 cell.font = font
-            _sp55_row_height(appendix, row[0].row, [(cell.column, cell.column, cell.value) for cell in row])
+                if cell.row > 1 and cell.column in (3, 4):
+                    cell.alignment = Alignment(horizontal="center", vertical="top")
+            _wrapped_row_height(appendix, row[0].row, [(cell.column, cell.column, cell.value) for cell in row])
         appendix.print_title_rows = "1:1"
     _sp55_finish_print(workbook, reference_workbook, total_row)
     return True
@@ -410,7 +438,7 @@ def printable_slaughter_excel(content):
     return output.getvalue()
 
 
-def slaughter_workbook(document):
+def slaughter_workbook(document, *, animals=None):
     template = Path(settings.BASE_DIR) / "begunici/app_types/animals/excel_templates/sp-55.xlsx"
     workbook = load_workbook(template)
     sheet = workbook.worksheets[0]
@@ -423,7 +451,7 @@ def slaughter_workbook(document):
     sheet["X12"] = "Убойный цех"
     sheet["J28"] = "Овец в живой массе принял"
     workbook.worksheets[1]["B14"] = "Убой овец указанной массы и выход"
-    animals = list(document.animals.all())
+    animals = list(document.animals.all()) if animals is None else animals
     animal_rows = []
     for case in animals:
         details = document.payload.get("animals", {}).get(str(case.pk), {})
@@ -458,47 +486,49 @@ def slaughter_workbook(document):
     products = {p.code: p for p in Product.objects.all()}
     case_map = {case.pk: case for case in animals}
     outputs, rejected = [], []
-    totals = defaultdict(Decimal)
     offal = defaultdict(list)
-    meat_by_animal = defaultdict(Decimal)
+    meat_rows = []
+    has_meat = set()
+    measured_animals = set()
     for item in document.payload.get("outputs", []):
-        product = products[item["product"]]
         case = case_map[int(item["animal_id"])]
-        name = item.get("name") or product.name
-        category = item.get("category") or product.category
-        row = [case.tag_number, name, int(item.get("quantity", 0)), numeric(item["weight"]), item.get("reason", "")]
+        name = item.get("name") or products[item["product"]].name
+        category = item.get("category") or products[item["product"]].category
+        weight = numeric(item["weight"])
+        row = [case.tag_number, name, int(item.get("quantity", 0)), weight, item.get("reason", "")]
+        if category == "meat":
+            has_meat.add(case.pk)
+        if weight is not None:
+            measured_animals.add(case.pk)
         if item.get("rejected"):
             rejected.append(row)
+            continue
+        unit, price, line_total = price_columns(item)
+        outputs.append([*row, unit, price, line_total])
+        act_row = (f"{name} ({case.tag_number})", weight, unit, price, line_total, False)
+        if category == "meat":
+            meat_rows.append(act_row)
         else:
-            outputs.append(row)
-            if row[3] is not None:
-                totals[category] += row[3]
-            if category == "meat":
-                meat_by_animal[case.pk] += row[3] or Decimal(0)
-            elif category == "offal":
-                offal[name].append((case.tag_number, row[3]))
-    # Carcass mass is separate from live mass. Never add the entered cuts to
-    # their full carcass mass a second time. Rejected meat is not accepted.
-    meat_weight = Decimal(0)
-    meat_rows = []
+            offal[name].append(act_row)
+
+    # A declared carcass weight is a fallback only when no measured outputs exist.
     for case in animals:
         details = document.payload.get("animals", {}).get(str(case.pk), {})
         declared = numeric(details.get("carcass_weight") or case.snapshot.get("carcass_weight"))
-        all_meat = [item for item in document.payload.get("outputs", [])
-                    if int(item["animal_id"]) == case.pk and (item.get("category") or products[item["product"]].category) == "meat"]
-        if all_meat:
-            accepted_weight = meat_by_animal[case.pk]
-            meat_weight += accepted_weight
-            if accepted_weight:
-                meat_rows.append((f"Мясо ({case.tag_number})", accepted_weight))
-        elif declared is not None and not any(int(item["animal_id"]) == case.pk and item.get("weight") not in (None, "")
-                                             for item in document.payload.get("outputs", [])):
-            meat_weight += declared
-            meat_rows.append((f"Мясо ({case.tag_number})", declared))
-    _write_slaughter_output_rows(sheet, meat_rows, offal, meat_weight, totals["offal"])
+        if declared is not None and case.pk not in has_meat and case.pk not in measured_animals:
+            meat_rows.append((f"Мясо ({case.tag_number})", declared, "", None, None, False))
+    _write_slaughter_output_rows(sheet, meat_rows, offal)
     table_sheet(workbook, "Животные", ["Бирка", "С участка", "Голов", "Масса, кг", "Заключение ветврача"], animal_rows)
-    table_sheet(workbook, "Выход продукции", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Примечание"], outputs)
-    table_sheet(workbook, "Брак — не поступает", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Причина брака"], rejected)
+    output_sheet = table_sheet(workbook, "Выход продукции", [
+        "Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Примечание",
+        "Ед. цены", "Цена, руб.", "Сумма, руб.",
+    ], outputs)
+    for row in output_sheet.iter_rows(min_row=2, min_col=7, max_col=8):
+        for cell in row:
+            cell.number_format = MONEY_FORMAT
+    if rejected:
+        table_sheet(workbook, "Брак — не поступает",
+                    ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Причина брака"], rejected)
     format_slaughter_workbook(workbook)
     return workbook
 
@@ -522,13 +552,32 @@ def invoice_workbook(document):
     from .models import StockLot
     workbook = Workbook()
     workbook.remove(workbook.active)
+    items = document.payload.get("lines", [])
+    lots = StockLot.objects.select_related("product", "animal").in_bulk([item["lot_id"] for item in items])
     rows = []
-    for item in document.payload.get("lines", []):
-        lot = StockLot.objects.select_related("product", "animal").get(pk=item["lot_id"])
-        rows.append([lot.animal.tag_number, item.get("name") or lot.product.name, item["quantity"], numeric(item["weight"]), item.get("order_line_id") or ""])
-    sheet = table_sheet(workbook, "Товарная накладная", ["Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Строка заявки"], rows)
-    text_cell(sheet, len(rows) + 4, 1, f"Тестовый шаблон товарной накладной № {document.number or document.pk} от {document.date:%d.%m.%Y}")
-    text_cell(sheet, len(rows) + 5, 1, f"Получатель: {document.payload.get('customer', '')}")
-    text_cell(sheet, len(rows) + 6, 1, f"Заявка: {document.order_id or 'не связана'}")
-    sheet.merge_cells(start_row=len(rows) + 4, start_column=1, end_row=len(rows) + 4, end_column=5)
+    for item in items:
+        lot = lots[item["lot_id"]]
+        rows.append([lot.animal.tag_number, item.get("name") or lot.product.name, item["quantity"],
+                     numeric(item["weight"]), item.get("order_line_id") or "", *price_columns(item)])
+    sheet = table_sheet(workbook, "Товарная накладная", [
+        "Бирка", "Номенклатура", "Количество, шт.", "Масса, кг", "Строка заявки",
+        "Ед. цены", "Цена, руб.", "Сумма, руб.",
+    ], rows, header_row=5)
+    text_cell(sheet, 1, 1, f"Товарная накладная № {document.number or document.pk} от {document.date:%d.%m.%Y}")
+    text_cell(sheet, 2, 1, f"Получатель: {document.payload.get('customer', '')}")
+    text_cell(sheet, 3, 1, f"Заявка: {document.order_id or 'не связана'}")
+    text_cell(sheet, 4, 1, "Итого, руб.")
+    sheet.cell(4, 8, priced_total([row[7] for row in rows])).number_format = MONEY_FORMAT
+    for row in range(1, 5):
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7 if row == 4 else 8)
+        sheet.cell(row, 1).alignment = Alignment(wrap_text=True, vertical="center")
+        sheet.cell(row, 1).font = Font(bold=row in (1, 4), size=13 if row == 1 else 11)
+        sheet.row_dimensions[row].height = 36 if row == 2 else 22
+    for column, width in enumerate([16, 39, 14, 15, 15, 13, 18, 20], 1):
+        sheet.column_dimensions[get_column_letter(column)].width = width
+    for row_index, row in enumerate(rows, 6):
+        _wrapped_row_height(sheet, row_index, [(2, 2, row[1])])
+        for column in (7, 8):
+            sheet.cell(row_index, column).number_format = MONEY_FORMAT
+    _print_settings(sheet, sheet.dimensions)
     return workbook

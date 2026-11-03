@@ -6,12 +6,14 @@ from django.views.decorators.http import require_http_methods
 
 from .catalog_management import ProductForm, product_used, product_values, save_product
 from .models import Product
-from .permissions import access_required
+from .permissions import can_edit_meat_catalog, require_meat_catalog_editor
 
 
 @require_http_methods(["GET", "POST"])
-@access_required()
 def meat_products(request, pk=None):
+    can_edit = can_edit_meat_catalog(request.user)
+    if request.method == "POST" or pk is not None:
+        require_meat_catalog_editor(request.user)
     product = get_object_or_404(Product.objects.exclude(category="live"), pk=pk) if pk else None
     form = ProductForm(request.POST if request.method == "POST" else None,
                        initial=product_values(product) if product else None)
@@ -33,7 +35,7 @@ def meat_products(request, pk=None):
             for name, errors in form.errors.items() for error in errors
         )
     return render(request, "inventory/catalog/products.html", {"form": form, "product": product,
-        "unit_locked": used,
+        "unit_locked": used, "can_edit": can_edit,
         "products": Product.objects.exclude(category="live")})
 
 

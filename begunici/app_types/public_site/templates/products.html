@@ -1,129 +1,41 @@
 {% extends "base_public.html" %}
-{% load static %}
+{% load static i18n %}
 
-{% block title %}Продукция — Ферма Бегуницы{% endblock %}
+{% block title %}{{ title }} — Ферма Бегуницы{% endblock %}
 
 {% block content %}
-
 <section class="mb-4">
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
     <div>
-        <h1 class="fw-bold mb-1">Продукция</h1>
-        <div class="text-muted">Витрина. Временно используем фото-заглушки.</div>
+      <h1 class="fw-bold mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">{{ description }}</p>
     </div>
-    <img
-        src="{% static 'img/logo.png' %}"
-        alt="Ферма Бегуницы"
-        style="height:90px; width:auto; opacity:0.95;"
-    >
-    </div>
-
-    <a href="{% url 'public_site:contacts' %}" class="btn btn-brand btn-lg">
-          Заказать
-        </a>
+    <img src="{% static 'img/logo.png' %}" alt="Ферма Бегуницы" height="90">
   </div>
+  <a href="{% url 'public_site:contacts' %}" class="btn btn-brand btn-lg">Заказать</a>
 </section>
 
-<section>
+<section aria-label="{{ title }}">
   <div class="row g-4">
-
-    <!-- 1 -->
+    {% for card in cards %}
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/cut.png' %}" alt="Вырезка ягнёнка">
+      <article class="product-card h-100">
+        {% if card.image %}<img class="product-img" src="{% static card.image %}" alt="{{ card.name }}">{% endif %}
         <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Вырезка ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>Упаковка: 700 г</div>
+          <h2 class="product-title">{{ card.name }}</h2>
+          <div class="product-price">
+            {% if card.product.unit_price is not None %}
+              {% language 'ru' %}{{ card.product.unit_price|floatformat:"-2g" }}{% endlanguage %} ₽ / {{ card.product.get_price_unit_display }}
+            {% else %}
+              <a href="{% url 'public_site:contacts' %}">Уточнить цену</a>
+            {% endif %}
           </div>
-          <div class="product-price">3 030 ₽ / шт</div>
         </div>
-      </div>
+      </article>
     </div>
-
-    <!-- 2 -->
-    <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/shoulder_blade.png' %}" alt="Лопатка ягнёнка">
-        <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Лопатка ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>Продажа: за кг</div>
-          </div>
-          <div class="product-price">2 350 ₽ / кг</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 3 -->
-    <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/mincemeat.png' %}" alt="Фарш ягнёнка">
-        <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Фарш ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>Упаковка: 500 г</div>
-          </div>
-          <div class="product-price">690 ₽ / шт</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 4 -->
-    <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/side_of_lamb.png' %}" alt="Бок ягнёнка">
-        <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Бок ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>Упаковка: 1100–1300 г</div>
-          </div>
-          <div class="product-price">5 310 ₽ / шт</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5 -->
-    <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/rack_of_lamb.png' %}" alt="Каре ягнёнка">
-        <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Каре ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>1 шт: 600–800 г</div>
-          </div>
-          <div class="product-price">3 965 ₽ / шт</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 6 -->
-    <div class="col-12 col-sm-6 col-lg-4">
-      <div class="product-card">
-        <img class="product-img" src="{% static 'img/products/stake.png' %}" alt="Стейк ягнёнка">
-        <div class="product-body">
-          <div class="rating">★★★★★</div>
-          <div class="product-title">Стейк ягнёнка (пример)</div>
-          <div class="product-meta">
-            <div class="product-availability">• Много</div>
-            <div>Упаковка: 170–220 г</div>
-          </div>
-          <div class="product-price">1 030 ₽ / шт</div>
-        </div>
-      </div>
-    </div>
-
+    {% empty %}
+    <p>Свяжитесь с нами, чтобы узнать ассортимент и оформить заказ.</p>
+    {% endfor %}
   </div>
 </section>
-
 {% endblock %}

@@ -25,6 +25,15 @@ def can_access_slaughter(user):
     ))
 
 
+def can_edit_meat_catalog(user):
+    return user.is_authenticated and user.is_active and user.username in {"finans", "main", "admin"}
+
+
+def require_meat_catalog_editor(user):
+    if not can_edit_meat_catalog(user):
+        raise PermissionDenied("Редактирование мясной номенклатуры доступно finans, main и admin.")
+
+
 def require_inventory(user):
     if not can_manage_inventory(user):
         raise PermissionDenied("Складской учёт доступен finans и admin.")

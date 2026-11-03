@@ -23,8 +23,8 @@
                 </a>
             </div>
             {% inventory_access as catalog_allowed %}
+            <div class="col-md-6"><a href="{% url 'inventory_catalog:meat-products' %}" class="btn btn-outline-primary w-100 py-3">Номенклатура мясной продукции</a></div>
             {% if catalog_allowed %}
-            <div class="col-md-6"><a href="{% url 'inventory_catalog:meat-products' %}" class="btn btn-outline-primary w-100 py-3">Управление номенклатурой мясной продукции</a></div>
             <div class="col-md-6"><a href="{% url 'inventory_catalog:feed-products' %}" class="btn btn-outline-primary w-100 py-3">Управление кормовой номенклатурой</a></div>
             {% endif %}
         </div>

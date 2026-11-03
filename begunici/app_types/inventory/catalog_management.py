@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import AuditEvent, Document, DocumentVersion, Product
-from .permissions import require_inventory
+from .permissions import require_meat_catalog_editor
 
 
 class ProductForm(forms.Form):
@@ -16,6 +16,9 @@ class ProductForm(forms.Form):
     unit = forms.ChoiceField(label="Единицы учёта", choices=[("kg_pcs", "кг и шт."), ("kg", "кг (только вес)")])
     parts_per_animal = forms.IntegerField(label="Максимум штук с одного животного", min_value=1, max_value=1000, required=False,
         help_text="Для весовой продукции оставьте пустым.")
+    unit_price = forms.DecimalField(label="Цена за единицу, ₽", min_value=0, max_digits=10,
+                                    decimal_places=2, required=False)
+    price_unit = forms.ChoiceField(label="Единица цены", choices=Product.PriceUnit.choices, initial=Product.PriceUnit.KG)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,6 +38,8 @@ class ProductForm(forms.Form):
         values = super().clean()
         if values.get("unit") == "kg" and values.get("parts_per_animal"):
             self.add_error("parts_per_animal", "Для весовой продукции ограничение штук не задаётся.")
+        if values.get("unit") == "kg" and values.get("price_unit") == Product.PriceUnit.PIECE:
+            self.add_error("price_unit", "Для весовой продукции задайте цену за килограмм.")
         return values
 
 
@@ -50,12 +55,14 @@ def product_used(product):
 
 def product_values(product):
     return {"revision": product.revision, "name": product.name, "category": product.category,
-            "unit": "kg_pcs" if product.counted else "kg", "parts_per_animal": product.parts_per_animal}
+            "unit": "kg_pcs" if product.counted else "kg", "parts_per_animal": product.parts_per_animal,
+            "unit_price": str(product.unit_price) if product.unit_price is not None else None,
+            "price_unit": product.price_unit}
 
 
 @transaction.atomic
 def save_product(user, values, pk=None):
-    require_inventory(user)
+    require_meat_catalog_editor(user)
     # Use the same lock order as receipt/order/cutting commands: changing an
     # unused unit cannot race its first use in an accounting document.
     list(Product.objects.select_for_update().order_by("pk"))
@@ -76,6 +83,10 @@ def save_product(user, values, pk=None):
         raise ValidationError("Единицы и категория уже используются в учёте. Для другого способа учёта добавьте отдельную позицию.")
     product.name, product.category, product.counted = name, values["category"], counted
     product.parts_per_animal = maximum
+    product.unit_price = values["unit_price"]
+    product.price_unit = values["price_unit"]
+    if not counted and product.price_unit == Product.PriceUnit.PIECE:
+        raise ValidationError("Для весовой продукции задайте цену за килограмм.")
     if pk:
         product.revision += 1
     product.full_clean()

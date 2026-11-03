@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import date
 from functools import wraps
 from urllib.parse import quote
 
@@ -150,14 +151,29 @@ def document(request, pk):
 
 
 @require_GET
-def version_download(request, pk, number):
+def version_download(request, pk, number, *, printable=False):
     version = get_object_or_404(DocumentVersion.objects.select_related("document"), document_id=pk, number=number)
     document_access(request.user, version.document)
     content = bytes(version.content)
     if hashlib.sha256(content).hexdigest() != version.sha256:
         return HttpResponse("Контрольная сумма документа не совпадает. Файл не выдан.", status=409)
     original_hash = version.sha256
-    if version.filename.lower().endswith(".xlsx") and version.document.kind in {"sp54", "sp55"}:
+    filename, content_type = version.filename, version.content_type
+    if printable:
+        from .documents import XLSX_TYPE
+        from .exports import generate_document
+
+        doc, snapshot = version.document, version.snapshot
+        if version.origin != "uploaded" or doc.kind not in {"sp55", "invoice"}:
+            raise Http404
+        doc.payload = snapshot["payload"]
+        doc.number = snapshot["number"]
+        doc.date = date.fromisoformat(snapshot["date"])
+        doc.order_id = snapshot["order_id"]
+        animals = list(doc.animals.filter(pk__in=[row["id"] for row in snapshot["animals"]]))
+        content = generate_document(doc, animals=animals)
+        filename, content_type = f"{doc.kind}_{pk}_v{number}_print.xlsx", XLSX_TYPE
+    elif version.filename.lower().endswith(".xlsx") and version.document.kind in {"sp54", "sp55"}:
         from begunici.app_types.animals.act_numbering import is_generated_version, numbered_excel
         if is_generated_version(version):
             updated = numbered_excel(content, version.document.act_number,
@@ -167,10 +183,10 @@ def version_download(request, pk, number):
             if version.document.kind == "sp55":
                 from .exports import printable_slaughter_excel
                 content = printable_slaughter_excel(content)
-    response = HttpResponse(content, content_type=version.content_type)
+    response = HttpResponse(content, content_type=content_type)
     response["X-Document-Source-SHA256"] = original_hash
     response["X-Document-SHA256"] = hashlib.sha256(content).hexdigest()
-    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(version.filename)}"
+    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
     return response
