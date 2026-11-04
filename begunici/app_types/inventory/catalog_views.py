@@ -14,9 +14,12 @@ def meat_products(request, pk=None):
     can_edit = can_edit_meat_catalog(request.user)
     if request.method == "POST" or pk is not None:
         require_meat_catalog_editor(request.user)
-    product = get_object_or_404(Product.objects.exclude(category="live"), pk=pk) if pk else None
-    form = ProductForm(request.POST if request.method == "POST" else None,
-                       initial=product_values(product) if product else None)
+    products = Product.objects.exclude(category="live")
+    if can_edit:
+        products = products.select_related("storefront_photo").defer("storefront_photo__content")
+    product = get_object_or_404(products, pk=pk) if pk else None
+    form_data = (request.POST, request.FILES) if request.method == "POST" else ()
+    form = ProductForm(*form_data, initial=product_values(product) if product else None)
     used = product_used(product) if product else False
     if used:
         form.fields["category"].disabled = True
@@ -36,7 +39,7 @@ def meat_products(request, pk=None):
         )
     return render(request, "inventory/catalog/products.html", {"form": form, "product": product,
         "unit_locked": used, "can_edit": can_edit,
-        "products": Product.objects.exclude(category="live")})
+        "products": products})
 
 
 def feed_products(request, pk=None):

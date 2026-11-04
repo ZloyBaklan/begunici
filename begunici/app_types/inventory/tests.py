@@ -7,9 +7,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from openpyxl import load_workbook
+from PIL import Image
 
 from . import invoices, receipts
-from .models import AnimalCase, Document, Product, StockLot, StockMovement
+from .models import AnimalCase, Document, Product, ProductPhoto, StockLot, StockMovement
 
 
 class CatalogPriceTests(TestCase):
@@ -48,6 +49,62 @@ class CatalogPriceTests(TestCase):
         self.assertContains(offal, "Печень ягнёнка")
         self.assertContains(offal, "Уточнить цену")
         self.assertNotContains(offal, "Вырезка")
+
+    def test_storefront_name_and_photo_can_be_updated_independently(self):
+        listing = reverse("inventory_catalog:meat-products")
+        edit = reverse("inventory_catalog:meat-product-edit", args=[self.meat.pk])
+        storefront = reverse("public_site:products")
+
+        def edit_values():
+            self.meat.refresh_from_db()
+            return {"name": self.meat.name, "category": "meat", "unit": "kg_pcs",
+                    "parts_per_animal": self.meat.parts_per_animal, "revision": self.meat.revision,
+                    "price_unit": "kg", "storefront_name": "Филе для запекания"}
+
+        def photo_url():
+            self.meat.refresh_from_db()
+            return reverse("public_site:product-photo", args=[self.meat.pk, self.meat.revision])
+
+        def photo_file(name, color):
+            buffer = BytesIO()
+            Image.new("RGB", (20, 20), color).save(buffer, format="PNG")
+            return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/jpeg")
+
+        self.client.force_login(self.reader)
+        self.assertEqual(self.client.post(edit, dict(edit_values(), photo=photo_file("fillet.png", "red"))).status_code, 403)
+        self.client.force_login(self.main)
+        invalid = SimpleUploadedFile("invalid.jpg", b"<html>not a photo</html>", content_type="image/jpeg")
+        self.assertContains(self.client.post(edit, dict(edit_values(), photo=invalid)),
+                            "Загрузите корректное изображение")
+        self.assertFalse(ProductPhoto.objects.exists())
+
+        first = photo_file("fillet.png", "red")
+        first_content = first.read()
+        first.seek(0)
+        self.assertRedirects(self.client.post(edit, dict(edit_values(), photo=first)), listing)
+        first_url = photo_url()
+        self.assertEqual(self.meat.name, "Вырезка ягнёнка")
+        internal = self.client.get(edit)
+        self.assertContains(internal, "Текущий файл: fillet.png")
+        self.assertNotContains(internal, first_url)
+        self.assertContains(self.client.get(listing), "fillet.png")
+        self.assertContains(self.client.get(storefront), "Филе для запекания")
+        self.assertContains(self.client.get(storefront), first_url)
+        response = self.client.get(first_url)
+        self.assertEqual(response.content, first_content)
+        self.assertEqual(response["Content-Type"], "image/png")
+
+        self.assertRedirects(self.client.post(edit, dict(edit_values(), storefront_name="")), listing)
+        self.assertContains(self.client.get(storefront), "Вырезка ягнёнка премиум")
+        self.assertEqual(self.client.get(photo_url()).content, first_content)
+        self.assertRedirects(self.client.post(edit, dict(edit_values(), photo=photo_file("new.png", "blue"))), listing)
+        self.assertContains(self.client.get(listing), "new.png")
+        self.assertNotContains(self.client.get(listing), "fillet.png")
+        self.client.logout()
+        self.assertEqual(self.client.get(first_url).status_code, 404)
+        self.assertContains(self.client.get(storefront), photo_url())
+        self.assertNotEqual(self.client.get(photo_url()).content, first_content)
+        self.assertEqual(ProductPhoto.objects.count(), 1)
 
     def test_receipt_and_invoice_freeze_prices_and_print_totals(self):
         Product.objects.filter(pk=self.meat.pk).update(unit_price="10.01")

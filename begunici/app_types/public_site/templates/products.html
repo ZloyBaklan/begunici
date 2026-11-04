@@ -20,7 +20,11 @@
     {% for card in cards %}
     <div class="col-12 col-sm-6 col-lg-4">
       <article class="product-card h-100">
-        {% if card.image %}<img class="product-img" src="{% static card.image %}" alt="{{ card.name }}">{% endif %}
+        {% if card.photo_url %}
+          <img class="product-img" src="{{ card.photo_url }}" alt="{{ card.name }}" loading="lazy">
+        {% elif card.image %}
+          <img class="product-img" src="{% static card.image %}" alt="{{ card.name }}">
+        {% endif %}
         <div class="product-body">
           <h2 class="product-title">{{ card.name }}</h2>
           <div class="product-price">
