@@ -21,6 +21,37 @@ PRODUCT_IMAGES = {
     "rack": "rack_of_lamb.png",
     "steak": "stake.png",
 }
+PRODUCT_PACKAGING = {
+    "tenderloin": "700 г",
+    "mince": "500 г",
+    "side": "1100–1300 г",
+    "rack": "600–800 г за штуку",
+    "steak": "170–220 г",
+}
+PRODUCT_DESCRIPTIONS = {
+    "carcass": "Целая туша для разделки на отрубы или запекания на вертеле.",
+    "half": "Половина туши для разделки на порции и приготовления нескольких блюд.",
+    "tenderloin": "Нежная вырезка для быстрой обжарки на сковороде или гриле.",
+    "shoulder": "Лопатка подходит для медленного запекания и тушения с овощами.",
+    "mince": "Фарш для домашних котлет, люля-кебаба и начинки.",
+    "side": "Бок ягнёнка подходит для запекания целым куском или рулетом.",
+    "rack": "Каре на кости можно запечь целиком или нарезать на порционные котлеты.",
+    "steak": "Порционный стейк для быстрой обжарки на сковороде или гриле.",
+    "shank": "Голень становится мягкой при длительном тушении с травами.",
+    "leg": "Окорок для запекания целым куском и подачи к общему столу.",
+    "ribs": "Рёбра можно запечь со специями или приготовить на гриле.",
+    "lungs": "Лёгкие можно отварить для начинки или потушить с овощами.",
+    "liver": "Печень подходит для быстрой обжарки с луком и для паштетов.",
+    "kidneys": "Почки можно потушить в соусе или использовать в начинке.",
+    "testes": "Семенники подойдут для быстрой обжарки со специями.",
+    "head": "Голова подходит для наваристого бульона и традиционных блюд.",
+    "heart": "Сердце хорошо подходит для длительного тушения с овощами.",
+    "tongue": "Язык можно отварить и подать как холодную закуску.",
+}
+DEFAULT_DESCRIPTIONS = {
+    "meat": "Уточним особенности отруба и подскажем, как его приготовить.",
+    "offal": "Подскажем, как подготовить этот субпродукт и для каких блюд он подходит.",
+}
 LAMB_NAME = re.compile(r"\bягн[её]н(?:ок|ка)\b|\bяген(?:ок|ка)\b", re.IGNORECASE)
 
 
@@ -47,8 +78,13 @@ def products(request, category="meat"):
         photo_url = None
         if product.has_photo:
             photo_url = reverse("public_site:product-photo", args=[product.pk, product.revision])
-        cards.append({"product": product, "name": name, "photo_url": photo_url,
-                      "image": f"img/products/{image}" if image else None})
+        cards.append({
+            "product": product, "name": name, "photo_url": photo_url,
+            "image": f"img/products/{image}" if image else None,
+            "packaging": PRODUCT_PACKAGING.get(product.code, "уточняйте"),
+            "description": PRODUCT_DESCRIPTIONS.get(product.code, DEFAULT_DESCRIPTIONS[category]),
+        })
+    cards.sort(key=lambda card: not (card["photo_url"] or card["image"]))
     return render(request, "products.html", {"title": title, "description": description, "cards": cards})
 
 

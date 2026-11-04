@@ -59,33 +59,6 @@
         overflow-wrap: anywhere;
     }
 
-    .public-page .public-header-layout {
-        flex-direction: column;
-        align-items: stretch !important;
-        gap: 8px;
-        padding-top: 10px !important;
-        padding-bottom: 10px !important;
-    }
-
-    .public-page .public-header nav {
-        display: grid !important;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 4px !important;
-        width: 100%;
-    }
-
-    .public-page .public-header nav a {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 44px;
-        font-size: 14px;
-    }
-
-    .public-page .brand-mark {
-        align-self: flex-start;
-    }
-
     .public-page .hero-content {
         padding: 24px 20px 132px;
     }
@@ -422,11 +395,5 @@
 
     .login-page .login-card {
         padding: 24px;
-    }
-}
-
-@media (max-width: 359.98px) {
-    .public-page .public-header nav {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }

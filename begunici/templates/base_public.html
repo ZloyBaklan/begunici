@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="{{ csrf_token }}">
   {% include "partials/favicons.html" %}
-  <link rel="stylesheet" href="{% static 'css/public.css' %}">
+  <link rel="stylesheet" href="{% static 'css/public.css' %}?v=2">
 
 
   <title>{% block title %}Ферма Бегуницы{% endblock %}</title>
@@ -19,34 +19,31 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
   {% block extra_head %}{% endblock %}
-  <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=2">
 </head>
 
 <body class="public-page">
 <header class="public-header">
-  <div class="public-header-layout container py-3 d-flex align-items-center justify-content-between">
-    <a class="d-flex align-items-center gap-2 brand-mark" href="{% url 'public_site:home' %}">
-      <img src="{% static 'img/logo.png' %}" alt="Ферма Бегуницы">
+  <div class="public-header-layout container">
+    <a class="brand-mark" href="{% url 'public_site:home' %}">
+      <img src="{% static 'img/logo.png' %}" alt="" width="44" height="44">
       <span class="brand-name">Ферма Бегуницы</span>
     </a>
-    <div class="d-none d-lg-flex align-items-center gap-3 text-muted small">
-        <span><i class="fa-solid fa-phone"></i> +7(931)329-02-08</span>
-        <span><i class="fa-solid fa-envelope"></i> aeg@pf60.ru</span>
-        <span>
-            <i class="fa-solid fa-location-dot"></i>
-            Ленинградская область(59.571908, 29.186340)
-        </span>
-
-    </div>
-
-
-    <nav class="d-flex flex-wrap align-items-center gap-3">
-      <a href="{% url 'public_site:home' %}">Главная</a>
-      <a href="{% url 'public_site:products' %}">Мясная продукция</a>
-      <a href="{% url 'public_site:offal' %}">Субпродукты</a>
-      <a href="{% url 'public_site:tribe' %}">Племя</a>
-      <a href="{% url 'public_site:contacts' %}">Контакты</a>
+    <a class="public-header-phone" href="tel:+79313290208" aria-label="Позвонить на ферму, +7 (931) 329-02-08">
+      <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M7 3H4.5A1.5 1.5 0 0 0 3 4.6 18.4 18.4 0 0 0 19.4 21a1.5 1.5 0 0 0 1.6-1.5V17l-4.5-2-1.7 1.7a13.4 13.4 0 0 1-7.5-7.5L9 7.5 7 3Z"/>
+      </svg>
+      <span>+7 (931) 329-02-08</span>
+    </a>
+    {% with current=request.resolver_match.url_name %}
+    <nav class="public-nav" aria-label="Навигация по сайту">
+      <a href="{% url 'public_site:home' %}"{% if current == 'home' %} aria-current="page"{% endif %}>Главная</a>
+      <a href="{% url 'public_site:products' %}"{% if current == 'products' %} aria-current="page"{% endif %}>Мясная продукция</a>
+      <a href="{% url 'public_site:offal' %}"{% if current == 'offal' %} aria-current="page"{% endif %}>Субпродукты</a>
+      <a href="{% url 'public_site:tribe' %}"{% if current == 'tribe' %} aria-current="page"{% endif %}>Племя</a>
+      <a href="{% url 'public_site:contacts' %}"{% if current == 'contacts' %} aria-current="page"{% endif %}>Контакты</a>
     </nav>
+    {% endwith %}
   </div>
 </header>
 
