@@ -1,112 +1,66 @@
 {% extends "base_public.html" %}
 {% load static %}
 
-{% block title %}Племя — Ферма Бегуницы{% endblock %}
+{% block title %}Племенные дорперы — Ферма Бегуницы{% endblock %}
 
 {% block content %}
-
-<section class="mb-5">
-  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
-    <div>
-      <h1 class="fw-bold mb-1">Племенное направление</h1>
-      <div class="text-muted">
-        Племенные дорперы для фермерских хозяйств и частных фермеров
-      </div>
+<section class="tribe-hero" aria-labelledby="tribe-title">
+  <div class="tribe-intro">
+    <p class="tribe-kicker">Племенное направление · Ферма Бегуницы</p>
+    <h1 id="tribe-title">Племенные дорперы</h1>
+    <p class="tribe-purity"><span aria-hidden="true">✓</span> 100% чистая порода</p>
+    <p class="tribe-description">Разводим чистопородных дорперов и продаём племенных баранов и ярок (молодняк) для хозяйств и частных фермеров.</p>
+    <div class="tribe-actions">
+      <a href="#breeding-order" class="order-link">Заказать <span aria-hidden="true">→</span></a>
+      <a href="tel:+79313290208" class="order-link order-link-secondary">+7 (931) 329-02-08</a>
     </div>
-
-    <img
-      src="{% static 'img/logo.png' %}"
-      alt="Ферма Бегуницы"
-      style="height:110px; width:auto; opacity:0.95;"
-    >
+    <p class="tribe-note">Цену и возраст животных уточняйте при заказе.</p>
   </div>
-
-  <div class="row g-4 align-items-center">
-    <div class="col-lg-5">
-      <div class="feature-card text-center">
-        <img
-          src="{% static 'img/lamb.png' %}"
-          alt="Племенной дорпер"
-          style="max-width:100%; height:auto; border-radius:14px;"
-        >
-      </div>
-    </div>
-
-    <div class="col-lg-7">
-      <div class="feature-card text-center tribe-photo-card">
-        <h2 class="section-title mb-3">Описание</h2>
-        <div class="section-rule mb-4"></div>
-
-        <p class="feature-text mb-3">
-          Мы занимаемся разведением и продажей племенных дорперов для хозяйств,
-          которым важны надёжная генетика, крепкая конституция животных и
-          практическая ценность породы в реальной работе.
-        </p>
-
-        <p class="feature-text mb-3">
-          Дорпер ценится за неприхотливость, адаптивность к разным условиям
-          содержания, хорошие мясные формы и быстрый рост приплода.
-          Порода относится к easy-care типу: дорперов часто выбирают за
-          удобство в содержании и снижение трудоёмкости обслуживания.
-        </p>
-
-        <p class="feature-text mb-3">
-          Для фермерских хозяйств и частных фермеров это означает понятную
-          экономику: порода интересна как для формирования собственного
-          маточного стада, так и для развития мясного направления и
-          племенной работы.
-        </p>
-
-        <p class="feature-text mb-4">
-          Мы работаем с теми, кто ищет не просто животных, а основу для
-          стабильного и перспективного хозяйства: консультируем по подбору,
-          рассказываем о линии, помогаем подобрать формат сотрудничества
-          под задачи хозяйства.
-        </p>
-
-        <a href="{% url 'public_site:contacts' %}" class="btn btn-brand btn-lg">
-          Заказать
-        </a>
-      </div>
-    </div>
+  <div class="tribe-image">
+    <img src="{% static 'img/lamb.png' %}" alt="Ягнёнок породы дорпер" width="1254" height="1254">
   </div>
 </section>
 
-<section class="mb-5">
-  <h2 class="section-title">Почему дорпер</h2>
-  <div class="section-rule"></div>
-
-  <div class="row g-4 mt-1">
-    <div class="col-md-4">
-      <div class="feature-card text-center tribe-photo-card">
-        <div class="feature-icon"><i class="fa-solid fa-seedling"></i></div>
-        <div class="feature-title">Неприхотливость</div>
-        <p class="feature-text">
-          Породу ценят за easy-care формат содержания и хорошую адаптацию к разным условиям.
-        </p>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="feature-card text-center tribe-photo-card">
-        <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
-        <div class="feature-title">Быстрый рост</div>
-        <p class="feature-text">
-          Приплод отличается хорошими темпами роста, а порода известна качественными мясными формами.
-        </p>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="feature-card text-center tribe-photo-card">
-        <div class="feature-icon"><i class="fa-solid fa-medal"></i></div>
-        <div class="feature-title">Племенная ценность</div>
-        <p class="feature-text">
-          Подходит для хозяйств, которые строят сильное стадо и думают о долгосрочном результате.
-        </p>
-      </div>
-    </div>
+<section class="tribe-section" aria-labelledby="tribe-offers-title">
+  <h2 id="tribe-offers-title" class="section-title">Кого можно приобрести</h2>
+  <div class="tribe-offers">
+    <article class="feature-card tribe-offer">
+      <h3>Племенные бараны</h3>
+      <p class="feature-text">Для разведения и подбора производителя под ваше стадо.</p>
+    </article>
+    <article class="feature-card tribe-offer">
+      <h3>Ярки (молодняк)</h3>
+      <p class="feature-text">Молодые самки для формирования или пополнения маточного стада.</p>
+    </article>
   </div>
 </section>
 
+<section class="tribe-section" aria-labelledby="tribe-about-title">
+  <h2 id="tribe-about-title" class="section-title">Почему выбирают дорперов</h2>
+  <div class="tribe-benefits">
+    <article class="feature-card">
+      <h3>Адаптивность</h3>
+      <p class="feature-text">Дорперы хорошо приспосабливаются к разным условиям содержания.</p>
+    </article>
+    <article class="feature-card">
+      <h3>Быстрый рост</h3>
+      <p class="feature-text">Породу ценят за хорошие темпы роста молодняка.</p>
+    </article>
+    <article class="feature-card">
+      <h3>Племенная работа</h3>
+      <p class="feature-text">Расскажем о племенной линии и поможем с выбором животных.</p>
+    </article>
+  </div>
+</section>
+
+<section class="tribe-contact" id="breeding-order" tabindex="-1" aria-labelledby="tribe-order-title">
+  <div>
+    <h2 id="tribe-order-title" class="section-title">Уточнить цену и возраст</h2>
+    <p class="feature-text">Позвоните или напишите нам. Расскажем, какие бараны и ярки доступны, сколько им месяцев и сколько они стоят.</p>
+  </div>
+  <div class="tribe-actions">
+    <a class="order-link" href="tel:+79313290208">Позвонить</a>
+    <a class="order-link order-link-secondary" href="mailto:aeg@pf60.ru?subject={{ 'Племенные дорперы'|urlencode }}">Написать на почту</a>
+  </div>
+</section>
 {% endblock %}

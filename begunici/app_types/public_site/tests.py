@@ -7,7 +7,7 @@ class CatalogNavigationTests(TestCase):
     def test_storefront_shows_packaging_and_working_order_destination(self):
         products = self.client.get(reverse("public_site:products"))
         self.assertContains(products, "Упаковка: 700 г")
-        self.assertContains(products, "Наличие: уточняйте")
+        self.assertContains(products, "Наличие: много")
         self.assertContains(products, "Нежная вырезка для быстрой обжарки")
         self.assertContains(products, 'href="/site/products/" aria-current="page"')
         self.assertContains(products, 'href="/site/contacts/#order"')
