@@ -23,6 +23,8 @@ class FeedProduct(models.Model):
     unit = models.CharField(max_length=8, choices=[("kg", "кг"), ("l", "л"), ("pcs", "шт.")])
     package = models.CharField(max_length=40, blank=True)
     revision = models.PositiveIntegerField(default=1)
+    package_weight = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    plan_product = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="variants")
 
     class Meta:
         ordering = ["pk"]
@@ -57,6 +59,8 @@ class FeedDocument(models.Model):
         ("receipt", "Приходная накладная"), ("consume", "Расход кормов"),
         ("writeoff", "Акт списания кормов"),
         ("reversal", "Сторно"),
+        ("transfer", "Поставка на овчарню"),
+        ("barn_return", "Возврат с овчарни"),
     ])
     state = models.CharField(max_length=12, default="draft", choices=[
         ("draft", "Черновик"), ("posted", "Подтверждён"),
@@ -123,3 +127,45 @@ class FeedAudit(AppendOnly):
     data = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+
+
+class BarnFeedDocument(AppendOnly):
+    barn = models.PositiveSmallIntegerField()
+    kind = models.CharField(max_length=12, choices=[("delivery", "Поставка"), ("return", "Возврат на склад"),
+        ("writeoff", "Списание по акту"), ("close", "Факт за месяц"), ("reversal", "Сторно")])
+    date = models.DateField()
+    token = models.UUIDField(default=uuid.uuid4, unique=True)
+    payload = models.JSONField(default=dict)
+    central_document = models.OneToOneField(FeedDocument, null=True, blank=True, on_delete=models.PROTECT, related_name="barn_document")
+    reversal_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
+    filename = models.CharField(max_length=200, blank=True)
+    content = models.BinaryField(default=bytes, blank=True)
+    content_type = models.CharField(max_length=100, blank=True)
+    sha256 = models.CharField(max_length=64, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [models.CheckConstraint(check=Q(barn__gte=1, barn__lte=4), name="feed_barn_1_to_4")]
+
+
+class BarnFeedMovement(AppendOnly):
+    document = models.ForeignKey(BarnFeedDocument, on_delete=models.PROTECT, related_name="movements")
+    product = models.ForeignKey(FeedProduct, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=15, decimal_places=3)
+    packages = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["document", "product"], name="feed_barn_doc_product")]
+
+
+class BarnFeedPeriod(models.Model):
+    barn = models.PositiveSmallIntegerField()
+    month = models.DateField()
+    plan = models.JSONField(default=dict)
+    captured_at = models.DateTimeField(default=timezone.now)
+    closing = models.OneToOneField(BarnFeedDocument, null=True, blank=True, on_delete=models.PROTECT, related_name="closed_period")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["barn", "month"], name="feed_barn_month")]

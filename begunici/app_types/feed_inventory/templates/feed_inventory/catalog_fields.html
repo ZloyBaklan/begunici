@@ -1,0 +1,5 @@
+{% load l10n %}
+<div class="row mt-3">
+<label class="form-label col-md-5">Вес упаковки / рулона, кг<input class="form-control" type="number" step="0.001" min="0.001" name="package_weight" value="{{ form.package_weight|default_if_none:''|unlocalize }}"><small class="text-muted">Подставляется в новую поставку; фактический вес можно уточнить в её строке.</small></label>
+<label class="form-label col-md-7">Общий тип корма для плана<select class="form-select" name="plan_product"><option value="">Самостоятельный тип</option>{% for item in plan_products %}<option value="{{ item.pk }}"{% if form.plan_product == item.pk|stringformat:'s' %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select><small class="text-muted">Например, «Сено Карелия» и «Сено Волосово» относятся к общему типу «Сено». Нормы задаются один раз для общего типа.</small></label>
+</div>

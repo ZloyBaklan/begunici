@@ -1,0 +1,12 @@
+{% load feed_tags static %}
+<link rel="stylesheet" href="{% static 'feed_inventory/barns.css' %}?v=1">
+<section class="bf-comparison mt-4">
+{% if inline %}<form method="get" action="#feed-plan" class="d-flex gap-2 mb-3"><label>Месяц сверки<input type="month" class="form-control" name="feed_month" value="{{ comparison.month }}"></label><button class="btn btn-outline-secondary btn-sm align-self-end">Показать</button></form>{% endif %}
+<div class="iv-title-row"><h3>План / факт · {{ comparison.month }}</h3><span>Сверено овчарен: {{ comparison.closed }} / {{ comparison.total }}</span></div>
+<p class="small text-muted">План — снимки месячного прогноза по овчарням. Факт — расход, подтверждённый пересчётом. Поставки не считаются съеденным кормом.{% if not comparison.complete %} Факт пока частичный: не все овчарни закрыли месяц.{% endif %}</p>
+{% if comparison.central_direct %}<p class="small text-muted">В факт включены также прямые подтверждённые списания на кормление с центрального склада.</p>{% endif %}
+<div class="feed-table-wrap"><table class="table table-sm"><thead><tr><th>Тип корма</th><th>План</th><th>Подтверждённый факт</th><th>Факт / план</th></tr></thead><tbody>
+{% for row in comparison.rows %}<tr><td>{{ row.name }}</td><td>{{ row.plan|feed_quantity }} {{ row.unit }}</td><td>{% if comparison.closed or comparison.central_direct %}{{ row.actual|feed_quantity }} {{ row.unit }}{% else %}Ожидает сверки{% endif %}</td><td><div class="bf-bar"><span style="width:{{ row.percent }}%"></span></div>{% if comparison.complete %}<small>Отклонение: {{ row.difference|feed_quantity }} {{ row.unit }}</small>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<a class="btn btn-outline-primary btn-sm" href="{% url 'feed_inventory:analytics' %}">Сверка по овчарням и месяцам</a>
+</section>

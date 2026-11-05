@@ -4,7 +4,7 @@
 <p>{{ document.date|date:'d.m.Y' }} · Создал: {{ document.created_by }}{% if document.number and document.kind != 'writeoff' %} · Номер поставщика: {{ document.number }}{% endif %}{% if document.order_id %} · <a href="{% url 'feed_inventory:order' document.order_id %}">Заявка № {{ document.order_id }}</a>{% endif %}</p>
 {% if document.posted_at %}<p>Подтвердил: {{ document.posted_by }} · {{ document.posted_at|date:'d.m.Y H:i' }}</p>{% endif %}
 {% if document.reversal_of %}<p>Сторно документа <a href="{% url 'feed_inventory:document' document.reversal_of_id %}">{{ document.reversal_of }}</a>. Причина: {{ version.payload.note }}</p>{% endif %}
-<div class="feed-table-wrap"><table class="table table-striped"><thead><tr><th>Номенклатура</th><th>Количество</th><th>Упаковки, шт.</th></tr></thead><tbody>{% for line in version.payload.lines %}<tr><td>{{ line.name }}</td><td>{{ line.amount }} {{ line.unit }}</td><td>{{ line.packages }}<small>{{ line.package }}</small></td></tr>{% endfor %}</tbody></table></div>
+<div class="feed-table-wrap"><table class="table table-striped"><thead><tr><th>Номенклатура</th><th>Итого</th><th>Кг на упаковку</th><th>Упаковки, шт.</th></tr></thead><tbody>{% for line in version.payload.lines %}<tr><td>{{ line.name }}</td><td>{{ line.amount }} {{ line.unit }}</td><td>{{ line.unit_amount|default:'—' }}</td><td>{{ line.packages }}<small>{{ line.package }}</small></td></tr>{% endfor %}</tbody></table></div>
 <p>{{ version.payload.note }}</p>
 {% if version.payload.reason_label %}<p><strong>Причина списания:</strong> {{ version.payload.reason_label }}</p>{% endif %}
 <div class="feed-actions mb-3">

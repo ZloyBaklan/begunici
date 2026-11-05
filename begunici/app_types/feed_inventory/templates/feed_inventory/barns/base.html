@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% load static inventory_tags %}
+{% block title %}Корма по овчарням · Бегуницы{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=8">
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'feed_inventory/barns.css' %}?v=1">
+<div class="inventory container mt-4 bf-page">
+{% warehouse_navigation 'feeds' %}
+<nav class="card card-body mb-4 iv-card-feeds"><div class="iv-nav">
+<a class="btn btn-outline-secondary" href="{% url 'feed_inventory:barns' %}">Остатки по овчарням</a>
+<a class="btn btn-outline-secondary" href="{% url 'feed_inventory:analytics' %}">План и факт за месяц</a>
+<a class="btn btn-outline-primary" href="{% url 'places_map' %}">Карта овчарен</a>
+</div></nav>
+{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}
+<div class="card iv-content-card">{% block barn_content %}{% endblock %}</div>
+</div>
+{% endblock %}

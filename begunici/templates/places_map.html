@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% load static %}
+{% load static feed_tags %}
 
 {% block content %}
     <h1>Карта овчарен</h1>
@@ -429,4 +429,5 @@
     </div>
 
     <script type="module" src="{% static 'js/places_map.js' %}"></script>
+    {% barn_feed_map_bridge %}
 {% endblock %}

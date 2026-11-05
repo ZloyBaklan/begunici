@@ -1,0 +1,5 @@
+{% load static %}{% if allowed %}
+<link rel="stylesheet" href="{% static 'feed_inventory/barns.css' %}?v=1">
+<div id="barn-feed-bridge" data-url="{% url 'feed_inventory:barn-data' %}" data-base="{% url 'feed_inventory:barns' %}"></div>
+<script src="{% static 'feed_inventory/barn_map.js' %}?v=1" defer></script>
+{% endif %}

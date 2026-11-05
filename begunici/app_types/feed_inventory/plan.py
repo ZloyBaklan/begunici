@@ -19,7 +19,7 @@ def number(value):
     return result.rstrip("0").rstrip(".") if "." in result else result
 
 
-def build_plan(as_of_date=None):
+def build_plan(as_of_date=None, place_ids=None):
     as_of_date = as_of_date or timezone.localdate()
     # Read revision before the rows: concurrent edits can only make this form
     # stale, never give older norm values a newer version accepted on save.
@@ -27,13 +27,16 @@ def build_plan(as_of_date=None):
     counts = dict.fromkeys(legacy.FEED_GROUP_LABELS, 0)
     unclassified = 0
     for model in (legacy.Maker, legacy.Sheep, legacy.Ewe, legacy.Ram):
-        for animal in legacy.get_active_feed_queryset(model):
+        queryset = legacy.get_active_feed_queryset(model)
+        if place_ids is not None:
+            queryset = queryset.filter(place_id__in=place_ids)
+        for animal in queryset:
             group = legacy.classify_feed_plan_animal(animal, as_of_date)
             if group:
                 counts[group] += 1
             else:
                 unclassified += 1
-    products = list(FeedProduct.objects.all())
+    products = list(FeedProduct.objects.filter(plan_product__isnull=True))
     norms = {(n.product_id, n.group): n.per_head for n in FeedNorm.objects.all()}
     days = monthrange(as_of_date.year, as_of_date.month)[1]
     year_end = date(as_of_date.year, 12, 31)

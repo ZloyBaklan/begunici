@@ -1,0 +1,21 @@
+{% extends 'feed_inventory/barns/base.html' %}{% load feed_tags %}
+{% block barn_content %}
+<div class="iv-title-row"><h1>{{ summary.name }} · корма</h1><div class="iv-nav">
+<a class="btn btn-primary" href="{% url 'feed_inventory:barn-move' barn 'delivery' %}">Поставить корм</a>
+<a class="btn btn-outline-secondary" href="{% url 'feed_inventory:barn-move' barn 'return' %}">Вернуть на склад</a>
+{% if can_finance %}<a class="btn btn-outline-danger" href="{% url 'feed_inventory:barn-move' barn 'writeoff' %}">Списать по акту</a><a class="btn btn-success" href="{% url 'feed_inventory:barn-close' barn %}">Подтвердить факт за месяц</a>{% endif %}
+</div></div>
+{% include 'feed_inventory/barns/stock_table.html' %}
+<h2>Поголовье за {{ summary.weekly.from }}–{{ summary.weekly.to }}</h2>
+<div class="bf-metrics"><div>Прибыло <strong>{{ summary.weekly.arrived }}</strong></div><div>Убыло <strong>{{ summary.weekly.left }}</strong></div><div>Переведено между отсеками <strong>{{ summary.weekly.transferred }}</strong></div></div>
+<details class="mt-4"><summary>Нормированный расход по группам животных</summary>
+{% for group in summary.groups %}<div class="bf-group"><strong>{{ group.label }} · {{ group.count }} голов</strong><p>{% for cell in group.cells %}{% if cell.daily != '0' %}{{ cell.product_name }}: {{ cell.daily|feed_quantity }} / сутки{% if not forloop.last %}; {% endif %}{% endif %}{% endfor %}</p></div>{% endfor %}</details>
+<h2>История поставок, сверок и исправлений</h2>
+{% for doc in documents %}<details id="barn-doc-{{ doc.pk }}" class="bf-document mb-3"><summary>{{ doc.date|date:'d.m.Y' }} · {{ doc.get_kind_display }} № {{ doc.pk }} · {{ doc.created_by }}</summary>
+<p class="mt-2">{{ doc.payload.note }}</p>
+{% if doc.central_document_id and can_finance %}<a href="{% url 'feed_inventory:document' doc.central_document_id %}">Движение центрального склада</a>{% endif %}
+{% if doc.filename %}<a href="{% url 'feed_inventory:barn-file' doc.pk %}">Скачать акт</a>{% endif %}
+<ul>{% for line in doc.payload.lines %}<li>{{ line.name }}: {{ line.amount|feed_quantity }} {{ line.unit }}{% if doc.kind == 'close' %}; остаток {{ line.closing|feed_quantity }} {{ line.unit }}{% endif %}</li>{% endfor %}</ul>
+{% if can_finance and doc.kind != 'reversal' %}{% if not doc.reversal %}<form method="post">{% csrf_token %}<input type="hidden" name="document" value="{{ doc.pk }}"><label class="form-label">Причина сторно<input class="form-control" name="reason" required></label><button class="btn btn-outline-danger btn-sm">Сторнировать с сохранением истории</button></form>{% else %}<p class="text-muted">Сторнирован документом № {{ doc.reversal.pk }}</p>{% endif %}{% endif %}
+</details>{% empty %}<p class="text-muted">Поставок пока нет.</p>{% endfor %}
+{% endblock %}
