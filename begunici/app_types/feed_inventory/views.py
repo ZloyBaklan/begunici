@@ -13,14 +13,16 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_GET
 from io import BytesIO
 
-from begunici.app_types.inventory.permissions import access_required
+from begunici.app_types.inventory.permissions import access_required, can_manage_inventory
 from . import services
 from .models import FeedAudit, FeedDocument, FeedMovement, FeedOrder, FeedProduct, FeedVersion
 from .plan import build_plan, feed_plan_response
 
 
 def page(request, template, **context):
-    return render(request, f"feed_inventory/{template}.html", {"section": "feeds", **context})
+    return render(request, f"feed_inventory/{template}.html", {
+        "section": "feeds", "can_finance": can_manage_inventory(request.user), **context,
+    })
 
 
 def error(request, exc):
@@ -90,7 +92,7 @@ def order_detail(request, pk):
 
 
 @require_http_methods(["GET", "POST"])
-@access_required()
+@access_required(write=True)
 def document_new(request, kind, order_id=None):
     if kind not in {"receipt", "consume", "writeoff"}:
         raise Http404

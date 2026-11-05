@@ -90,7 +90,7 @@ def order_detail(request, pk):
 
 
 @require_http_methods(["GET", "POST"])
-@access_required()
+@access_required(write=True)
 def document_new(request, kind, order_id=None):
     if kind not in {"receipt", "consume", "writeoff"}:
         raise Http404

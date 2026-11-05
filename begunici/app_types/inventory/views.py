@@ -14,7 +14,10 @@ from . import bridges, invoices, orders, receipts, stock
 from .animal_types import ANIMAL_TYPE_CHOICES
 from .documents import add_version, assert_editable, assert_revision
 from .models import AnimalCase, AuditEvent, Document, DocumentVersion, Order, Product, StockLot, StockMovement
-from .permissions import access_required, can_access_slaughter, can_manage_inventory, can_prepare_slaughter, require_inventory
+from .permissions import (
+    access_required, can_access_slaughter, can_manage_inventory, can_prepare_slaughter,
+    can_view_inventory, is_inventory_read_only, require_inventory,
+)
 from .presentation import animal_display
 from .selectors import archive_rows, pending_animals, stock_summary
 
@@ -24,6 +27,8 @@ def api(view):
     @require_POST
     def wrapped(request, *args, **kwargs):
         try:
+            if is_inventory_read_only(request.user):
+                raise PermissionDenied
             data = json.loads(request.POST.get("data", "{}")) if request.content_type and request.content_type.startswith("multipart/") else json.loads(request.body or b"{}")
             if not isinstance(data, dict):
                 raise ValidationError("Ожидается объект запроса.")
@@ -54,19 +59,16 @@ def document_access(user, document, *, write=False):
         if not allowed:
             raise PermissionDenied
     else:
-        require_inventory(user)
+        require_inventory(user, write=write)
 
 
 @require_GET
 @access_required(slaughter=True)
 def dashboard(request, section="home"):
-    if not (can_prepare_slaughter(request.user) or can_manage_inventory(request.user)):
-        if section == "home":
-            return redirect("inventory:slaughter")
-        raise PermissionDenied
     if section not in {"home", "live", "pending"}:
-        require_inventory(request.user)
-    context = {"section": section, "can_finance": can_manage_inventory(request.user)}
+        require_inventory(request.user, write=False)
+    context = {"section": section, "can_finance": can_manage_inventory(request.user),
+               "can_view_finance": can_view_inventory(request.user)}
     if section == "live":
         context["animals"] = bridges.discover("live")
     elif section == "pending":
@@ -139,8 +141,15 @@ def document(request, pk):
         "can_edit": can_edit,
     }
     if doc.kind == "invoice":
-        context.update(invoice_context(order_id=doc.order_id))
-    if can_manage_inventory(request.user):
+        if can_edit:
+            context.update(invoice_context(order_id=doc.order_id))
+        else:
+            saved_lines = doc.payload.get("lines", [])
+            lots = {str(lot.pk): lot for lot in StockLot.objects.select_related("animal", "product").filter(
+                pk__in=[line["lot_id"] for line in saved_lines],
+            )}
+            context["invoice_lines"] = [{**line, "lot": lots.get(str(line["lot_id"]))} for line in saved_lines]
+    if can_view_inventory(request.user):
         context["invoice_lots"] = ",".join(str(lot.pk) for lot in stock.available_lots().filter(animal__receipt=doc))
         context["deliveries"] = Document.objects.filter(kind="invoice", movements__lot__animal__receipt=doc).distinct()
         context["ledger"] = StockMovement.objects.filter(
@@ -197,7 +206,7 @@ def invoice_context(order_id=None):
 
 
 @require_GET
-@access_required()
+@access_required(write=True)
 def invoice_new(request):
     context = invoice_context(request.GET.get("order"))
     context["selected_lots"] = request.GET.get("lots", "").split(",")
@@ -212,7 +221,7 @@ def order_list(request):
 
 
 @require_GET
-@access_required()
+@access_required(write=True)
 def order_new(request):
     return render(request, "inventory/order_new.html", {
         "products": list(Product.objects.values("code", "name", "category", "counted")),
@@ -228,7 +237,7 @@ def order_detail(request, pk):
 
 
 @require_GET
-@access_required()
+@access_required(write=True)
 def cut_page(request, pk):
     lot = get_object_or_404(StockLot.objects.select_related("animal", "product"), pk=pk)
     weight, quantity = stock.balance(lot)

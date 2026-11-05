@@ -6,7 +6,7 @@ from urllib.parse import quote
 from django.conf import settings
 from django.http import HttpResponse
 
-from .models import Lambing
+from .models import Lambing, iter_insemination_events
 
 
 TEMPLATE_FILENAME = "Akt_osem_i_okot_mec.xlsx"
@@ -114,15 +114,15 @@ def build_monthly_breeding_counts(year):
         "lambing": empty_month_counts(),
     }
 
-    insemination_lambings = (
-        Lambing.objects.filter(start_date__year=year)
-        .exclude(completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION)
-        .select_related("sheep__tag", "ewe__tag")
-        .order_by("start_date", "id")
-    )
-    for lambing in insemination_lambings:
-        category = get_lambing_mother_category(lambing, first_regular_lambing_ids)
-        counts["insemination"][category][lambing.start_date.month] += 1
+    for event in iter_insemination_events():
+        placement = event["placement_date"]
+        if not placement or placement.year != year:
+            continue
+        category = (
+            get_lambing_mother_category(event["lambing"], first_regular_lambing_ids)
+            if event["lambing"] else event["mother_type"]
+        )
+        counts["insemination"][category][placement.month] += 1
 
     completed_lambings = (
         Lambing.objects.filter(

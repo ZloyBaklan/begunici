@@ -16,7 +16,7 @@
             </div>
         </div>
     </div>
-    {% if can_finance %}
+    {% if can_view_finance %}
     <div class="col-md-6">
         <div class="card h-100 iv-card-products">
             <div class="card-header"><h5 class="mb-0">Продукция и реализация</h5></div>
@@ -35,7 +35,7 @@
                 <div class="row g-2 mb-3">
                 <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:home' %}">Остатки и потребление кормов</a></div>
                 <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:orders' %}">Входящие заявки и приход</a></div>
-                <div class="col-md-4"><a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a></div>
+                <div class="col-md-4">{% if can_finance %}<a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a>{% else %}<a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:history' %}">История операций с кормами</a>{% endif %}</div>
                 </div>
                 <p class="text-muted small mb-0">Сено, мешки кормов, соль и другие корма. Приход по накладным и подтверждение фактического расхода.</p>
             </div>
@@ -56,10 +56,10 @@
     <td>{{ animal.snapshot.animal_type|animal_type_label }}, {{ animal.snapshot.age }}</td><td>{{ animal.snapshot.dorper_percentage|default_if_none:'—' }}</td><td>{{ animal.snapshot.last_weight|default_if_none:'—' }}</td>
     <td>{{ animal.archive_date|date:'d.m.Y'|default:'—' }}</td><td>
     {% if animal.document %}
-        {% if can_finance or animal.document.kind == 'sp55' %}<a href="{% url 'inventory:document' animal.document.pk %}">{{ animal.document }} · {{ animal.document.get_state_display }}</a>
+        {% if can_view_finance or animal.document.kind == 'sp55' %}<a href="{% url 'inventory:document' animal.document.pk %}">{{ animal.document }} · {{ animal.document.get_state_display }}</a>
         {% else %}<span>{{ animal.document }} · {{ animal.document.get_state_display }}</span>{% endif %}
-    {% elif can_finance %}
-        <a href="{% url 'inventory:animal' animal.tag_id %}">{% if section == 'pending' %}Оформить{% else %}Данные животного{% endif %}</a>
+    {% elif can_view_finance %}
+        <a href="{% url 'inventory:animal' animal.tag_id %}">{% if section == 'pending' and can_finance %}Оформить{% else %}Данные животного{% endif %}</a>
     {% elif section == 'pending' and animal.kind == 'meat' %}
         <a href="{% url 'inventory:slaughter' %}">Акты СП-55</a>
     {% elif animal.url %}<a href="{{ animal.url }}">Данные животного</a>{% endif %}
@@ -68,7 +68,7 @@
 <tr data-filter-empty hidden><td colspan="9" class="iv-empty" role="status">По вашему запросу ничего не найдено</td></tr>
 </tbody></table></div>
 {% elif section == 'stock' %}
-<div class="iv-title-row"><h1>Складская база к реализации</h1><a class="btn btn-primary" href="{% url 'inventory:invoice-new' %}">Создать накладную</a></div>
+<div class="iv-title-row"><h1>Складская база к реализации</h1>{% if inventory_can_write %}<a class="btn btn-primary" href="{% url 'inventory:invoice-new' %}">Создать накладную</a>{% endif %}</div>
 <div class="iv-totals">{% for item in summary %}<div><strong>{{ item.name }}</strong><span>{{ item.weight }} кг / {{ item.quantity }} шт.</span></div>{% empty %}<p>На складе пока нет продукции.</p>{% endfor %}</div>
 <p>Каждая партия связана с животным. Непроданная продукция остаётся здесь после частичной отгрузки.</p>
 <div class="iv-table-wrap"><table class="table table-striped table-hover"><thead><tr><th>Бирка</th><th>Номенклатура</th><th>Остаток, кг</th><th>Шт.</th><th>Приход</th><th>Действия</th></tr></thead><tbody>

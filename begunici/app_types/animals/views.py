@@ -57,6 +57,7 @@ from .models import (
     format_lambing_tracking_result,
     RAM_GROUP_DAYS,
     get_lambing_placement_date,
+    iter_insemination_events,
     planned_lambing_date_from_placement,
 )
 from .serializers import (
@@ -106,7 +107,11 @@ from .utils_permissions import (
 from .weight_acts import get_weight_acts_page, weight_act_response
 from .progeny_acts import get_progeny_acts_page, progeny_act_response
 from .rejection_acts import get_rejection_acts_page, rejection_act_response
-from .livestock_movement_acts import livestock_movement_act_response
+from .livestock_movement_acts import (
+    get_archive_events_for_period,
+    get_latest_archive_events,
+    livestock_movement_act_response,
+)
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -7294,57 +7299,6 @@ def _get_animal_link_data(animal):
     return tag_number, None
 
 
-def _get_visible_actual_lambing_date(lambing):
-    if not lambing or lambing.completion_type in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES:
-        return None
-    return lambing.actual_lambing_date
-
-
-def _build_group_lambing_actual_date_map(groups):
-    group_ids = [group.id for group in groups]
-    if not group_ids:
-        return {}
-
-    lambings = (
-        Lambing.objects.filter(source_group_id__in=group_ids)
-        .select_related("sheep__tag", "ewe__tag")
-        .order_by("-actual_lambing_date", "-id")
-    )
-    actual_date_map = {}
-    for lambing in lambings:
-        if lambing.sheep_id:
-            key = (lambing.source_group_id, "sheep", lambing.sheep_id)
-        elif lambing.ewe_id:
-            key = (lambing.source_group_id, "ewe", lambing.ewe_id)
-        else:
-            continue
-
-        actual_date = _get_visible_actual_lambing_date(lambing)
-        if key not in actual_date_map or (not actual_date_map[key] and actual_date):
-            actual_date_map[key] = actual_date
-
-    return actual_date_map
-
-
-def _build_group_unsuccessful_insemination_keys(groups):
-    group_ids = [group.id for group in groups]
-    if not group_ids:
-        return set()
-
-    keys = set()
-    lambings = Lambing.objects.filter(
-        source_group_id__in=group_ids,
-        completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION,
-    ).values_list("source_group_id", "sheep_id", "ewe_id")
-
-    for group_id, sheep_id, ewe_id in lambings:
-        if sheep_id:
-            keys.add((group_id, "sheep", sheep_id))
-        elif ewe_id:
-            keys.add((group_id, "ewe", ewe_id))
-    return keys
-
-
 def _passes_insemination_tag_filters(
     mother_tag,
     father_tag,
@@ -7361,66 +7315,15 @@ def _passes_insemination_tag_filters(
 
 
 def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
-    groups = list(
-        LambingGroup.objects.all()
-        .select_related("maker__tag", "ram__tag")
-        .prefetch_related("sheep__tag", "ewes__tag")
-        .order_by("-placement_date", "-id")
-    )
-    actual_date_map = _build_group_lambing_actual_date_map(groups)
-    unsuccessful_group_keys = _build_group_unsuccessful_insemination_keys(groups)
-
     rows = []
-    for group in groups:
-        father = group.get_father()
-        if not father:
-            continue
-        father_tag, father_url = _get_animal_link_data(father)
-        father_rshn_tag = getattr(father, "rshn_tag", "") or ""
-        mothers = [(mother, "sheep") for mother in group.sheep.all()]
-        mothers.extend((mother, "ewe") for mother in group.ewes.all())
-
-        for mother, mother_type in mothers:
-            if (group.id, mother_type, mother.id) in unsuccessful_group_keys:
-                continue
-
+    for event in iter_insemination_events():
+        mother, father = event["mother"], event["father"]
+        if event["source_group"] is not None:
             mother_tag, mother_url = _get_animal_link_data(mother)
-            if not _passes_insemination_tag_filters(
-                mother_tag,
-                father_tag,
-                mother_tag_search,
-                father_tag_search,
-                getattr(mother, "rshn_tag", "") or "",
-                father_rshn_tag,
-            ):
-                continue
-
-            rows.append(
-                {
-                    "mother_tag": mother_tag,
-                    "mother_url": mother_url,
-                    "father_tag": father_tag,
-                    "father_url": father_url,
-                    "placement_date": group.get_father_placement_date(),
-                    "actual_lambing_date": actual_date_map.get(
-                        (group.id, mother_type, mother.id)
-                    ),
-                    "sort_id": group.id,
-                }
-            )
-
-    fallback_lambings = (
-        Lambing.objects.filter(source_group__isnull=True)
-        .exclude(completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION)
-        .select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
-        .order_by("-start_date", "-id")
-    )
-    for lambing in fallback_lambings:
-        placement_date = _get_lambing_placement_date(lambing)
-        mother_tag, mother_url = _get_mother_link_data(lambing)
-        father_tag, father_url = _get_father_link_data(lambing)
-        mother = lambing.get_mother()
-        father = lambing.get_father()
+            father_tag, father_url = _get_animal_link_data(father)
+        else:
+            mother_tag, mother_url = _get_mother_link_data(event["lambing"])
+            father_tag, father_url = _get_father_link_data(event["lambing"])
         if not _passes_insemination_tag_filters(
             mother_tag,
             father_tag,
@@ -7437,9 +7340,9 @@ def _build_insemination_rows(mother_tag_search="", father_tag_search=""):
                 "mother_url": mother_url,
                 "father_tag": father_tag,
                 "father_url": father_url,
-                "placement_date": placement_date,
-                "actual_lambing_date": _get_visible_actual_lambing_date(lambing),
-                "sort_id": lambing.id,
+                "placement_date": event["placement_date"],
+                "actual_lambing_date": event["actual_lambing_date"],
+                "sort_id": event["sort_id"],
             }
         )
 
@@ -9501,46 +9404,22 @@ def dashboard_statistics(request):
     # 2. Перенесено в архив за текущий месяц.
     # Для бизнес-отчетов используем дату статуса из модалки архивации,
     # а не техническое время записи StatusHistory.
-    archive_act_tag_ids = set(ArchiveAct.objects.filter(
-        status_date__gte=month_start,
-        status_date__lte=month_end,
-    ).values_list('tag_id', flat=True))
+    archive_stats = _get_dashboard_period_archive_stats(month_start, month_end)
+    archived_tag_ids = set().union(*archive_stats.values())
 
-    tags_with_archive_acts = ArchiveAct.objects.values_list('tag_id', flat=True)
-    archive_status_ids = Status.objects.filter(status_type__in=ARCHIVE_STATUS_NAMES).values_list('id', flat=True)
-    fallback_archived_tag_ids = set(
-        StatusHistory.objects.filter(
-            new_status_id__in=archive_status_ids,
-            change_date__date__gte=month_start,
-            change_date__date__lte=month_end,
-        )
-        .exclude(tag_id__in=tags_with_archive_acts)
-        .exclude(old_status_id=F("new_status_id"))
-        .values_list('tag_id', flat=True)
-    )
+    def archived_by_type(model):
+        tag_ids = set(model.objects.filter(
+            is_archived=True, tag_id__in=archived_tag_ids,
+        ).values_list('tag_id', flat=True))
+        return [
+            {'animal_status__status_type': status_name, 'count': len(tags & tag_ids)}
+            for status_name, tags in sorted(archive_stats.items()) if tags & tag_ids
+        ]
 
-    archived_tag_ids = archive_act_tag_ids | fallback_archived_tag_ids
-    
-    # Подсчитываем архивированных животных по типам
-    archived_makers = Maker.objects.filter(
-        is_archived=True,
-        tag_id__in=archived_tag_ids
-    ).values('animal_status__status_type').annotate(count=Count('id'))
-    
-    archived_rams = Ram.objects.filter(
-        is_archived=True,
-        tag_id__in=archived_tag_ids
-    ).values('animal_status__status_type').annotate(count=Count('id'))
-    
-    archived_ewes = Ewe.objects.filter(
-        is_archived=True,
-        tag_id__in=archived_tag_ids
-    ).values('animal_status__status_type').annotate(count=Count('id'))
-    
-    archived_sheep = Sheep.objects.filter(
-        is_archived=True,
-        tag_id__in=archived_tag_ids
-    ).values('animal_status__status_type').annotate(count=Count('id'))
+    archived_makers = archived_by_type(Maker)
+    archived_rams = archived_by_type(Ram)
+    archived_ewes = archived_by_type(Ewe)
+    archived_sheep = archived_by_type(Sheep)
     
     # Подсчёт общего количества архивированных
     total_archived_makers = sum(item['count'] for item in archived_makers)
@@ -9809,36 +9688,14 @@ def _build_dashboard_status_age_table(animals, title, accent, as_of_date, allowe
     }
 
 
-def _get_dashboard_period_archive_stats(period_start, period_end, acts_only=False):
+def _get_dashboard_period_archive_stats(period_start, period_end, acts_only=False, *, archive_events=None):
     archive_statuses = defaultdict(set)
-    acts = ArchiveAct.objects.filter(
-        status_date__gte=period_start,
-        status_date__lte=period_end,
-    ).values("tag_id", "status_name")
-    for act in acts:
-        if act["tag_id"] and act["status_name"]:
-            archive_statuses[act["status_name"]].add(act["tag_id"])
-
-    if acts_only:
-        return archive_statuses
-
-    tags_with_archive_acts = set(ArchiveAct.objects.values_list("tag_id", flat=True))
-    archive_status_ids = Status.objects.filter(
-        status_type__in=ARCHIVE_STATUS_NAMES
-    ).values_list("id", flat=True)
-    fallback_histories = (
-        StatusHistory.objects.filter(
-            new_status_id__in=archive_status_ids,
-            change_date__date__gte=period_start,
-            change_date__date__lte=period_end,
-        )
-        .exclude(tag_id__in=tags_with_archive_acts)
-        .exclude(old_status_id=F("new_status_id"))
-        .select_related("new_status")
-    )
-    for history in fallback_histories:
-        if history.tag_id and history.new_status:
-            archive_statuses[history.new_status.status_type].add(history.tag_id)
+    if archive_events is None:
+        archive_events = get_latest_archive_events(acts_only=acts_only)
+    for tag_id, status_name, _archive_date in get_archive_events_for_period(
+        archive_events, period_start, period_end,
+    ):
+        archive_statuses[status_name].add(tag_id)
 
     return archive_statuses
 
@@ -9988,11 +9845,14 @@ def _build_dashboard_reproduction_table(period_start, period_end, period_label, 
 
 def _build_dashboard_monthly_dynamics_table(year, archive_by_acts=False):
     rows = []
+    archive_events = get_latest_archive_events(acts_only=archive_by_acts)
     for month_index, month_name in enumerate(DASHBOARD_MONTH_NAMES, start=1):
         month_start = date(year, month_index, 1)
         month_end = month_start + relativedelta(months=1) - timedelta(days=1)
         reproduction_stats = _get_dashboard_lambing_reproduction_stats(month_start, month_end)
-        archive_stats = _get_dashboard_period_archive_stats(month_start, month_end, acts_only=archive_by_acts)
+        archive_stats = _get_dashboard_period_archive_stats(
+            month_start, month_end, acts_only=archive_by_acts, archive_events=archive_events,
+        )
         archived_total = len(set().union(*archive_stats.values())) if archive_stats else 0
 
         rows.append([

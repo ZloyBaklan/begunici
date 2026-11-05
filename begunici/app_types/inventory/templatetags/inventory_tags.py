@@ -3,7 +3,7 @@ from django.contrib.auth.models import AnonymousUser
 
 from ..animal_types import type_label
 from ..models import AnimalCase
-from ..permissions import can_access_slaughter, can_manage_inventory, can_prepare_slaughter
+from ..permissions import can_access_slaughter, can_manage_inventory, can_prepare_slaughter, can_view_inventory
 
 register = template.Library()
 register.filter("animal_type_label", type_label)
@@ -15,21 +15,26 @@ def context_user(context):
 
 @register.simple_tag(takes_context=True)
 def inventory_access(context):
+    return can_view_inventory(context_user(context))
+
+
+@register.simple_tag(takes_context=True)
+def inventory_write_access(context):
     return can_manage_inventory(context_user(context))
 
 
 @register.simple_tag(takes_context=True)
 def inventory_product_access(context):
     user = context_user(context)
-    return can_manage_inventory(user) or can_prepare_slaughter(user)
+    return can_view_inventory(user) or can_prepare_slaughter(user)
 
 
 @register.inclusion_tag("inventory/includes/warehouse_navigation.html", takes_context=True)
 def warehouse_navigation(context, section=""):
     from begunici.app_types.vet_inventory.permissions import can_view
     user = context_user(context)
-    return {"finance": can_manage_inventory(user), "veterinary": can_view(user),
-            "products": can_manage_inventory(user) or can_prepare_slaughter(user),
+    return {"finance": can_view_inventory(user), "veterinary": can_view(user),
+            "products": can_view_inventory(user) or can_prepare_slaughter(user),
             "slaughter": can_access_slaughter(user),
             "area": section if section in {"feeds", "vet", "slaughter"} else "products"}
 
@@ -44,7 +49,7 @@ def inventory_archive_hint(context):
 def inventory_home_button(context):
     user = context_user(context)
     return {"allowed": can_access_slaughter(user), "finance": can_manage_inventory(user),
-            "slaughter_only": not (can_prepare_slaughter(user) or can_manage_inventory(user))}
+            "slaughter_only": not (can_prepare_slaughter(user) or can_view_inventory(user))}
 
 
 @register.inclusion_tag("inventory/includes/acts_button.html", takes_context=True)
@@ -54,11 +59,14 @@ def inventory_acts_button(context):
 
 @register.inclusion_tag("inventory/includes/animal_button.html", takes_context=True)
 def inventory_animal_button(context, animal):
-    if not can_manage_inventory(context_user(context)):
+    user = context_user(context)
+    if not can_view_inventory(user):
         return {}
     case = AnimalCase.objects.filter(source_tag_id=animal.tag_id).select_related("receipt").first()
     label = "Складской учёт"
-    if case and case.receipt.state == "confirmed":
+    if not can_manage_inventory(user):
+        label = "Складские данные и документы"
+    elif case and case.receipt.state == "confirmed":
         label = "Акт подтверждён · товарные накладные"
     elif animal.is_archived and str(animal.animal_status) == "Реализация в живом весе" and animal.is_for_sale:
         label = "Подтвердить акт реализации"

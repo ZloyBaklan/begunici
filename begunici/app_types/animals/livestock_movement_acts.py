@@ -5,8 +5,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
-from dateutil.relativedelta import relativedelta
 from django.conf import settings
+from django.db.models import F
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -119,7 +119,7 @@ def get_all_animals():
 def build_status_history_map(tag_ids):
     history_map = defaultdict(list)
     histories = (
-        StatusHistory.objects.select_related("new_status")
+        StatusHistory.objects.select_related("old_status", "new_status")
         .filter(tag_id__in=tag_ids)
         .order_by("tag_id", "change_date", "id")
     )
@@ -128,32 +128,61 @@ def build_status_history_map(tag_ids):
     return history_map
 
 
-def build_archive_dates_map(tag_ids, history_map):
-    archive_dates = defaultdict(list)
-    for tag_id, histories in history_map.items():
+def get_latest_archive_events(tag_ids=None, *, history_map=None, acts_only=False):
+    """Select one exit per tag across all dates, preferring acts to status history."""
+    if tag_ids is not None:
+        tag_ids = set(tag_ids)
+        if not tag_ids:
+            return []
+
+    acts = ArchiveAct.objects.all()
+    if tag_ids is not None:
+        acts = acts.filter(tag_id__in=tag_ids)
+    acts = acts.order_by("tag_id", "-status_date", "-updated_at", "-id").values(
+        "tag_id", "status_name", "status_date",
+    )
+    latest_events = {}
+    tags_with_acts = set()
+    for act in acts:
+        tag_id = act["tag_id"]
+        tags_with_acts.add(tag_id)
+        if act["status_date"] and act["status_name"] in ARCHIVE_STATUS_NAMES:
+            latest_events.setdefault(tag_id, (tag_id, act["status_name"], act["status_date"]))
+
+    if not acts_only:
+        if history_map is None:
+            histories = (
+                StatusHistory.objects.filter(new_status__status_type__in=ARCHIVE_STATUS_NAMES)
+                .exclude(old_status_id=F("new_status_id"))
+                .exclude(tag_id__in=tags_with_acts)
+                .select_related("new_status")
+                .order_by("tag_id", "-change_date", "-id")
+            )
+            if tag_ids is not None:
+                histories = histories.filter(tag_id__in=tag_ids)
+        else:
+            # build_status_history_map keeps each tag's history in chronological order.
+            histories = (history for rows in history_map.values() for history in reversed(rows))
+
         for history in histories:
+            tag_id = history.tag_id
+            if tag_id in tags_with_acts or tag_id in latest_events:
+                continue
+            if tag_ids is not None and tag_id not in tag_ids:
+                continue
             status_name = history.new_status.status_type if history.new_status else ""
             history_date = normalize_date(history.change_date)
-            if (
-                status_name in ARCHIVE_STATUS_NAMES
-                and history_date
-                and history.old_status_id != history.new_status_id
-            ):
-                archive_dates[tag_id].append(history_date)
+            if (status_name in ARCHIVE_STATUS_NAMES and history_date
+                    and history.old_status_id != history.new_status_id):
+                latest_events[tag_id] = (tag_id, status_name, history_date)
 
-    acts = (
-        ArchiveAct.objects.filter(tag_id__in=tag_ids, status_date__isnull=False)
-        .order_by("tag_id", "-updated_at", "-id")
-        .values("tag_id", "status_date")
-    )
-    for act in acts:
-        if act["status_date"] not in archive_dates[act["tag_id"]]:
-            archive_dates[act["tag_id"]].append(act["status_date"])
+    return [latest_events[tag_id] for tag_id in sorted(latest_events)]
 
-    for tag_id in list(archive_dates.keys()):
-        archive_dates[tag_id].sort()
 
-    return archive_dates
+def build_archive_dates_map(tag_ids, history_map, *, archive_events=None):
+    if archive_events is None:
+        archive_events = get_latest_archive_events(tag_ids, history_map=history_map)
+    return {tag_id: [archive_date] for tag_id, _status, archive_date in archive_events}
 
 
 def get_status_name_on_date(animal, history_map, as_of_date):
@@ -178,6 +207,8 @@ def is_active_on_date(animal, history_map, archive_dates_map, as_of_date):
 
     tag_id = animal.tag_id
     archive_dates = archive_dates_map.get(tag_id, [])
+    if archive_dates and as_of_date < min(archive_dates):
+        return True
     current_status_name = animal.animal_status.status_type if animal.animal_status else ""
 
     if animal.is_archived or current_status_name in ARCHIVE_STATUS_NAMES:
@@ -238,10 +269,11 @@ def was_sheep_ewe_on_date(animal, as_of_date, sheep_first_lambing_map):
     )
 
 
-def is_progeny_by_age(animal, as_of_date):
-    if not animal.birth_date:
+def is_unweaned_progeny(animal_type, animal, as_of_date):
+    if animal_type not in {"Ram", "Ewe"}:
         return False
-    return as_of_date < animal.birth_date + relativedelta(months=7)
+    weaning_date = normalize_date(animal.date_otbivka)
+    return not weaning_date or as_of_date < weaning_date
 
 
 def get_year_group(prefix, birth_date, report_year):
@@ -255,8 +287,7 @@ def get_year_group(prefix, birth_date, report_year):
 
 
 def classify_animal_group(animal_type, animal, as_of_date, report_year, sheep_first_lambing_map):
-    # Приплод считается первым, чтобы он не попадал в ярки/баранчики по году.
-    if is_progeny_by_age(animal, as_of_date):
+    if is_unweaned_progeny(animal_type, animal, as_of_date):
         return "progeny"
 
     if animal_type == "Maker":
@@ -272,35 +303,9 @@ def classify_animal_group(animal_type, animal, as_of_date, report_year, sheep_fi
     return None
 
 
-def get_archive_events_for_period(tag_ids, history_map, archive_dates_map, period_start, period_end):
-    events = []
-    seen = set()
-
-    for tag_id in tag_ids:
-        for history in history_map.get(tag_id, []):
-            status_name = history.new_status.status_type if history.new_status else ""
-            history_date = normalize_date(history.change_date)
-            if (
-                status_name in ARCHIVE_STATUS_NAMES
-                and history.old_status_id != history.new_status_id
-                and history_date
-                and period_start <= history_date <= period_end
-            ):
-                key = (tag_id, status_name, history_date)
-                if key not in seen:
-                    seen.add(key)
-                    events.append((tag_id, status_name, history_date))
-
-    # Fallback for archived animals that have ArchiveAct/status dates but no matching status object.
-    for tag_id, archive_dates in archive_dates_map.items():
-        if any(event_tag_id == tag_id for event_tag_id, _, _ in events):
-            continue
-        for archive_date in archive_dates:
-            if period_start <= archive_date <= period_end:
-                events.append((tag_id, "", archive_date))
-                break
-
-    return events
+def get_archive_events_for_period(archive_events, period_start, period_end):
+    # Filter only after selecting the latest event across the complete history.
+    return [event for event in archive_events if period_start <= event[2] <= period_end]
 
 
 def increment(counter, group_key, amount=1):
@@ -323,12 +328,13 @@ def build_livestock_movement_group(year, month):
         if animal.tag_id
     }
     history_map = build_status_history_map(tag_ids)
-    archive_dates_map = build_archive_dates_map(tag_ids, history_map)
+    latest_archive_events = get_latest_archive_events(tag_ids, history_map=history_map)
+    archive_dates_map = build_archive_dates_map(
+        tag_ids, history_map, archive_events=latest_archive_events,
+    )
     sheep_first_lambing_map = build_sheep_first_lambing_map()
     archive_events = get_archive_events_for_period(
-        tag_ids,
-        history_map,
-        archive_dates_map,
+        latest_archive_events,
         period_start,
         effective_period_end,
     )
@@ -382,8 +388,32 @@ def build_livestock_movement_group(year, month):
             )
             increment(counts["ending"], ending_group)
 
-        if animal.birth_date and period_start <= animal.birth_date <= effective_period_end:
-            increment(counts["incoming_groups"], "progeny")
+        born_in_period = animal.birth_date and period_start <= animal.birth_date <= effective_period_end
+        if born_in_period:
+            birth_group = classify_animal_group(
+                animal_type, animal, animal.birth_date, year, sheep_first_lambing_map,
+            )
+            increment(counts["incoming_groups"], birth_group)
+
+        if animal_type in {"Ram", "Ewe"}:
+            weaning_date = normalize_date(animal.date_otbivka)
+            if (weaning_date and period_start <= weaning_date <= effective_period_end
+                    and (not animal.birth_date or animal.birth_date < weaning_date)):
+                before_weaning = weaning_date - timedelta(days=1)
+                # Include a transfer before a same-day exit, but not after an earlier exit.
+                if is_active_on_date(animal, history_map, archive_dates_map, before_weaning):
+                    from_group = classify_animal_group(
+                        animal_type, animal, before_weaning, year, sheep_first_lambing_map,
+                    )
+                    to_group = classify_animal_group(
+                        animal_type, animal, weaning_date, year, sheep_first_lambing_map,
+                    )
+                    if from_group != to_group:
+                        increment(counts["outgoing_groups"], from_group)
+                        increment(counts["incoming_groups"], to_group)
+            continue
+
+        if born_in_period:
             continue
 
         if animal.tag_id in archived_tag_ids_in_period:

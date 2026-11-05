@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="{% static 'inventory/inventory.css' %}?v=7">
 <div class="inventory container mt-4" id="inventory-app">
     {% inventory_access as inventory_allowed %}
+    {% inventory_write_access as inventory_can_write %}
     {% inventory_product_access as inventory_products_allowed %}
     {% if section != 'home' %}
     {% warehouse_navigation section %}

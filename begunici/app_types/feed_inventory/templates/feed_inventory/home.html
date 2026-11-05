@@ -1,7 +1,7 @@
 {% extends 'feed_inventory/base.html' %}
 {% load feed_tags %}
 {% block feed_content %}
-<div class="iv-title-row"><h1>Корма и сено</h1><div class="feed-actions"><a class="btn btn-primary" href="{% url 'feed_inventory:orders' %}#new-order">Оформить приход</a><a class="btn btn-success" href="{% url 'feed_inventory:consume' %}">Расход на кормление</a><a class="btn btn-outline-danger" href="{% url 'feed_inventory:writeoff-new' %}">Списать по акту</a></div></div>
+<div class="iv-title-row"><h1>Корма и сено</h1>{% if can_finance %}<div class="feed-actions"><a class="btn btn-primary" href="{% url 'feed_inventory:orders' %}#new-order">Оформить приход</a><a class="btn btn-success" href="{% url 'feed_inventory:consume' %}">Расход на кормление</a><a class="btn btn-outline-danger" href="{% url 'feed_inventory:writeoff-new' %}">Списать по акту</a></div>{% endif %}</div>
 <p class="text-muted">Накладная пополняет склад после проверки. Расход предлагается по нормам; фактические количества вы подтверждаете сами.</p>
 {% if not consumption_confirmed %}<p class="text-muted">Расход за сегодня ещё не подтверждён.</p>{% endif %}
 <div class="feed-table-wrap"><table class="table table-striped table-hover feed-stock-table"><thead><tr><th>Номенклатура</th><th>Остаток</th><th>Упаковки, шт.</th><th>Норма / сутки</th><th>Кормление сегодня</th><th>По актам сегодня</th><th>Запас, дней</th></tr></thead><tbody>

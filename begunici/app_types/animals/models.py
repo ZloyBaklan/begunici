@@ -1,5 +1,5 @@
 ﻿from django.db import models, transaction
-from django.db.models import Max, Q
+from django.db.models import Max, Prefetch, Q
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -815,7 +815,7 @@ class Maker(AnimalBase):
 def get_default_lambing_tracking_care():
     for care in VeterinaryCare.objects.order_by("pk"):
         medication = (care.medication or "").casefold()
-        if "пастанарм" in medication and "перв" in medication:
+        if "пастанарм" in medication and "повтор" in medication:
             return care
     return None
 
@@ -1352,6 +1352,65 @@ class Lambing(models.Model):
                             father.save()
                     except Exception as e:
                         print(f"Ошибка при установке статуса '{STATUS_FATTENING}' отцу после завершения окота: {e}")
+
+
+def iter_insemination_events():
+    """Share placement-based events between the journal and monthly report."""
+    groups = (
+        LambingGroup.objects.select_related("maker__tag", "ram__tag")
+        .prefetch_related(
+            "sheep__tag", "ewes__tag",
+            Prefetch("lambings", queryset=Lambing.objects.select_related("sheep__tag", "ewe__tag")
+                     .order_by("-start_date", "-id"), to_attr="insemination_lambings"),
+        )
+        .order_by("-placement_date", "-id")
+    )
+    for group in groups:
+        father = group.get_father()
+        if not father:
+            continue
+        by_mother = {}
+        for lambing in group.insemination_lambings:
+            if lambing.sheep_id:
+                key = ("sheep", lambing.sheep_id)
+            elif lambing.ewe_id:
+                key = ("ewe", lambing.ewe_id)
+            else:
+                continue
+            by_mother.setdefault(key, []).append(lambing)
+
+        mothers = [(mother, "sheep") for mother in group.sheep.all()]
+        mothers.extend((mother, "ewe") for mother in group.ewes.all())
+        for mother, mother_type in mothers:
+            lambings = by_mother.get((mother_type, mother.pk), [])
+            if any(item.completion_type == Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION for item in lambings):
+                continue
+            actual_dates = [item.actual_lambing_date for item in lambings
+                            if item.completion_type not in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES
+                            and item.actual_lambing_date]
+            yield {
+                "mother": mother, "mother_type": mother_type, "father": father,
+                "lambing": lambings[0] if lambings else None, "source_group": group,
+                "placement_date": group.get_father_placement_date(),
+                "actual_lambing_date": max(actual_dates, default=None), "sort_id": group.pk,
+            }
+
+    # Standalone historical records have no group row to count instead.
+    standalone = (
+        Lambing.objects.filter(source_group__isnull=True)
+        .exclude(completion_type=Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION)
+        .select_related("sheep__tag", "ewe__tag", "maker__tag", "ram__tag")
+        .order_by("-start_date", "-id")
+    )
+    for lambing in standalone:
+        yield {
+            "mother": lambing.get_mother(), "mother_type": "sheep" if lambing.sheep_id else "ewe",
+            "father": lambing.get_father(), "lambing": lambing, "source_group": None,
+            "placement_date": get_lambing_placement_date(lambing),
+            "actual_lambing_date": (lambing.actual_lambing_date
+                                    if lambing.completion_type not in Lambing.NON_PRODUCTIVE_COMPLETION_TYPES else None),
+            "sort_id": lambing.pk,
+        }
 
 
 def get_lambing_sequence_queryset_for_mother(mother):
