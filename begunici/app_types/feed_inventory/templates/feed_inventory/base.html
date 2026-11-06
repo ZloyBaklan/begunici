@@ -15,11 +15,11 @@
 </div>
 {% endblock %}
 {% block inventory_content %}
-<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=6">
 <div class="feeds">
 {% if not catalog_mode %}
 {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="alert">{{ message }}</div>{% endfor %}{% endif %}
 {% block feed_content %}{% endblock %}
 </div>
-<script src="{% static 'feed_inventory/feeds.js' %}?v=3" defer></script>
+<script src="{% static 'feed_inventory/feeds.js' %}?v=4" defer></script>
 {% endblock %}

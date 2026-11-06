@@ -112,7 +112,7 @@ def close(request, barn):
 @access
 def analytics(request):
     for i in range(1, 5): barns.ensure_period(i)
-    return page(request, "analytics", comparison=barns.comparison(request.GET.get("month")))
+    return page(request, "analytics", comparison=barns.comparison(request.GET.get("month")), can_edit=can_manage_inventory(request.user))
 
 
 @require_GET

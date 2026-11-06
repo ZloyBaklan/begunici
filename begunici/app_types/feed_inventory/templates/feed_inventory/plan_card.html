@@ -1,5 +1,5 @@
 {% load static feed_tags %}
-<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'feed_inventory/feeds.css' %}?v=6">
 <section class="plan-parameters-card feed-plan" id="feed-plan">
     <div class="plan-parameters-header feed-actions">
         <div><h4>Кормовой план</h4><small data-feed-period-label data-month-caption="{{ plan.month|capfirst }} {{ plan.year }} · по текущему поголовью на {{ plan.date_label }} · {{ plan.days }} дн." data-year-caption="По текущему поголовью · {{ plan.date_label }}–{{ plan.year_end_label }} · {{ plan.year_days }} дн.">{{ plan.month|capfirst }} {{ plan.year }} · по текущему поголовью на {{ plan.date_label }} · {{ plan.days }} дн.</small></div>
@@ -25,14 +25,13 @@
                 <span class="feed-view-explanation" data-feed-view-explanation aria-live="polite">На одну голову в день</span>
             </div>
             {% if can_edit %}<div class="feed-actions mb-3">
-                <button type="button" class="btn btn-outline-primary btn-sm" data-feed-edit {% if editing %}hidden{% endif %}>Редактировать потребление</button>
                 <button type="submit" class="btn btn-success btn-sm" data-feed-save {% if not editing %}hidden{% endif %}>Сохранить нормы</button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-feed-cancel {% if not editing %}hidden{% endif %}>Отмена</button>
             </div>{% endif %}
             {% include 'feed_inventory/plan_table.html' %}
             <p class="text-muted small" data-feed-norm-hint hidden>После сохранения итоги за сутки, месяц и до конца года будут пересчитаны. Ранее подтверждённые списания не меняются.</p>
         </form>
-        {% feed_actual_plan %}
     </div>
 </section>
-<script src="{% static 'feed_inventory/feeds.js' %}?v=3" defer></script>
+{% feed_actual_plan True %}
+<script src="{% static 'feed_inventory/feeds.js' %}?v=4" defer></script>

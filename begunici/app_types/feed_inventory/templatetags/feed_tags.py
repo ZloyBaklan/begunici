@@ -7,7 +7,7 @@ register = template.Library()
 
 
 @register.inclusion_tag("feed_inventory/barns/comparison.html", takes_context=True)
-def feed_actual_plan(context):
+def feed_actual_plan(context, local_norms=False):
     from .. import barns
     for i in range(1, 5): barns.ensure_period(i)
     request = context.get("request")
@@ -16,11 +16,19 @@ def feed_actual_plan(context):
         data = barns.comparison(request.GET.get("feed_month") if request else None)
     except ValidationError:
         data = barns.comparison()
-    return {"comparison": data, "inline": True}
+    return {"comparison": data, "inline": True, "local_norms": local_norms,
+            "expanded": bool(request and request.GET.get("feed_month")),
+            "can_edit": bool(request and can_manage_inventory(request.user))}
 
 
 @register.inclusion_tag("feed_inventory/barns/map_bridge.html", takes_context=True)
 def barn_feed_map_bridge(context):
+    from ..barns import can_supply
+    return {"allowed": can_supply(context["request"].user)}
+
+
+@register.inclusion_tag("feed_inventory/barns/map_actions.html", takes_context=True)
+def barn_feed_actions(context):
     from ..barns import can_supply
     return {"allowed": can_supply(context["request"].user)}
 
@@ -45,5 +53,6 @@ def feed_plan_card(context):
     if request is None:
         return {}
     return {"plan": build_plan(), "can_edit": can_manage_inventory(request.user),
+            "editing": request.GET.get("edit_feed") == "1" and can_manage_inventory(request.user),
             "request": request,
             "csrf_token": context.get("csrf_token"), "messages": context.get("messages")}

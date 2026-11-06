@@ -2,7 +2,7 @@
 import hashlib
 import re
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -13,7 +13,7 @@ from django.utils import timezone
 from begunici.app_types.inventory.documents import read_upload
 from begunici.app_types.inventory.permissions import can_manage_inventory, require_inventory
 from begunici.app_types.inventory.validation import amount
-from begunici.app_types.veterinary.vet_models import Place, PlaceMovement, StatusHistory
+from begunici.app_types.veterinary.vet_models import Place
 from .models import BarnFeedDocument, BarnFeedMovement, BarnFeedPeriod, FeedDocument, FeedMovement, FeedProduct, FeedSettings
 from . import services
 from .plan import build_plan, number
@@ -244,23 +244,8 @@ def reverse(user, pk, reason):
 
 
 def weekly_movements(barn, today=None):
-    today = today or timezone.localdate()
-    arrived, left, internal = set(), set(), set()
-    start = today - timedelta(days=6)
-    for m in PlaceMovement.objects.filter(created_at__date__range=(start, today)).select_related("old_place", "new_place"):
-        old, new = place_barn(m.old_place), place_barn(m.new_place)
-        if old == barn and new == barn and m.old_place_id != m.new_place_id:
-            internal.add(m.tag_id)
-        elif old != new:
-            if new == barn: arrived.add(m.tag_id)
-            if old == barn: left.add(m.tag_id)
-    from begunici.app_types.animals import feed_plan as legacy
-    current_tags = set()
-    for model in (legacy.Maker, legacy.Sheep, legacy.Ewe, legacy.Ram):
-        current_tags.update(model.objects.filter(place_id__in=places_by_barn()[barn]).values_list("tag_id", flat=True))
-    left.update(StatusHistory.objects.filter(tag_id__in=current_tags, change_date__date__range=(start, today),
-        new_status__status_type__in=legacy.ARCHIVE_STATUS_NAMES).values_list("tag_id", flat=True))
-    return {"arrived": len(arrived), "left": len(left), "transferred": len(internal), "from": start.strftime("%d.%m"), "to": today.strftime("%d.%m")}
+    from .barn_statistics import weekly_movements as calculate
+    return calculate(barn, today)
 
 
 def summary(barn, today=None):
@@ -292,10 +277,6 @@ def comparison(month=None):
     roots = {p.pk: p for p in FeedProduct.objects.filter(plan_product__isnull=True)}
     totals = {pk: {"name": p.name, "unit": p.get_unit_display(), "plan": ZERO, "actual": ZERO} for pk, p in roots.items()}
     periods = list(BarnFeedPeriod.objects.filter(month=month).select_related("closing"))
-    central_direct = False
-    for movement in FeedMovement.objects.filter(document__kind="consume", document__state="posted", document__date__range=(month, month_end(month))):
-        totals[mapping[movement.product_id]]["actual"] -= movement.amount
-        central_direct = True
     for period in periods:
         for item in period.plan.get("products", []):
             root = mapping.get(item["id"], item["id"])
@@ -308,6 +289,6 @@ def comparison(month=None):
         row["difference"] = number(row["actual"] - row["plan"])
         row["over"] = row["actual"] > row["plan"]
         row["percent"] = min(100, round(row["actual"] / row["plan"] * 100)) if row["plan"] else (100 if row["actual"] else 0)
-    return {"month": month.strftime("%Y-%m"), "rows": list(totals.values()), "closed": sum(p.closing_id is not None for p in periods),
+    return {"month": month.strftime("%Y-%m"), "rows": [r for r in totals.values() if r["plan"] > 0 or r["actual"] > 0], "closed": sum(p.closing_id is not None for p in periods),
         "total": len(periods), "complete": bool(periods) and all(p.closing_id for p in periods),
-        "periods": periods, "central_direct": central_direct}
+        "periods": periods}
