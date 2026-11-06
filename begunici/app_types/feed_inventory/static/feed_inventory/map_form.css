@@ -1,0 +1,25 @@
+.bf-dialog { width: min(1080px, calc(100vw - 32px)); max-height: 90vh; padding: 0; border: 1px solid #d8dde2; border-radius: 9px; color: #212529; background: white; box-shadow: 0 14px 55px #24374b40; }
+.bf-dialog::backdrop { background: #20324780; }
+.bf-dialog [hidden], .bf-map-result[hidden] { display: none !important; }
+.bf-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 18px 22px; background: #fff8e4; border-bottom: 1px solid #e7dfc5; }
+.bf-dialog-header h2 { margin: 0; font-size: 1.4rem; }
+.bf-dialog-body { padding: 20px 22px; }
+.bf-operation-switch { display: flex; gap: 1.5rem; margin-bottom: 18px; }
+.bf-operation-switch label { cursor: pointer; font-weight: 600; }
+.bf-dialog-fields { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 12px; }
+.bf-dialog-fields > label { display: flex; flex-direction: column; gap: 5px; min-width: 210px; }
+.bf-dialog-table { overflow-x: auto; margin: 18px 0 12px; }
+.bf-dialog-table table { min-width: 750px; margin-bottom: 0; }
+.bf-dialog-table th { background: #f3f6f9; font-size: .85rem; }
+.bf-dialog-table th:first-child { width: 34%; }
+.bf-dialog-table th:nth-child(4) { width: 22%; }
+.bf-dialog-table td { vertical-align: middle; padding: 12px 7px; }
+.bf-dialog-table input { min-width: 95px; }
+.bf-dialog-table [readonly] { background: #edf4fa; font-weight: 600; }
+.bf-dialog-note, .bf-dialog-file { display: block; margin-top: 15px; }
+.bf-dialog-note > span { display: block; margin-bottom: 5px; }
+.bf-dialog-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 16px 22px; border-top: 1px solid #e0e4e8; background: white; }
+.bf-dialog-footer > div { display: flex; gap: .6rem; }
+.bf-map-result { max-width: 1440px; margin: 1rem auto; padding: 12px 18px; background: #e8f5eb; color: #245b35; border-radius: 5px; }
+.barns-actions .bf-map-result { flex-basis: 100%; text-align: left; margin: 0; }
+@media (max-width: 600px) { .bf-dialog { width: calc(100vw - 16px); max-height: 95vh; } .bf-dialog-body, .bf-dialog-header, .bf-dialog-footer { padding: 14px; } .bf-dialog-fields > label { min-width: 0; flex: 1 1 180px; } }

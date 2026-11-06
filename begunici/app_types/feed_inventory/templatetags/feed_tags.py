@@ -24,7 +24,13 @@ def feed_actual_plan(context, local_norms=False):
 @register.inclusion_tag("feed_inventory/barns/map_bridge.html", takes_context=True)
 def barn_feed_map_bridge(context):
     from ..barns import can_supply
-    return {"allowed": can_supply(context["request"].user)}
+    from ..models import FeedProduct
+    import uuid
+    user = context["request"].user
+    allowed = can_supply(user)
+    return {"allowed": allowed, "can_writeoff": can_manage_inventory(user),
+            "products": FeedProduct.objects.all() if allowed else [], "barn_numbers": range(1, 5),
+            "token": uuid.uuid4(), "csrf_token": context.get("csrf_token")}
 
 
 @register.inclusion_tag("feed_inventory/barns/map_actions.html", takes_context=True)

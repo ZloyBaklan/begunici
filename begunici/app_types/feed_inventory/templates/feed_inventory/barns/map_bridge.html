@@ -1,5 +1,8 @@
 {% load static %}{% if allowed %}
 <link rel="stylesheet" href="{% static 'feed_inventory/barns.css' %}?v=2">
+<link rel="stylesheet" href="{% static 'feed_inventory/map_form.css' %}?v=2">
 <div id="barn-feed-bridge" data-url="{% url 'feed_inventory:barn-data' %}" data-base="{% url 'feed_inventory:barns' %}"></div>
-<script src="{% static 'feed_inventory/barn_map.js' %}?v=2" defer></script>
+{% include 'feed_inventory/barns/map_form.html' %}
+<script src="{% static 'feed_inventory/barn_map.js' %}?v=3" defer></script>
+<script src="{% static 'feed_inventory/map_form.js' %}?v=1" defer></script>
 {% endif %}
