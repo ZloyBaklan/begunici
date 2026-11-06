@@ -26,11 +26,14 @@ def barn_feed_map_bridge(context):
     from ..barns import can_supply
     from ..models import FeedProduct
     import uuid
+    from datetime import timedelta
+    from django.utils import timezone
     user = context["request"].user
     allowed = can_supply(user)
     return {"allowed": allowed, "can_writeoff": can_manage_inventory(user),
             "products": FeedProduct.objects.all() if allowed else [], "barn_numbers": range(1, 5),
-            "token": uuid.uuid4(), "csrf_token": context.get("csrf_token")}
+            "token": uuid.uuid4(), "csrf_token": context.get("csrf_token"),
+            "previous_month": (timezone.localdate().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")}
 
 
 @register.inclusion_tag("feed_inventory/barns/map_actions.html", takes_context=True)

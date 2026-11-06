@@ -2,12 +2,14 @@ from django.urls import path
 from . import views
 from . import barn_views
 from . import map_operations
+from . import map_closing
 
 app_name = "feed_inventory"
 urlpatterns = [
     path("barns/", barn_views.overview, name="barns"),
     path("barns/data/", barn_views.map_data, name="barn-data"),
     path("barns/map-operation/", map_operations.save, name="map-operation"),
+    path("barns/map-closing/", map_closing.details, name="map-closing"),
     path("barns/analytics/", barn_views.analytics, name="analytics"),
     path("barns/files/<int:pk>/", barn_views.attachment, name="barn-file"),
     path("barns/<int:barn>/", barn_views.detail, name="barn"),

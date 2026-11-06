@@ -10,7 +10,7 @@ from django.views.decorators.http import require_POST
 from begunici.app_types.inventory.permissions import require_inventory
 from begunici.app_types.inventory.documents import read_upload
 
-from . import barns, services
+from . import barns, services, map_closing
 
 
 def _quantities(lines):
@@ -22,9 +22,9 @@ def save(request):
     try:
         barns.require_supply(request.user)
         kind = request.POST.get("kind")
-        if kind not in {"delivery", "writeoff"}:
-            raise ValidationError("Выберите поставку или списание.")
-        if kind == "writeoff":
+        if kind not in {"delivery", "writeoff", "close"}:
+            raise ValidationError("Выберите поставку, списание или фактический расход.")
+        if kind in {"writeoff", "close"}:
             require_inventory(request.user)
         if request.POST.get("verified") != "yes":
             raise ValidationError("Подтвердите проверку количеств.")
@@ -34,6 +34,10 @@ def save(request):
             raise ValidationError("Проверьте список кормов и количества.")
         if not isinstance(lines, list) or any(not isinstance(line, dict) for line in lines):
             raise ValidationError("Проверьте список кормов и количества.")
+        if kind == "close":
+            doc = map_closing.confirm(request, lines)
+            return JsonResponse({"message": f"Фактический расход за {doc.date:%Y-%m} подтверждён · Овчарня {doc.barn}. Остатки обновлены.",
+                "document": doc.pk, "token": str(uuid.uuid4())})
         note = request.POST.get("note", "").strip()
         if not note and kind == "delivery":
             note = "Поставка на овчарню с карты овчарен"

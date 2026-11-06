@@ -6,21 +6,28 @@
         <div class="bf-dialog-body">
             <fieldset class="bf-operation-switch"><legend class="visually-hidden">Операция</legend>
                 <label><input type="radio" name="kind" value="delivery" checked> Поставка</label>
-                {% if can_writeoff %}<label><input type="radio" name="kind" value="writeoff"> Списание</label>{% endif %}
+                {% if can_writeoff %}<label><input type="radio" name="kind" value="writeoff"> Списание</label><label><input type="radio" name="kind" value="close"> Фактический расход за месяц</label>{% endif %}
             </fieldset>
             <div class="bf-dialog-fields">
-                <label>Дата<input class="form-control" type="date" name="date" value="{% now 'Y-m-d' %}" max="{% now 'Y-m-d' %}" required></label>
+                <label data-barn-feed-date>Дата<input class="form-control" type="date" name="date" value="{% now 'Y-m-d' %}" max="{% now 'Y-m-d' %}" required></label>
+                <label data-barn-feed-month hidden>Месяц расхода<input class="form-control" type="month" name="month" value="{{ previous_month }}" max="{{ previous_month }}" required disabled></label>
                 <label>Овчарня<select class="form-select" name="barn" required><option value="">Выберите овчарню</option>{% for number in barn_numbers %}<option value="{{ number }}">Овчарня {{ number }}</option>{% endfor %}</select></label>
             </div>
             <p class="text-muted small" data-barn-feed-hint>Корм переносится с центрального склада на выбранную овчарню.</p>
-            <div class="bf-dialog-table"><table class="table"><thead><tr><th>Корм</th><th>Вес упаковки, кг</th><th>Упаковки, шт.</th><th>Всего</th><th></th></tr></thead><tbody data-barn-feed-rows></tbody></table></div>
+            <div data-barn-feed-movement><div class="bf-dialog-table"><table class="table"><thead><tr><th>Корм</th><th>Вес упаковки, кг</th><th>Упаковки, шт.</th><th>Всего</th><th></th></tr></thead><tbody data-barn-feed-rows></tbody></table></div>
             <button type="button" class="btn btn-outline-primary btn-sm" data-barn-feed-add>+ Добавить корм</button>
-            <p class="text-muted small mt-2">Для корма россыпью укажите итоговое количество. При заполнении веса и числа упаковок итог рассчитывается автоматически.</p>
+            <p class="text-muted small mt-2">Для корма россыпью укажите итоговое количество. При заполнении веса и числа упаковок итог рассчитывается автоматически.</p></div>
+            <div data-barn-feed-closing data-url="{% url 'feed_inventory:map-closing' %}" hidden>
+                <p class="bf-close-status" data-barn-close-status role="status"></p>
+                <label class="bf-close-zero"><input type="checkbox" data-barn-close-zero disabled> Всё израсходовано — остатки на конец месяца равны нулю</label>
+                <div class="bf-dialog-table"><table class="table"><thead><tr><th>Корм</th><th>Наличие за месяц</th><th>Осталось на конец месяца</th><th>Осталось упаковок</th><th>Фактический расход</th></tr></thead><tbody data-barn-close-rows></tbody></table></div>
+                <p class="small text-muted">Расход = начальный остаток + поставки − возвраты − списания по актам − остаток на конец месяца. Акт не нужен. Поставки следующего месяца сохранятся.</p>
+            </div>
             <label class="bf-dialog-note"><span data-barn-feed-note-label>Комментарий (необязательно)</span><textarea class="form-control" name="note" maxlength="2000" rows="2"></textarea></label>
             <label class="bf-dialog-file" data-barn-feed-file hidden>Подтверждающий акт<input class="form-control" type="file" name="file" accept=".pdf,.xlsx" disabled><small class="text-muted">PDF или XLSX</small></label>
             <p class="alert alert-danger mt-3" data-barn-feed-error role="alert" tabindex="-1" hidden></p>
         </div>
-        <div class="bf-dialog-footer"><label><input type="checkbox" name="verified" value="yes" required> Количества проверены, подтверждаю операцию</label><div><button class="btn btn-outline-secondary" type="button" data-barn-feed-close>Отмена</button><button class="btn btn-primary" type="submit" data-barn-feed-submit>Провести поставку</button></div></div>
+        <div class="bf-dialog-footer"><label><input type="checkbox" name="verified" value="yes" required> <span data-barn-feed-verified>Количества проверены, подтверждаю операцию</span></label><div><button class="btn btn-outline-secondary" type="button" data-barn-feed-close>Отмена</button><button class="btn btn-primary" type="submit" data-barn-feed-submit>Провести поставку</button></div></div>
     </form>
     <template data-barn-feed-row>
         <tr><td><select class="form-select" aria-label="Корм" data-feed-product required><option value="">Выберите корм</option>{% for product in products %}<option value="{{ product.pk }}" data-unit="{{ product.get_unit_display }}" data-packaged="{% if product.package %}yes{% endif %}" data-weight="{{ product.package_weight|default_if_none:''|unlocalize }}" data-weighted="{% if product.package and product.unit == 'kg' %}yes{% endif %}">{{ product.name }}{% if product.package %} · {{ product.package }}{% endif %}</option>{% endfor %}</select></td>
@@ -30,4 +37,10 @@
             <td><button type="button" class="btn btn-outline-danger btn-sm" data-barn-feed-remove aria-label="Удалить строку корма">×</button></td>
         </tr>
     </template>
+    <template data-barn-close-row><tr>
+        <td><strong data-close-name></strong><small data-close-unit></small></td><td data-close-available></td>
+        <td><input class="form-control" type="number" data-close-amount min="0" max="999999999.999" step="0.001" required></td>
+        <td><input class="form-control" type="number" data-close-packages min="0" max="999999999.999" step="0.001"></td>
+        <td><strong data-close-used>—</strong></td>
+    </tr></template>
 </dialog>
