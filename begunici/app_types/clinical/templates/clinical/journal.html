@@ -10,6 +10,7 @@
                 <a class="btn btn-sm {% if not archive %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{% url 'clinical:journal' %}?q={{ q|urlencode }}">На лечении</a>
                 <a class="btn btn-sm {% if archive %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?archive=1&amp;q={{ q|urlencode }}">Лечебный архив</a>
             </div>
+            <a class="btn btn-outline-success btn-sm" href="{{ export_url }}">Экспорт</a>
         </div>
     </div>
     <div class="card-body">

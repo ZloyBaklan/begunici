@@ -1,0 +1,10 @@
+{% extends 'feed_inventory/barns/base.html' %}{% load feed_tags %}
+{% block barn_content %}
+<h1>Корма на овчарнях</h1>
+<p class="text-muted">Поставка переносит запас с центрального склада. Фактический расход подтверждается по остаткам в конце месяца.</p>
+<div class="bf-grid">{% for summary in barns %}<section class="bf-card">
+<div class="iv-title-row"><h2>{{ summary.name }}</h2><strong>{{ summary.heads }} голов</strong></div>
+{% include 'feed_inventory/barns/stock_table.html' %}
+<a class="btn btn-outline-primary" href="{% url 'feed_inventory:barn' summary.barn %}">Движения и поставки</a>
+</section>{% endfor %}</div>
+{% endblock %}

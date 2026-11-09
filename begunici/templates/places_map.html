@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% load static %}
+{% load static feed_tags %}
 
 {% block content %}
     <h1>Карта овчарен</h1>
@@ -31,6 +31,7 @@
                 Ковровое перемещение
             </button>
             <a href="{% url 'barn_calculator' %}" class="btn btn-outline-primary">Калькулятор</a>
+            {% barn_feed_actions %}
         </div>
 
         <div id="housing-standards-card" class="housing-standards-card" style="display: none;">
@@ -429,4 +430,5 @@
     </div>
 
     <script type="module" src="{% static 'js/places_map.js' %}"></script>
+    {% barn_feed_map_bridge %}
 {% endblock %}

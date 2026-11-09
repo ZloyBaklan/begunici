@@ -1,0 +1,13 @@
+{% extends 'feed_inventory/barns/base.html' %}{% load feed_tags %}
+{% block barn_content %}
+<h1>Овчарня {{ barn }} · сверка за месяц</h1>
+<form method="get" class="iv-nav mb-4"><label>Месяц<input class="form-control" type="month" name="month" value="{{ month }}" required></label><button class="btn btn-outline-secondary align-self-end">Показать</button></form>
+<p class="text-muted">Начальный остаток + поставки − возвраты − списания по актам − фактический конечный остаток = расход на кормление. Подтверждение доступно после окончания месяца.</p>
+{% if period.closing_id %}<div class="alert alert-success">Факт за {{ month }} уже подтверждён. Для исправления используйте сторно в истории овчарни.</div><ul>{% for line in period.closing.payload.lines %}<li>{{ line.name }}: расход {{ line.amount|feed_quantity }} {{ line.unit }}, конечный остаток {{ line.closing|feed_quantity }} {{ line.unit }}</li>{% endfor %}</ul><a class="btn btn-outline-primary" href="{% url 'feed_inventory:barn' barn %}">Открыть историю</a>{% else %}<form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="month" value="{{ month }}">
+<div class="feed-table-wrap"><table class="table"><thead><tr><th>Позиция</th><th>На начало</th><th>Наличие до сверки</th><th>Фактический остаток</th><th>Осталось упаковок</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.product.name }}<small>{{ row.product.get_unit_display }}</small></td><td>{{ row.opening|feed_quantity }}</td><td>{{ row.available|feed_quantity }}</td><td><input class="form-control" type="number" name="closing_{{ row.product.pk }}"{% if not can_finance %} disabled{% endif %} min="0" step="0.001" value="{{ row.closing_value }}" required aria-label="{{ row.product.name }}: конечный остаток"></td><td><input class="form-control" type="number" name="packs_{{ row.product.pk }}"{% if not can_finance %} disabled{% endif %} min="0" step="0.001" value="{{ row.packs_value }}" aria-label="{{ row.product.name }}: осталось упаковок"></td></tr>{% empty %}<tr><td colspan="5">Нет поставок за выбранный период.</td></tr>{% endfor %}</tbody></table></div>
+<label class="form-label w-100">Комментарий пересчёта<textarea class="form-control" name="note" required{% if not can_finance %} disabled{% endif %}>{{ form.note }}</textarea></label>
+{% if can_finance %}<label class="d-block my-3"><input type="checkbox" name="verified" value="yes" required> Фактические остатки пересчитаны и проверены</label>
+<button class="btn btn-success" type="submit">Подтвердить расход и закрыть месяц</button>{% endif %}
+</form>{% endif %}
+{% endblock %}

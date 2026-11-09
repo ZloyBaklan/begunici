@@ -1,6 +1,23 @@
 from urllib.parse import urlencode
 
+from django.conf import settings
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect
+
+
+class PublicModeMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if settings.APP_MODE == 'public':
+            if settings.DEBUG:
+                return HttpResponse('Public deployment requires DEBUG=False', status=503)
+            if request.path_info == '/':
+                return HttpResponseRedirect('/site/')
+            if not request.path_info.startswith(('/site/', '/static/')):
+                return HttpResponse(status=404)
+        return self.get_response(request)
 
 
 class LoginRequiredExceptPublicMiddleware:

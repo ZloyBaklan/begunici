@@ -13,6 +13,7 @@ urlpatterns = [
     path("animals/<int:tag_id>/", views.animal, name="animal"),
     path("documents/<int:pk>/", views.document, name="document"),
     path("documents/<int:pk>/versions/<int:number>/", views.version_download, name="download"),
+    path("documents/<int:pk>/versions/<int:number>/print/", views.version_download, {"printable": True}, name="print-version"),
     path("invoices/new/", views.invoice_new, name="invoice-new"),
     path("orders/", views.order_list, name="orders"),
     path("orders/new/", views.order_new, name="order-new"),

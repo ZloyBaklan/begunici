@@ -33,6 +33,14 @@ def can_access_slaughter(user):
     ))
 
 
+def can_edit_meat_catalog(user):
+    return can_manage_inventory(user)
+
+
+def require_meat_catalog_editor(user):
+    require_inventory(user)
+
+
 def require_inventory(user, *, write=True):
     if not (can_manage_inventory(user) if write else can_view_inventory(user)):
         raise PermissionDenied("Изменение складского учёта доступно finans и admin." if write else "Нет доступа к складскому учёту.")

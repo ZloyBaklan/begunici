@@ -13,28 +13,22 @@ def index(request):
 
 
 def internal_login(request):
+    params = request.POST if request.method == "POST" else request.GET
+    next_url = params.get("next", "/")
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        next_url = "/"
     if request.user.is_authenticated:
-        return redirect("/")
-
-    next_url = request.GET.get("next", "/")
+        return redirect(next_url)
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
-
         if username and password:
             user = authenticate(request, username=username, password=password)
             if user is not None and user.username != "scales":
                 login(request, user)
-                post_next = request.POST.get("next", "/")
-
-                if post_next and url_has_allowed_host_and_scheme(
-                    post_next, allowed_hosts={request.get_host()}
-                ):
-                    return redirect(post_next)
-
-                return redirect("/")
-
+                return redirect(next_url)
             messages.error(request, "Неверное имя пользователя или пароль.")
         else:
             messages.error(request, "Введите логин и пароль.")

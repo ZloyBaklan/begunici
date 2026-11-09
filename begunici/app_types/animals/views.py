@@ -4100,17 +4100,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         '№',
         'Тип животного',
         'Бирка',
-        'Статус',
         'Возраст (мес)',
         'Овчарня',
-        'Кровность по основной породе',
-        'Назначение',
-        'Дата последнего взвешивания',
-        'Последнее взвешивание',
-        'Дата последней ветобработки',
-        'Последняя ветобработка',
-        'Рабочее состояние',
-        'Бирка РСХН',
         'Примечание',
     ]
     CALENDAR_EXPORT_TYPE_LABELS = {
@@ -4124,25 +4115,43 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             '№ группы', 'Дата постановки барана', 'Плановая дата снятия барана',
         ],
         'Ветобработка': [
+            'Предыдущая ветобработка',
+            'Дата предыдущей ветобработки',
             'Выполненная ветобработка',
             'Срок действия',
             'Дата окончания срока действия',
         ],
         'Стрижка': [
-            'Выполненная ветобработка',
-            'Срок действия',
-            'Дата окончания срока действия',
+            'Дата предыдущей стрижки',
         ],
         'Напоминание о стрижке': ['Дата последней стрижки'],
         'Окончание срока ветобработки': [
+            'Предыдущая ветобработка',
+            'Дата предыдущей ветобработки',
             'Окончен срок действия ветобработки',
-            'Срок действия',
             'Дата ветобработки',
+            'Срок действия',
         ],
         'Взвешивание': [
+            'Этап взвешивания',
+            'Плановая дата взвешивания',
+            'Дата предыдущего взвешивания',
+            'Предыдущее взвешивание',
             'Выполнено',
             'Вес',
         ],
+        'Ожидаемые роды': ['Мать', 'Отец'],
+    }
+    CALENDAR_WEIGHING_LABELS = {
+        'primary': 'Первичное взвешивание (3 месяца)',
+        'secondary': 'Вторичное взвешивание (5 месяцев)',
+        'final': 'Заключительное взвешивание (10 месяцев)',
+    }
+    CALENDAR_EXPORT_DATE_HEADERS = {
+        'Дата события', 'Дата постановки барана', 'Плановая дата снятия барана',
+        'Дата предыдущей ветобработки', 'Дата ветобработки', 'Дата окончания срока действия',
+        'Дата предыдущей стрижки', 'Дата последней стрижки',
+        'Плановая дата взвешивания', 'Дата предыдущего взвешивания', 'Выполнено',
     }
 
     def _get_ram_removal_reminders(self, start_date, end_date):
@@ -4289,29 +4298,12 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         return None, None
 
     def _calendar_export_row(self, index, animal, animal_type):
-        last_weight_record = (
-            WeightRecord.objects
-            .filter(tag=animal.tag)
-            .order_by('-weight_date', '-id')
-            .first()
-        )
-        last_vet_date, last_vet_text = _get_last_vet_parts(animal)
-
         return [
             index,
             self.CALENDAR_EXPORT_TYPE_LABELS.get(animal_type, animal_type or '-'),
             animal.tag.tag_number if animal.tag else '-',
-            animal.animal_status.status_type if animal.animal_status else 'Нет статуса',
             age_months_for_export(animal.birth_date),
             animal.place.sheepfold if animal.place else 'Нет данных',
-            _format_dorper_display(animal),
-            animal.get_assignment_display(),
-            _format_date_for_excel(last_weight_record.weight_date) if last_weight_record else '-',
-            _format_weight_record_value(last_weight_record),
-            _format_date_for_excel(last_vet_date) if last_vet_date else '-',
-            last_vet_text,
-            animal.working_condition if getattr(animal, 'working_condition', None) else '-',
-            animal.rshn_tag or '-',
             animal.note if animal.note else '',
         ]
 
@@ -4335,6 +4327,54 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             return str(duration_days)
         return 'Бессрочно' if duration_days == 0 else f'{duration_days} дней'
+
+    def _calendar_previous_weight(self, tag_id, planned_date, completed=None):
+        cutoff = min(timezone.localdate(), completed.weight_date if completed else planned_date)
+        records = WeightRecord.objects.filter(tag_id=tag_id, weight_date__lte=cutoff)
+        if completed:
+            records = records.filter(Q(weight_date__lt=completed.weight_date) |
+                                     Q(weight_date=completed.weight_date, pk__lt=completed.pk))
+        else:
+            records = records.filter(weight_date__lt=planned_date)
+        return records.order_by('-weight_date', '-pk').first()
+
+    def _calendar_weighing_values(self, event, completed=None):
+        previous = self._calendar_previous_weight(event['animal'].tag_id, event['weighing_date'], completed)
+        return [
+            self.CALENDAR_WEIGHING_LABELS[event['weighing_type']],
+            _format_date_for_excel(event['weighing_date']),
+            _format_date_for_excel(previous.weight_date) if previous else '-',
+            _format_weight_record_value(previous),
+            _format_date_for_excel(completed.weight_date) if completed else '-',
+            _format_weight_record_value(completed),
+        ]
+
+    def _calendar_previous_vet(self, vet, event_date, *, expiring=False):
+        cutoff = min(timezone.localdate(), event_date)
+        records = Veterinary.objects.filter(tag_id=vet.tag_id, date_of_care__date__lte=cutoff).exclude(pk=vet.pk)
+        if not expiring:
+            records = records.filter(Q(date_of_care__lt=vet.date_of_care) |
+                                     Q(date_of_care=vet.date_of_care, pk__lt=vet.pk))
+        records = records.select_related('veterinary_care').order_by('-date_of_care', '-pk')
+        for previous in records:
+            if self._is_shearing_care(previous.veterinary_care) == self._is_shearing_care(vet.veterinary_care):
+                return previous
+        return None
+
+    def _calendar_vet_values(self, vet, event_date, *, expiring=False):
+        previous = self._calendar_previous_vet(vet, event_date, expiring=expiring)
+        previous_date = _format_date_for_excel(previous.get_care_date()) if previous else '-'
+        if self._is_shearing_care(vet.veterinary_care):
+            return [previous_date]
+        values = [
+            self._format_calendar_export_vet_name(previous) if previous else '-',
+            previous_date,
+            self._format_calendar_export_vet_name(vet),
+        ]
+        duration = self._format_calendar_export_duration(vet.duration_days)
+        if expiring:
+            return values + [_format_date_for_excel(vet.get_care_date()), duration]
+        return values + [duration, _format_date_for_excel(vet.get_expiry_date())]
 
     def _merge_calendar_extra_values(self, old_values, new_values):
         old_values = list(old_values or [])
@@ -4369,14 +4409,15 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             return
 
         groups.setdefault(group_name, {})
-        if animal.tag_id in groups[group_name]:
-            groups[group_name][animal.tag_id]['extra_values'] = self._merge_calendar_extra_values(
-                groups[group_name][animal.tag_id].get('extra_values'),
+        key = dedupe_key if dedupe_key is not None else animal.tag_id
+        if key in groups[group_name]:
+            groups[group_name][key]['extra_values'] = self._merge_calendar_extra_values(
+                groups[group_name][key].get('extra_values'),
                 extra_values,
             )
             return
 
-        groups[group_name][animal.tag_id] = {
+        groups[group_name][key] = {
             'animal': animal,
             'animal_type': animal_type,
             'extra_values': extra_values or [],
@@ -4524,16 +4565,20 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         for lambing in lambings:
             mother = lambing.get_mother()
             father = lambing.get_father()
+            parents = [mother.tag.tag_number if mother else (lambing.mother_tag_text or '-'),
+                       father.tag.tag_number if father else '-']
             self._add_calendar_export_animal(
                 groups,
                 'Ожидаемые роды',
                 mother,
+                extra_values=parents,
                 dedupe_key=('lambing', 'mother', getattr(getattr(mother, 'tag', None), 'id', None)),
             )
             self._add_calendar_export_animal(
                 groups,
                 'Ожидаемые роды',
                 father,
+                extra_values=parents,
                 dedupe_key=('lambing', 'father', getattr(getattr(father, 'tag', None), 'id', None)),
             )
 
@@ -4552,11 +4597,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 group_name,
                 animal,
                 animal_type,
-                extra_values=[
-                    self._format_calendar_export_vet_name(vet),
-                    self._format_calendar_export_duration(vet.duration_days),
-                    _format_date_for_excel(vet.get_expiry_date()) if vet.get_expiry_date() else '-',
-                ],
+                extra_values=self._calendar_vet_values(vet, target_date),
+                dedupe_key=('veterinary', vet.pk),
             )
 
         expiring_vets = (
@@ -4570,17 +4612,13 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             if vet.get_expiry_date() != target_date:
                 continue
             animal, animal_type = self._get_calendar_animal_by_tag_id(vet.tag_id)
-            care_date = vet.get_care_date()
             self._add_calendar_export_animal(
                 groups,
                 'Окончание срока ветобработки',
                 animal,
                 animal_type,
-                extra_values=[
-                    self._format_calendar_export_vet_name(vet),
-                    self._format_calendar_export_duration(vet.duration_days),
-                    _format_date_for_excel(care_date) if care_date else '-',
-                ],
+                extra_values=self._calendar_vet_values(vet, target_date, expiring=True),
+                dedupe_key=('expiry', vet.pk),
             )
 
         for event in self._build_calendar_weighing_groups_for_date(target_date):
@@ -4593,10 +4631,7 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 'Взвешивание',
                 event['animal'],
                 event['animal_type'],
-                extra_values=[
-                    _format_date_for_excel(completed_weight.weight_date) if completed_weight else '-',
-                    _format_weight_record_value(completed_weight),
-                ],
+                extra_values=self._calendar_weighing_values(event, completed_weight),
                 dedupe_key=('weighing', event['weighing_type'], event['animal'].tag_id),
             )
 
@@ -4607,13 +4642,15 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         if start_date > end_date:
             return events
 
-        def add_event(event_date, event_type, animal=None, animal_type=None, details=''):
+        def add_event(event_date, event_type, animal=None, animal_type=None, details='', *, category=None, extra_values=None):
             if animal is not None and animal.is_archived:
                 return
             events.append({
                 'date': event_date, 'event_type': event_type, 'animal': animal,
                 'animal_type': animal_type or self._get_calendar_animal_type_key(animal),
                 'details': details,
+                'category': category or event_type,
+                'extra_values': extra_values or [],
             })
 
         for reminder in self._get_ram_removal_reminders(start_date, end_date):
@@ -4622,6 +4659,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 reminder['animal'], reminder['animal_type'],
                 f"Группа № {reminder['group_id']}; дата постановки: {reminder['placement_date']:%d.%m.%Y}; "
                 f"снять барана через {self.RAM_REMOVAL_REMINDER_DAYS} дней после постановки",
+                extra_values=[reminder['group_id'], _format_date_for_excel(reminder['placement_date']),
+                              _format_date_for_excel(reminder['reminder_date'])],
             )
 
         lambings = Lambing.objects.filter(
@@ -4632,12 +4671,13 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             mother_tag = mother.tag.tag_number if mother else (lambing.mother_tag_text or '-')
             father_tag = father.tag.tag_number if father else '-'
             details = f'Мать: {mother_tag}; отец: {father_tag}'
+            parents = [mother_tag, father_tag]
             if mother:
-                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', mother, details=details)
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', mother, details=details, extra_values=parents)
             elif not father:
-                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', details=details)
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', details=details, extra_values=parents)
             if father:
-                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', father, details=details)
+                add_event(lambing.planned_lambing_date, 'Ожидаемые роды', father, details=details, extra_values=parents)
 
         animal_cache = {}
         vets = Veterinary.objects.filter(duration_days__gt=0, is_hidden=False, date_of_care__date__lte=today).select_related('veterinary_care')
@@ -4656,7 +4696,8 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     f'срок действия: {self._format_calendar_export_duration(vet.duration_days)}; '
                     f'дата обработки: {vet.get_care_date():%d.%m.%Y}'
                 )
-                add_event(expiry, 'Окончание срока ветобработки', animal, animal_type, details)
+                add_event(expiry, 'Окончание срока ветобработки', animal, animal_type, details,
+                          extra_values=self._calendar_vet_values(vet, expiry, expiring=True))
 
         weighings = self._build_calendar_weighing_groups_for_date(start_date, end_date)
         if weighings:
@@ -4670,15 +4711,13 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
             ).values_list('tag_id', 'weight_date')
             for tag_id, weight_date in records:
                 records_by_tag[tag_id].append(weight_date)
-            labels = {'primary': 'Первичное взвешивание (3 месяца)',
-                      'secondary': 'Вторичное взвешивание (5 месяцев)',
-                      'final': 'Заключительное взвешивание (10 месяцев)'}
             for event in weighings:
                 if any(abs((measured - event['weighing_date']).days) <= 15
                        for measured in records_by_tag[event['animal'].tag_id]):
                     continue
-                add_event(event['calendar_date'], labels[event['weighing_type']], event['animal'],
-                          event['animal_type'], f"Плановая дата: {event['weighing_date']:%d.%m.%Y}; допуск: 15 дней")
+                add_event(event['calendar_date'], self.CALENDAR_WEIGHING_LABELS[event['weighing_type']], event['animal'],
+                          event['animal_type'], f"Плановая дата: {event['weighing_date']:%d.%m.%Y}; допуск: 15 дней",
+                          category='Взвешивание', extra_values=self._calendar_weighing_values(event))
 
         for month in (4, 10):
             reminder_date = date(start_date.year, month, 15)
@@ -4686,10 +4725,11 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                 for reminder in self._get_shearing_reminder_animals(reminder_date):
                     last_date = reminder['last_shearing_date']
                     details = f'Последняя стрижка: {last_date:%d.%m.%Y}' if last_date else 'Стрижка ещё не проводилась'
-                    add_event(reminder_date, 'Напоминание о стрижке', reminder['animal'], reminder['animal_type'], details)
+                    add_event(reminder_date, 'Напоминание о стрижке', reminder['animal'], reminder['animal_type'], details,
+                              extra_values=[_format_date_for_excel(last_date)])
 
         for note in CalendarNote.objects.filter(date__range=(start_date, end_date)):
-            add_event(note.date, 'Заметка', details=note.text)
+            add_event(note.date, 'Заметка', details=note.text, category='Заметки')
 
         return sorted(events, key=lambda item: (
             item['date'], item['event_type'],
@@ -4715,29 +4755,49 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
         end_date = next_month - timedelta(days=1)
         start_date = max(today, month_start)
         events = self._build_upcoming_calendar_events(start_date, end_date, today)
-        headers = ['№', 'Дата события', 'Событие'] + self.CALENDAR_EXPORT_HEADERS[1:] + ['Подробности события']
         workbook = Workbook()
-        worksheet = workbook.active
-        worksheet.title = 'Предстоящие события'
+        workbook.remove(workbook.active)
+        groups = defaultdict(list)
+        for event in events:
+            groups[event['category']].append(event)
         header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
         header_font = Font(bold=True, color='FFFFFF')
-        for column, header in enumerate(headers, 1):
-            cell = worksheet.cell(1, column, header)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-            worksheet.column_dimensions[get_column_letter(column)].width = 15
-        for index, event in enumerate(events, 1):
-            animal_data = self._calendar_export_row(index, event['animal'], event['animal_type'])[1:] if event['animal'] else ['-'] * (len(self.CALENDAR_EXPORT_HEADERS) - 1)
-            values = [index, event['date'], event['event_type']] + animal_data + [event['details']]
-            for column, value in enumerate(values, 1):
-                if column in (2, 11, 13):
-                    cell = _write_excel_cell(worksheet, index + 1, column, value)
+        for category, entries in groups.items():
+            worksheet = workbook.create_sheet(category[:31])
+            extra_headers = self.CALENDAR_EXPORT_EXTRA_HEADERS.get(category, [])
+            extra_columns = [index for index, header in enumerate(extra_headers)
+                             if header not in {'Выполнено', 'Вес', 'Плановая дата снятия барана'}]
+            headers = (['№', 'Дата события', 'Текст'] if category == 'Заметки' else
+                       ['№', 'Дата события'] + self.CALENDAR_EXPORT_HEADERS[1:] +
+                       [extra_headers[index] for index in extra_columns])
+            for column, header in enumerate(headers, 1):
+                cell = worksheet.cell(1, column, header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                worksheet.column_dimensions[get_column_letter(column)].width = 15
+            for index, event in enumerate(entries, 1):
+                if category == 'Заметки':
+                    values = [index, event['date'], event['details']]
                 else:
-                    cell = worksheet.cell(index + 1, column, value)
-                if isinstance(cell.value, str):
-                    cell.data_type = 's'
+                    animal_row = (self._calendar_export_row(index, event['animal'], event['animal_type'])
+                                  if event['animal'] else ['-'] * len(self.CALENDAR_EXPORT_HEADERS))
+                    values = ([index, event['date']] + animal_row[1:] +
+                              [event['extra_values'][column] for column in extra_columns])
+                for column, value in enumerate(values, 1):
+                    if headers[column - 1] in self.CALENDAR_EXPORT_DATE_HEADERS:
+                        cell = _write_excel_cell(worksheet, index + 1, column, value)
+                    else:
+                        cell = worksheet.cell(index + 1, column, value)
+                    if isinstance(cell.value, str):
+                        cell.data_type = 's'
         if not events:
+            worksheet = workbook.create_sheet('Предстоящие события')
+            for column, header in enumerate(['№', 'Дата события', 'Событие'], 1):
+                cell = worksheet.cell(1, column, header)
+                cell.font, cell.fill = header_font, header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                worksheet.column_dimensions[get_column_letter(column)].width = 15
             worksheet.cell(2, 1, 'Предстоящих событий нет')
         output = BytesIO()
         workbook.save(output)
@@ -4825,7 +4885,12 @@ class CalendarNoteViewSet(viewsets.ModelViewSet):
                     )
                     row_data.extend(item.get('extra_values') or [])
                     for col_num, value in enumerate(row_data, 1):
-                        cell = _write_excel_cell(worksheet, row_index, col_num, value)
+                        if headers[col_num - 1] in self.CALENDAR_EXPORT_DATE_HEADERS:
+                            cell = _write_excel_cell(worksheet, row_index, col_num, value)
+                        else:
+                            cell = worksheet.cell(row_index, col_num, value)
+                        if isinstance(cell.value, str):
+                            cell.data_type = 's'
                         cell.alignment = Alignment(vertical='top', wrap_text=True)
 
                 for col_index in range(1, len(headers) + 1):
@@ -6615,7 +6680,7 @@ def _split_sheep_last_lambing(animal):
     return lambing_date, f"{children_text}; м/р: {summary.get('dead_lambs_count', 0)}"
 
 
-def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None, row_fills=None, text_columns=None):
+def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_lines=None, row_fills=None, text_columns=None, wrap_columns=None):
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill
@@ -6659,6 +6724,8 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
+        if wrap_columns:
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     row_fills = row_fills or {}
 
@@ -6677,6 +6744,8 @@ def _build_excel_response(filename_prefix, sheet_title, headers, rows, summary_l
                 _write_excel_cell(worksheet, data_row_idx, col_index, value)
             if data_fill:
                 worksheet.cell(row=data_row_idx, column=col_index).fill = data_fill
+            if wrap_columns and col_index in wrap_columns:
+                worksheet.cell(row=data_row_idx, column=col_index).alignment = Alignment(vertical="top", wrap_text=True)
 
     for col_index in range(1, len(headers) + 1):
         max_length = len(str(headers[col_index - 1]))

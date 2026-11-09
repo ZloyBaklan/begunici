@@ -32,6 +32,7 @@ def error(request, exc):
 
 def posted_lines(request, products):
     return [{"product": p.pk, "amount": request.POST.get(f"amount_{p.pk}", ""),
+             "unit_amount": request.POST.get(f"unit_amount_{p.pk}", ""),
              "packages": request.POST.get(f"packages_{p.pk}", "")} for p in products]
 
 
@@ -42,6 +43,7 @@ def editor_rows(request, products, initial=None, show_available=False):
     for product in products:
         row = initial.get(product.pk, {})
         rows.append({"product": product,
+                     "unit_amount": request.POST.get(f"unit_amount_{product.pk}", row.get("unit_amount", "") if row else product.package_weight or ""),
                      "available": stock.get(product.pk, (Decimal(0), Decimal(0)))[0],
                      "amount": request.POST.get(f"amount_{product.pk}", row.get("amount", "")),
                      "packages": request.POST.get(f"packages_{product.pk}", row.get("packages", ""))})
@@ -60,10 +62,22 @@ def home(request):
     written_off = {row["product_id"]: -row["amount"] for row in
                    FeedMovement.objects.filter(document__kind="writeoff", document__state="posted", document__date=today)
                    .values("product_id").annotate(amount=Sum("amount"))}
+    from .packaging import group_map
+    mapping = group_map()
+    def grouped(values):
+        result = {}
+        for pk, value in values.items():
+            result[mapping[pk]] = result.get(mapping[pk], Decimal(0)) + value
+        return result
+    actual, written_off = grouped(actual), grouped(written_off)
+    issued = grouped({row["product_id"]: -row["amount"] for row in FeedMovement.objects.filter(
+        document__kind__in=["transfer", "barn_return"], document__state="posted", document__date=today).values("product_id").annotate(amount=Sum("amount"))})
     for row in stock:
         row["actual"] = actual.get(row["id"], Decimal(0))
+        row["issued"] = issued.get(row["id"], Decimal(0))
         row["written_off"] = written_off.get(row["id"], Decimal(0))
     return page(request, "home", stock=stock, plan=plan,
+                positions=editor_rows(request, FeedProduct.objects.select_related("plan_product"), show_available=True),
                 consumption_confirmed=FeedDocument.objects.filter(kind="consume", state="posted", date=today).exists(),
                 documents=FeedDocument.objects.select_related("created_by", "order")[:30])
 
@@ -185,17 +199,18 @@ def version_download(request, pk):
 
 @require_http_methods(["GET", "POST"])
 @access_required()
-def products(request, catalog_mode=False):
+def products(request, catalog_mode=True):
     if request.method == "POST":
         try:
             services.create_product(request.user, request.POST.get("name"), request.POST.get("category"),
-                                    request.POST.get("unit"), request.POST.get("package"))
+                                    request.POST.get("unit"), request.POST.get("package"), package_weight=request.POST.get("package_weight", ""), plan_product=request.POST.get("plan_product", ""))
             request._inventory_logged = True
             messages.success(request, "Номенклатура добавлена. Нормы можно задать в кормовом плане на главной.")
             return redirect("inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products")
         except (ValidationError, IntegrityError) as exc:
             error(request, exc)
     return page(request, "products", products=FeedProduct.objects.all(), form=request.POST,
+                plan_products=FeedProduct.objects.filter(plan_product__isnull=True),
                 catalog_mode=catalog_mode, feed_base_template="inventory/catalog/base.html" if catalog_mode else "inventory/base.html",
                 product_edit_route="inventory_catalog:feed-product-edit" if catalog_mode else "feed_inventory:product-edit",
                 categories=FeedProduct._meta.get_field("category").choices, units=FeedProduct._meta.get_field("unit").choices)
@@ -203,12 +218,12 @@ def products(request, catalog_mode=False):
 
 @require_http_methods(["GET", "POST"])
 @access_required()
-def product_edit(request, pk, catalog_mode=False):
+def product_edit(request, pk, catalog_mode=True):
     product = get_object_or_404(FeedProduct, pk=pk)
     if request.method == "POST":
         try:
             services.update_product(request.user, pk, request.POST.get("revision"), request.POST.get("name"),
-                request.POST.get("category"), request.POST.get("unit"), request.POST.get("package"))
+                request.POST.get("category"), request.POST.get("unit"), request.POST.get("package"), package_weight=request.POST.get("package_weight", ""), plan_product=request.POST.get("plan_product", ""))
             request._inventory_logged = True
             messages.success(request, "Номенклатура изменена. Ранее оформленные документы сохранены без изменений.")
             return redirect("inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products")
@@ -217,8 +232,10 @@ def product_edit(request, pk, catalog_mode=False):
     values = request.POST if request.method == "POST" else {
         "name": product.name, "category": product.category, "unit": product.unit,
         "package": product.package, "revision": product.revision,
+        "package_weight": product.package_weight, "plan_product": str(product.plan_product_id or ""),
     }
     return page(request, "product_edit", product=product, form=values,
+                plan_products=FeedProduct.objects.filter(plan_product__isnull=True).exclude(pk=product.pk),
                 catalog_mode=catalog_mode, feed_base_template="inventory/catalog/base.html" if catalog_mode else "inventory/base.html",
                 products_route="inventory_catalog:feed-products" if catalog_mode else "feed_inventory:products",
                 **services.product_restrictions(product),

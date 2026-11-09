@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.utils import timezone
 
 from begunici.app_types.animals.feed_plan import FEED_GROUP_LABELS
@@ -53,7 +53,7 @@ def product_name_exists(name, exclude_pk=None):
 
 
 @transaction.atomic
-def update_product(user, pk, revision, name, category, unit, package):
+def update_product(user, pk, revision, name, category, unit, package, *, package_weight=None, plan_product=None):
     config = lock(user)
     product = FeedProduct.objects.select_for_update().get(pk=pk)
     if str(product.revision) != str(revision):
@@ -69,15 +69,21 @@ def update_product(user, pk, revision, name, category, unit, package):
     if restrictions["package_locked"] and product.package != package:
         raise ValidationError("Упаковка уже используется в документах. Для другого вида упаковки создайте отдельную номенклатуру.")
     before = {"name": product.name, "category": product.get_category_display(),
-              "unit": product.get_unit_display(), "package": product.package}
+              "unit": product.get_unit_display(), "package": product.package,
+              "package_weight": number(product.package_weight) if product.package_weight else None,
+              "plan_product": product.plan_product.name if product.plan_product_id else "Самостоятельный тип"}
     product.name, product.category, product.unit, product.package = name, category, unit, package
     product.revision += 1
     product.save(update_fields=["name", "category", "unit", "package", "revision"])
+    from .packaging import configure
+    configure(product, package_weight=package_weight, plan_product=plan_product)
     config.revision += 1
     config.save(update_fields=["revision"])
     audit(user, "Изменена номенклатура", product=product.pk, before=before,
           after={"name": product.name, "category": product.get_category_display(),
-                 "unit": product.get_unit_display(), "package": product.package})
+                 "unit": product.get_unit_display(), "package": product.package,
+                 "package_weight": number(product.package_weight) if product.package_weight else None,
+                 "plan_product": product.plan_product.name if product.plan_product_id else "Самостоятельный тип"})
     return product
 
 
@@ -89,7 +95,20 @@ def lock(user):
 @transaction.atomic
 def audit(user, action, **data):
     FeedAudit.objects.create(created_by=user, action=action, data=data)
-    write_stock_audit_log(user, "Склад кормов", action, data)
+    log_data = data
+    if data.get("barn_document"):
+        details = [f"Овчарня {data['barn']}", f"Операция № {data['barn_document']}"]
+        if data.get("month"):
+            details.append(f"Месяц: {data['month']}")
+        if data.get("kind"):
+            from .models import BarnFeedDocument
+            details.append(dict(BarnFeedDocument._meta.get_field("kind").choices).get(data['kind'], data['kind']))
+        if data.get("reason"):
+            details.append(data["reason"])
+        for line in data.get("lines", []):
+            details.append(f"{line['name']}: {line['amount']} {line['unit']}")
+        log_data = {**data, "reason": "; ".join(details)}
+    write_stock_audit_log(user, "Склад кормов", action, log_data)
 
 
 def token(value):
@@ -129,8 +148,8 @@ def normalize_lines(rows, allow_empty=False):
         if product.pk in used:
             raise ValidationError("Объедините повторяющиеся позиции корма в одну строку.")
         used.add(product.pk)
-        quantity = amount(row.get("amount") or 0, "Количество", allow_zero=True)
-        packages = amount(row.get("packages") or 0, "Упаковки", allow_zero=True)
+        from .packaging import line_total
+        quantity, packages, extra = line_total(row, product)
         if quantity == 0 and packages == 0:
             continue
         if quantity == 0:
@@ -138,7 +157,7 @@ def normalize_lines(rows, allow_empty=False):
         if packages and not product.package:
             raise ValidationError(f"{product.name}: для этой позиции упаковки не учитываются.")
         result.append({"product": product.pk, "name": product.name, "unit": product.get_unit_display(),
-                       "package": product.package, "amount": number(quantity), "packages": number(packages)})
+                       "package": product.package, "amount": number(quantity), "packages": number(packages), **extra})
     if not result and not allow_empty:
         raise ValidationError("Добавьте хотя бы одну позицию с положительным количеством.")
     return result
@@ -152,14 +171,30 @@ def balances():
 def stock_rows(plan=None):
     plan = plan or build_plan()
     stock = balances()
+    from .packaging import group_map
+    grouped = {}
+    for pk, root in group_map().items():
+        old = grouped.get(root, (Decimal(0), Decimal(0)))
+        value = stock.get(pk, (Decimal(0), Decimal(0)))
+        grouped[root] = (old[0] + value[0], old[1] + value[1])
+    stock = grouped
     rows = []
     for product in plan["products"]:
         available, packages = stock.get(product["id"], (Decimal(0), Decimal(0)))
         daily = Decimal(product["daily"])
         rows.append({**product, "available": available, "packages": packages,
+                     "package_weight": _group_package_weight(product["id"]),
                      "days_left": number((available / daily).quantize(Decimal("0.1"))) if daily else "—",
                      "shortage": daily > available})
     return rows
+
+
+def _group_package_weight(root):
+    products = FeedProduct.objects.filter(Q(pk=root) | Q(plan_product_id=root))
+    weights = sorted(set(products.exclude(package_weight__isnull=True).values_list("package_weight", flat=True)))
+    if not weights:
+        return None
+    return number(weights[0]) if len(weights) == 1 else f"{number(weights[0])}–{number(weights[-1])}"
 
 
 def order_progress(order):
@@ -182,7 +217,7 @@ def order_progress(order):
 
 
 @transaction.atomic
-def create_product(user, name, category, unit, package):
+def create_product(user, name, category, unit, package, *, package_weight=None, plan_product=None):
     lock(user)
     if category not in dict(FeedProduct._meta.get_field("category").choices) or unit not in dict(FeedProduct._meta.get_field("unit").choices):
         raise ValidationError("Выберите категорию и единицу измерения из списка.")
@@ -190,11 +225,14 @@ def create_product(user, name, category, unit, package):
     if product_name_exists(name):
         raise ValidationError("Такая номенклатура уже существует.")
     product = FeedProduct.objects.create(name=name, category=category, unit=unit, package=text(package, "Упаковка", 40, False))
+    from .packaging import configure
+    configure(product, package_weight=package_weight, plan_product=plan_product)
     FeedNorm.objects.bulk_create([FeedNorm(product=product, group=g) for g in FEED_GROUP_LABELS])
     config = FeedSettings.objects.get(pk=1)
     config.revision += 1
     config.save(update_fields=["revision"])
-    audit(user, "Добавлена номенклатура", product=product.pk, name=product.name, unit=unit, package=product.package)
+    audit(user, "Добавлена номенклатура", product=product.pk, name=product.name, unit=unit, package=product.package,
+          package_weight=number(product.package_weight) if product.package_weight else None, plan_product=product.plan_product_id)
     return product
 
 
@@ -204,7 +242,7 @@ def save_norms(user, revision, values):
     if str(revision) != str(config.revision):
         raise ValidationError("Нормы уже изменены другим пользователем. Обновите страницу.")
     changes = []
-    for norm in FeedNorm.objects.select_related("product"):
+    for norm in FeedNorm.objects.select_related("product").filter(product__plan_product__isnull=True):
         key = f"norm_{norm.product_id}_{norm.group}"
         if key not in values:
             raise ValidationError("Получены не все нормы. Обновите страницу.")
@@ -363,6 +401,8 @@ def cancel_draft(user, pk, revision):
 def reverse_document(user, pk, reason):
     lock(user)
     document = FeedDocument.objects.select_for_update().get(pk=pk)
+    if hasattr(document, "barn_document"):
+        raise ValidationError("Исправляйте поставку через сводку овчарни: остатки должны измениться в обоих местах.")
     reason = text(reason, "Причина сторно", 2000)
     if document.state != "posted" or document.kind == "reversal":
         raise ValidationError("Сторно доступно для подтверждённого прихода или расхода.")

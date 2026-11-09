@@ -1,0 +1,1 @@
+{% if can_supply %}<button class="btn btn-outline-primary" type="button" data-barn-feed-open aria-haspopup="dialog" aria-controls="barn-feed-dialog">Поставка на овчарню</button><p class="bf-map-result" data-barn-feed-result role="status" hidden></p>{% elif allowed %}<a class="btn btn-outline-primary" href="{% url 'feed_inventory:barns' %}">Корма по овчарням</a>{% endif %}

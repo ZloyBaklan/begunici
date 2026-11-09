@@ -6,6 +6,7 @@ from .documents import add_version, assert_editable, assert_revision
 from .models import AuditEvent, Document, Order, StockLot, StockMovement
 from .orders import allocate_order_lines, fulfillment, refresh_state
 from .permissions import require_inventory
+from .pricing import line_price
 from .stock import validate_withdrawal
 from .validation import amount, count, rows
 
@@ -40,7 +41,8 @@ def normalize_invoice(payload, order):
             raise ValidationError("Сначала выберите заявку.")
         validate_withdrawal(lot, weight, quantity)
         clean.append({"lot_id": lot_id, "weight": str(weight), "quantity": quantity, "order_line_id": line_id,
-                      "name": lot.product.name, "unit": "кг и шт." if lot.product.counted else "кг"})
+                      "name": lot.product.name, "unit": "кг и шт." if lot.product.counted else "кг",
+                      **line_price(lot.product, weight, quantity)})
     if order:
         assignments = allocate_order_lines(order, [
             (row["order_line_id"], lots[row["lot_id"]], amount(row["weight"]), row["quantity"])

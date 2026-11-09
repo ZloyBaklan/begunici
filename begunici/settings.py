@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,6 +28,16 @@ SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
+
+APP_MODE = config('APP_MODE', default='internal').strip().lower()
+if APP_MODE not in {'internal', 'public'}:
+    raise ImproperlyConfigured('APP_MODE must be internal or public')
+CATALOG_SYNC_URL = config('CATALOG_SYNC_URL', default='').strip()
+CATALOG_SYNC_KEY = config('CATALOG_SYNC_KEY', default='')
+CATALOG_SYNC_INTERVAL = config('CATALOG_SYNC_INTERVAL', default=120, cast=int)
+if config('TRUST_PROXY_HEADERS', default=False, cast=bool):
+    # Enable only behind a trusted proxy that overwrites this header.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 def _split_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
@@ -69,6 +80,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "begunici.app_types.public_site.middleware.PublicModeMiddleware",
     "begunici.app_types.animals.act_numbering.ActNumberingMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

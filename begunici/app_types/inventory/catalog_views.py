@@ -6,19 +6,26 @@ from django.views.decorators.http import require_http_methods
 
 from .catalog_management import ProductForm, product_used, product_values, save_product
 from .models import Product
-from .permissions import access_required
+from .permissions import access_required, can_edit_meat_catalog, require_meat_catalog_editor
 
 
 @require_http_methods(["GET", "POST"])
 @access_required()
 def meat_products(request, pk=None):
-    product = get_object_or_404(Product.objects.exclude(category="live"), pk=pk) if pk else None
-    form = ProductForm(request.POST if request.method == "POST" else None,
-                       initial=product_values(product) if product else None)
+    can_edit = can_edit_meat_catalog(request.user)
+    if request.method == "POST":
+        require_meat_catalog_editor(request.user)
+    products = Product.objects.exclude(category="live").select_related("storefront_photo").defer("storefront_photo__content")
+    product = get_object_or_404(products, pk=pk) if pk else None
+    form_data = (request.POST, request.FILES) if request.method == "POST" else ()
+    form = ProductForm(*form_data, initial=product_values(product) if product else None)
     used = product_used(product) if product else False
     if used:
         form.fields["category"].disabled = True
         form.fields["unit"].disabled = True
+    if not can_edit:
+        for field in form.fields.values():
+            field.disabled = True
     if request.method == "POST" and form.is_valid():
         try:
             save_product(request.user, form.cleaned_data, pk)
@@ -33,8 +40,8 @@ def meat_products(request, pk=None):
             for name, errors in form.errors.items() for error in errors
         )
     return render(request, "inventory/catalog/products.html", {"form": form, "product": product,
-        "unit_locked": used,
-        "products": Product.objects.exclude(category="live")})
+        "unit_locked": used, "can_edit": can_edit,
+        "products": products})
 
 
 def feed_products(request, pk=None):

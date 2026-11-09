@@ -25,6 +25,8 @@ dependencies = [
     "pytz",      # legacy, Django still uses it
     "tzdata",    # timezone info for Windows / py 3.9+
     "openpyxl>=3.1.5",   # Excel export
+    "Pillow==12.3.0",    # Storefront image validation
+    "gunicorn==26.2.0; platform_system != 'Windows'",
     "xlrd==2.0.2",      # Legacy Excel imports
     "hidapi==0.14.0.post4",   # HID scanner access
 

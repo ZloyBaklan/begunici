@@ -50,9 +50,7 @@ def animal_map(tag_ids):
     return result
 
 
-@require_GET
-@access_required
-def journal(request):
+def journal_entries(request):
     archive = request.GET.get("archive") == "1"
     q = request.GET.get("q", "").strip()[:200]
     episodes = Episode.objects.filter(closed_on__isnull=not archive).select_related("tag", "expense_document", "closed_by").prefetch_related("events__doses")
@@ -60,12 +58,19 @@ def journal(request):
         episodes = episodes.filter(Q(tag__tag_number__icontains=q) | Q(diagnosis__icontains=q) | Q(snapshot__tag__icontains=q) | Q(tag__maker__rshn_tag__icontains=q) | Q(tag__ram__rshn_tag__icontains=q) | Q(tag__ewe__rshn_tag__icontains=q) | Q(tag__sheep__rshn_tag__icontains=q))
     if request.GET.get("pending") == "1":
         episodes = episodes.filter(expense_document__state="draft")
-    page = Paginator(episodes, 10).get_page(request.GET.get("page"))
     filters = {"q": q}
     if archive:
         filters["archive"] = "1"
     if request.GET.get("pending") == "1":
         filters["pending"] = "1"
+    return episodes, archive, q, filters
+
+
+@require_GET
+@access_required
+def journal(request):
+    episodes, archive, q, filters = journal_entries(request)
+    page = Paginator(episodes, 10).get_page(request.GET.get("page"))
     journal_url = reverse("clinical:journal") + "?" + urlencode({**filters, "page": page.number})
     page_links = []
     for number in page.paginator.get_elided_page_range(page.number, on_each_side=2, on_ends=1):
@@ -80,9 +85,85 @@ def journal(request):
         episode.recent_events = [event for event in episode.events.all() if event.kind == "care"][-3:]
     return render(request, "clinical/journal.html", context(request, episodes=page, archive=archive, q=q, pending=request.GET.get("pending") == "1",
         journal_url=journal_url, page_links=page_links,
+        export_url=reverse("clinical:export") + "?" + urlencode(filters),
         previous_url="?" + urlencode({**filters, "page": page.previous_page_number()}) if page.has_previous() else "",
         next_url="?" + urlencode({**filters, "page": page.next_page_number()}) if page.has_next() else "",
         reset_url="?" + urlencode({"archive": "1" if archive else "0"})))
+
+
+def initial_diagnosis(episode):
+    intakes = sorted((event for event in episode.events.all() if event.kind == "intake"),
+                     key=lambda event: (event.created_at, event.pk))
+    for event in intakes:
+        for side in ("before", "after"):
+            details = event.details if isinstance(event.details, dict) else {}
+            state = details.get(side)
+            value = state.get("diagnosis") if isinstance(state, dict) else None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return episode.diagnosis or "-"
+
+
+def treatment_history(episode):
+    entries = []
+    for event in episode.events.all():
+        if event.kind != "care":
+            continue
+        entry = f"{event.date:%d.%m.%Y}: {event.note}"
+        doses = [f"{dose.name}: {services.number(dose.quantity)} {dose.unit}" for dose in event.doses.all()]
+        if doses:
+            entry += "\nПрепараты / материалы: " + "; ".join(doses)
+        entries.append(entry)
+    return "\n\n".join(entries) or "-"
+
+
+def history_chunks(text):
+    # Excel truncates strings past 32767 characters; use continuation rows instead.
+    start = 0
+    while start < len(text):
+        end = min(start + 32767, len(text))
+        if end < len(text):
+            boundary = text.rfind("\n", start, end)
+            if boundary > start:
+                end = boundary + 1
+        yield text[start:end]
+        start = end
+
+
+@require_GET
+@access_required
+def export_excel(request):
+    from begunici.app_types.animals.age_utils import age_months_for_export
+    from begunici.app_types.animals.views import _build_excel_response
+
+    episodes, archive, _, _ = journal_entries(request)
+    episodes = list(episodes)
+    animals = animal_map([episode.tag_id for episode in episodes if episode.tag_id])
+    rows = []
+    for index, episode in enumerate(episodes, 1):
+        animal = animals.get(episode.tag_id)
+        snapshot = episode.snapshot if archive or not animal else services.animal_snapshot(animal)
+        birth_date = snapshot.get("birth_date")
+        label = snapshot.get("label") or services.LABELS.get(snapshot.get("type"), "-")
+        treatment_place = (snapshot.get("discharge_place") or snapshot.get("place")) if archive else (
+            str(animal.place or "") if animal else snapshot.get("place"))
+        outcome = f"{episode.outcome or '-'}\n{episode.closed_on:%d.%m.%Y}" if episode.closed_on else "На лечении"
+        common = [
+            index, episode.admitted_on, label, episode.tag_number, age_months_for_export(birth_date),
+            episode.origin or "-", treatment_place or "-", episode.admitted_on,
+            initial_diagnosis(episode), (episode.diagnosis or "-") if episode.closed_on else "-",
+        ]
+        for history in history_chunks(treatment_history(episode)):
+            rows.append(common + [history, outcome])
+    return _build_excel_response(
+        filename_prefix="treatment_archive" if archive else "treatment_journal",
+        sheet_title="Лечебный архив" if archive else "Журнал лечения",
+        headers=["№", "Дата поступления", "Тип животного", "Бирка", "Возраст (мес)",
+                 "Овчарня (откуда поступило)", "Овчарня (в процессе лечения)", "Дата заболевания",
+                 "Диагноз болезни (первоначальный)", "Диагноз болезни (заключительный)",
+                 "Исследования, признаки, лечение и рекомендации", "Исход и дата выписки"],
+        rows=rows, text_columns={3, 4, 6, 7, 9, 10, 11, 12}, wrap_columns={6, 7, 9, 10, 11, 12},
+    )
 
 
 @require_GET

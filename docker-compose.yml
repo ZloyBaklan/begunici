@@ -12,7 +12,7 @@ services:
       LC_ALL: C.UTF-8
       LANG: C.UTF-8
     ports:
-      - "54320:5432"  
+      - "${DB_PORT_BINDING:-54320:5432}"
     volumes:
       - pgdata:/var/lib/postgresql/data
     command: >
@@ -28,14 +28,15 @@ services:
 
   web:
     build: .
+    image: begunici-web:latest
     container_name: begunici-web
     ports:
-      - "8000:8000"
+      - "${WEB_PORT_BINDING:-8000:8000}"
     volumes:
       - .:/app
     env_file:
       - .env
-    environment:
+    environment: &application_environment
       - DB_HOST=db
       - DB_NAME=begunici
       - DB_USER=admin
@@ -47,10 +48,36 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: >
-      sh -c "sleep 10 &&
-             python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+    command:
+      - sh
+      - -c
+      - |
+        sleep 10 &&
+        python manage.py migrate &&
+        if [ "$$APP_MODE" = public ]; then python manage.py collectstatic --noinput; fi &&
+        exec ${WEB_COMMAND:-python manage.py runserver 0.0.0.0:8000}
+
+  catalog-sync:
+    image: begunici-web:latest
+    profiles: [catalog-sync]
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment: *application_environment
+    depends_on:
+      web:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    command: python manage.py sync_public_catalog --watch
 
 volumes:
   pgdata:

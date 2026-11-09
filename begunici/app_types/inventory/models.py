@@ -8,6 +8,7 @@ from datetime import date
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -120,13 +121,21 @@ class AppendOnly(models.Model):
 
 
 class Product(models.Model):
+    class PriceUnit(models.TextChoices):
+        KG = "kg", "кг"
+        PIECE = "pcs", "шт."
+
     code = models.SlugField(unique=True)
     name = models.CharField(max_length=120)
+    storefront_name = models.CharField(max_length=120, blank=True)
     category = models.CharField(max_length=10, choices=[
         ("live", "Животное"), ("meat", "Мясо"), ("offal", "Субпродукт"),
     ])
     counted = models.BooleanField(default=True)
     parts_per_animal = models.PositiveSmallIntegerField(null=True, blank=True)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
+                                     validators=[MinValueValidator(0)])
+    price_unit = models.CharField(max_length=3, choices=PriceUnit.choices, default=PriceUnit.KG)
     revision = models.PositiveIntegerField(default=1)
 
     class Meta:
@@ -134,6 +143,13 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ProductPhoto(models.Model):
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="storefront_photo")
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=10)
+    content = models.BinaryField()
 
 
 class Order(models.Model):
@@ -360,8 +376,9 @@ class AuditEvent(AppendOnly):
         parts = []
         if self.action in {"product_created", "product_updated"}:
             before, after = self.data.get("before") or {}, self.data.get("after") or {}
-            labels = {"name": "Название", "category": "Категория", "unit": "Единицы учёта", "parts_per_animal": "Штук с животного"}
-            display = {"meat": "Мясная часть", "offal": "Субпродукт", "kg_pcs": "кг и шт.", "kg": "кг"}
+            labels = {"name": "Название", "category": "Категория", "unit": "Единицы учёта", "parts_per_animal": "Штук с животного", "unit_price": "Цена, ₽", "price_unit": "Единица цены",
+                      "storefront_name": "Название на сайте", "photo_filename": "Файл фотографии"}
+            display = {"meat": "Мясная часть", "offal": "Субпродукт", "kg_pcs": "кг и шт.", "kg": "кг", "pcs": "шт."}
             for key, label in labels.items():
                 if before and before.get(key) == after.get(key):
                     continue

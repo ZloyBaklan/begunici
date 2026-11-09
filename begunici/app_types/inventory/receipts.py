@@ -10,6 +10,7 @@ from .catalog import DEFAULT_SP55_OFFAL_CODES
 from .documents import add_version, assert_editable, assert_revision
 from .models import AnimalCase, AuditEvent, Document, Product, StockLot, StockMovement
 from .permissions import require_inventory, require_slaughter
+from .pricing import line_price
 from .validation import amount, count, rows
 from .yield_rules import validate_parts
 
@@ -109,6 +110,13 @@ def prepare_receipt(user, tag_ids, *, kind, document_id=None, expected_revision=
                 "weight": str(snapshot["carcass_weight"]), "rejected": False, "reason": "",
             })
     document.payload = with_default_offal(document)
+    if kind == "sp55":
+        products = {product.code: product for product in Product.objects.all()}
+        for row in document.payload["outputs"]:
+            product = products[row["product"]]
+            row.update(name=product.name, category=product.category, counted=product.counted)
+            if not row["rejected"]:
+                row.update(line_price(product, row["weight"], row["quantity"]))
     document.state = "ready" if kind == "sp54" else "draft"
     document.number = document.act_number
     original = bridges.original_sp54(bridges.source_animal(sources[0]["tag_id"]), user) if kind == "sp54" else None
@@ -184,6 +192,8 @@ def normalize_receipt_payload(document, payload, *, complete=False):
         clean = {"animal_id": animal_id, "product": product.code, "weight": str(weight),
                  "quantity": quantity, "rejected": rejected, "reason": reason,
                  "name": product.name, "category": product.category, "counted": product.counted}
+        if document.kind == "sp55" and not rejected:
+            clean.update(line_price(product, weight, quantity))
         result["outputs"].append(clean)
         per_animal[animal_id].append((product, clean))
     for case_id, outputs in per_animal.items():

@@ -19,7 +19,7 @@ def number(value):
     return result.rstrip("0").rstrip(".") if "." in result else result
 
 
-def build_plan(as_of_date=None):
+def build_plan(as_of_date=None, place_ids=None):
     as_of_date = as_of_date or timezone.localdate()
     # Read revision before the rows: concurrent edits can only make this form
     # stale, never give older norm values a newer version accepted on save.
@@ -27,14 +27,18 @@ def build_plan(as_of_date=None):
     counts = dict.fromkeys(legacy.FEED_GROUP_LABELS, 0)
     unclassified = 0
     for model in (legacy.Maker, legacy.Sheep, legacy.Ewe, legacy.Ram):
-        for animal in legacy.get_active_feed_queryset(model):
+        queryset = legacy.get_active_feed_queryset(model)
+        if place_ids is not None:
+            queryset = queryset.filter(place_id__in=place_ids)
+        for animal in queryset:
             group = legacy.classify_feed_plan_animal(animal, as_of_date)
             if group:
                 counts[group] += 1
             else:
                 unclassified += 1
-    products = list(FeedProduct.objects.all())
+    products = list(FeedProduct.objects.filter(plan_product__isnull=True))
     norms = {(n.product_id, n.group): n.per_head for n in FeedNorm.objects.all()}
+    configured = {p.pk: any((norms.get((p.pk, group)) or Decimal(0)) > 0 for group in legacy.FEED_GROUP_LABELS) for p in products}
     days = monthrange(as_of_date.year, as_of_date.month)[1]
     year_end = date(as_of_date.year, 12, 31)
     year_days = (year_end - as_of_date).days + 1
@@ -48,6 +52,7 @@ def build_plan(as_of_date=None):
             totals[product.pk] += daily
             missing += int(norm is None and counts[group] > 0)
             cells.append({"product_id": product.pk, "product_name": product.name,
+                          "has_norm": norm is not None and norm > 0, "column_has_norm": configured[product.pk],
                           "norm": "" if norm is None else number(norm),
                           "daily": number(daily), "monthly": number(daily * days),
                           "yearly": number(daily * year_days)})
@@ -60,6 +65,7 @@ def build_plan(as_of_date=None):
         "heads": sum(counts.values()), "unclassified": unclassified, "missing": missing,
         "revision": revision,
         "products": [{"id": p.pk, "name": p.name, "unit": p.get_unit_display(),
+                      "has_norm": configured[p.pk],
                       "package": p.package, "daily": number(totals[p.pk]),
                       "monthly": number(totals[p.pk] * days),
                       "yearly": number(totals[p.pk] * year_days)} for p in products],

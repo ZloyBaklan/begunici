@@ -1,0 +1,15 @@
+{% extends 'feed_inventory/barns/base.html' %}{% load static %}
+{% block barn_content %}
+<h1>Овчарня {{ barn }} · {% if kind == 'delivery' %}поставка кормов{% elif kind == 'return' %}возврат на центральный склад{% else %}списание по акту{% endif %}</h1>
+<form method="post" enctype="multipart/form-data" class="feeds">{% csrf_token %}
+<input type="hidden" name="token" value="{{ token }}"><fieldset{% if not can_supply %} disabled{% endif %}>
+<label class="form-label">Дата<input class="form-control" type="date" name="date" value="{% if form.date %}{{ form.date }}{% else %}{% now 'Y-m-d' %}{% endif %}" required></label>
+{% include 'feed_inventory/line_editor.html' %}
+<label class="form-label w-100">Основание / комментарий<textarea class="form-control" name="note" maxlength="2000" required>{{ form.note }}</textarea></label>
+{% if kind == 'writeoff' %}<label class="form-label w-100">Подтверждающий акт<input class="form-control" type="file" name="file" accept=".pdf,.xlsx" required></label>{% endif %}
+<label class="d-block my-3"><input type="checkbox" name="verified" value="yes" required> Количество проверено, операция подтверждена</label>
+{% if can_supply %}<button class="btn btn-primary" type="submit">Провести {% if kind == 'delivery' %}поставку{% elif kind == 'return' %}возврат{% else %}списание{% endif %}</button>{% endif %}
+</fieldset>
+</form>
+<script src="{% static 'feed_inventory/packages.js' %}?v=1" defer></script>
+{% endblock %}

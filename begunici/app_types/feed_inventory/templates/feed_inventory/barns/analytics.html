@@ -1,0 +1,5 @@
+{% extends 'feed_inventory/barns/base.html' %}
+{% block barn_content %}
+{% include 'feed_inventory/barns/comparison.html' %}
+{% for period in comparison.periods %}<p>Овчарня {{ period.barn }} · план зафиксирован {{ period.captured_at|date:'d.m.Y' }} · {% if period.closing_id %}факт подтверждён{% else %}ожидает сверки{% if can_finance %} · <a href="{% url 'feed_inventory:barn-close' period.barn %}?month={{ comparison.month }}">Подтвердить</a>{% endif %}{% endif %}</p>{% endfor %}
+{% endblock %}
