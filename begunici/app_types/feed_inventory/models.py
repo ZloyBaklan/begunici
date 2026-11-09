@@ -132,7 +132,7 @@ class FeedAudit(AppendOnly):
 class BarnFeedDocument(AppendOnly):
     barn = models.PositiveSmallIntegerField()
     kind = models.CharField(max_length=12, choices=[("delivery", "Поставка"), ("return", "Возврат на склад"),
-        ("writeoff", "Списание по акту"), ("close", "Факт за месяц"), ("reversal", "Сторно")])
+        ("writeoff", "Списание по акту"), ("week", "Расход за неделю"), ("close", "Факт за месяц"), ("reversal", "Сторно")])
     date = models.DateField()
     token = models.UUIDField(default=uuid.uuid4, unique=True)
     payload = models.JSONField(default=dict)

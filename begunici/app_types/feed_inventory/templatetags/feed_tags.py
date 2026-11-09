@@ -37,10 +37,13 @@ def barn_feed_map_bridge(context):
         return {"allowed": False}
     user = request.user
     allowed = can_view_barns(user)
+    today = timezone.localdate()
     return {"allowed": allowed, "can_supply": can_supply(user), "can_writeoff": can_manage_inventory(user),
             "products": FeedProduct.objects.all() if allowed else [], "barn_numbers": range(1, 5),
             "token": uuid.uuid4(), "csrf_token": context.get("csrf_token"),
-            "previous_month": (timezone.localdate().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")}
+            "previous_month": (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m"),
+            "previous_day": (today - timedelta(days=1)).isoformat(),
+            "previous_week": (today - timedelta(days=today.weekday() + 1)).isoformat()}
 
 
 @register.inclusion_tag("feed_inventory/barns/map_actions.html", takes_context=True)

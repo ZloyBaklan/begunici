@@ -19,23 +19,26 @@ def number(value):
     return result.rstrip("0").rstrip(".") if "." in result else result
 
 
-def build_plan(as_of_date=None, place_ids=None):
+def build_plan(as_of_date=None, place_ids=None, *, headcounts=None):
     as_of_date = as_of_date or timezone.localdate()
     # Read revision before the rows: concurrent edits can only make this form
     # stale, never give older norm values a newer version accepted on save.
     revision = FeedSettings.objects.get(pk=1).revision
-    counts = dict.fromkeys(legacy.FEED_GROUP_LABELS, 0)
-    unclassified = 0
-    for model in (legacy.Maker, legacy.Sheep, legacy.Ewe, legacy.Ram):
-        queryset = legacy.get_active_feed_queryset(model)
-        if place_ids is not None:
-            queryset = queryset.filter(place_id__in=place_ids)
-        for animal in queryset:
-            group = legacy.classify_feed_plan_animal(animal, as_of_date)
-            if group:
-                counts[group] += 1
-            else:
-                unclassified += 1
+    if headcounts is None:
+        counts = dict.fromkeys(legacy.FEED_GROUP_LABELS, 0)
+        unclassified = 0
+        for model in (legacy.Maker, legacy.Sheep, legacy.Ewe, legacy.Ram):
+            queryset = legacy.get_active_feed_queryset(model)
+            if place_ids is not None:
+                queryset = queryset.filter(place_id__in=place_ids)
+            for animal in queryset:
+                group = legacy.classify_feed_plan_animal(animal, as_of_date)
+                if group:
+                    counts[group] += 1
+                else:
+                    unclassified += 1
+    else:
+        counts, unclassified = headcounts
     products = list(FeedProduct.objects.filter(plan_product__isnull=True))
     norms = {(n.product_id, n.group): n.per_head for n in FeedNorm.objects.all()}
     configured = {p.pk: any((norms.get((p.pk, group)) or Decimal(0)) > 0 for group in legacy.FEED_GROUP_LABELS) for p in products}

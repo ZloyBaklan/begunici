@@ -118,8 +118,12 @@ def get_ram_or_ewe_age_group(animal, as_of_date):
     return None
 
 
-def classify_feed_plan_animal(animal, as_of_date):
-    status_name = get_status_name(animal)
+_CURRENT_STATUS = object()
+
+
+def classify_feed_plan_animal(animal, as_of_date, *, status_name=_CURRENT_STATUS):
+    if status_name is _CURRENT_STATUS:
+        status_name = get_status_name(animal)
 
     if isinstance(animal, Maker):
         return "makers"

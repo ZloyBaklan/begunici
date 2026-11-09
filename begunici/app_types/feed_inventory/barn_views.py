@@ -9,7 +9,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from django.utils import timezone
 from io import BytesIO
 
-from . import barns, views
+from . import barn_forecast, barns, map_closing, views
 from .models import FeedProduct, BarnFeedDocument, BarnFeedPeriod
 from begunici.app_types.inventory.permissions import can_manage_inventory, require_inventory
 
@@ -104,11 +104,18 @@ def close(request, barn):
         except ValidationError as exc:
             views.error(request, exc)
     rows = barns.closing_rows(barn, month)
+    period = BarnFeedPeriod.objects.filter(barn=barn, month=month).select_related("closing").first()
+    estimate = None
+    closed_rows = []
+    if period and period.closing_id:
+        closed_rows = map_closing.reconciliation_details(barn, month, barns.month_end(month))["rows"]
+    elif barns.month_end(month) < timezone.localdate():
+        estimate = barn_forecast.consumption_estimate(barn, month, barns.month_end(month), rows, period.plan if period else None)
     for row in rows:
         row["closing_value"] = request.POST.get(f"closing_{row['product'].pk}", "")
         row["packs_value"] = request.POST.get(f"packs_{row['product'].pk}", "0")
     return page(request, "close", barn=barn, month=month.isoformat()[:7], rows=rows,
-        period=BarnFeedPeriod.objects.filter(barn=barn, month=month).select_related("closing").first(),
+        period=period, estimate=estimate, closed_rows=closed_rows,
         periods=BarnFeedPeriod.objects.filter(barn=barn).order_by("-month"), form=request.POST,
         token=request.POST.get("token") or uuid.uuid4())
 

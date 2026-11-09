@@ -13,9 +13,10 @@
 <h2>История поставок, сверок и исправлений</h2>
 {% for doc in documents %}<details id="barn-doc-{{ doc.pk }}" class="bf-document mb-3"><summary>{{ doc.date|date:'d.m.Y' }} · {{ doc.get_kind_display }} № {{ doc.pk }} · {{ doc.created_by }}</summary>
 <p class="mt-2">{{ doc.payload.note }}</p>
+{% if doc.kind == 'week' %}<p>Период {{ doc.payload.start }} — {{ doc.date|date:'Y-m-d' }}</p>{% endif %}
 {% if doc.central_document_id and can_finance %}<a href="{% url 'feed_inventory:document' doc.central_document_id %}">Движение центрального склада</a>{% endif %}
 {% if doc.filename %}<a href="{% url 'feed_inventory:barn-file' doc.pk %}">Скачать акт</a>{% endif %}
-<ul>{% for line in doc.payload.lines %}<li>{{ line.name }}: {{ line.amount|feed_quantity }} {{ line.unit }}{% if doc.kind == 'close' %}; остаток {{ line.closing|feed_quantity }} {{ line.unit }}{% endif %}</li>{% endfor %}</ul>
+<ul>{% for line in doc.payload.lines %}<li>{{ line.name }}: {{ line.amount|feed_quantity }} {{ line.unit }}{% if doc.kind == 'close' or doc.kind == 'week' %}; остаток {{ line.closing|feed_quantity }} {{ line.unit }}{% endif %}</li>{% endfor %}</ul>
 {% if can_finance and doc.kind != 'reversal' %}{% if not doc.reversal %}<form method="post">{% csrf_token %}<input type="hidden" name="document" value="{{ doc.pk }}"><label class="form-label">Причина сторно<input class="form-control" name="reason" required></label><button class="btn btn-outline-danger btn-sm">Сторнировать с сохранением истории</button></form>{% else %}<p class="text-muted">Сторнирован документом № {{ doc.reversal.pk }}</p>{% endif %}{% endif %}
 </details>{% empty %}<p class="text-muted">Поставок пока нет.</p>{% endfor %}
 {% endblock %}
