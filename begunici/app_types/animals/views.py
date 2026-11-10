@@ -7977,26 +7977,36 @@ def export_to_excel(request):
         """
         print(f"Получен запрос на экспорт: {request.data}")  # Отладочный вывод
         animal_type = request.data.get('animal_type', 'maker')
-        limit = request.data.get('limit', None)
-        weight_min = request.data.get('weight_min', None)
-        weight_max = request.data.get('weight_max', None)
-        age_min = request.data.get('age_min', None)
-        age_max = request.data.get('age_max', None)
         include_details = request.data.get('include_details', False)
         selected_animals = request.data.get('selected_animals', []) or []
-        has_rshn_tag = request.data.get('has_rshn_tag', False)
-        search = str(request.data.get('search', '') or '').strip()
-        birth_date_from = _parse_date_filter(request.data.get('birth_date_from'))
-        birth_date_to = _parse_date_filter(request.data.get('birth_date_to'))
-        date_otbivka_from = _parse_date_filter(request.data.get('date_otbivka_from'))
-        date_otbivka_to = _parse_date_filter(request.data.get('date_otbivka_to'))
-        father_tag = str(request.data.get('father_tag', '') or '').strip()
-        mother_tag = str(request.data.get('mother_tag', '') or '').strip()
-        animal_status = request.data.get('animal_status', None)
-        place = request.data.get('place', None)
-        is_reject = request.data.get('is_reject', False)
-        is_for_sale = request.data.get('is_for_sale', False)
-        common_animal_type = str(request.data.get('common_animal_type', '') or '').strip().lower()
+        selected_tags = set()
+        if 'selected_tags' in request.data:
+            tags = request.data['selected_tags']
+            if not isinstance(tags, list) or not tags or any(not isinstance(tag, str) or not tag.strip() for tag in tags):
+                return Response({"error": "Не удалось прочитать список выбранных животных."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            selected_tags = {tag.strip() for tag in tags}
+
+        # A selection can span different searches and pages.
+        filters = {} if selected_tags else request.data
+        limit = filters.get('limit')
+        weight_min = filters.get('weight_min')
+        weight_max = filters.get('weight_max')
+        age_min = filters.get('age_min')
+        age_max = filters.get('age_max')
+        has_rshn_tag = filters.get('has_rshn_tag', False)
+        search = str(filters.get('search', '') or '').strip()
+        birth_date_from = _parse_date_filter(filters.get('birth_date_from'))
+        birth_date_to = _parse_date_filter(filters.get('birth_date_to'))
+        date_otbivka_from = _parse_date_filter(filters.get('date_otbivka_from'))
+        date_otbivka_to = _parse_date_filter(filters.get('date_otbivka_to'))
+        father_tag = str(filters.get('father_tag', '') or '').strip()
+        mother_tag = str(filters.get('mother_tag', '') or '').strip()
+        animal_status = filters.get('animal_status')
+        place = filters.get('place')
+        is_reject = filters.get('is_reject', False)
+        is_for_sale = filters.get('is_for_sale', False)
+        common_animal_type = str(filters.get('common_animal_type', '') or '').strip().lower()
         
         print(f"Параметры экспорта: type={animal_type}, limit={limit}, weight_min={weight_min}, weight_max={weight_max}, age_min={age_min}, age_max={age_max}, include_details={include_details}")
         
@@ -8063,7 +8073,9 @@ def export_to_excel(request):
 
                 queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
-                if selected_ids:
+                if selected_tags:
+                    queryset = queryset.filter(tag__tag_number__in=selected_tags)
+                elif selected_ids:
                     queryset = queryset.filter(tag_id__in=selected_ids)
 
                 for animal in queryset:
@@ -8130,7 +8142,9 @@ def export_to_excel(request):
 
             queryset = _filter_queryset_by_latest_weight(queryset, weight_min, weight_max)
 
-            if selected_ids:
+            if selected_tags:
+                queryset = queryset.filter(tag__tag_number__in=selected_tags)
+            elif selected_ids:
                 queryset = queryset.filter(id__in=selected_ids)
             elif limit:
                 queryset = queryset[:int(limit)]
@@ -8145,6 +8159,10 @@ def export_to_excel(request):
                     'last_weight': weight_value,
                     'last_weight_date': last_weight.weight_date if last_weight else None
                 })
+
+        if selected_tags and not animals_list:
+            return Response({"error": "Выбранные животные не найдены в этом списке. Очистите выбор и отметьте их заново."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         print(f"Найдено {len(animals_list)} животных для экспорта")
         if animal_type == 'ewe':

@@ -6,6 +6,7 @@ function getExportApiErrorFieldLabel(field) {
         include_details: 'Детальный экспорт',
         limit: 'Лимит',
         selected_animals: 'Выбранные животные',
+        selected_tags: 'Выбранные животные',
         non_field_errors: 'Общая ошибка',
     };
 
@@ -203,7 +204,7 @@ async function performExport(animalType) {
     
     // Если есть выбранные животные, экспортируем только их
     if (hasSelectedAnimals) {
-        data.selected_animals = selectedAnimals;
+        data.selected_tags = selectedAnimals;
     } else {
         Object.assign(data, getAppliedListFiltersForExport());
 
@@ -316,16 +317,7 @@ function getCSRFToken() {
 }
 
 function getSelectedAnimals() {
-    const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]:checked');
-    const selectedIds = [];
-    
-    checkboxes.forEach(checkbox => {
-        if (checkbox.dataset.animalId) {
-            selectedIds.push(parseInt(checkbox.dataset.animalId));
-        }
-    });
-    
-    return selectedIds;
+    return [...new Set(window.getSelectedAnimalTagsForExport?.() ?? [])];
 }
 
 // Функция для включения/отключения секций фильтров

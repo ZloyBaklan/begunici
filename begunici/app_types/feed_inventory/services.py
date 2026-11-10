@@ -376,13 +376,37 @@ def confirm_document(user, pk, revision):
     return document
 
 
+def validate_dated_debit(movements, lines, day, location):
+    """Check both quantities against every daily closing balance after insertion."""
+    ids = [line["product"] for line in lines]
+    movements = movements.filter(product_id__in=ids)
+    opening = {row["product_id"]: (row["quantity"], row["packs"]) for row in
+        movements.filter(document__date__lte=day).values("product_id")
+        .annotate(quantity=Sum("amount"), packs=Sum("packages"))}
+    subsequent = {pk: [] for pk in ids}
+    for row in movements.filter(document__date__gt=day).values("product_id", "document__date").annotate(
+            quantity=Sum("amount"), packs=Sum("packages")).order_by("document__date"):
+        subsequent[row["product_id"]].append(row)
+    for line in lines:
+        available, packs = opening.get(line["product"], (Decimal(0), Decimal(0)))
+        balance = available - Decimal(line["amount"])
+        remaining_packs = packs - Decimal(line["packages"])
+        if balance < 0 or remaining_packs < 0:
+            raise ValidationError(f"{line['name']}: недостаточно остатков {location} на {day:%d.%m.%Y}. "
+                f"Доступно {number(available)} {line['unit']}, упаковок {number(packs)}.")
+        for row in subsequent[line["product"]]:
+            balance += row["quantity"]
+            remaining_packs += row["packs"]
+            if balance < 0 or remaining_packs < 0:
+                later_day = row["document__date"]
+                raise ValidationError(f"{line['name']}: операция приведёт к нехватке {location} на {later_day:%d.%m.%Y}.")
+
+
 def apply_movements(document, lines, sign):
-    current = balances()
+    if sign < 0:
+        validate_dated_debit(FeedMovement.objects.all(), lines, document.date, "на центральном складе")
     for line in lines:
         quantity, packages = Decimal(line["amount"]) * sign, Decimal(line["packages"]) * sign
-        old_quantity, old_packages = current.get(line["product"], (Decimal(0), Decimal(0)))
-        if old_quantity + quantity < 0 or old_packages + packages < 0:
-            raise ValidationError(f"{line['name']}: недостаточно остатков. Доступно {number(old_quantity)} {line['unit']}, упаковок {number(old_packages)}.")
         FeedMovement.objects.create(document=document, product_id=line["product"], amount=quantity, packages=packages)
 
 

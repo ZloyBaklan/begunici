@@ -389,8 +389,8 @@ input[type="checkbox"]:focus {
 
 <!-- Подключение скриптов -->
 <script src="{% static 'js/archive_act_modal.js' %}?v=20261102-clinical"></script>
-<script type="module" src="{% static 'js/ewes.js' %}"></script>
-<script src="{% static 'js/export-common.js' %}"></script>
+<script type="module" src="{% static 'js/ewes.js' %}?v=20261110-export-selection"></script>
+<script src="{% static 'js/export-common.js' %}?v=20261110-export-selection"></script>
 <script>
     function performSearch() {
         const query = document.getElementById('ewe-search').value;

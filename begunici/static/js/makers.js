@@ -902,6 +902,7 @@ async function applyArchiveStatus() {
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedMakers = deleteSelectedMakers;
 window.clearSelectedMakers = clearSelectedMakers;
+window.getSelectedAnimalTagsForExport = () => [...selectedMakers];
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectMaker = toggleSelectMaker;
 window.toggleDeleteButton = toggleDeleteButton;
@@ -926,7 +927,7 @@ window.addEventListener('beforeunload', function() {
         sessionStorage.removeItem('selectedMakers');
     }
 });
-// Функция для сброса фильтров и выбранных элементов
+// Функция для сброса фильтров
 function clearFilters() {
     // Очищаем поля фильтров
     const searchInput = document.getElementById('maker-search');
@@ -949,10 +950,6 @@ function clearFilters() {
     if (fatherTagInput) fatherTagInput.value = '';
     const motherTagInput = document.getElementById('maker-mother-tag-filter');
     if (motherTagInput) motherTagInput.value = '';
-    
-    // Очищаем выбранные элементы
-    selectedMakers.clear();
-    saveSelectedMakers(); // Сохраняем очищенное состояние
     
     // Снимаем галочку с "выбрать все"
     const selectAllCheckbox = document.getElementById('select-all');

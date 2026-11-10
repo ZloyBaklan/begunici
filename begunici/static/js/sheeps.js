@@ -467,25 +467,7 @@ async function loadPlaces() {
 
 // Функция поиска овцематок
 async function searchSheeps() {
-    const filters = getSheepFiltersFromInputs();
-    
-    // Сохраняем выбранные чекбоксы
-    const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedSheeps"]:checked'))
-        .map(cb => cb.value);
-    
-    currentPage = 1;
-    await fetchSheeps(currentPage, filters);
-    
-    // Восстанавливаем выбранные чекбоксы
-    selectedCheckboxes.forEach(tagNumber => {
-        const checkbox = document.querySelector(`input[name="selectedSheeps"][value="${tagNumber}"]`);
-        if (checkbox) {
-            checkbox.checked = true;
-        }
-    });
-    
-    // Обновляем кнопку удаления
-    toggleDeleteButton();
+    await fetchSheeps(1, getSheepFiltersFromInputs());
 }
 
 // Алиас для совместимости с шаблоном
@@ -903,6 +885,7 @@ window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedSheeps = deleteSelectedSheeps;
 window.clearSelectedSheeps = clearSelectedSheeps;
+window.getSelectedAnimalTagsForExport = () => [...selectedSheeps];
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectSheep = toggleSelectSheep;
 window.toggleDeleteButton = toggleDeleteButton;

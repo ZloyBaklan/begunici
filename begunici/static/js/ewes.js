@@ -445,25 +445,7 @@ async function loadPlaces() {
 
 // Функция поиска ярок
 async function searchEwes() {
-    const filters = getEweFiltersFromInputs();
-    
-    // Сохраняем выбранные чекбоксы
-    const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedEwes"]:checked'))
-        .map(cb => cb.value);
-    
-    currentPage = 1;
-    await fetchEwes(currentPage, filters);
-    
-    // Восстанавливаем выбранные чекбоксы
-    selectedCheckboxes.forEach(tagNumber => {
-        const checkbox = document.querySelector(`input[name="selectedEwes"][value="${tagNumber}"]`);
-        if (checkbox) {
-            checkbox.checked = true;
-        }
-    });
-    
-    // Обновляем кнопку удаления
-    toggleDeleteButton();
+    await fetchEwes(1, getEweFiltersFromInputs());
 }
 
 // Алиас для совместимости с шаблоном
@@ -881,6 +863,7 @@ window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedEwes = deleteSelectedEwes;
 window.clearSelectedEwes = clearSelectedEwes;
+window.getSelectedAnimalTagsForExport = () => [...selectedEwes];
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectEwe = toggleSelectEwe;
 window.toggleDeleteButton = toggleDeleteButton;

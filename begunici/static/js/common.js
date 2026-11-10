@@ -802,6 +802,7 @@ window.toggleCommonAdditionalFilters = toggleCommonAdditionalFilters;
 window.toggleSelectAll = toggleSelectAll;
 window.deleteSelectedAnimals = deleteSelectedAnimals;
 window.clearSelectedAnimals = clearSelectedAnimals;
+window.getSelectedAnimalTagsForExport = () => [...selectedAnimals.values()].map(animal => animal.tagNumber);
 window.closeDeleteModal = closeDeleteModal;
 window.openArchiveModal = openArchiveModal;
 window.closeArchiveModal = closeArchiveModal;

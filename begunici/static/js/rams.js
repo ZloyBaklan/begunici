@@ -421,25 +421,7 @@ async function loadPlaces() {
 
 // Функция поиска баранчиков
 async function searchRams() {
-    const filters = getRamFiltersFromInputs();
-    
-    // Сохраняем выбранные чекбоксы
-    const selectedCheckboxes = Array.from(document.querySelectorAll('input[name="selectedRams"]:checked'))
-        .map(cb => cb.value);
-    
-    currentPage = 1;
-    await fetchRams(currentPage, filters);
-    
-    // Восстанавливаем выбранные чекбоксы
-    selectedCheckboxes.forEach(tagNumber => {
-        const checkbox = document.querySelector(`input[name="selectedRams"][value="${tagNumber}"]`);
-        if (checkbox) {
-            checkbox.checked = true;
-        }
-    });
-    
-    // Обновляем кнопку удаления
-    toggleDeleteButton();
+    await fetchRams(1, getRamFiltersFromInputs());
 }
 
 // Алиас для совместимости с шаблоном
@@ -857,6 +839,7 @@ window.closeDeleteModal = closeDeleteModal;
 window.applyArchiveStatus = applyArchiveStatus;
 window.deleteSelectedRams = deleteSelectedRams;
 window.clearSelectedRams = clearSelectedRams;
+window.getSelectedAnimalTagsForExport = () => [...selectedRams];
 window.toggleSelectAll = toggleSelectAll;
 window.toggleSelectRam = toggleSelectRam;
 window.toggleDeleteButton = toggleDeleteButton;
