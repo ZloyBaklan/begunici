@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db import models, transaction
 from django.db.models import Q
 from django.urls import reverse
+from django.core.exceptions import ValidationError as DjangoValidationError
 from decimal import Decimal
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
@@ -1086,7 +1087,13 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
-        instance.save(skip_status_history=skip_status_history)
+        try:
+            instance.save(
+                skip_status_history=skip_status_history, archive_date=status_date,
+                archive_actor=request.user if request else None,
+            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"animal_status_id": exc.messages}) from exc
         if new_rejection:
             self._store_rejection_reason(instance, rejection_reason)
         
@@ -1659,6 +1666,14 @@ class LambingSerializer(LambingTrackingSerializer):
                 raise serializers.ValidationError(
                     f"Мать с биркой {mother_tag_number} не найдена среди овцематок и ярок"
                 )
+
+        is_active = data.get("is_active", self.instance.is_active if self.instance else True)
+        if is_active and (mother.is_archived or (
+            mother.animal_status and mother.animal_status.status_type in ARCHIVE_STATUS_NAMES
+        )):
+            raise serializers.ValidationError({
+                "mother_tag_number": "Нельзя создать или сохранить активный окот у архивированной матери.",
+            })
         
         # Проверяем существование отца
         father = None
@@ -1702,6 +1717,18 @@ class LambingSerializer(LambingTrackingSerializer):
         data.pop('father_tag_number', None)
         
         return data
+
+    def create(self, validated_data):
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
+
+    def update(self, instance, validated_data):
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
     
 class LambingGroupSerializer(LambingTrackingSerializer):
     placement_date = serializers.SerializerMethodField()

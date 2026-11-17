@@ -560,6 +560,11 @@ def normalize_log_for_display(log):
     display_action = strip_http_status(log.action_type)
     display_object_type = strip_http_status(log.object_type)
     display_object_id = log.object_id or ""
+    if (display_object_type == "Окот" and isinstance(log.additional_data, dict)
+            and log.additional_data.get("source") == "mother_archived"):
+        parent_tags = log.additional_data.get("parent_tags")
+        if isinstance(parent_tags, list) and len(parent_tags) == 2 and all(isinstance(tag, str) and tag for tag in parent_tags):
+            display_object_id = ", ".join(parent_tags)
 
     if method and path:
         normalized_action = resolve_log_action(

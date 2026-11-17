@@ -440,6 +440,8 @@ class AnimalBase(models.Model):
         # Параметр для пропуска создания StatusHistory (используется в сериализаторе)
         skip_status_history = kwargs.pop('skip_status_history', False)
         cascade_dorper = kwargs.pop('cascade_dorper', True)
+        archive_date = as_local_date(kwargs.pop('archive_date', None))
+        archive_actor = kwargs.pop('archive_actor', None)
 
         # 🔹 Проверка на архивный статус
         if self.animal_status and self.animal_status.status_type in ARCHIVE_STATUS_NAMES:
@@ -453,6 +455,8 @@ class AnimalBase(models.Model):
             kwargs["update_fields"] = set(kwargs["update_fields"]) | {
                 "dorper_percentage", "dorper_uses_default",
             }
+            if "animal_status" in kwargs["update_fields"] or "animal_status_id" in kwargs["update_fields"]:
+                kwargs["update_fields"].add("is_archived")
 
         # 🔹 Автоматическое заполнение `animal_type` у `Tag`
         if self.tag:
@@ -476,6 +480,10 @@ class AnimalBase(models.Model):
 
         # 🔹 Сохранение объекта
         super().save(*args, **kwargs)
+
+        if self.is_archived and old_culling_state is not None and not old_culling_state[1]:
+            from .status_logic import close_active_lambings_on_archive
+            close_active_lambings_on_archive(self, archive_date, actor=archive_actor)
 
         if self.get_animal_type() == 'Sheep' and (
             is_new or old_culling_state != (self.is_reject, self.is_archived)
@@ -1267,11 +1275,22 @@ class Lambing(models.Model):
             if existing_active.exists():
                 raise ValidationError(f"У {mother.tag.tag_number} уже есть активный окот")
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
         """
         Переопределение метода save для автоматического изменения статуса матери
         """
         is_new = self.pk is None
+        if self.is_active and (mother := self.get_mother()):
+            from django.core.exceptions import ValidationError
+            father = self.get_father()
+            parent_tag_ids = [parent.tag_id for parent in (mother, father) if parent]
+            list(Tag.objects.select_for_update().filter(pk__in=parent_tag_ids).order_by("pk"))
+            current_mother = type(mother).objects.select_related("animal_status").get(pk=mother.pk)
+            if current_mother.is_archived or (
+                current_mother.animal_status and current_mother.animal_status.status_type in ARCHIVE_STATUS_NAMES
+            ):
+                raise ValidationError("Нельзя создать или сохранить активный окот у архивированной матери.")
         if is_new and self.is_active:
             group = self.source_group if self.source_group_id else None
             if self.father_placement_date is None:

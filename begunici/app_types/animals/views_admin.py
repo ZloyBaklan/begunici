@@ -153,6 +153,7 @@ def admin_logs_api(request):
                 Q(action_type__icontains=search)
                 | Q(object_type__icontains=search)
                 | Q(object_id__icontains=search)
+                | Q(additional_data__parent_tags__icontains=search)
                 | Q(description__icontains=search)
             )
 

@@ -90,6 +90,7 @@ from .status_logic import (
     get_status_by_name,
     set_animal_status,
     set_mothers_not_inseminated_after_child_update,
+    close_active_lambings_on_archive,
 )
 from .backup_utils import backup_manager
 from .archive_acts import (
@@ -2988,6 +2989,9 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
 
             created_lambings = []
             with transaction.atomic():
+                list(Tag.objects.select_for_update().filter(
+                    pk__in=[father.tag_id, *(mother.tag_id for mother, _ in mothers)],
+                ).order_by("pk"))
                 stint = _record_group_father(group, request.user)
                 stint.removal_date = removal_date
                 stint.save(update_fields=["removal_date"])
@@ -2998,6 +3002,11 @@ class LambingGroupViewSet(viewsets.ModelViewSet):
                 group.save(update_fields=["removal_date", "is_active", "note"])
 
                 for mother, mother_type in mothers:
+                    mother.refresh_from_db(fields=["is_archived", "animal_status"])
+                    if mother.is_archived or (
+                        mother.animal_status and mother.animal_status.status_type in ARCHIVE_STATUS_NAMES
+                    ):
+                        continue
                     lambing_data = {
                         "start_date": removal_date,
                         "planned_lambing_date": planned_lambing_date_from_placement(group.get_father_placement_date()),
@@ -5507,7 +5516,7 @@ class AnimalActionsViewSet(viewsets.ViewSet):
     permission_classes = [AllowAny]
 
     @action(detail=False, methods=["post"], url_path="bulk_archive")
-    @transaction.atomic  # CLINICAL BRIDGE: защита от одновременного поступления.
+    @_atomic_animal_action
     def bulk_archive(self, request):
         if not can_archive_animals(request.user):
             return Response({'error': ANIMAL_ARCHIVE_DENIED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
@@ -5535,6 +5544,14 @@ class AnimalActionsViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        try:
+            archive_date = (
+                _parse_iso_date(str(request.data["status_date"]), "дату архивирования")
+                if request.data.get("status_date") else timezone.localdate()
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         # CLINICAL BRIDGE: bulk QuerySet.update bypasses model signals.
         list(Tag.objects.select_for_update().filter(pk__in=animal_ids).order_by("pk"))
         from begunici.app_types.clinical.models import Episode
@@ -5547,7 +5564,15 @@ class AnimalActionsViewSet(viewsets.ViewSet):
         for model in animal_models:
             # Мы используем tag__id, так как animal_ids - это ID бирок
             queryset = model.objects.filter(tag__id__in=animal_ids)
+            mothers = list(queryset.filter(is_archived=False).select_related("tag")) if model in (Ewe, Sheep) else []
             model_updated_count = queryset.update(animal_status=archive_status, is_archived=True)
+            for mother in mothers:
+                mother.animal_status = archive_status
+                mother.is_archived = True
+                try:
+                    close_active_lambings_on_archive(mother, archive_date, actor=request.user)
+                except DjangoValidationError as exc:
+                    return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
             updated_count += model_updated_count
             if model is Sheep and model_updated_count:
                 record_dashboard_culling_snapshot()

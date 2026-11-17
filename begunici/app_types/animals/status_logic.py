@@ -1,10 +1,14 @@
 from calendar import monthrange
 
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from begunici.app_types.veterinary.vet_models import Status
+from begunici.app_types.vet_inventory.middleware import current_actor
 
+from .models_user_log import UserActionLog
 from .models import (
     ARCHIVE_STATUS_NAMES,
     Ewe,
@@ -64,6 +68,59 @@ def set_animal_status(animal, status_obj):
     animal.animal_status = status_obj
     animal.save()
     return True
+
+
+@transaction.atomic
+def close_active_lambings_on_archive(animal, archive_date=None, *, actor=None):
+    if not isinstance(animal, (Ewe, Sheep)) or not animal.is_archived:
+        return []
+    relation = "ewe_id" if isinstance(animal, Ewe) else "sheep_id"
+    lambings = list(Lambing.objects.select_related("maker__tag", "ram__tag").select_for_update(of=("self",)).filter(
+        **{relation: animal.pk}, is_active=True,
+    ).order_by("pk"))
+    if not lambings:
+        return []
+    if any(item.actual_lambing_date or (item.number_of_lambs or 0) > 0
+           or item.dead_lambs_count > 0 for item in lambings):
+        raise ValidationError(
+            f"У {animal.tag.tag_number} в активном окоте уже указаны роды или ягнята. "
+            "Сначала завершите этот окот, затем архивируйте мать."
+        )
+
+    archive_date = archive_date or timezone.localdate()
+    archive_note = (
+        f"Мать архивирована - {animal.animal_status.status_type}, {archive_date:%d.%m.%Y}"
+    )
+    for lambing in lambings:
+        old_note = (lambing.note or "").rstrip(" \t\r\n")
+        lambing.note = f"{old_note}\n{archive_note}" if old_note else archive_note
+        lambing.is_active = False
+        lambing.completion_type = Lambing.COMPLETION_UNSUCCESSFUL_INSEMINATION
+        lambing.actual_lambing_date = None
+        lambing.number_of_lambs = 0
+        lambing.dead_lambs_count = 0
+    # Do not run ordinary completion: it changes the parents' statuses and may convert an ewe.
+    Lambing.objects.bulk_update(lambings, [
+        "is_active", "completion_type", "actual_lambing_date", "number_of_lambs", "dead_lambs_count", "note",
+    ])
+    actor = actor if actor is not None else current_actor.get()
+    if actor is not None and actor.is_authenticated:
+        logs = []
+        for lambing in lambings:
+            father = lambing.get_father()
+            father_tag = father.tag.tag_number if father and father.tag else "Неизвестно"
+            parent_tags = [animal.tag.tag_number, father_tag]
+            object_id = ", ".join(parent_tags)
+            # Each tag can be 100 characters; preserve long pairs in metadata without truncation.
+            if len(object_id) > UserActionLog._meta.get_field("object_id").max_length:
+                object_id = str(lambing.pk)
+            logs.append(UserActionLog(
+                user=actor, action_type="Неудачное осеменение", object_type="Окот",
+                object_id=object_id, description=lambing.note,
+                additional_data={"source": "mother_archived", "lambing_id": lambing.pk, "parent_tags": parent_tags},
+            ))
+        UserActionLog.objects.bulk_create(logs)
+    return [lambing.pk for lambing in lambings]
 
 
 def normalize_animal_type(animal_type):
