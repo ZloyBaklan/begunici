@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load inventory_tags %}
+{% extends 'base.html' %}{% load inventory_tags vet_inventory_tags %}
 
 {% block content %}
 <div class="container">
@@ -6,27 +6,29 @@
     
     <div class="navigation-section">
         <h3>Выберите раздел:</h3>
+        {% inventory_access as catalog_allowed %}
+        {% vet_inventory_access as vet_catalog_allowed %}
         <div class="row g-2">
             <div class="col-md-4">
-                <a href="{% url 'veterinary:veterinary_statuses' %}" class="btn btn-outline-primary w-100 py-3">
+                <a href="{% url 'veterinary:veterinary_statuses' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">
                     Управление статусами
                 </a>
             </div>
             <div class="col-md-4">
-                <a href="{% url 'veterinary:veterinary_places' %}" class="btn btn-outline-primary w-100 py-3">
+                <a href="{% url 'veterinary:veterinary_places' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">
                     Управление овчарнями
                 </a>
             </div>
             <div class="col-md-4">
-                <a href="{% url 'veterinary:veterinary_cares' %}" class="btn btn-outline-primary w-100 py-3">
+                <a href="{% url 'veterinary:veterinary_cares' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">
                     Управление ветеринарным уходом
                 </a>
             </div>
-            {% inventory_access as catalog_allowed %}
             {% if catalog_allowed %}
-            <div class="col-md-6"><a href="{% url 'inventory_catalog:meat-products' %}" class="btn btn-outline-primary w-100 py-3">Номенклатура мясной продукции</a></div>
-            <div class="col-md-6"><a href="{% url 'inventory_catalog:feed-products' %}" class="btn btn-outline-primary w-100 py-3">Управление кормовой номенклатурой</a></div>
+            <div class="col-md-4"><a href="{% url 'inventory_catalog:meat-products' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">Номенклатура мясной продукции</a></div>
+            <div class="col-md-4"><a href="{% url 'inventory_catalog:feed-products' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">Управление кормовой номенклатурой</a></div>
             {% endif %}
+            {% if vet_catalog_allowed %}<div class="col-md-4{% if not catalog_allowed %} offset-md-8{% endif %}"><a href="{% url 'inventory_catalog:vet-products' %}" class="btn btn-outline-primary w-100 py-3 h-100 d-flex align-items-center justify-content-center">Номенклатура препаратов</a></div>{% endif %}
         </div>
     </div>
 </div>

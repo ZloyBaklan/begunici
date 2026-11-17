@@ -17,12 +17,20 @@ class VetSettings(models.Model):
 
 class VetProduct(models.Model):
     name = models.CharField(max_length=120, unique=True)
+    base_name = models.CharField(max_length=120, blank=True, default="")
     category = models.CharField(max_length=12, choices=[
         ("medicine", "Препарат"), ("vaccine", "Вакцина"),
         ("material", "Материал"), ("other", "Прочее"),
     ])
     unit = models.CharField(max_length=8, choices=[("ml", "мл"), ("g", "г"), ("pcs", "шт."), ("dose", "доз"), ("l", "л"), ("kg", "кг")])
-    package = models.CharField(max_length=40, blank=True)
+    package_size = models.DecimalField(max_digits=15, decimal_places=3, null=True, blank=True)
+    active_substance = models.CharField(max_length=120, blank=True)
+    concentration = models.DecimalField(max_digits=15, decimal_places=6, null=True, blank=True)
+    concentration_unit = models.CharField(max_length=16, blank=True, choices=[
+        ("mg/ml", "мг/мл"), ("mg/g", "мг/г"), ("g/ml", "г/мл"), ("g/g", "г/г"),
+        ("percent_wv", "% (г на 100 мл)"), ("percent_ww", "% (г на 100 г)"),
+        ("percent_vv", "% (мл на 100 мл)"),
+    ])
     revision = models.PositiveIntegerField(default=1)
 
     class Meta:
@@ -33,9 +41,14 @@ class VetProduct(models.Model):
 
 
 class VetNorm(models.Model):
-    care = models.OneToOneField("veterinary.VeterinaryCare", on_delete=models.CASCADE, related_name="stock_norm")
+    care = models.ForeignKey("veterinary.VeterinaryCare", on_delete=models.CASCADE, related_name="stock_norms")
     product = models.ForeignKey(VetProduct, on_delete=models.PROTECT, related_name="norms")
-    mode = models.CharField(max_length=12, choices=[("head", "На голову"), ("weight", "На 1 кг веса"), ("bands", "По диапазонам веса")])
+    auto_variant = models.BooleanField(default=False)
+    mode = models.CharField(max_length=12, choices=[("head", "На голову"), ("weight", "На 1 кг веса"), ("bands", "По диапазонам веса"), ("step", "На каждые N кг (вверх)")])
+    dose_basis = models.CharField(max_length=8, default="product", choices=[("product", "По препарату"), ("active", "По действующему веществу")])
+    dose_unit = models.CharField(max_length=8, blank=True)
+    weight_step = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    conditions = models.JSONField(default=list)
     rate = models.DecimalField(max_digits=12, decimal_places=3, null=True)
     bands = models.JSONField(default=list)
     revision = models.PositiveIntegerField(default=1)
@@ -43,6 +56,7 @@ class VetNorm(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(check=Q(rate__gte=0) | Q(rate__isnull=True), name="vet_nonnegative_norm"),
+            models.UniqueConstraint(fields=["care", "product"], name="vet_unique_care_product_norm"),
         ]
 
 
@@ -111,10 +125,27 @@ class VetMovement(AppendOnly):
     document = models.ForeignKey(VetDocument, on_delete=models.PROTECT, related_name="movements")
     amount = models.DecimalField(max_digits=15, decimal_places=3)
     packages = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+    allocations = models.JSONField(default=list)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["document", "product"], name="vet_unique_movement")]
+
+
+class VetStockLot(models.Model):
+    product = models.ForeignKey(VetProduct, on_delete=models.PROTECT, related_name="stock_lots")
+    receipt = models.ForeignKey(VetMovement, on_delete=models.PROTECT, null=True, related_name="stock_lots")
+    capacity = models.DecimalField(max_digits=15, decimal_places=3, null=True)
+    initial = models.DecimalField(max_digits=15, decimal_places=3)
+    remaining = models.DecimalField(max_digits=15, decimal_places=3)
+    packages = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+
+    class Meta:
+        ordering = ["pk"]
+        constraints = [
+            models.CheckConstraint(check=Q(remaining__gte=0) & Q(remaining__lte=models.F("initial")), name="vet_lot_valid_balance"),
+            models.CheckConstraint(check=Q(capacity__gt=0) | Q(capacity__isnull=True), name="vet_lot_positive_capacity"),
+        ]
 
 
 class VetAudit(AppendOnly):

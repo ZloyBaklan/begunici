@@ -1,13 +1,14 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
+from decimal import Decimal
 
 from begunici.app_types.veterinary.vet_models import Veterinary
 from begunici.app_types.inventory.validation import amount
 from .models import VetDocument, VetProduct, VetSettings, VetTreatment
 from .permissions import require_treat
-from .rules import estimate, is_shearing
-from .services import add_version, apply_movements, audit, normalize_lines, number, text
+from .rules import estimate, estimate_product, is_shearing
+from .services import add_version, apply_movements, audit, normalize_lines, number, text, resolve_group_expenses
 
 
 SHEARING_NO_EXPENSE = "Стрижка не требует расхода ветпрепаратов"
@@ -55,15 +56,29 @@ def post_expense(entry, user, reason):
         raise ValidationError(SHEARING_NO_EXPENSE)
     if date.fromisoformat(entry.snapshot["date"]) > timezone.localdate():
         raise ValidationError("Обработка датирована будущим числом. Проверьте дату перед списанием.")
-    lines = normalize_lines([{"product": entry.product_id, "amount": number(entry.quantity), "packages": "0"}], allow_empty=True)
+    selection = entry.calculation.get("group_expenses", [])
+    if selection and "expense_lines" not in entry.calculation:
+        # Allocate only after any previous expense has been reversed, under the ledger lock.
+        if all(Decimal(row["amount"]) == 0 for row in selection):
+            lines = []
+        else:
+            lines, selection = resolve_group_expenses(selection, decimal_places=18)
+        entry.product_id = lines[0]["product"] if len(lines) == 1 else None
+        entry.quantity = Decimal(lines[0]["amount"]) if len(lines) == 1 else None
+        entry.calculation.update(group_expenses=selection, expense_lines=lines)
+    lines = entry.calculation["expense_lines"] if selection else normalize_lines(
+        [{"product": entry.product_id, "amount": number(entry.quantity), "packages": "0"}], allow_empty=True)
     doc = VetDocument.objects.create(kind="treatment", date=entry.snapshot["date"], state="posted",
         created_by=user, posted_by=user, posted_at=timezone.now())
     add_version(doc, user, {"lines": lines, "note": reason, "treatment_id": entry.pk,
-                            "animal": entry.snapshot, "calculation": entry.calculation, "manual": entry.manual})
+                            "animal": entry.snapshot, "calculation": entry.calculation, "manual": entry.manual,
+                            **({"group_expenses": selection} if selection else {})})
     apply_movements(doc, lines, -1)
     entry.document, entry.state, entry.issue = doc, "posted", ""
     audit(user, "Учтён расход обработки", treatment=entry.pk, document=doc.pk,
-          quantity=number(entry.quantity), unit=entry.product.get_unit_display(), manual=entry.manual, reason=reason, animal=entry.snapshot)
+          quantity=selection[0]["amount"] if selection else number(entry.quantity),
+          unit=selection[0]["unit_label"] if selection else entry.product.get_unit_display(),
+          manual=entry.manual, reason=reason, animal=entry.snapshot)
 
 
 @transaction.atomic
@@ -100,7 +115,7 @@ def capture(source_id, user=None, created=False):
         if entry.manual:
             raise ValidationError("Данные мероприятия изменились после ручного уточнения. Проверьте расход повторно.")
         entry.product, entry.quantity, entry.calculation = None, None, {}
-        entry.product, entry.quantity, entry.calculation = estimate(source)
+        entry.product, entry.quantity, entry.calculation = estimate_product(source)
         # A shortage rolls back only the attempted movement, preserving the queue.
         with transaction.atomic():
             post_expense(entry, user, "Приблизительный расход по норме на момент обработки")
@@ -113,7 +128,7 @@ def capture(source_id, user=None, created=False):
 
 
 @transaction.atomic
-def adjust(user, pk, revision, product_id, quantity, reason, recalculate=False):
+def adjust(user, pk, revision, product_id, quantity, reason, recalculate=False, weight=None, group_expenses=None, direct=False):
     require_treat(user)
     VetSettings.objects.select_for_update().get(pk=1)
     entry = VetTreatment.objects.select_for_update().get(pk=pk)
@@ -124,11 +139,54 @@ def adjust(user, pk, revision, product_id, quantity, reason, recalculate=False):
     if not requires_stock(entry):
         raise ValidationError(SHEARING_NO_EXPENSE)
     reason = text(reason, "Причина уточнения", 2000)
+    if direct:
+        has_quantity = bool(str(quantity if quantity is not None else "").strip())
+        try:
+            product = VetProduct.objects.get(pk=product_id)
+        except (VetProduct.DoesNotExist, TypeError, ValueError):
+            raise ValidationError("Выберите конкретный препарат.")
+        source = Veterinary.objects.select_related("tag", "veterinary_care").filter(pk=entry.source_id).first()
+        expected, calculation = None, {}
+        try:
+            if source is None:
+                raise ValidationError("Исходная обработка недоступна для расчёта.")
+            _, expected, calculation = estimate_product(source, product_id=product.pk, weight=weight)
+        except ValidationError:
+            if recalculate or not has_quantity:
+                raise
+        actual = expected if recalculate or not has_quantity else amount(quantity, "Фактический расход", allow_zero=True)
+        entry.product, entry.quantity = product, actual
+        entry.manual = expected is None or actual != expected
+        entry.calculation = {**calculation, "quantity": number(actual)}
+        if expected is not None:
+            entry.calculation["expected_quantity"] = number(expected)
+        if entry.manual:
+            entry.calculation["mode_label"] = "Уточнено вручную"
+        if source:
+            entry.snapshot = snapshot(source)
+        undo_expense(entry, user, reason)
+        post_expense(entry, user, reason)
+        entry.revision += 1
+        entry.save()
+        return entry
+    if group_expenses is not None:
+        if recalculate or len(group_expenses) != 1:
+            raise ValidationError("Для уточнения обработки выберите одну группу препарата.")
+        undo_expense(entry, user, reason)
+        lines, selections = resolve_group_expenses(group_expenses)
+        entry.product_id = lines[0]["product"] if len(lines) == 1 else None
+        entry.quantity = Decimal(lines[0]["amount"]) if len(lines) == 1 else None
+        entry.calculation = {"group_expenses": selections, "expense_lines": lines, "mode_label": "Уточнено вручную"}
+        entry.manual = True
+        post_expense(entry, user, reason)
+        entry.revision += 1
+        entry.save()
+        return entry
     if recalculate:
         source = Veterinary.objects.select_related("tag", "veterinary_care").filter(pk=entry.source_id).first()
         if source is None:
             raise ValidationError("Исходная обработка недоступна для пересчёта.")
-        entry.product, entry.quantity, entry.calculation = estimate(source)
+        entry.product, entry.quantity, entry.calculation = estimate(source, weight=weight)
         entry.snapshot = snapshot(source)
         entry.manual = False
     else:

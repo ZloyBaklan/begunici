@@ -763,6 +763,12 @@ class VeterinaryPlacesView(TemplateView):
 class VeterinaryCaresView(TemplateView):
     template_name = "veterinary_cares.html"
 
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("tab") == "norms":
+            from begunici.app_types.vet_inventory.views import norms
+            return norms(request)
+        return super().get(request, *args, **kwargs)
+
 
 # Специальные endpoints без пагинации для select элементов
 @api_view(['GET'])

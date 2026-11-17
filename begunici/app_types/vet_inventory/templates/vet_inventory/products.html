@@ -1,14 +1,25 @@
-{% extends 'vet_inventory/base.html' %}
+{% extends 'vet_inventory/technical_base.html' %}
+{% block vet_heading %}Номенклатура ветпрепаратов{% endblock %}
 {% block vet_content %}
-<h1>Номенклатура ветпрепаратов</h1>
-{% if can_finance %}<p class="text-muted">Откройте «Изменить» в нужной строке. Название и категорию можно исправить; история документов сохранится.</p>{% endif %}
-<div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Название</th><th>Категория</th><th>Основная единица</th><th>Упаковка</th><th>Действия</th></tr></thead><tbody>{% for product in products %}<tr><td>{{ product.name }}</td><td>{{ product.get_category_display }}</td><td>{{ product.get_unit_display }}</td><td>{{ product.package|default:'—' }}</td><td>{% if can_finance %}<a class="btn btn-outline-primary btn-sm" href="{% url 'vet_inventory:product-edit' product.pk %}" aria-label="Изменить: {{ product.name }}">Изменить</a>{% else %}-{% endif %}</td></tr>{% endfor %}</tbody></table></div>
-{% if can_finance %}<div class="card mt-4"><div class="card-header"><h2 class="h5 mb-0">Добавить препарат или материал</h2></div><form class="card-body" method="post">{% csrf_token %}
-<label class="form-label w-100">Название<input class="form-control" name="name" value="{{ form.name }}" maxlength="120" required></label>
-<div class="row"><label class="form-label col-md-4">Категория<select class="form-select" name="category">{% for value,label in categories %}<option value="{{ value }}"{% if form.category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-<label class="form-label col-md-3">Единица измерения<select class="form-select" name="unit">{% for value,label in units %}<option value="{{ value }}"{% if form.unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-<label class="form-label col-md-5">Упаковка (если нужна)<input class="form-control" name="package" value="{{ form.package }}" maxlength="40" placeholder="Флакон, коробка, ампула…"></label></div>
-<p class="text-muted small">Единица фиксируется при создании, чтобы сохранить корректную историю движения. Выберите единицу содержимого (мл, г, шт., дозы) и название упаковки. Например: 100 мл и 1 флакон.</p>
+{% if can_finance %}<div class="card mb-4" id="new-vet-product"><div class="card-header"><h5 class="card-title mb-0">Добавить препарат или материал</h5></div><form class="card-body" method="post">{% csrf_token %}
+{% include 'vet_inventory/product_fields.html' %}
 <button class="btn btn-primary" type="submit">Добавить номенклатуру</button>
 </form></div>{% endif %}
+
+<div class="row"><div class="col-12"><div class="card">
+    <div class="card-header"><h5 class="card-title mb-0">Список препаратов и материалов</h5></div>
+    <div class="card-body">
+        {% if can_finance %}<p class="text-muted">Чтобы изменить карточку препарата, нажмите «Редактировать» в нужной строке. Ранее оформленные документы сохранятся.</p>{% endif %}
+        <div class="table-responsive"><table class="table table-striped table-hover">
+            <thead class="table-light"><tr><th>№</th><th>Название</th><th>Категория</th><th>Единица измерения</th><th>Действия</th></tr></thead>
+            <tbody>{% for group in product_groups %}
+            {% if group.products|length > 1 %}<tr class="vet-catalog-group"><th colspan="5">{{ group.name }}</th></tr>{% endif %}
+            {% for product in group.products %}<tr{% if group.products|length > 1 %} class="vet-catalog-variant"{% endif %}>
+                <td>{{ product.catalog_number }}</td><td>{{ product.name }}</td><td>{{ product.get_category_display }}</td><td>{{ product.get_unit_display }}</td>
+                <td>{% if can_finance %}<div class="btn-group btn-group-sm" role="group" aria-label="Действия с препаратом {{ product.name }}"><a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-product-edit' product.pk %}" aria-label="Редактировать: {{ product.name }}">Редактировать</a></div>{% else %}—{% endif %}</td>
+            </tr>{% endfor %}{% empty %}<tr><td colspan="5" class="text-center">Препараты и материалы пока не добавлены</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% include 'vet_inventory/technical_pagination.html' %}
+    </div>
+</div></div></div>
 {% endblock %}

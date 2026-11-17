@@ -12,20 +12,27 @@
         const noData = document.getElementById('no-data');
         const errorBox = document.getElementById('weight-error');
         const total = document.getElementById('total-count');
-        const dateFrom = form.elements.weight_date_from;
-        const dateTo = form.elements.weight_date_to;
-        const weightMin = form.elements.weight_min;
-        const weightMax = form.elements.weight_max;
+        const isGain = root.dataset.mode === 'gain';
+        const ranges = isGain ? [
+            ['last_weight_date_from', 'last_weight_date_to', 'date'],
+            ['previous_weight_date_from', 'previous_weight_date_to', 'date'],
+            ['daily_gain_min', 'daily_gain_max', 'gain'],
+        ] : [['weight_date_from', 'weight_date_to', 'date'], ['weight_min', 'weight_max', 'weight']];
         let appliedFilters = new URLSearchParams();
         let requestId = 0;
         let controller = null;
 
         function readFilters() {
-            dateTo.setCustomValidity(dateFrom.value && dateTo.value && dateFrom.value > dateTo.value
-                ? 'Дата «по» не может быть раньше даты «с».' : '');
-            weightMax.setCustomValidity(weightMin.value && weightMax.value
-                && Number(weightMin.value) > Number(weightMax.value)
-                ? 'Вес «до» не может быть меньше веса «от».' : '');
+            for (const [fromKey, toKey, kind] of ranges) {
+                const from = form.elements[fromKey];
+                const to = form.elements[toKey];
+                const invalid = from.value !== '' && to.value !== '' && (kind === 'date'
+                    ? from.value > to.value : Number(from.value) > Number(to.value));
+                const message = kind === 'date' ? 'Дата «по» не может быть раньше даты «с».'
+                    : kind === 'gain' ? 'Привес «до» не может быть меньше привеса «от».'
+                    : 'Вес «до» не может быть меньше веса «от».';
+                to.setCustomValidity(invalid ? message : '');
+            }
             if (!form.reportValidity()) return null;
             const params = new URLSearchParams();
             for (const [key, value] of new FormData(form)) {
@@ -50,9 +57,13 @@
                 }
                 row.appendChild(tag);
                 // Date-only values must not shift with the browser's time zone.
-                const date = record.weight_date.split('-').reverse().join('.');
-                const weight = Number(record.weight).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
-                for (const value of [record.animal_type, record.rshn_tag || '-', date, weight]) {
+                const date = value => value.split('-').reverse().join('.');
+                const number = value => Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+                const values = isGain ? [record.type_display, date(record.previous_weight_date), number(record.previous_weight),
+                    date(record.last_weight_date), number(record.last_weight), number(record.daily_gain),
+                    String(record.days_between), number(record.gain)]
+                    : [record.animal_type, record.rshn_tag || '-', date(record.weight_date), number(record.weight)];
+                for (const value of values) {
                     const cell = document.createElement('td');
                     cell.textContent = value;
                     row.appendChild(cell);
@@ -95,7 +106,7 @@
             if (typeof data === 'string') return data;
             if (Array.isArray(data)) return data.map(errorMessage).join(' ');
             if (data && typeof data === 'object') return Object.values(data).map(errorMessage).join(' ');
-            return 'Не удалось загрузить взвешивания.';
+            return isGain ? 'Не удалось загрузить данные о привесе.' : 'Не удалось загрузить взвешивания.';
         }
 
         async function loadPage(page = 1) {
@@ -118,7 +129,8 @@
                     headers: { Accept: 'application/json' },
                 });
                 if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
-                    let message = 'Не удалось загрузить взвешивания. Обновите страницу и повторите попытку.';
+                    let message = isGain ? 'Не удалось загрузить данные о привесе. Обновите страницу и повторите попытку.'
+                        : 'Не удалось загрузить взвешивания. Обновите страницу и повторите попытку.';
                     if ((response.headers.get('content-type') || '').includes('application/json')) {
                         message = errorMessage(await response.json());
                     }
@@ -150,13 +162,12 @@
                 loadPage();
             }
         });
-        form.addEventListener('input', () => {
-            dateTo.setCustomValidity('');
-            weightMax.setCustomValidity('');
-        });
+        function clearRangeValidity() {
+            for (const [, toKey] of ranges) form.elements[toKey].setCustomValidity('');
+        }
+        form.addEventListener('input', clearRangeValidity);
         form.addEventListener('reset', () => {
-            dateTo.setCustomValidity('');
-            weightMax.setCustomValidity('');
+            clearRangeValidity();
             appliedFilters = new URLSearchParams();
             loadPage();
         });

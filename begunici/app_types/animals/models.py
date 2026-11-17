@@ -4,9 +4,10 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator, MaxValueValidator
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
-from .age_utils import as_local_date, calculate_age_months, format_age, get_age_delta
+from .age_utils import as_local_date, calculate_age_months, format_age, get_age_delta, animal_age_reference_date
 from .dorper import DorperCalculator, animal_dorper_record, recalculate_dorper_values
 from .models_user_log import UserActionLog
 from begunici.app_types.veterinary.vet_models import (
@@ -152,6 +153,12 @@ class AnimalBase(models.Model):
         blank=True,
         help_text="Процент дорперности (0-100%)"
     )
+    improving_breed_percentage = models.DecimalField(
+        max_digits=8, decimal_places=5, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name="Кровность по улучшающей породе (%)",
+        help_text="Независимое ручное значение от 0 до 100%",
+    )
     is_manual_dorper = models.BooleanField(
         default=False,
         verbose_name="Дорперность задана вручную",
@@ -245,7 +252,12 @@ class AnimalBase(models.Model):
         return self.tag.note_history.all()
 
     def get_age_months(self, reference_date=None):
-        return calculate_age_months(self.birth_date, reference_date)
+        reference_date = animal_age_reference_date(self, reference_date)
+        return calculate_age_months(self.birth_date, reference_date) if reference_date is not None else None
+
+    def refresh_from_db(self, *args, **kwargs):
+        self.__dict__.pop("_archive_age_date", None)
+        return super().refresh_from_db(*args, **kwargs)
 
     def get_assignment_display(self, empty="-"):
         labels = []
@@ -261,7 +273,8 @@ class AnimalBase(models.Model):
         """
         Возвращает возраст в формате 'X мес. (Y сут)'
         """
-        return format_age(self.birth_date, reference_date)
+        reference_date = animal_age_reference_date(self, reference_date)
+        return format_age(self.birth_date, reference_date) if reference_date is not None else None
 
     def get_animal_type(self):
         """
@@ -415,6 +428,7 @@ class AnimalBase(models.Model):
         3. Создание записей о перемещении (`PlaceMovement`).
         4. Создание записей об изменении статуса (`StatusHistory`).
         """
+        self.__dict__.pop("_archive_age_date", None)
         print(f"Сохранение животного {self.tag.tag_number if self.tag else 'без бирки'}")
         is_new = self.pk is None  # Проверяем, создаётся ли новый объект
         old_place = None
@@ -771,6 +785,11 @@ class Maker(AnimalBase):
     class Meta:
         verbose_name = "Производитель"
         verbose_name_plural = "Производители"
+        constraints = [models.CheckConstraint(
+            check=Q(improving_breed_percentage__gte=0, improving_breed_percentage__lte=100)
+                  | Q(improving_breed_percentage__isnull=True),
+            name="maker_improving_breed_pct_valid",
+        )]
 
     def __str__(self):
         if self.name:
@@ -1529,6 +1548,11 @@ class Ram(AnimalBase):
     class Meta:
         verbose_name = "Баран"
         verbose_name_plural = "Бараны"
+        constraints = [models.CheckConstraint(
+            check=Q(improving_breed_percentage__gte=0, improving_breed_percentage__lte=100)
+                  | Q(improving_breed_percentage__isnull=True),
+            name="ram_improving_breed_pct_valid",
+        )]
 
     def get_animal_type(self):
         return "Ram"
@@ -1579,6 +1603,7 @@ class Ram(AnimalBase):
                 rshn_tag=self.rshn_tag,
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
+                improving_breed_percentage=self.improving_breed_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
@@ -1618,6 +1643,11 @@ class Ewe(AnimalBase):
     class Meta:
         verbose_name = "Ярка"
         verbose_name_plural = "Ярки"
+        constraints = [models.CheckConstraint(
+            check=Q(improving_breed_percentage__gte=0, improving_breed_percentage__lte=100)
+                  | Q(improving_breed_percentage__isnull=True),
+            name="ewe_improving_breed_pct_valid",
+        )]
 
     def __str__(self):
         return f"Ярка {self.tag.tag_number}"
@@ -1650,6 +1680,7 @@ class Ewe(AnimalBase):
                 rshn_tag=self.rshn_tag,
                 date_otbivka=self.date_otbivka,
                 dorper_percentage=self.dorper_percentage,
+                improving_breed_percentage=self.improving_breed_percentage,
                 is_manual_dorper=self.is_manual_dorper,
                 dorper_uses_default=self.dorper_uses_default,
                 is_reject=self.is_reject,
@@ -1697,6 +1728,11 @@ class Sheep(AnimalBase):
     class Meta:
         verbose_name = "Овца"
         verbose_name_plural = "Овцы"
+        constraints = [models.CheckConstraint(
+            check=Q(improving_breed_percentage__gte=0, improving_breed_percentage__lte=100)
+                  | Q(improving_breed_percentage__isnull=True),
+            name="sheep_improving_breed_pct_valid",
+        )]
 
     def __str__(self):
         return f"Овца {self.tag.tag_number}"

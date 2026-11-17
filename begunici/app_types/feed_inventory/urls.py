@@ -29,5 +29,4 @@ urlpatterns = [
     path("products/<int:pk>/edit/", views.product_edit, name="product-edit"),
     path("norms/", views.norms, name="norms"),
     path("plan.xlsx", views.export, name="export"),
-    path("history/", views.history, name="history"),
 ]

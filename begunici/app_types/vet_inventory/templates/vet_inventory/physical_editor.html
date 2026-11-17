@@ -1,0 +1,29 @@
+<div data-vet-physical{% if single_expense %} data-vet-estimate="{% url 'vet_inventory:treatment-estimate' entry.pk %}" data-initial-calculate="{% if entry.state == 'pending' %}yes{% else %}no{% endif %}"{% endif %}>
+{{ physical_groups|json_script:'vet-physical-groups' }}
+{% if single_expense %}
+{% for row in physical_rows %}
+<div class="row g-3 vet-physical-single" data-vet-physical-row>
+    <div class="col-12 col-lg-4"><label class="form-label" for="vet-physical-group">Общее название</label><select id="vet-physical-group" class="form-select" name="physical_group" aria-label="Общее название препарата" required><option value="">Выберите препарат</option>{% for group in physical_groups %}<option value="{{ group.id }}"{% if row.group == group.id %} selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></div>
+    <div class="col-12 col-lg-5">
+        <label class="form-label" for="vet-physical-product">Препарат</label><select id="vet-physical-product" class="form-select" name="product" data-vet-physical-product aria-label="Конкретный препарат" required><option value="">Выберите препарат</option>{% for group in physical_groups %}{% if row.group == group.id %}{% for variant in group.variants %}<option value="{{ variant.id }}"{% if row.product == variant.id %} selected{% endif %}>{{ variant.name }} · {{ variant.available }} {{ variant.unit }}</option>{% endfor %}{% endif %}{% endfor %}</select>
+        <div class="mt-3" data-vet-weight-field{% if not weight_required %} hidden{% endif %}>
+            <label class="form-label" for="vet-physical-weight">Вес для расчёта расхода, кг</label><input id="vet-physical-weight" class="form-control" type="number" name="weight" value="{{ form.weight }}" min="0.001" max="999999999.999" step="0.001" data-vet-expense-weight aria-describedby="vet-physical-weight-help"{% if not weight_required %} disabled{% endif %}>
+            <small class="text-muted mt-2" id="vet-physical-weight-help">Не добавляется в историю взвешиваний</small>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-3"><label class="form-label" for="vet-physical-quantity">Количество</label><div class="input-group vet-physical-quantity"><input id="vet-physical-quantity" class="form-control" type="number" name="quantity" data-vet-physical-quantity value="{{ row.amount }}" min="0" max="999999999.999" step="0.001" aria-label="Количество препарата"><span class="input-group-text" data-vet-physical-unit>—</span></div><small class="text-muted" data-vet-physical-help></small></div>
+</div>
+{% endfor %}
+{% else %}
+<div class="table-responsive"><table class="table table-striped align-middle"><thead class="table-light"><tr><th>Общее название</th><th>Препарат</th><th>Количество</th>{% if not single_expense %}<th></th>{% endif %}</tr></thead><tbody>
+{% for row in physical_rows %}<tr data-vet-physical-row>
+<td><select class="form-select" name="physical_group" aria-label="Общее название препарата" required><option value="">Выберите препарат</option>{% for group in physical_groups %}<option value="{{ group.id }}"{% if row.group == group.id %} selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></td>
+<td><select class="form-select" name="{% if single_expense %}product{% else %}line_product{% endif %}" data-vet-physical-product aria-label="Конкретный препарат" required><option value="">Выберите препарат</option>{% for group in physical_groups %}{% if row.group == group.id %}{% for variant in group.variants %}<option value="{{ variant.id }}"{% if row.product == variant.id %} selected{% endif %}>{{ variant.name }} · {{ variant.available }} {{ variant.unit }}</option>{% endfor %}{% endif %}{% endfor %}</select></td>
+<td><div class="input-group"><input class="form-control" type="number" name="{% if single_expense %}quantity{% else %}line_amount{% endif %}" data-vet-physical-quantity value="{{ row.amount }}" min="0" max="999999999.999" step="0.001" aria-label="Количество препарата"{% if not single_expense %} required{% endif %}><span class="input-group-text" data-vet-physical-unit>—</span></div><small class="text-muted" data-vet-physical-help></small>{% if not single_expense %}<input type="hidden" name="line_packages" value="0"><input type="hidden" name="line_size" value="">{% endif %}</td>
+{% if not single_expense %}<td><button type="button" class="btn btn-outline-danger btn-sm" data-vet-remove-physical>Убрать</button></td>{% endif %}
+</tr>{% endfor %}</tbody></table></div>
+{% endif %}
+{% if single_expense %}
+<p class="text-muted small mt-2" role="status" data-vet-calculation-status></p>
+{% else %}<button type="button" class="btn btn-outline-secondary mb-3" data-vet-add-physical>Добавить препарат</button>{% endif %}
+</div>

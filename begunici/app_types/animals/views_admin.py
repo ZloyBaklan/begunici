@@ -68,7 +68,10 @@ def _hide_technical_and_duplicate_logs(logs):
         | metadata_path("path__regex", r"^/animals/lambing/[0-9]+/(complete|complete-with-children|complete-early-failure)/$")
         | metadata_path("path__regex", r"^/animals/api/tags/")
     )
-    return logs.exclude(hidden_readonly_logs | raw_request_noise | successful_middleware_duplicates)
+    stock_notification_noise = Q(
+        object_type="Склад ветпрепаратов", action_type="Расход требует сверки",
+    )
+    return logs.exclude(hidden_readonly_logs | raw_request_noise | successful_middleware_duplicates | stock_notification_noise)
 
 
 def _find_animal_link_by_tag(tag):

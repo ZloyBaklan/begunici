@@ -8,11 +8,94 @@
 .vet-quantity-input .input-group-text { min-width:44px; justify-content:center; background:#eaf0f5; font-weight:600; }
 .vet-quantity-input input { min-width:80px; }
 .vet-line-editor th:first-child { width:37%; }
+.vet-line-editor input:not([type=hidden]) { min-width:95px; }
+.vet-line-editor .input-group { flex-wrap:nowrap; min-width:165px; }
+.vet-conditions input { min-width:100px; }
+.vet-line-editor th:first-child { min-width:220px; width:30%; }
 .vet-stock [hidden] { display:none !important; }
 .vet-stock summary { cursor:pointer; }
 .vet-stock .vet-hash { overflow-wrap:anywhere; }
 .vet-number { font-size:1.2rem; color:#244b71; }
 .vet-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem; background:#edf5ff; border:1px solid #cbdff2; border-radius:6px; padding:1rem; }
+.vet-stock .vet-group-heading th { background:#f0f2f4; --bs-table-accent-bg:transparent; vertical-align:middle; }
+.vet-group-editor td { vertical-align:top; min-width:210px; }
+.vet-group-editor td:last-child { min-width:70px; }
+.vet-group-editor td:nth-child(3) { min-width:190px; }
+.vet-group-editor .input-group { flex-wrap:nowrap; }
 .vet-summary strong { display:block; color:#244b71; font-size:1.15rem; }
 .vet-stock .vet-search { width:300px; max-width:100%; }
 @media(max-width:600px) { .vet-stock h1 { font-size:1.6rem; } .vet-actions .btn { white-space:normal; } }
+
+.vet-stock-home { margin-bottom:3rem; }
+.vet-stock-home .iv-card-vet { background:#eef8ef; border-color:#c4dfca; }
+.vet-stock-home .iv-card-vet .card-header { background:#daeddd; }
+.vet-stock-home .table th { vertical-align:middle; font-weight:600; }
+.vet-stock-home .table td { font-variant-numeric:tabular-nums; }
+.vet-stock-home .vet-stock-table { min-width:860px; margin-bottom:0; }
+.vet-stock-home .vet-stock-name { width:29%; overflow-wrap:anywhere; }
+.vet-stock-home .vet-stock-variant { padding-left:1.5rem; }
+.vet-stock-home .vet-group-heading > th,
+.vet-stock-home .vet-group-heading > td { background:#edf0f3; --bs-table-accent-bg:transparent; border-top:2px solid #d8dee4; }
+.vet-stock-home .vet-group-heading > td { font-weight:400; }
+.vet-stock-home .vet-stock-documents { min-width:700px; }
+.vet-treatment-pages { margin-bottom:3rem; }
+.vet-treatment-pages .iv-card-vet { background:#eef8ef; border-color:#c4dfca; }
+.vet-treatment-pages .iv-card-vet .card-header { background:#daeddd; }
+.vet-treatment-pages .row > *,
+.vet-treatment-pages .card,
+.vet-treatment-pages .list-group-item { min-width:0; }
+.vet-treatment-pages .table th { vertical-align:middle; font-weight:600; }
+.vet-treatment-pages .table td,
+.vet-treatment-pages .vet-treatment-facts dd,
+.vet-treatment-pages .list-group-item { overflow-wrap:anywhere; }
+.vet-treatment-pages .vet-treatment-table { min-width:850px; margin-bottom:0; }
+.vet-treatment-pages .vet-treatment-table th:first-child { width:16%; }
+.vet-treatment-pages .vet-treatment-table th:nth-child(2) { width:26%; }
+.vet-treatment-pages .vet-treatment-table th:nth-child(3) { width:27%; }
+.vet-treatment-pages .vet-treatment-table .badge { white-space:normal; text-align:left; }
+.vet-treatment-pages .vet-treatment-table .btn { white-space:nowrap; }
+.vet-treatment-pages .vet-stock-documents { min-width:640px; margin-bottom:0; }
+.vet-treatment-pages .vet-empty-table { min-width:0; }
+.vet-treatment-pages .vet-physical-single .form-select { min-width:0; }
+.vet-treatment-pages .vet-physical-quantity { flex-wrap:nowrap; }
+.vet-treatment-pages .vet-physical-quantity .form-control { min-width:0; }
+.vet-treatment-pages .vet-physical-quantity .input-group-text { min-width:44px; justify-content:center; }
+.vet-treatment-pages [data-vet-calculation-status]:empty { display:none; }
+.vet-treatment-pages .vet-treatment-exclusion > summary { color:inherit; }
+@media(max-width:575.98px) {
+    .vet-treatment-pages button[type=submit] { max-width:100%; white-space:normal; }
+}
+@media(max-width:575.98px) {
+    .vet-stock-home .vet-stock-controls { width:100%; }
+    .vet-stock-home .vet-stock-controls .btn { flex:1 1 auto; white-space:normal; }
+}
+
+.vet-technical .table th { border-top:none; font-weight:600; }
+.vet-technical .table td { vertical-align:middle; }
+.vet-technical .vet-catalog-group th { background:#edf0f3; --bs-table-accent-bg:transparent; border-top:2px solid #d8dee4; padding:.65rem .75rem; }
+.vet-technical .vet-catalog-variant td:nth-child(2) { padding-left:1.75rem; border-left:3px solid #d8dee4; }
+.vet-technical .table td.vet-missing-norm { background-color:#fff7d6; --bs-table-accent-bg:transparent; }
+.vet-technical .btn-group-sm .btn { padding:.25rem .5rem; font-size:.875rem; }
+.vet-technical label small { display:block; color:#6c757d; margin-top:.3rem; }
+.vet-technical [hidden] { display:none !important; }
+.vet-document-pages { margin-bottom:3rem; }
+.vet-document-pages .iv-card-vet { background:#eef8ef; border-color:#c4dfca; }
+.vet-document-pages .iv-card-vet .card-header { background:#daeddd; }
+.vet-document-pages .row > *,
+.vet-document-pages .card { min-width:0; }
+.vet-document-pages .vet-document-facts dd,
+.vet-document-pages .vet-document-note,
+.vet-document-pages .table td { overflow-wrap:anywhere; }
+.vet-document-pages .table th { vertical-align:middle; font-weight:600; }
+.vet-document-pages .vet-document-table { min-width:560px; margin-bottom:0; }
+.vet-document-pages summary.card-header { color:inherit; }
+.vet-document-pages .vet-physical-single .form-select,
+.vet-document-pages .vet-physical-quantity .form-control { min-width:0; }
+.vet-document-pages .vet-physical-quantity { flex-wrap:nowrap; }
+@media(max-width:575.98px) {
+    .vet-document-pages .btn { max-width:100%; white-space:normal; }
+}
+@media(max-width:767.98px) {
+    .vet-technical .table-responsive { font-size:.875rem; }
+    .vet-technical .btn-group-sm .btn { padding:.2rem .4rem; font-size:.75rem; }
+}

@@ -1,0 +1,7 @@
+{% load static vet_inventory_tags %}
+<link rel="stylesheet" href="{% static 'clinical/navigation.css' %}">
+{% vet_inventory_access as norms_allowed %}
+<div class="clinical-navigation lambing-management-selector barns-selector mb-4"><nav class="barns-list lambing-management-buttons" aria-label="Настройки ветобработок">
+    <a class="barn-selector-card lambing-management-card{% if active == 'cares' %} active{% endif %}" href="{% url 'veterinary:veterinary_cares' %}"{% if active == 'cares' %} aria-current="page"{% endif %}>Ветеринарный уход</a>
+    {% if norms_allowed %}<a class="barn-selector-card lambing-management-card{% if active == 'norms' %} active{% endif %}" href="{% url 'veterinary:veterinary_cares' %}?tab=norms"{% if active == 'norms' %} aria-current="page"{% endif %}>Нормы расхода</a>{% endif %}
+</nav></div>

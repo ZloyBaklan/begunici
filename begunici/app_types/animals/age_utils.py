@@ -20,6 +20,33 @@ def as_local_date(value):
     return None
 
 
+def archive_age_dates(tag_ids):
+    from .livestock_movement_acts import get_latest_archive_events
+    return {tag_id: archived_date for tag_id, _status, archived_date in get_latest_archive_events(tag_ids)}
+
+
+def preload_archive_age_dates(animals):
+    animals = list(animals)
+    archived = [animal for animal in animals if getattr(animal, "is_archived", False)]
+    dates = archive_age_dates({animal.tag_id for animal in archived if animal.tag_id})
+    for animal in archived:
+        animal._archive_age_date = dates.get(animal.tag_id)
+    return animals
+
+
+def animal_age_reference_date(animal, reference_date=None):
+    # Explicit historical dates keep their original meaning in event reports.
+    if reference_date is not None:
+        return as_local_date(reference_date)
+    if not animal.is_archived:
+        return timezone.localdate()
+    if hasattr(animal, "_archive_age_date"):
+        return animal._archive_age_date
+    if not animal.tag_id:
+        return None
+    return archive_age_dates([animal.tag_id]).get(animal.tag_id)
+
+
 def get_age_delta(birth_date, reference_date=None):
     birth_date = as_local_date(birth_date)
     reference_date = timezone.localdate() if reference_date is None else as_local_date(reference_date)

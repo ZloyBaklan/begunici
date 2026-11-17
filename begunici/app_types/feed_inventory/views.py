@@ -15,7 +15,7 @@ from io import BytesIO
 
 from begunici.app_types.inventory.permissions import access_required, can_manage_inventory
 from . import services
-from .models import FeedAudit, FeedDocument, FeedMovement, FeedOrder, FeedProduct, FeedVersion
+from .models import FeedDocument, FeedMovement, FeedOrder, FeedProduct, FeedVersion
 from .plan import build_plan, feed_plan_response
 
 
@@ -265,11 +265,3 @@ def norms(request):
 def export(request):
     period = "yearly" if request.GET.get("period") == "yearly" else "monthly"
     return feed_plan_response(period=period)
-
-
-@require_GET
-@access_required()
-def history(request):
-    from django.core.paginator import Paginator
-    events = FeedAudit.objects.select_related("created_by").order_by("-pk")
-    return page(request, "history", events=Paginator(events, 50).get_page(request.GET.get("page")))

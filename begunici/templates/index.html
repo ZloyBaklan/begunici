@@ -62,7 +62,7 @@
         {% endif %}
 
         {% if user_permissions.can_view_plans %}
-        <div class="plan-parameters-card" id="plan-parameters-card">
+        <div class="plan-parameters-card" id="plan-parameters-card" data-plan-year="{% now 'Y' %}">
             <div class="plan-parameters-header">
                 <div>
                     <h4>Плановые параметры</h4>
@@ -70,7 +70,7 @@
                 </div>
                 <div class="plan-parameters-actions">
                     <select id="plan-month-select" class="form-select form-select-sm" aria-label="Месяц плановых параметров" onchange="changePlanMonth()" style="display: none; width: auto;">
-                        <option value="">Все месяцы</option>
+                        <option value="">За год</option>
                         <option value="1">Январь</option>
                         <option value="2">Февраль</option>
                         <option value="3">Март</option>
@@ -242,7 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (document.getElementById('plan-parameters-card')) {
-        await loadPlanParameters(new Date().getFullYear());
+        await loadPlanParameters(planParametersYear);
     }
     
     // Проверяем нужность автобэкапа
@@ -279,7 +279,7 @@ function getSelectedStatisticsMonth() {
 
 let planParameters = [];
 let planEditing = false;
-let planParametersYear = new Date().getFullYear();
+let planParametersYear = Number(document.getElementById('plan-parameters-card')?.dataset.planYear) || new Date().getFullYear();
 let planRequestSequence = 0;
 let yearlyStatisticsLoaded = false;
 const statisticsCurrentYear = new Date().getFullYear();

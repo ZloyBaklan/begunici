@@ -23,6 +23,7 @@ const API_ERROR_FIELD_LABELS = {
     condition_index: 'Индекс упитанности',
     dead_lambs_count: 'Мертвые ягнята',
     dorper_percentage: 'Кровность по основной породе',
+    improving_breed_percentage: 'Кровность по улучшающей породе',
     father: 'Отец',
     measurement_date: 'Дата измерения',
     mother: 'Мать',
@@ -459,6 +460,7 @@ async function loadAnimalDetails(animalType, tagNumber) {
         }
 
         renderDorperPercentage(animal);
+        renderImprovingBreedPercentage(animal);
 
         const rejectField = document.getElementById('is_reject');
         if (rejectField) {
@@ -987,6 +989,34 @@ function renderDorperPercentage(animal) {
     if (display) {
         display.textContent = animal?.dorper_display || '-';
         display.title = animal?.dorper_calculation_note || '';
+    }
+}
+
+function renderImprovingBreedPercentage(animal) {
+    const input = document.getElementById('improving_breed_percentage');
+    if (input) input.value = animal?.improving_breed_percentage ?? '';
+    const display = document.getElementById('improving-breed-display');
+    if (display) display.textContent = animal?.improving_breed_display || '-';
+}
+
+async function saveImprovingBreedPercentage() {
+    const detail = document.getElementById('animal-detail');
+    const input = document.getElementById('improving_breed_percentage');
+    const rawValue = input.value.trim();
+    const value = rawValue === '' ? null : Number(rawValue);
+    if (!input.checkValidity() || (rawValue !== '' && (!Number.isFinite(value) || value < 0 || value > 100))) {
+        alert('Кровность по улучшающей породе должна быть числом от 0 до 100.');
+        return;
+    }
+    try {
+        const updatedAnimal = await apiRequest(
+            `/animals/${detail.dataset.animalType}/${encodeURIComponent(detail.dataset.tagNumber)}/`,
+            'PATCH', {improving_breed_percentage: value});
+        renderImprovingBreedPercentage(updatedAnimal);
+        alert('Кровность по улучшающей породе сохранена');
+    } catch (error) {
+        console.error('Ошибка сохранения кровности по улучшающей породе:', error);
+        alert('Ошибка при сохранении кровности: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 

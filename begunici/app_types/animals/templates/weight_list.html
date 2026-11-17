@@ -1,17 +1,30 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Список взвешиваний{% endblock %}
+{% block title %}{% if is_gain %}Среднесуточный привес{% else %}Список взвешиваний{% endif %}{% endblock %}
 
 {% block content %}
 <div class="container-fluid" id="weight-list-page"
+     data-mode="{% if is_gain %}gain{% else %}weight{% endif %}"
+     {% if is_gain %}
+     data-api-url="{% url 'animals:daily-gain-api' %}"
+     data-export-url="{% url 'animals:daily-gain-export-excel' %}"
+     {% else %}
      data-api-url="{% url 'animals:weight-list-api' %}"
      data-export-url="{% url 'animals:weight-list-export-excel' %}"
      data-import-preview-url="{% url 'animals:import-preview' 'weight' %}"
-     data-import-confirm-url="{% url 'animals:import-confirm' 'weight' %}">
+     data-import-confirm-url="{% url 'animals:import-confirm' 'weight' %}"
+     {% endif %}>
     <div class="row mb-4">
         <div class="col-12">
-            <h1 class="mb-3">Список взвешиваний</h1>
+            <h1 class="mb-3">{% if is_gain %}Среднесуточный привес{% else %}Список взвешиваний{% endif %}</h1>
+            <link rel="stylesheet" href="{% static 'clinical/navigation.css' %}">
+            <div class="clinical-navigation lambing-management-selector barns-selector mb-4">
+                <nav class="barns-list lambing-management-buttons" aria-label="Разделы взвешиваний">
+                    <a class="barn-selector-card lambing-management-card {% if not is_gain %}active{% endif %}" href="{% url 'animals:weight-list' %}"{% if not is_gain %} aria-current="page"{% endif %}>Список взвешиваний</a>
+                    <a class="barn-selector-card lambing-management-card {% if is_gain %}active{% endif %}" href="{% url 'animals:weight-list' %}?tab=gain"{% if is_gain %} aria-current="page"{% endif %}>Среднесуточный привес</a>
+                </nav>
+            </div>
         </div>
     </div>
     <div class="row">
@@ -27,6 +40,32 @@
                             <input type="text" id="tag-search" name="tag_search" class="form-control"
                                    placeholder="Поиск по бирке или бирке РСХН">
                         </div>
+                        {% if is_gain %}
+                        <div class="mb-3">
+                            <label for="last-date-from" class="form-label">Последнее взвешивание с:</label>
+                            <input type="date" id="last-date-from" name="last_weight_date_from" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="last-date-to" class="form-label">Последнее взвешивание по:</label>
+                            <input type="date" id="last-date-to" name="last_weight_date_to" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="previous-date-from" class="form-label">Предпоследнее взвешивание с:</label>
+                            <input type="date" id="previous-date-from" name="previous_weight_date_from" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="previous-date-to" class="form-label">Предпоследнее взвешивание по:</label>
+                            <input type="date" id="previous-date-to" name="previous_weight_date_to" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="daily-gain-min" class="form-label">Среднесуточный привес от, г:</label>
+                            <input type="number" id="daily-gain-min" name="daily_gain_min" class="form-control" min="-999990" max="999990" step="0.01" inputmode="decimal">
+                        </div>
+                        <div class="mb-3">
+                            <label for="daily-gain-max" class="form-label">Среднесуточный привес до, г:</label>
+                            <input type="number" id="daily-gain-max" name="daily_gain_max" class="form-control" min="-999990" max="999990" step="0.01" inputmode="decimal">
+                        </div>
+                        {% else %}
                         <div class="mb-3">
                             <label for="weight-date-from" class="form-label">Дата взвешивания с:</label>
                             <input type="date" id="weight-date-from" name="weight_date_from" class="form-control">
@@ -45,6 +84,7 @@
                             <input type="number" id="weight-max" name="weight_max" class="form-control"
                                    min="0" max="999.99" step="0.01" inputmode="decimal">
                         </div>
+                        {% endif %}
                         <div class="d-grid gap-2">
                             <button type="submit" class="btn btn-primary">Поиск</button>
                             <button type="reset" class="btn btn-outline-secondary">Сбросить</button>
@@ -52,7 +92,7 @@
                     </form>
                 </div>
             </div>
-            <div class="card mt-3">
+            {% if not is_gain %}<div class="card mt-3">
                 <div class="card-header">
                     <h5 class="card-title mb-0">Импорт</h5>
                 </div>
@@ -70,15 +110,15 @@
                     </div>
                     <div id="weight-import-result" class="mt-3" role="status" aria-live="polite" style="display: none;"></div>
                 </div>
-            </div>
+            </div>{% endif %}
         </div>
         <div class="col-lg-9 mobile-list-column">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <h5 class="card-title mb-0">Взвешивания</h5>
+                    <h5 class="card-title mb-0">{% if is_gain %}Среднесуточный привес{% else %}Взвешивания{% endif %}</h5>
                     <div class="d-flex align-items-center flex-wrap gap-2">
                         <button type="button" class="btn btn-success btn-sm" id="weight-export">Экспорт</button>
-                        <div class="text-muted">Всего записей: <span id="total-count">0</span></div>
+                        <div class="text-muted">{% if is_gain %}Всего животных{% else %}Всего записей{% endif %}: <span id="total-count">0</span></div>
                     </div>
                 </div>
                 <div class="card-body" id="weight-results" aria-live="polite">
@@ -88,10 +128,21 @@
                             <thead class="table-light">
                                 <tr>
                                     <th scope="col">Бирка</th>
+                                    {% if is_gain %}
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Дата предпоследнего взвешивания</th>
+                                    <th scope="col">Предпоследний вес, кг</th>
+                                    <th scope="col">Дата последнего взвешивания</th>
+                                    <th scope="col">Последний вес, кг</th>
+                                    <th scope="col">Среднесуточный привес, г</th>
+                                    <th scope="col">Дней между взвешиваниями</th>
+                                    <th scope="col">Привес, кг</th>
+                                    {% else %}
                                     <th scope="col">Тип</th>
                                     <th scope="col">Бирка РСХН</th>
                                     <th scope="col">Дата взвешивания</th>
                                     <th scope="col">Вес, кг</th>
+                                    {% endif %}
                                 </tr>
                             </thead>
                             <tbody id="weight-list"></tbody>
@@ -108,5 +159,5 @@
         </div>
     </div>
 </div>
-<script src="{% static 'js/weight_list.js' %}?v=20261026-import"></script>
+<script src="{% static 'js/weight_list.js' %}?v=20261113-daily-gain-type"></script>
 {% endblock %}

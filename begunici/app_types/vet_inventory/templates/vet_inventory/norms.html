@@ -1,7 +1,33 @@
-{% extends 'vet_inventory/base.html' %}{% load vet_inventory_tags %}{% block vet_content %}
-<h1>Нормы расхода препаратов</h1>
-<p class="text-muted">Свяжите обработку из существующего справочника с препаратом склада. Нормы задаются ветврачом и используются для приблизительного учёта; фактическое количество можно уточнить после обработки.</p>
-<div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Обработка</th><th>Препарат на складе</th><th>Расчёт расхода</th><th>Действия</th></tr></thead><tbody>{% for item in entries %}
-<tr><td><strong>{{ item.care.care_type }} · {{ item.care.care_name }}</strong><small>{{ item.care.medication|default:'Без препарата в справочнике' }}{% if item.care.purpose %} · {{ item.care.purpose }}{% endif %}</small></td>{% if not item.requires_stock %}<td>Не требуется</td><td>Без расхода</td><td>-</td>{% else %}<td>{{ item.rule.product.name|default:'Не связан' }}</td><td>{% if item.rule %}{{ item.rule.get_mode_display }}{% if item.rule.mode != 'bands' %}<strong class="d-block">{{ item.rule.rate|vet_quantity }} {{ item.rule.product.get_unit_display }}</strong>{% else %}<small>Диапазонов: {{ item.rule.bands|length }}</small>{% endif %}{% else %}<span class="badge bg-warning text-dark">Не задана</span>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'vet_inventory:norm-edit' item.care.pk %}">{% if can_treat %}{% if item.rule %}Изменить{% else %}Задать норму{% endif %}{% else %}Посмотреть{% endif %}</a></td>{% endif %}</tr>
-{% empty %}<tr><td colspan="4">Сначала добавьте обработку в существующий справочник ветеринарного ухода.</td></tr>{% endfor %}</tbody></table></div>
-<a class="btn btn-outline-secondary" href="{% url 'veterinary:veterinary_cares' %}">Справочник ветобработок</a>{% endblock %}
+{% extends 'vet_inventory/technical_base.html' %}{% load vet_inventory_tags %}
+{% block vet_heading %}Нормы расхода препаратов{% endblock %}
+{% block vet_content %}
+<div class="row"><div class="col-12"><div class="card">
+    <div class="card-header"><h5 class="card-title mb-0">Список норм расхода</h5></div>
+    <div class="card-body">
+        <div class="table-responsive"><table class="table table-striped table-hover">
+            <thead class="table-light"><tr><th>№</th><th>Обработка</th><th>Препарат на складе</th><th>Расчёт расхода</th><th>Действия</th></tr></thead>
+            <tbody>{% for item in entries %}<tr>
+                <td>{{ forloop.counter0|add:page_obj.start_index }}</td>
+                <td>{{ item.care.care_type }}: {{ item.care.care_name }}<div class="small text-muted">{{ item.care.medication|default:'Без препарата в справочнике' }}{% if item.care.purpose %}: {{ item.care.purpose }}{% endif %}</div></td>
+                {% if not item.requires_stock %}
+                <td>Не требуется</td><td>Без расхода</td><td>—</td>
+                {% else %}
+                <td{% if not item.rule %} class="vet-missing-norm"{% endif %}>{% for entry in item.product_rules %}<div{% if not forloop.last %} class="mb-2"{% endif %}>{{ entry.rule.product.name }}</div>{% empty %}Не связан{% endfor %}</td>
+                <td{% if not item.rule %} class="vet-missing-norm"{% endif %}>{% if item.rule %}
+                    {% for entry in item.product_rules %}<div{% if not forloop.last %} class="mb-2"{% endif %}>{% if entry.direct %}
+                    {{ entry.details|vet_calculation_mode }}
+                    {% if entry.rule.conditions %}<div>Условий: {{ entry.rule.conditions|length }}</div>
+                    {% elif entry.rule.mode == 'bands' %}<div>Диапазонов: {{ entry.rule.bands|length }}</div>
+                    {% else %}<div>{{ entry.rule.rate|vet_quantity }} {{ entry.details.dose_unit_label }}</div>{% endif %}
+                    {% else %}<span class="text-warning">Нужно задать заново</span>{% endif %}</div>{% endfor %}
+                {% else %}Не задана{% endif %}</td>
+                <td><div class="btn-group btn-group-sm" role="group" aria-label="Действия с нормой обработки {{ item.care.care_name }}">
+                    <a class="btn btn-outline-primary" href="{% url 'veterinary:veterinary_care_norm' item.care.pk %}">{% if can_treat %}{% if item.rule %}Редактировать{% else %}Задать норму{% endif %}{% else %}Посмотреть{% endif %}</a>
+                </div></td>
+                {% endif %}
+            </tr>{% empty %}<tr><td colspan="5" class="text-center">Сначала добавьте обработку в существующий справочник ветеринарного ухода.</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% include 'vet_inventory/technical_pagination.html' %}
+    </div>
+</div></div></div>
+{% endblock %}

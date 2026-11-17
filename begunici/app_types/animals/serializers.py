@@ -7,7 +7,7 @@ from django.urls import reverse
 from decimal import Decimal
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
-from .age_utils import as_local_date, format_age
+from .age_utils import as_local_date, format_age, archive_age_dates, animal_age_reference_date, preload_archive_age_dates
 from .utils_permissions import ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals
 from .models import (
     ARCHIVE_DEATH_REASONS,
@@ -303,6 +303,12 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
                 self.fields.pop(field_name)
 
 
+class ArchiveAgeListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        items = data.all() if isinstance(data, models.Manager) else data
+        return super().to_representation(preload_archive_age_dates(items))
+
+
 class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     animal_status = StatusSerializer(
         read_only=True
@@ -380,6 +386,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     
     # Поле для отображения кровности по основной породе с форматированием
     dorper_display = serializers.SerializerMethodField()
+    improving_breed_display = serializers.SerializerMethodField()
     dorper_calculation_note = serializers.SerializerMethodField()
     unsuccessful_insemination_warning = serializers.SerializerMethodField()
     primary_weighing_display = serializers.SerializerMethodField()
@@ -392,6 +399,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
     class Meta:
         model = AnimalBase
         fields = "__all__"
+        list_serializer_class = ArchiveAgeListSerializer
     
     def get_dorper_display(self, obj):
         """Возвращает отформатированную кровность по основной породе с процентом и звездочкой для ручных значений"""
@@ -417,6 +425,18 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         if obj.dorper_uses_default:
             return "Расчёт с допущением: неизвестная кровность родителей или предков принята за 50%"
         return "Рассчитано по родителям"
+
+    @staticmethod
+    def _format_improving_breed_percentage(value):
+        if value is None:
+            return None
+        formatted = f"{value:f}"
+        if "." in formatted:
+            formatted = formatted.rstrip("0").rstrip(".")
+        return f"{formatted}%"
+
+    def get_improving_breed_display(self, obj):
+        return self._format_improving_breed_percentage(obj.improving_breed_percentage)
 
     def get_unsuccessful_insemination_warning(self, obj):
         if not isinstance(obj, (Sheep, Ewe)):
@@ -917,6 +937,14 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
                     f"{self._format_dorper_log_value(new_dorper, new_is_manual)}"
                 )
         
+        if "improving_breed_percentage" in validated_data:
+            old_value = instance.improving_breed_percentage
+            new_value = validated_data["improving_breed_percentage"]
+            if old_value != new_value:
+                old_display = self._format_improving_breed_percentage(old_value) or "Не указано"
+                new_display = self._format_improving_breed_percentage(new_value) or "Не указано"
+                changes.append(f"Кровность по улучшающей породе: {old_display} → {new_display}")
+
         # Проверяем изменение бирки
         new_tag = validated_data.get("tag", None)
         if new_tag and isinstance(new_tag, str) and instance.tag.tag_number != new_tag:
@@ -1203,21 +1231,7 @@ class AnimalBaseSerializer(DynamicFieldsModelSerializer):
         Возвращаем бизнес-дату архивирования из ArchiveAct.
         StatusHistory используется только как fallback для старых данных без акта.
         """
-        if obj.is_archived and obj.animal_status:
-            archive_act = obj.tag.archive_acts.order_by("-updated_at", "-id").first() if obj.tag else None
-            if archive_act and archive_act.status_date:
-                return archive_act.status_date
-
-            # Ищем самую последнюю запись в истории статусов для этого животного (по ID, который автоинкрементный)
-            from begunici.app_types.veterinary.vet_models import StatusHistory
-            last_status_change = StatusHistory.objects.filter(
-                tag=obj.tag,
-                new_status=obj.animal_status
-            ).order_by('-change_date', '-id').first()
-            
-            if last_status_change:
-                return last_status_change.change_date
-        return None
+        return animal_age_reference_date(obj) if obj.is_archived else None
 
     def get_mother_display(self, obj):
         """Получить отображение матери с информацией о ссылке"""
@@ -1337,6 +1351,9 @@ class UniversalChildSerializer(serializers.Serializer):
     archive_date = serializers.SerializerMethodField()
     first_weight = serializers.SerializerMethodField()
 
+    class Meta:
+        list_serializer_class = ArchiveAgeListSerializer
+
     def get_tag_number(self, obj):
         if not obj.tag:
             return "Нет бирки"
@@ -1367,27 +1384,7 @@ class UniversalChildSerializer(serializers.Serializer):
 
     def get_archive_date(self, obj):
         """Получаем бизнес-дату архивирования из ArchiveAct."""
-        if not obj.animal_status:
-            return None
-
-        archive_act = obj.tag.archive_acts.order_by("-updated_at", "-id").first() if obj.tag else None
-        if archive_act and archive_act.status_date:
-            return archive_act.status_date
-        
-        # Fallback для старых данных без ArchiveAct.
-        from begunici.app_types.veterinary.vet_models import StatusHistory
-        
-        archive_statuses = ARCHIVE_STATUS_NAMES
-        if obj.animal_status.status_type in archive_statuses:
-            status_history = StatusHistory.objects.filter(
-                tag=obj.tag,
-                new_status=obj.animal_status
-            ).order_by('-change_date', '-id').first()
-            
-            if status_history:
-                return status_history.change_date
-        
-        return None
+        return animal_age_reference_date(obj) if obj.is_archived else None
 
     def get_first_weight(self, obj):
         """Возвращает первый (самый ранний) вес животного"""
@@ -1804,6 +1801,9 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     Polymorphic serializer for archive animal lists.
     """
 
+    class Meta:
+        list_serializer_class = ArchiveAgeListSerializer
+
     tag_number = serializers.CharField()
     animal_type = serializers.CharField()
     status = serializers.CharField(source="animal_status__status_type", allow_null=True)
@@ -1857,31 +1857,14 @@ class ArchiveAnimalSerializer(serializers.Serializer):
     def _get_archive_date_from_act(tag_obj, status_type=None):
         if not tag_obj:
             return None
-
-        archive_act = tag_obj.archive_acts.order_by("-updated_at", "-id").first()
-        if archive_act and archive_act.status_date:
-            return archive_act.status_date
-
-        if not status_type:
-            return None
-
-        # Fallback for old archived animals without ArchiveAct rows.
-        status_history = (
-            StatusHistory.objects.filter(
-                tag=tag_obj,
-                new_status__status_type=status_type,
-            )
-            .order_by("-change_date", "-id")
-            .first()
-        )
-        return status_history.change_date if status_history else None
+        return archive_age_dates([tag_obj.pk]).get(tag_obj.pk)
 
     @staticmethod
     def _format_age_at_date(birth_date, reference_date):
         if not birth_date:
             return None
         birth_date = as_local_date(birth_date)
-        reference_date = timezone.localdate() if reference_date is None else as_local_date(reference_date)
+        reference_date = as_local_date(reference_date)
         if not birth_date or not reference_date:
             return None
         if reference_date < birth_date:
@@ -1945,12 +1928,7 @@ class ArchiveAnimalSerializer(serializers.Serializer):
         tag_number = instance.tag.tag_number if instance.tag else "Нет данных"
         animal_type = instance.tag.animal_type if instance.tag else "Unknown"
 
-        archived_date = None
-        if instance.animal_status and instance.tag:
-            archived_date = self._get_archive_date_from_act(
-                instance.tag,
-                instance.animal_status.status_type,
-            )
+        archived_date = animal_age_reference_date(instance) if instance.is_archived else None
 
         mother_tag = (instance.mother or "").strip() or None
         age_display = self._format_age_at_date(instance.birth_date, archived_date)

@@ -95,8 +95,12 @@ def resolve_log_action(method, path, params=None, status_code=None):
         action = {"care": "Лечебное мероприятие", "intake": "Уточнение поступления на лечение",
                   "close": "Завершение лечения", "reconcile": "Сверка расхода лечения"}.get(clinical_action, "Изменение истории болезни")
 
-    elif path.startswith(("/catalog/meat/", "/catalog/feeds/")) and method == "POST":
-        area = "склада кормов" if path.startswith("/catalog/feeds/") else "склада продукции"
+    elif path.startswith("/veterinary/cares/norms/") and method == "POST":
+        action = "Изменение норм расхода склада ветпрепаратов"
+
+    elif path.startswith(("/catalog/meat/", "/catalog/feeds/", "/catalog/vet/")) and method == "POST":
+        area = ("склада кормов" if path.startswith("/catalog/feeds/") else
+                "склада ветпрепаратов" if path.startswith("/catalog/vet/") else "склада продукции")
         label = "Редактирование позиции" if re.search(r"/[0-9]+/$", path) else "Создание позиции"
         action = f"{label} {area}"
 
@@ -357,6 +361,8 @@ def resolve_log_object_type(method, path):
         return "Номенклатура мясной продукции"
     if path.startswith("/catalog/feeds/"):
         return "Склад кормов"
+    if path.startswith(("/catalog/vet/", "/veterinary/cares/norms/")):
+        return "Склад ветпрепаратов"
 
     if path.startswith("/inventory/"):
         if path.startswith("/inventory/feeds/"):

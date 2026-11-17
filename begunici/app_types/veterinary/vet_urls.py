@@ -1,4 +1,6 @@
 from django.urls import path, include
+from django.views.generic import RedirectView
+from begunici.app_types.vet_inventory import views as vet_stock_views
 from rest_framework.routers import DefaultRouter
 from .vet_views import (
     barn_calculator_config,
@@ -40,6 +42,8 @@ router.register(r"weight-record", WeightRecordViewSet)
 router.register(r"place_movement", PlaceMovementViewSet)
 
 urlpatterns = [
+    path("cares/norms/", RedirectView.as_view(url="/veterinary/cares/?tab=norms", permanent=False), name="veterinary_care_norms"),
+    path("cares/norms/<int:pk>/", vet_stock_views.norm_edit, name="veterinary_care_norm"),
     path("api/barn-calculator/", barn_calculator_config, name="barn_calculator_config"),
     path("api/barn-calculator/factual/", barn_calculator_factual, name="barn_calculator_factual"),
     path("api/barn-calculator/calculate/", barn_calculator_calculate, name="barn_calculator_calculate"),

@@ -60,6 +60,8 @@ from .views import (
     weight_list,
     weight_list_api,
     weight_list_export_excel,
+    daily_gain_api,
+    daily_gain_export_excel,
     vet_filter_options,
     lambings_export_excel,
     lambing_groups_export_excel,
@@ -332,6 +334,8 @@ urlpatterns = [
     path("api/vet-list/export-excel/", vet_list_export_excel, name="vet-list-export-excel"),  # API экспорта ветобработок
     path("api/weight-list/", weight_list_api, name="weight-list-api"),
     path("api/weight-list/export-excel/", weight_list_export_excel, name="weight-list-export-excel"),
+    path("api/weight-list/daily-gain/", daily_gain_api, name="daily-gain-api"),
+    path("api/weight-list/daily-gain/export-excel/", daily_gain_export_excel, name="daily-gain-export-excel"),
     path("api/vet-filter-options/", vet_filter_options, name="vet-filter-options"),  # API для опций фильтров ветобработок
     path("api/lambings/export-excel/", lambings_export_excel, name="lambings-export-excel"),  # API экспорта окотов
     path("api/lambing-groups/export-excel/", lambing_groups_export_excel, name="lambing-groups-export-excel"),  # API экспорта групп

@@ -13,7 +13,7 @@ from django.db.models.functions import Coalesce
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
 from django.utils.html import escape
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections import defaultdict
 from functools import wraps
 from dateutil.relativedelta import relativedelta
@@ -100,7 +100,10 @@ from .archive_acts import (
 )
 from .transfer_acts import get_transfer_acts_page, manual_transfer_act_response, transfer_act_response
 from .monthly_breeding_acts import monthly_breeding_act_response
-from .age_utils import age_months_for_export, filter_queryset_by_age, format_age
+from .age_utils import (
+    age_months_for_export, filter_queryset_by_age, format_age, get_age_delta,
+    animal_age_reference_date, preload_archive_age_dates,
+)
 from .utils_permissions import (
     ANIMAL_ARCHIVE_DENIED_MESSAGE, can_archive_animals, can_edit_dashboard_plans,
 )
@@ -339,6 +342,7 @@ def _build_base_animal_kwargs(source_animal, status_obj):
         "rshn_tag": source_animal.rshn_tag,
         "date_otbivka": source_animal.date_otbivka,
         "dorper_percentage": source_animal.dorper_percentage,
+        "improving_breed_percentage": source_animal.improving_breed_percentage,
         "is_manual_dorper": source_animal.is_manual_dorper,
         "dorper_uses_default": source_animal.dorper_uses_default,
         "is_reject": source_animal.is_reject,
@@ -5388,6 +5392,7 @@ class AnimalDetailView(TemplateView):
         tag_number = self.kwargs.get("tag_number")
         try:
             animal = self.model.objects.get(tag__tag_number=tag_number)
+            preload_archive_age_dates([animal])
             model_name = self.model._meta.model_name
             animal_type_labels = {
                 "maker": "баран-производитель",
@@ -6415,18 +6420,15 @@ def young_stock_export_excel(request):
             ]
         )
 
+    headers, rows = _add_animal_breed_export_columns(
+        ["№", "Номер приплода (бирка)", "Тип рождения", "Дата рождения", "Вес при рождении",
+         "Отбивка", "Номер матери (бирка)"],
+        rows, [animal for _, _, animal in items],
+    )
     return _build_excel_response(
         filename_prefix="young_stock",
         sheet_title="Приплод",
-        headers=[
-            "№",
-            "Номер приплода (бирка)",
-            "Тип рождения",
-            "Дата рождения",
-            "Вес при рождении",
-            "Отбивка",
-            "Номер матери (бирка)",
-        ],
+        headers=headers,
         rows=rows,
     )
 
@@ -6654,6 +6656,46 @@ def _get_last_vet_parts(animal):
     medication = care.medication or "без препарата"
     care_date = vet_record.get_care_date()
     return care_date, f"{care_type} ({medication})"
+
+
+ANIMAL_EXPORT_MASS_HEADERS = {
+    'Первичное взвешивание': 'Живая масса (первичное взвешивание), кг',
+    'Вторичное взвешивание': 'Живая масса (вторичное взвешивание), кг',
+    'Заключительное взвешивание': 'Живая масса (заключительное взвешивание), кг',
+    'Последнее взвешивание': 'Живая масса (последнее взвешивание), кг',
+}
+
+
+def _add_animal_breed_export_columns(headers, rows, animals):
+    position = headers.index('Тип животного') + 1 if 'Тип животного' in headers else headers.index('№') + 1
+    headers = [ANIMAL_EXPORT_MASS_HEADERS.get(header, header) for header in headers]
+    headers[position:position] = ['Порода', 'Кровность по улучшающей породе']
+    result = []
+    for row, animal in zip(rows, animals, strict=True):
+        value = getattr(animal, 'improving_breed_percentage', None)
+        percentage = f'{value.normalize():f}%' if value is not None else '-'
+        result.append([*row[:position], '-', percentage, *row[position:]])
+    return headers, result
+
+
+def _get_ewe_insemination_export_dates(animals):
+    ewe_ids = {animal.pk for animal in animals}
+    dates = {}
+
+    def remember(pk, value):
+        if value is not None and (pk not in dates or dates[pk] < value):
+            dates[pk] = value
+
+    groups = (LambingGroup.objects.filter(ewes__pk__in=ewe_ids)
+              .filter(Q(maker__isnull=False) | Q(ram__isnull=False))
+              .distinct().prefetch_related('ewes'))
+    for group in groups:
+        for ewe in group.ewes.all():
+            if ewe.pk in ewe_ids:
+                remember(ewe.pk, group.get_father_placement_date())
+    for lambing in Lambing.objects.filter(ewe_id__in=ewe_ids).select_related('source_group'):
+        remember(lambing.ewe_id, get_lambing_placement_date(lambing))
+    return dates
 
 
 def _split_sheep_last_insemination(animal):
@@ -8185,12 +8227,14 @@ def export_to_excel(request):
                 'Последнее взвешивание',
                 'Дата отбивки',
                 'Вес при отбивке',
+                'Дата осеменения',
                 'Дата последней ветобработки',
                 'Последняя ветобработка',
                 'Бирка РСХН',
                 'Примечание',
             ]
             export_data = []
+            insemination_dates = _get_ewe_insemination_export_dates([item['animal'] for item in animals_list])
             for idx, item in enumerate(animals_list, start=1):
                 animal = item['animal']
                 last_weight_record = WeightRecord.objects.filter(
@@ -8220,6 +8264,7 @@ def export_to_excel(request):
                     _format_weight_record_value(last_weight_record),
                     weaning_date,
                     weaning_weight,
+                    _format_date_for_excel(insemination_dates.get(animal.pk)),
                     _format_date_for_excel(last_vet_date) if last_vet_date else '-',
                     last_vet_text,
                     animal.rshn_tag or '-',
@@ -8391,7 +8436,7 @@ def export_to_excel(request):
                     father = animal.father if animal.father else 'Нет данных'
                     
                     # Дети
-                    children = animal.get_children()
+                    children = preload_archive_age_dates(animal.get_children())
                     # Словарь переводов типов животных
                     type_translations = {
                         'Maker': 'Баран-Производитель',
@@ -8422,6 +8467,10 @@ def export_to_excel(request):
                 
                 export_data.append(row_data)
         
+        headers, export_data = _add_animal_breed_export_columns(
+            headers, export_data, [item['animal'] for item in animals_list],
+        )
+
         # Создаем файл в зависимости от доступности openpyxl
         if use_excel:
             # Создаём Excel файл
@@ -8439,6 +8488,9 @@ def export_to_excel(request):
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center', vertical='center')
+                if header in ('Кровность по улучшающей породе', 'Дата осеменения') or header in ANIMAL_EXPORT_MASS_HEADERS.values():
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            ws.row_dimensions[1].height = 60
             
             # Добавляем данные
             for row_num, row_data in enumerate(export_data, start=2):
@@ -8447,7 +8499,11 @@ def export_to_excel(request):
             
             # Автоширина колонок
             for col in range(1, len(headers) + 1):
-                ws.column_dimensions[get_column_letter(col)].width = 15
+                header = headers[col - 1]
+                width = 27 if header in ANIMAL_EXPORT_MASS_HEADERS.values() else 15
+                if header == 'Кровность по улучшающей породе':
+                    width = 26
+                ws.column_dimensions[get_column_letter(col)].width = width
             
             # Сохраняем в response
             filename = f"{animal_type}s_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
@@ -8518,6 +8574,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
 
     try:
         animal = model.objects.select_related('tag', 'animal_status', 'place').get(tag__tag_number=tag_number)
+        preload_archive_age_dates([animal])
     except model.DoesNotExist:
         return Response({'error': 'Животное не найдено'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -8591,23 +8648,9 @@ def export_animal_detail_excel(request, animal_type, tag_number):
         return worksheet
 
     def get_child_archive_date(child_animal):
-        if not child_animal.is_archived or not child_animal.animal_status:
+        if not child_animal.is_archived:
             return '-'
-        archive_act = (
-            child_animal.tag.archive_acts.order_by("-updated_at", "-id").first()
-            if child_animal.tag
-            else None
-        )
-        if archive_act and archive_act.status_date:
-            return format_date(archive_act.status_date)
-
-        # Fallback for old archived animals without ArchiveAct rows.
-        archive_record = (
-            StatusHistory.objects.filter(tag=child_animal.tag, new_status=child_animal.animal_status)
-            .order_by('-change_date', '-id')
-            .first()
-        )
-        return format_datetime(archive_record.change_date) if archive_record else '-'
+        return format_date(animal_age_reference_date(child_animal))
 
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -8717,7 +8760,7 @@ def export_animal_detail_excel(request, animal_type, tag_number):
         )
 
     if 'children' in selected_sections:
-        children = animal.get_children()
+        children = preload_archive_age_dates(animal.get_children())
         rows = []
         for idx, child in enumerate(children, 1):
             child_display_name = child.tag.tag_number
@@ -9001,7 +9044,7 @@ def _find_dashboard_weight_near_date(records, target_date, delta_days, min_date=
     ]
     return min(
         candidates,
-        key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, record.id),
+        key=lambda record: (abs((record.weight_date - target_date).days), record.weight_date, -record.id),
         default=None,
     )
 
@@ -10772,7 +10815,7 @@ def vet_list(request):
 
 
 def weight_list(request):
-    return render(request, "weight_list.html")
+    return render(request, "weight_list.html", {"is_gain": request.GET.get("tab") == "gain"})
 
 
 def _get_weight_list_queryset(params):
@@ -10812,18 +10855,24 @@ def _get_weight_list_queryset(params):
     return queryset
 
 
-def _build_weight_list_rows(records):
+def _build_weight_list_rows(records, *, include_gain_type=False):
     records = list(records)
     tag_ids = {record.tag_id for record in records}
     animals_by_tag = {}
     for code, (model, label) in COMMON_ANIMAL_TYPE_MAP.items():
-        for animal in model.objects.filter(tag_id__in=tag_ids).values("tag_id", "rshn_tag"):
-            animals_by_tag[animal["tag_id"]] = (code, label, animal["rshn_tag"])
+        for animal in model.objects.filter(tag_id__in=tag_ids).values("tag_id", "rshn_tag", "birth_date", "is_archived"):
+            animals_by_tag[animal["tag_id"]] = (code, label, animal["rshn_tag"], animal["birth_date"], animal["is_archived"])
 
     rows = []
+    today = timezone.localdate() if include_gain_type else None
+    archive_dates = {}
+    if include_gain_type:
+        archived_tags = {tag_id for tag_id, animal in animals_by_tag.items()
+                         if animal[0] in {"ram", "ewe"} and animal[4]}
+        archive_dates = {tag_id: archived_date for tag_id, _status, archived_date in get_latest_archive_events(archived_tags)}
     for record in records:
         animal = animals_by_tag.get(record.tag_id)
-        rows.append({
+        row = {
             "id": record.id,
             "tag_number": record.tag.tag_number,
             "animal_type": animal[1] if animal else "Не определено",
@@ -10833,14 +10882,23 @@ def _build_weight_list_rows(records):
             ) if animal else None,
             "weight_date": record.weight_date.isoformat(),
             "weight": str(record.weight),
-        })
+        }
+        if include_gain_type:
+            label = row["animal_type"]
+            if animal and animal[0] == "maker":
+                label = "Баран-производитель"
+            if animal and animal[0] in {"ram", "ewe"}:
+                reference_date = archive_dates.get(record.tag_id) if animal[4] else today
+                delta = get_age_delta(animal[3], reference_date=reference_date) if reference_date else None
+                months = delta.years * 12 + delta.months if delta is not None else None
+                if months is not None:
+                    label = f"{months} мес., {label.lower()}"
+            row["type_display"] = label
+        rows.append(row)
     return rows
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def weight_list_api(request):
-    queryset = _get_weight_list_queryset(request.query_params)
+def _weight_page_response(request, records, row_builder):
     try:
         page_number = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 10))
@@ -10848,16 +10906,22 @@ def weight_list_api(request):
         raise DRFValidationError({"error": "Некорректные параметры страницы."})
     if page_number < 1 or not 1 <= page_size <= 100:
         raise DRFValidationError({"error": "Номер страницы должен быть положительным, размер страницы — от 1 до 100."})
-    paginator = Paginator(queryset, page_size)
+    paginator = Paginator(records, page_size)
     page = paginator.get_page(page_number)
     return Response({
-        "results": _build_weight_list_rows(page.object_list),
+        "results": row_builder(page.object_list),
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page.number,
         "has_next": page.has_next(),
         "has_previous": page.has_previous(),
     })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def weight_list_api(request):
+    return _weight_page_response(request, _get_weight_list_queryset(request.query_params), _build_weight_list_rows)
 
 
 @api_view(["GET"])
@@ -10874,6 +10938,96 @@ def weight_list_export_excel(request):
         ] for record in records],
         summary_lines=[f"Итого записей: {len(records)}"],
         text_columns={1, 2, 3},
+    )
+
+
+def _get_daily_gain_records(params):
+    dates = {}
+    for prefix in ("last_weight_date", "previous_weight_date"):
+        for bound in ("from", "to"):
+            key = f"{prefix}_{bound}"
+            raw = params.get(key, "").strip()
+            if raw:
+                value = _parse_filter_date(raw)
+                if value is None:
+                    raise DRFValidationError({key: "Укажите корректную дату взвешивания."})
+                dates[key] = value
+        if dates.get(f"{prefix}_from") and dates.get(f"{prefix}_to") and dates[f"{prefix}_from"] > dates[f"{prefix}_to"]:
+            raise DRFValidationError({f"{prefix}_to": "Дата «по» не может быть раньше даты «с»."})
+    limits = {}
+    for key in ("daily_gain_min", "daily_gain_max"):
+        raw = params.get(key, "").strip()
+        if raw:
+            try:
+                value = Decimal(raw.replace(",", "."))
+            except InvalidOperation:
+                raise DRFValidationError({key: "Укажите корректный среднесуточный привес."})
+            if not value.is_finite() or value < Decimal("-999990") or value > Decimal("999990"):
+                raise DRFValidationError({key: "Среднесуточный привес должен быть от -999990 до 999990 г."})
+            limits[key] = value
+    if len(limits) == 2 and limits["daily_gain_min"] > limits["daily_gain_max"]:
+        raise DRFValidationError({"daily_gain_max": "Привес «до» не может быть меньше привеса «от»."})
+
+    latest = WeightRecord.objects.filter(tag_id=OuterRef("tag_id")).order_by("-weight_date", "-pk")
+    previous = WeightRecord.objects.filter(
+        tag_id=OuterRef("tag_id"), weight_date__lt=OuterRef("weight_date")
+    ).order_by("-weight_date", "-pk")
+    # Select the actual last pair first; filters must not replace it with older weights.
+    queryset = WeightRecord.objects.select_related("tag").filter(pk=Subquery(latest.values("pk")[:1])).annotate(
+        previous_weight_date=Subquery(previous.values("weight_date")[:1]),
+        previous_weight=Subquery(previous.values("weight")[:1]),
+    ).filter(previous_weight_date__isnull=False).order_by("-weight_date", "-pk")
+    search = params.get("tag_search", "").strip()
+    if search:
+        queryset = queryset.filter(_build_tag_or_rshn_relation_filter("tag", search))
+    for prefix, field in (("last_weight_date", "weight_date"), ("previous_weight_date", "previous_weight_date")):
+        for bound, lookup in (("from", "gte"), ("to", "lte")):
+            if (value := dates.get(f"{prefix}_{bound}")) is not None:
+                queryset = queryset.filter(**{f"{field}__{lookup}": value})
+
+    records = []
+    for record in queryset:
+        record.days_between = (record.weight_date - record.previous_weight_date).days
+        record.gain = record.weight - record.previous_weight
+        record.daily_gain = (record.gain * 1000 / record.days_between).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if "daily_gain_min" in limits and record.daily_gain < limits["daily_gain_min"]:
+            continue
+        if "daily_gain_max" in limits and record.daily_gain > limits["daily_gain_max"]:
+            continue
+        records.append(record)
+    return records
+
+
+def _build_daily_gain_rows(records):
+    records = list(records)
+    rows = _build_weight_list_rows(records, include_gain_type=True)
+    for record, row in zip(records, rows):
+        row.update(previous_weight_date=record.previous_weight_date.isoformat(),
+                   previous_weight=str(record.previous_weight), last_weight_date=row.pop("weight_date"),
+                   last_weight=row.pop("weight"), daily_gain=str(record.daily_gain),
+                   days_between=record.days_between, gain=str(record.gain))
+    return rows
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def daily_gain_api(request):
+    return _weight_page_response(request, _get_daily_gain_records(request.query_params), _build_daily_gain_rows)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def daily_gain_export_excel(request):
+    records = _build_daily_gain_rows(_get_daily_gain_records(request.query_params))
+    return _build_excel_response(
+        filename_prefix="daily_gain", sheet_title="Среднесуточный привес",
+        headers=["Бирка", "Тип", "Дата предпоследнего взвешивания", "Предпоследний вес, кг",
+                 "Дата последнего взвешивания", "Последний вес, кг", "Среднесуточный привес, г",
+                 "Дней между взвешиваниями", "Привес, кг"],
+        rows=[[row["tag_number"], row["type_display"], date.fromisoformat(row["previous_weight_date"]), Decimal(row["previous_weight"]),
+               date.fromisoformat(row["last_weight_date"]), Decimal(row["last_weight"]), Decimal(row["daily_gain"]),
+               row["days_between"], Decimal(row["gain"])] for row in records],
+        summary_lines=[f"Итого животных: {len(records)}"], text_columns={1, 2},
     )
 
 
@@ -11343,6 +11497,7 @@ def archive_export_excel(request):
         ])
         rows.append(row)
 
+    headers, rows = _add_animal_breed_export_columns(headers, rows, queryset)
     return _build_excel_response(
         filename_prefix="archive",
         sheet_title="Архив",

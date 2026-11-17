@@ -1,0 +1,19 @@
+<div data-vet-product-fields{% if product and not product.base_name %} data-vet-legacy-name="{{ product.name }}" data-vet-original-name="{{ product.name }}" data-vet-original-concentration="{{ product.concentration|default_if_none:'' }}" data-vet-original-concentration-unit="{{ product.concentration_unit }}" data-vet-original-size="{{ product.package_size|default_if_none:'' }}" data-vet-original-unit="{{ product.unit }}"{% endif %}>
+    <div class="row g-3 mb-3">
+        <div class="col-md-8"><label class="form-label w-100">Полное наименование<input class="form-control" name="full_name" value="{{ product.name }}" data-vet-full-name readonly aria-readonly="true" placeholder="Формируется автоматически"></label></div>
+        <div class="col-md-4"><label class="form-label w-100">Категория<select class="form-select" name="category">{% for value,label in categories %}<option value="{{ value }}"{% if form.category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div>
+    </div>
+    <div class="row g-3">
+        <div class="col-md-4"><label class="form-label w-100">Название<input class="form-control" name="name" value="{{ form.name }}" maxlength="120" required placeholder="Без концентрации и фасовки"></label></div>
+        <div class="col-md-4">
+            <label class="form-label w-100">Концентрация<input class="form-control" type="number" name="concentration" value="{{ form.concentration }}" min="0.000001" step="0.000001" max="{% if product.concentration_unit and product.concentration_unit|slice:':8' != 'percent_' %}999999999.999999{% else %}100{% endif %}"></label>
+            <label class="form-label w-100">Единица концентрации<select class="form-select" name="concentration_unit"><option value="">Без концентрации</option>{% for value,label in concentrations %}<option value="{{ value }}"{% if form.concentration_unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label w-100">Размер упаковки<input class="form-control" type="number" name="package_size" value="{{ form.package_size }}" min="0.001" step="0.001" max="999999999.999" placeholder="Например, 100"{% if size_locked %} readonly{% endif %}></label>
+            <label class="form-label w-100">Единица измерения<select class="form-select" name="unit"{% if unit_locked %} disabled{% endif %}>{% for value,label in units %}<option value="{{ value }}"{% if form.unit == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            {% if unit_locked %}<input type="hidden" name="unit" value="{{ product.unit }}">{% endif %}
+        </div>
+    </div>
+    {% if unit_locked %}<p class="alert alert-info">Единица уже используется в учёте и защищена от изменения.{% if size_locked %} Размер упаковки также зафиксирован.{% endif %} Для другой единицы или фасовки создайте отдельную позицию.</p>{% endif %}
+</div>

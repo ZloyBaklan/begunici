@@ -37,6 +37,8 @@ def write_stock_audit_log(user, area, action, data):
         if isinstance(data.get(key), dict):
             field_labels = {"name": "Название", "category": "Категория", "unit": "Единица", "package": "Упаковка",
                             "mode_label": "Способ расчёта", "rate": "Норма", "bands": "Диапазоны веса", "revision": "Версия"}
+            if area == "Склад ветпрепаратов":
+                field_labels.pop("package")
             values = []
             for field, title in field_labels.items():
                 if field not in data[key]:
@@ -82,7 +84,10 @@ def stock_audit_context(area, data):
             details.append("Позиция: " + product.name)
     for line in lines:
         item = f"{line['name']}: {line['amount']} {line['unit']}"
-        if line.get("package"):
+        if prefix == "Vet":
+            if "packages" in line:
+                item += f"; упаковок: {line['packages']}"
+        elif line.get("package"):
             item += f"; упаковки ({line['package']}): {line.get('packages', '0')}"
         details.append(item)
     if prefix == "Vet" and data.get("treatment"):

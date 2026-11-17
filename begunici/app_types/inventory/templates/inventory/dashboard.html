@@ -33,9 +33,9 @@
             <div class="card-header"><h5 class="mb-0">Корма и сено</h5></div>
             <div class="card-body">
                 <div class="row g-2 mb-3">
-                <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:home' %}">Остатки и потребление кормов</a></div>
-                <div class="col-md-4"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:orders' %}">Входящие заявки и приход</a></div>
-                <div class="col-md-4">{% if can_finance %}<a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a>{% else %}<a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:history' %}">История операций с кормами</a>{% endif %}</div>
+                <div class="{% if can_finance %}col-md-4{% else %}col-md-6{% endif %}"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:home' %}">Остатки и потребление кормов</a></div>
+                <div class="{% if can_finance %}col-md-4{% else %}col-md-6{% endif %}"><a class="btn btn-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:orders' %}">Входящие заявки и приход</a></div>
+                {% if can_finance %}<div class="col-md-4"><a class="btn btn-outline-secondary w-100 iv-menu-button" href="{% url 'feed_inventory:consume' %}">Оформить расход кормов</a></div>{% endif %}
                 </div>
                 <p class="text-muted small mb-0">Сено, мешки кормов, соль и другие корма. Приход по накладным и подтверждение фактического расхода.</p>
             </div>

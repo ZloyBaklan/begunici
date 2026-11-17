@@ -1,8 +1,86 @@
-{% extends 'vet_inventory/base.html' %}{% load vet_inventory_tags %}{% block vet_content %}
-<div class="iv-title-row"><h1>Ветпрепараты</h1>{% if can_finance %}<div class="vet-actions"><a class="btn btn-primary" href="{% url 'vet_inventory:orders' %}#new-order">Оформить приход</a><a class="btn btn-outline-secondary" href="{% url 'vet_inventory:consume' %}">Прочий расход</a><a class="btn btn-outline-danger" href="{% url 'vet_inventory:writeoff-new' %}">Списать по акту</a></div>{% endif %}</div>
-<p class="text-muted">При проведении новой ветобработки расход рассчитывается по сохранённой норме. Ветврач может уточнить фактическое количество с сохранением истории.</p>
-{% if pending %}<div class="alert alert-warning"><strong>Требует сверки: {{ pending }}</strong> — есть обработки без учтённого расхода. <a class="btn btn-sm btn-warning ms-2" href="{% url 'vet_inventory:treatments' %}?state=pending">Проверить</a></div>{% endif %}
-<div class="vet-table-wrap"><table class="table table-striped"><thead><tr><th>Препарат / материал</th><th>Остаток</th><th>Упаковки, шт.</th><th>Расход сегодня</th><th>По актам сегодня</th></tr></thead><tbody>
-{% for row in stock %}<tr><td><strong>{{ row.name }}</strong><small>{{ row.package|default:'Без упаковок' }}</small></td><td><strong class="vet-number">{{ row.available|vet_quantity }}</strong> {{ row.unit }}</td><td>{{ row.packages|vet_quantity }}</td><td>{{ row.actual|vet_quantity }} {{ row.unit }}</td><td>{{ row.written_off|vet_quantity }} {{ row.unit }}</td></tr>{% empty %}<tr><td colspan="5">Препаратов пока нет. Добавьте номенклатуру и оформите приход.</td></tr>{% endfor %}</tbody></table></div>
-<p class="text-muted small">Количества указаны в базовых единицах номенклатуры. Автоматический расход учитывает содержимое; упаковки списываются отдельно по факту.</p>
-<h2>Последние документы</h2>{% include 'vet_inventory/document_list.html' %}{% endblock %}
+{% extends 'vet_inventory/base.html' %}
+{% load vet_inventory_tags %}
+
+{% block vet_container_classes %}container-fluid vet-stock vet-stock-home{% endblock %}
+
+{% block vet_navigation %}
+<div class="row"><div class="col-12">
+    <h1 class="mb-3">Ветпрепараты</h1>
+    {{ block.super }}
+</div></div>
+{% endblock %}
+
+{% block vet_content_wrapper %}
+{% if pending %}
+<div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4" role="status">
+    <span><strong>Требует сверки: {{ pending }}</strong> — есть обработки без учтённого расхода.</span>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'vet_inventory:treatments' %}?state=pending">Проверить расход</a>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h5 class="card-title mb-0">Остатки препаратов и материалов</h5>
+        {% if can_finance %}
+        <div class="d-flex flex-wrap gap-2 vet-stock-controls">
+            <a class="btn btn-primary btn-sm" href="{% url 'vet_inventory:orders' %}#new-order">Оформить приход</a>
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'vet_inventory:consume' %}">Прочий расход</a>
+            <a class="btn btn-outline-danger btn-sm" href="{% url 'vet_inventory:writeoff-new' %}">Списать по акту</a>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle vet-stock-table">
+                <thead class="table-light"><tr>
+                    <th scope="col">Препарат / материал</th>
+                    <th scope="col">Остаток</th>
+                    <th scope="col">Упаковки</th>
+                    <th scope="col">Расход сегодня</th>
+                    <th scope="col">По актам сегодня</th>
+                </tr></thead>
+                <tbody>
+                {% for group in stock_groups %}
+                    {% if group.rows|length > 1 %}
+                    <tr class="vet-group-heading">
+                        <th scope="row">{{ group.name }}</th>
+                        <td colspan="4"><div class="d-flex flex-wrap gap-3">
+                            {% for total in group.totals %}<span>Итого: {{ total.amount|vet_quantity }} {{ total.unit }}</span>{% endfor %}
+                        </div></td>
+                    </tr>
+                    {% endif %}
+                    {% for row in group.rows %}
+                    <tr>
+                        <td class="vet-stock-name{% if group.rows|length > 1 %} vet-stock-variant{% endif %}">
+                            <a href="{% url 'inventory_catalog:vet-product-edit' row.id %}">{{ row.display_name }}</a>
+                        </td>
+                        <td><span class="text-nowrap">{{ row.measured_available|vet_quantity }} {{ row.measured_unit }}</span>
+                            <small class="text-muted">Количество препарата</small>
+                        </td>
+                        <td>
+                            {% for size in row.sizes %}
+                            <div>{{ size.sealed|vet_quantity }} закрытых × {{ size.capacity|vet_quantity }} {{ row.unit }}</div>
+                            {% if size.opened %}<small class="text-muted">Во вскрытых: {{ size.opened|vet_quantity }} {{ row.unit }}</small>{% endif %}
+                            {% endfor %}
+                            {% if row.unclassified %}<div>Без разбивки по фасовкам: {{ row.unclassified|vet_quantity }} {{ row.unit }}</div>{% endif %}
+                            {% if not row.sizes %}<small class="text-muted">Упаковок по учёту: {{ row.packages|vet_quantity }}</small>{% endif %}
+                            <small class="text-muted">Итого: {{ row.available|vet_quantity }} {{ row.unit }}</small>
+                        </td>
+                        <td class="text-nowrap">{{ row.actual|vet_quantity }} {{ row.unit }}</td>
+                        <td class="text-nowrap">{{ row.written_off|vet_quantity }} {{ row.unit }}</td>
+                    </tr>
+                    {% endfor %}
+                {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-4">Препаратов пока нет. Добавьте номенклатуру и оформите приход.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h5 class="card-title mb-0">Последние документы</h5></div>
+    <div class="card-body">{% include 'vet_inventory/document_list.html' with standard_style=True %}</div>
+</div>
+{% endblock %}

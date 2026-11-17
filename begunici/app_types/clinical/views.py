@@ -13,6 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 from rest_framework.exceptions import ValidationError as APIValidationError
 from begunici.app_types.veterinary.vet_models import Place, Status
 from begunici.app_types.animals.models import ARCHIVE_STATUS_NAMES, ARCHIVE_DEATH_REASONS, SheepBodyConditionRecord
+from begunici.app_types.animals.age_utils import animal_age_reference_date, format_age, preload_archive_age_dates
 from begunici.app_types.animals.status_logic import get_animal_status_validation_error
 from begunici.app_types.vet_inventory.services import stock_rows
 from .models import Episode
@@ -47,7 +48,25 @@ def animal_map(tag_ids):
     result = {}
     for model in services.ANIMALS:
         result.update({a.tag_id: a for a in model.objects.filter(tag_id__in=tag_ids).select_related("tag", "place", "animal_status")})
+    preload_archive_age_dates(result.values())
     return result
+
+
+def episode_age_date(episode, animal):
+    reference = episode.closed_on
+    if animal and animal.is_archived:
+        archive_date = animal_age_reference_date(animal)
+        if archive_date:
+            return min(reference, archive_date) if reference else archive_date
+        return reference
+    return reference or timezone.localdate()
+
+
+def episode_snapshot(episode, animal):
+    snapshot = dict(episode.snapshot) if episode.closed_on or not animal else services.animal_snapshot(animal)
+    reference = episode_age_date(episode, animal)
+    snapshot["age"] = format_age(snapshot.get("birth_date"), reference) if reference is not None else None
+    return snapshot
 
 
 def journal_entries(request):
@@ -80,7 +99,7 @@ def journal(request):
     for index, episode in enumerate(page, start=page.start_index()):
         episode.row_number = index
         episode.animal = animals.get(episode.tag_id)
-        episode.display_snapshot = services.animal_snapshot(episode.animal) if episode.animal and not episode.closed_on else episode.snapshot
+        episode.display_snapshot = episode_snapshot(episode, episode.animal)
         episode.previous_count = histories.get(episode.tag_id, 1) - 1
         episode.recent_events = [event for event in episode.events.all() if event.kind == "care"][-3:]
     return render(request, "clinical/journal.html", context(request, episodes=page, archive=archive, q=q, pending=request.GET.get("pending") == "1",
@@ -142,14 +161,16 @@ def export_excel(request):
     rows = []
     for index, episode in enumerate(episodes, 1):
         animal = animals.get(episode.tag_id)
-        snapshot = episode.snapshot if archive or not animal else services.animal_snapshot(animal)
+        snapshot = episode_snapshot(episode, animal)
         birth_date = snapshot.get("birth_date")
         label = snapshot.get("label") or services.LABELS.get(snapshot.get("type"), "-")
         treatment_place = (snapshot.get("discharge_place") or snapshot.get("place")) if archive else (
             str(animal.place or "") if animal else snapshot.get("place"))
         outcome = f"{episode.outcome or '-'}\n{episode.closed_on:%d.%m.%Y}" if episode.closed_on else "На лечении"
+        age_date = episode_age_date(episode, animal)
         common = [
-            index, episode.admitted_on, label, episode.tag_number, age_months_for_export(birth_date),
+            index, episode.admitted_on, label, episode.tag_number,
+            age_months_for_export(birth_date, age_date) if age_date is not None else "-",
             episode.origin or "-", treatment_place or "-", episode.admitted_on,
             initial_diagnosis(episode), (episode.diagnosis or "-") if episode.closed_on else "-",
         ]
@@ -180,7 +201,7 @@ def detail(request, pk):
     journal_url = safe_return_url(request.GET.get("return_url"), default_journal)
     if urlsplit(journal_url).path != reverse("clinical:journal"):
         journal_url = default_journal
-    return render(request, "clinical/detail.html", context(request, episode=episode, animal=animal, snapshot=services.animal_snapshot(animal) if animal and not episode.closed_on else episode.snapshot, totals=services.totals(episode), previous=previous, statuses=statuses, places=Place.objects.order_by("sheepfold"), death_reasons=ARCHIVE_DEATH_REASONS, archive_statuses=list(ARCHIVE_STATUS_NAMES), products=stock_rows() if can_manage(request.user) and not episode.closed_on else [], condition_choices=SheepBodyConditionRecord.CONDITION_CHOICES, latest_condition=condition.condition_index if condition else None,
+    return render(request, "clinical/detail.html", context(request, episode=episode, animal=animal, snapshot=episode_snapshot(episode, animal), totals=services.totals(episode), previous=previous, statuses=statuses, places=Place.objects.order_by("sheepfold"), death_reasons=ARCHIVE_DEATH_REASONS, archive_statuses=list(ARCHIVE_STATUS_NAMES), products=stock_rows() if can_manage(request.user) and not episode.closed_on else [], condition_choices=SheepBodyConditionRecord.CONDITION_CHOICES, latest_condition=condition.condition_index if condition else None,
         journal_url=journal_url, detail_url=episode_url(pk, journal_url), display_events=list(episode.events.all())))
 
 

@@ -136,10 +136,8 @@
             </div>
         </div>
 
-        <div class="row">
-            <!-- Левая колонка -->
-            <div class="col-lg-6">
-                <!-- Основная информация -->
+        <div class="row" id="animal-profile-columns">
+            <div class="col-lg-6" id="animal-profile-primary">
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Основная информация</h5>
@@ -149,12 +147,13 @@
                             <table class="table table-borderless">
                                 <tr><th width="40%">Бирка</th><td>{{ animal.tag.tag_number }}</td></tr>
                                 <tr><th>Статус</th><td>{{ animal.animal_status }}</td></tr>
-                                <tr><th>Возраст</th><td>{{ animal.get_age_display }}</td></tr>
+                                <tr><th>Возраст</th><td>{{ animal.get_age_display|default:'-' }}</td></tr>
                                 {% if animal_type == 'maker' %}
                                 <tr><th>Рабочее состояние</th><td>{{ animal.working_condition }}</td></tr>
                                 {% endif %}
                                 <tr><th>Место</th><td>{{ animal.place.sheepfold }}</td></tr>
                                 <tr><th>Кровность по основной породе</th><td id="dorper-display">-</td></tr>
+                                <tr><th>Кровность по улучшающей породе</th><td id="improving-breed-display">-</td></tr>
                                 <tr><th>Назначение</th><td id="reject-display">{{ animal.get_assignment_display }}</td></tr>
                                 <tr>
                                     <th>Мать</th>
@@ -184,122 +183,6 @@
                     </div>
                 </div>
 
-                <!-- Добавить взвешивание -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Добавить взвешивание</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="edit-weight-date" class="form-label">Дата:</label>
-                                <input type="date" id="edit-weight-date" class="form-control">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="edit-weight-value" class="form-label">Вес (кг):</label>
-                                <input type="number" id="edit-weight-value" step="0.1" class="form-control">
-                            </div>
-                            <div class="col-12">
-                                <button type="button" onclick="addWeightRecord()" class="btn btn-success">Добавить</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Правая колонка -->
-            <div class="col-lg-6">
-                <!-- Текущие ветобработки -->
-                <!-- VET BRIDGE: учёт и уточнение расхода по обработкам животного. -->
-                {% load vet_inventory_tags %}{% vet_stock_entry animal %}
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Активные ветобработки</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped" id="current-vet-treatments-table">
-                                <thead>
-                                    <tr>
-                                        <th>Класс</th>
-                                        <th>Препарат</th>
-                                        <th>Цель</th>
-                                        <th>Дата обработки</th>
-                                        <th>Дата окончания</th>
-                                        <th>Дней осталось</th>
-                                        <th>Комментарий</th>
-                                        <th>Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="current-vet-treatments-body">
-                                    <!-- Данные будут загружены через JavaScript -->
-                                </tbody>
-                            </table>
-                            <div id="no-current-treatments" class="text-muted text-center py-3" style="display: none;">
-                                Нет активных ветобработок для отслеживания
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Добавить ветобработку -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Добавить ветобработку</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label for="animal-vet-treatment-toggle" class="form-label">Обработка:</label>
-                                <div id="animal-vet-treatment-control">
-                                    <div class="dropdown animal-vet-dropdown">
-                                        <button class="btn btn-outline-secondary dropdown-toggle w-100 animal-vet-toggle" type="button" id="animal-vet-treatment-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                                            Выбрать ветобработки
-                                        </button>
-                                        <div class="dropdown-menu animal-vet-menu w-100 p-2" aria-labelledby="animal-vet-treatment-toggle">
-                                            <div class="dropdown-item-text text-muted small">Загрузка обработок...</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-12">
-                                <div id="animal-vet-details-block" class="bg-light p-2 rounded animal-vet-details" style="display: none;">
-                                    <div id="treatment-details-table-wrap" class="table-responsive" style="display: none;">
-                                        <table class="table table-sm table-bordered align-middle mb-0 animal-vet-details-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Класс</th>
-                                                    <th>Тип</th>
-                                                    <th>Препарат</th>
-                                                    <th>Цель</th>
-                                                    <th>Срок действия</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="treatment-details-body"></tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-12">
-                                <label for="vet-treatment-date" class="form-label">Дата:</label>
-                                <input type="date" id="vet-treatment-date" class="form-control">
-                            </div>
-                            <div class="col-12">
-                                <label for="vet-treatment-comments" class="form-label">Комментарии:</label>
-                                <textarea id="vet-treatment-comments" rows="3" placeholder="Добавьте комментарий (необязательно)" class="form-control"></textarea>
-                            </div>
-                            <div class="col-12">
-                                <button type="button" onclick="addVetRecord()" class="btn btn-success">Добавить</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Редактирование данных -->
-        <div class="row">
-            <div class="col-lg-6">
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Редактировать данные</h5>
@@ -384,6 +267,7 @@
                     </div>
                 </div>
 
+                <div id="blood-percentage-cards">
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Кровность по основной породе</h5>
@@ -401,15 +285,138 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Кровность по улучшающей породе</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="improving_breed_percentage" class="form-label">Кровность по улучшающей породе (%):</label>
+                                <input type="number" id="improving_breed_percentage" name="improving_breed_percentage" class="form-control" min="0" max="100" step="0.00001" placeholder="Не указано">
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="saveImprovingBreedPercentage()" class="btn btn-primary">Сохранить кровность</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
             </div>
 
-            <div class="col-lg-6">
+            <div class="col-lg-6" id="animal-profile-actions">
+                <!-- Текущие ветобработки -->
+                <div class="card mb-4">
+                    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <h5 class="card-title mb-0">Активные ветобработки</h5>
+                        {% load vet_inventory_tags %}{% vet_stock_entry animal %}
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="current-vet-treatments-table">
+                                <thead>
+                                    <tr>
+                                        <th>Класс</th>
+                                        <th>Препарат</th>
+                                        <th>Цель</th>
+                                        <th>Дата обработки</th>
+                                        <th>Дата окончания</th>
+                                        <th>Дней осталось</th>
+                                        <th>Комментарий</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="current-vet-treatments-body">
+                                    <!-- Данные будут загружены через JavaScript -->
+                                </tbody>
+                            </table>
+                            <div id="no-current-treatments" class="text-muted text-center py-3" style="display: none;">
+                                Нет активных ветобработок для отслеживания
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Добавить ветобработку -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Добавить ветобработку</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="animal-vet-treatment-toggle" class="form-label">Обработка:</label>
+                                <div id="animal-vet-treatment-control">
+                                    <div class="dropdown animal-vet-dropdown">
+                                        <button class="btn btn-outline-secondary dropdown-toggle w-100 animal-vet-toggle" type="button" id="animal-vet-treatment-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                                            Выбрать ветобработки
+                                        </button>
+                                        <div class="dropdown-menu animal-vet-menu w-100 p-2" aria-labelledby="animal-vet-treatment-toggle">
+                                            <div class="dropdown-item-text text-muted small">Загрузка обработок...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div id="animal-vet-details-block" class="bg-light p-2 rounded animal-vet-details" style="display: none;">
+                                    <div id="treatment-details-table-wrap" class="table-responsive" style="display: none;">
+                                        <table class="table table-sm table-bordered align-middle mb-0 animal-vet-details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Класс</th>
+                                                    <th>Тип</th>
+                                                    <th>Препарат</th>
+                                                    <th>Цель</th>
+                                                    <th>Срок действия</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="treatment-details-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="vet-treatment-date" class="form-label">Дата:</label>
+                                <input type="date" id="vet-treatment-date" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <label for="vet-treatment-comments" class="form-label">Комментарии:</label>
+                                <textarea id="vet-treatment-comments" rows="3" placeholder="Добавьте комментарий (необязательно)" class="form-control"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="addVetRecord()" class="btn btn-success">Добавить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Добавить взвешивание</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="edit-weight-date" class="form-label">Дата:</label>
+                                <input type="date" id="edit-weight-date" class="form-control">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="edit-weight-value" class="form-label">Вес (кг):</label>
+                                <input type="number" id="edit-weight-value" step="0.1" class="form-control">
+                            </div>
+                            <div class="col-12">
+                                <button type="button" onclick="addWeightRecord()" class="btn btn-success">Добавить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Редактировать родителей</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted mb-3"><small>Поля заполнены текущими родителями. Измените значения или очистите поля для удаления родителей.</small></p>
                         <div class="row g-3">
                             <div class="col-12">
                                 <label for="mother-input" class="form-label">Мать (бирка):</label>
@@ -985,6 +992,6 @@
 {% include 'includes/archive_modal.html' %}
 
 <script src="{% static 'js/archive_act_modal.js' %}?v=20261102-clinical"></script>
-<script src="{% static 'js/animal_detail.js' %}?v=20261102-clinical"></script>
+<script src="{% static 'js/animal_detail.js' %}?v=20261117-improving-breed"></script>
 <script src="{% static 'clinical/card.js' %}?v=20261102"></script>
 {% endblock %}

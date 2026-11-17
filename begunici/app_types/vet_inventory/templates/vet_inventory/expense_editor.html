@@ -1,0 +1,13 @@
+<div data-vet-expenses>
+{{ expense_groups|json_script:'vet-expense-groups' }}
+<div class="vet-table-wrap"><table class="table table-striped vet-group-editor">
+<thead><tr><th>Общее название</th><th>Вариант препарата</th><th>Количество</th>{% if not single_expense %}<th></th>{% endif %}</tr></thead>
+<tbody>{% for row in group_expense_rows %}<tr data-vet-expense-row>
+<td><select class="form-select" name="expense_group" aria-label="Общее название препарата"><option value="">Выберите препарат</option>{% for group in expense_groups %}<option value="{{ group.id }}"{% if row.group == group.id %} selected{% endif %}>{{ group.label }}</option>{% endfor %}</select></td>
+<td><select class="form-select" name="expense_variant" data-selected-variant="{{ row.variant|default:'' }}" aria-label="Вариант препарата"><option value="">Автоматически</option>{% for group in expense_groups %}{% if row.group == group.id %}{% for variant in group.variants %}<option value="{{ variant.id }}"{% if row.variant == variant.id %} selected{% endif %}>{{ variant.name }} · {{ variant.available }} {{ variant.unit }}</option>{% endfor %}{% endif %}{% endfor %}</select></td>
+<td><div class="input-group"><input class="form-control" type="number" name="expense_quantity" value="{{ row.amount }}" min="0" step="0.000000001" max="999999999.999999999" aria-label="Количество расхода"><span class="input-group-text" data-vet-expense-unit>—</span></div><small class="text-muted" data-vet-expense-help></small></td>
+{% if not single_expense %}<td><button class="btn btn-outline-danger btn-sm" type="button" data-vet-remove-expense>Убрать</button></td>{% endif %}
+</tr>{% endfor %}</tbody></table></div>
+{% if not single_expense %}<button class="btn btn-outline-secondary mb-3" type="button" data-vet-add-expense>Добавить препарат</button>{% endif %}
+<p class="text-muted small">При указанной концентрации вводится количество действующего вещества, иначе — самого препарата. Без выбранного варианта сначала расходуются вскрытые упаковки, затем более ранние поступления. Фактическое количество препарата округляется вверх до 0,001 его единицы и показывается в расшифровке.</p>
+</div>
