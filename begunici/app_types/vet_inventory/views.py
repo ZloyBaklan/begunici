@@ -13,9 +13,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_GET
 from io import BytesIO
 
-from begunici.app_types.inventory.permissions import can_manage_inventory
+from begunici.app_types.inventory.permissions import can_manage_inventory, require_inventory
 from begunici.app_types.veterinary.vet_models import VeterinaryCare, Veterinary
-from .permissions import access_required, can_treat
+from .permissions import (
+    access_required, can_edit_document, can_receive, can_treat, require_document_editor, require_receiving,
+)
 from . import services
 from .models import VetDocument, VetMovement, VetOrder, VetProduct, VetVersion, VetNorm, VetTreatment
 from . import rules, treatments
@@ -24,6 +26,7 @@ from . import rules, treatments
 def page(request, template, **context):
     return render(request, f"vet_inventory/{template}.html", {
         "can_finance": can_manage_inventory(request.user), "can_treat": can_treat(request.user),
+        "can_receive": can_receive(request.user),
         "technical_care_tab": "norms" if template in {"norms", "norm_edit"} else "", **context})
 
 
@@ -154,6 +157,7 @@ def home(request):
 def orders(request):
     products = list(VetProduct.objects.all())
     if request.method == "POST":
+        require_receiving(request.user)
         try:
             order = services.create_order(request.user, request.POST.get("supplier"), request.POST.get("note"),
                                           posted_lines(request, products), request.POST.get("token"))
@@ -177,6 +181,8 @@ def order_detail(request, pk):
 def document_new(request, kind, order_id=None):
     if kind not in {"receipt", "consume", "writeoff"}:
         raise Http404
+    if request.method == "POST":
+        require_document_editor(request.user, kind)
     order = get_object_or_404(VetOrder, pk=order_id) if kind == "receipt" else None
     products = list(VetProduct.objects.filter(pk__in=[r["product"] for r in order.lines]) if order else VetProduct.objects.all())
     initial = ([{"product": r["product"], "amount": str(r["missing"]), "packages": str(r["missing_packages"])}
@@ -195,6 +201,7 @@ def document_new(request, kind, order_id=None):
         except (ValidationError, IntegrityError) as exc:
             error(request, exc)
     return page(request, "document_form", kind=kind, order=order, form=request.POST,
+                can_edit_document=can_edit_document(request.user, kind),
                 **(physical_editor(request, products) if kind != "receipt" else {}),
                 reasons=services.WRITEOFF_REASONS, show_available=kind == "writeoff",
                 date=request.POST.get("date", timezone.localdate().isoformat()),
@@ -208,8 +215,12 @@ def document_detail(request, pk):
     version = document.versions.first()
     products = list(VetProduct.objects.filter(pk__in=[r["product"] for r in document.order.lines]) if document.order_id else VetProduct.objects.all())
     if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "reverse":
+            require_inventory(request.user)
+        else:
+            require_document_editor(request.user, document.kind)
         try:
-            action = request.POST.get("action")
             if action == "confirm":
                 if request.POST.get("verified") != "yes":
                     raise ValidationError("Подтвердите проверку номенклатуры и количеств.")
@@ -228,6 +239,7 @@ def document_detail(request, pk):
         except (ValidationError, IntegrityError) as exc:
             error(request, exc)
     return page(request, "document", document=document, version=version,
+                can_edit_document=can_edit_document(request.user, document.kind),
                 **(physical_editor(request, products, version.payload["lines"])
                    if document.kind in {"consume", "writeoff"} else {}),
                 reasons=services.WRITEOFF_REASONS, show_available=document.kind == "writeoff",

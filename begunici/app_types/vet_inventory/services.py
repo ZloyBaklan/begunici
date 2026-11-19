@@ -12,10 +12,12 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from begunici.app_types.inventory.documents import read_upload
+from begunici.app_types.inventory.models import write_stock_audit_log
 from begunici.app_types.inventory.permissions import require_inventory
 from begunici.app_types.inventory.validation import amount
-from begunici.app_types.inventory.models import write_stock_audit_log
+
 from .models import VetAudit, VetDocument, VetMovement, VetOrder, VetProduct, VetSettings, VetVersion
+from .permissions import require_document_editor, require_receiving
 
 
 def number(value):
@@ -110,7 +112,7 @@ def product_details(unit, values):
 
 @transaction.atomic
 def update_product(user, pk, revision, name, category, unit, *, automatic_name=False, **details):
-    config = lock(user)
+    config = lock(user, allow_receiving=True)
     product = VetProduct.objects.select_for_update().get(pk=pk)
     if str(product.revision) != str(revision):
         raise ValidationError("Номенклатура уже изменена. Обновите страницу перед редактированием.")
@@ -159,8 +161,11 @@ def update_product(user, pk, revision, name, category, unit, *, automatic_name=F
     return product
 
 
-def lock(user):
-    require_inventory(user)
+def lock(user, *, allow_receiving=False):
+    if allow_receiving:
+        require_receiving(user)
+    else:
+        require_inventory(user)
     return VetSettings.objects.select_for_update().get(pk=1)
 
 
@@ -482,7 +487,7 @@ def order_progress(order):
 
 @transaction.atomic
 def create_product(user, name, category, unit, *, automatic_name=False, **details):
-    lock(user)
+    lock(user, allow_receiving=True)
     if category not in dict(VetProduct._meta.get_field("category").choices) or unit not in dict(VetProduct._meta.get_field("unit").choices):
         raise ValidationError("Выберите категорию и единицу измерения из списка.")
     name = text(name, "Название", 120)
@@ -504,7 +509,7 @@ def create_product(user, name, category, unit, *, automatic_name=False, **detail
 
 @transaction.atomic
 def create_order(user, supplier, note, lines, request_token):
-    lock(user)
+    lock(user, allow_receiving=True)
     request_token = token(request_token)
     existing = VetOrder.objects.filter(token=request_token).first()
     if existing:
@@ -530,12 +535,13 @@ def add_version(document, user, payload, upload=None, previous=None):
 
 @transaction.atomic
 def create_document(user, kind, document_date, number_, lines, note, request_token, order_id=None, upload=None, reason=None, group_expenses=None):
-    lock(user)
+    lock(user, allow_receiving=kind == "receipt")
     if kind not in {"receipt", "consume", "writeoff"}:
         raise ValidationError("Неизвестный вид документа.")
     request_token = token(request_token)
     existing = VetDocument.objects.filter(token=request_token).first()
     if existing:
+        require_document_editor(user, existing.kind)
         return existing
     order = None
     if kind == "receipt":
@@ -567,8 +573,10 @@ def create_document(user, kind, document_date, number_, lines, note, request_tok
     return document
 
 
-def checked_document(pk, revision):
+def checked_document(user, pk, revision):
+    lock(user, allow_receiving=True)
     document = VetDocument.objects.select_for_update().get(pk=pk)
+    require_document_editor(user, document.kind)
     if hasattr(document, "clinical_episode"):
         raise ValidationError("Итоговый расход лечения подтверждается в истории болезни.")
     if str(document.revision) != str(revision):
@@ -578,8 +586,7 @@ def checked_document(pk, revision):
 
 @transaction.atomic
 def edit_draft(user, pk, revision, lines, note, upload=None, replace_confirmed=False, reason=None, group_expenses=None):
-    lock(user)
-    document = checked_document(pk, revision)
+    document = checked_document(user, pk, revision)
     if document.state != "draft":
         raise ValidationError("Изменять можно только черновик. Для подтверждённого документа используйте сторно.")
     previous = document.versions.first()
@@ -613,8 +620,7 @@ def edit_draft(user, pk, revision, lines, note, upload=None, replace_confirmed=F
 
 @transaction.atomic
 def confirm_document(user, pk, revision):
-    lock(user)
-    document = checked_document(pk, revision)
+    document = checked_document(user, pk, revision)
     if document.state == "posted":
         return document  # A repeated confirmation never doubles the ledger.
     if document.state != "draft":
@@ -674,8 +680,7 @@ def apply_movements(document, lines, sign):
 
 @transaction.atomic
 def cancel_draft(user, pk, revision):
-    lock(user)
-    document = checked_document(pk, revision)
+    document = checked_document(user, pk, revision)
     if document.state != "draft":
         raise ValidationError("Отменить можно только черновик.")
     document.state = "cancelled"

@@ -1,6 +1,6 @@
 {% extends 'vet_inventory/base.html' %}{% block vet_content %}
 <h1>{% if kind == 'receipt' %}Приходная накладная{% elif kind == 'writeoff' %}Акт списания препаратов{% else %}Прочий расход препаратов{% endif %}</h1>
-{% if not can_finance %}<div class="alert alert-info">Оформление документов доступно finans и admin.</div>{% elif not rows %}
+{% if not can_edit_document %}<div class="alert alert-info">Оформление документов доступно finans и admin.</div>{% elif not rows %}
 <div class="alert alert-info"><p>Сначала добавьте номенклатуру</p><a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-products' %}">Добавить номенклатуру</a></div>
 {% else %}
 {% if order %}<p>Заявка <a href="{% url 'vet_inventory:order' order.pk %}">№ {{ order.pk }}</a> · {{ order.supplier }}</p>{% else %}<p>Расход по обработкам учитывается автоматически. Здесь оформляются дополнительные расходы и списания с указанием основания.</p>{% endif %}

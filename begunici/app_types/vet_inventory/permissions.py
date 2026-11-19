@@ -1,7 +1,9 @@
 from functools import wraps
 
 from django.core.exceptions import PermissionDenied
-from begunici.app_types.inventory.permissions import can_prepare_slaughter, can_view_inventory, is_inventory_read_only
+from begunici.app_types.inventory.permissions import (
+    can_manage_inventory, can_prepare_slaughter, can_view_inventory, is_inventory_read_only, require_inventory,
+)
 
 
 def can_view(user):
@@ -15,6 +17,26 @@ def can_treat(user):
 def require_treat(user):
     if not can_treat(user):
         raise PermissionDenied("Нормы и расход обработок изменяют vet и admin.")
+
+
+def can_receive(user):
+    return can_treat(user) or can_manage_inventory(user)
+
+
+def require_receiving(user):
+    if not can_receive(user):
+        raise PermissionDenied("Номенклатуру и приход ветпрепаратов оформляют vet, finans и admin.")
+
+
+def can_edit_document(user, kind):
+    return can_receive(user) if kind == "receipt" else can_manage_inventory(user)
+
+
+def require_document_editor(user, kind):
+    if kind == "receipt":
+        require_receiving(user)
+    else:
+        require_inventory(user)
 
 
 def access_required(*, write=False):

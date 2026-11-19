@@ -4,7 +4,7 @@
 <div class="card"><div class="card-header"><h5 class="card-title mb-0">Настройка норм расхода</h5></div><div class="card-body">
 <p><strong>{{ care.care_type }} · {{ care.care_name }}</strong><br>{{ care.medication|default:'Препарат не указан в справочнике' }}</p>
 {% if not can_treat %}<div class="alert alert-info">Изменение норм доступно vet и admin.</div>{% endif %}
-{% if not products %}<div class="alert alert-info">{% if can_finance %}Сначала добавьте номенклатуру{% else %}Номенклатура пуста. Добавить её может финансовый сотрудник или администратор{% endif %}</div>{% if can_finance %}<a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-products' %}">Добавить номенклатуру</a>{% endif %}{% else %}
+{% if not products %}<div class="alert alert-info">{% if can_receive %}Сначала добавьте номенклатуру{% else %}Номенклатура пуста. Добавить её могут vet, finans и admin{% endif %}</div>{% if can_receive %}<a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-products' %}">Добавить номенклатуру</a>{% endif %}{% else %}
 <form method="post" data-vet-product-rules>{% csrf_token %}
 <label class="form-label w-100">Общее название препарата<select class="form-select" name="norm_group" data-vet-rule-group required><option value="">Выберите препарат</option>{% for group in norm_groups %}<option value="{{ group.id }}"{% if selected_group.id == group.id %} selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
 {% if selected_group %}

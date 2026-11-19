@@ -45,7 +45,7 @@
         </div>{% endif %}
     </div>
 </div>
-{% if document.state == 'draft' and can_finance and not version.payload.clinical_episode %}
+{% if document.state == 'draft' and can_edit_document and not version.payload.clinical_episode %}
 {% if document.kind == 'writeoff' and not version.filename %}<div class="alert alert-warning">Чтобы подтвердить списание, прикрепите акт в форме ниже. При необходимости откройте печатную форму, оформите документ и сохраните его в PDF.</div>{% endif %}
 <div class="card mb-4">
     <div class="card-header"><h5 class="card-title mb-0">Подтверждение документа</h5></div>

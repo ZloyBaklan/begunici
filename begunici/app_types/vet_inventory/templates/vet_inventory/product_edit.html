@@ -1,12 +1,12 @@
 {% extends 'vet_inventory/technical_base.html' %}
-{% block vet_heading %}{% if can_finance %}Редактировать препарат{% else %}Карточка препарата{% endif %}{% endblock %}
+{% block vet_heading %}{% if can_receive %}Редактировать препарат{% else %}Карточка препарата{% endif %}{% endblock %}
 {% block vet_content %}
 <div class="row"><div class="col-12"><div class="card">
 <div class="card-header"><h5 class="card-title mb-0">Данные препарата</h5></div>
-<div class="card-body"><p class="text-muted">{{ product.name }}{% if can_finance %}. Новое название появится в справочнике, остатках и нормах расхода. В оформленных документах останется название на момент их создания.{% endif %}</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="revision" value="{{ form.revision }}"><fieldset{% if not can_finance %} disabled{% endif %}>
+<div class="card-body"><p class="text-muted">{{ product.name }}{% if can_receive %}. Новое название появится в справочнике, остатках и нормах расхода. В оформленных документах останется название на момент их создания.{% endif %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="revision" value="{{ form.revision }}"><fieldset{% if not can_receive %} disabled{% endif %}>
 {% include 'vet_inventory/product_fields.html' %}
-{% if can_finance %}<div class="vet-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button><a class="btn btn-outline-secondary" href="{% url 'inventory_catalog:vet-products' %}">Отмена</a></div>{% endif %}
+{% if can_receive %}<div class="vet-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button><a class="btn btn-outline-secondary" href="{% url 'inventory_catalog:vet-products' %}">Отмена</a></div>{% endif %}
 </fieldset></form>
 </div></div></div></div>
 {% endblock %}

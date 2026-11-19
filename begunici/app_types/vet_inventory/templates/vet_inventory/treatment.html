@@ -23,7 +23,7 @@
 </div>
 {% if can_treat and entry.state != 'deleted' %}
 {% if requires_stock %}
-{% if not products %}<div class="alert alert-info"><p{% if not can_finance %} class="mb-0"{% endif %}>{% if can_finance %}Сначала добавьте номенклатуру{% else %}Номенклатура пуста. Добавить её может финансовый сотрудник или администратор{% endif %}</p>{% if can_finance %}<a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-products' %}">Добавить номенклатуру</a>{% endif %}</div>{% else %}
+{% if not products %}<div class="alert alert-info"><p{% if not can_receive %} class="mb-0"{% endif %}>{% if can_receive %}Сначала добавьте номенклатуру{% else %}Номенклатура пуста. Добавить её могут vet, finans и admin{% endif %}</p>{% if can_receive %}<a class="btn btn-outline-primary" href="{% url 'inventory_catalog:vet-products' %}">Добавить номенклатуру</a>{% endif %}</div>{% else %}
 <div class="card mb-4">
     <div class="card-header"><h5 class="card-title mb-0">Уточнить фактический расход</h5></div>
     <form method="post" class="card-body">{% csrf_token %}<input type="hidden" name="action" value="adjust"><input type="hidden" name="revision" value="{{ form.revision }}"><input type="hidden" name="physical_expense" value="yes">
